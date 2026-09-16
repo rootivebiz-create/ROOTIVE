@@ -10,7 +10,6 @@ export function encodeRfc5987(value: string): string {
 
 /** ASCII だけの代替ファイル名（非 ASCII を含む場合は export.<拡張子>） */
 export function asciiFallbackName(filename: string): string {
-  // eslint-disable-next-line no-control-regex
   if (/^[\x20-\x7e]+$/.test(filename) && !/["\\]/.test(filename)) return filename;
   const m = /\.([A-Za-z0-9]+)$/.exec(filename);
   return `export${m ? `.${m[1].toLowerCase()}` : ""}`;
@@ -67,7 +66,6 @@ export function errorResponse(status: number, message: string): Response {
 
 /** ファイル名に使えない文字を置き換える（OS 予約文字と制御文字） */
 export function safeFilePart(s: string): string {
-  // eslint-disable-next-line no-control-regex
   return s.replace(/[\\/:*?"<>|\x00-\x1f]/g, "_").trim() || "_";
 }
 
