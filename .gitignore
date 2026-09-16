@@ -20,3 +20,8 @@ supabase/.temp/
 next-env.d.ts
 .vscode/
 .idea/
+# E2E の生成物
+tests/e2e/.state.json
+tests/e2e/.storage/
+tests/e2e/.storage-selftest/
+tests/e2e/.logs/
