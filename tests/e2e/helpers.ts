@@ -263,11 +263,11 @@ export function countEntries(month: string): number {
 
 /**
  * 一覧の 1 行を、表示中の要素だけから文字列で探す。
- * PC は `<tr>`、スマホは最も内側の Card（`div.rounded-lg`）にマッチする
+ * PC は `<tr>`、スマホは最も内側の Card（`div.rounded-lg`。表を包む Card は除く）にマッチする
  */
 export function listRow(page: Page, text: string | RegExp): Locator {
   return page
-    .locator("tr, div.rounded-lg:not(:has(div.rounded-lg))")
+    .locator("tr, div.rounded-lg:not(:has(div.rounded-lg)):not(:has(table))")
     .filter({ hasText: text })
     .filter({ visible: true });
 }

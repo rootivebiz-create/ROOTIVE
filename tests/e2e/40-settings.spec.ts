@@ -164,13 +164,14 @@ test.describe("設定", () => {
     await expect(page.getByRole("heading", { name: "監査ログ" })).toBeVisible();
     await expect(page.getByLabel("テーブル")).toHaveValue("drivers");
     await expect(page.getByLabel("操作")).toHaveValue("INSERT");
-    const row = listRow(page, DRIVER_NAME);
+    // 監査ログはデータ全削除でも消えないため、以前の実行分がある場合は最新（先頭）を見る
+    const row = listRow(page, DRIVER_NAME).first();
     await expect(row).toContainText("追加");
     await expect(row).toContainText("ドライバー");
     await expect(row).toContainText("オーナー");
     // UPDATE（停止中への変更）も記録されている
     await page.goto("/settings/audit?table=drivers&action=UPDATE");
-    const upd = listRow(page, DRIVER_NAME);
+    const upd = listRow(page, DRIVER_NAME).first();
     await expect(upd).toContainText("更新");
     await expect(upd).toContainText("状態");
   });

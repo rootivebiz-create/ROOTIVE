@@ -159,8 +159,41 @@ TYPE_FLAG_SUPPORTED=0
 if "${VC[@]}" env add --help 2>&1 | grep -q -- '--type'; then
   TYPE_FLAG_SUPPORTED=1
 fi
+# Vercel REST API 呼び出し（CLI の対話プロンプトを避けるため環境変数の登録はこちらを優先）
+VERCEL_API_STATUS=""
+vercel_api() { # vercel_api METHOD PATH [JSON_BODY] → 本文を標準出力へ。HTTP ステータスは VERCEL_API_STATUS
+  local method="$1" path="$2" body="${3:-}"
+  local url="https://api.vercel.com$path"
+  case "$ORG_ID" in
+    team_*)
+      case "$url" in *\?*) url="$url&teamId=$ORG_ID" ;; *) url="$url?teamId=$ORG_ID" ;; esac
+      ;;
+  esac
+  local out
+  out="$(mktemp)"
+  local -a args=(-sS -o "$out" -w '%{http_code}' -X "$method" "$url" -H "Authorization: Bearer $VERCEL_TOKEN")
+  if [ -n "$body" ]; then args+=(-H "Content-Type: application/json" --data-binary "$body"); fi
+  VERCEL_API_STATUS="$(curl "${args[@]}" || echo 000)"
+  cat "$out"
+  rm -f "$out"
+}
+
 set_env() { # set_env NAME VALUE [sensitive]
   local name="$1" value="$2" sensitive="${3:-0}"
+  # (1) REST API で upsert（非対話・確実）
+  if [ -n "$PROJECT_ID" ] && [ "$HAS_JQ" = "1" ]; then
+    local type="plain"
+    [ "$sensitive" = "1" ] && type="sensitive"
+    local body res
+    body="$(jq -cn --arg k "$name" --arg v "$value" --arg t "$type" '{key: $k, value: $v, type: $t, target: ["production"]}')"
+    res="$(vercel_api POST "/v10/projects/$PROJECT_ID/env?upsert=true" "$body")"
+    if [ "$VERCEL_API_STATUS" -ge 200 ] && [ "$VERCEL_API_STATUS" -lt 300 ]; then
+      log "  設定: $name"
+      return 0
+    fi
+    warn "Vercel API での登録に失敗しました（HTTP $VERCEL_API_STATUS）: $(printf '%s' "$res" | tr -d '\n' | cut -c1-200)。CLI で再試行します"
+  fi
+  # (2) CLI（フォールバック）
   local -a flags=()
   vc env rm "$name" production --yes >/dev/null 2>&1 || true
   if [ "$sensitive" = "1" ]; then
