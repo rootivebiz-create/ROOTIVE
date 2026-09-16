@@ -5,6 +5,9 @@
   "functions": {
     "app/api/export/statement.pdf/route.ts": {
       "maxDuration": 30
+    },
+    "app/api/export/statements.zip/route.ts": {
+      "maxDuration": 60
     }
   },
   "crons": [

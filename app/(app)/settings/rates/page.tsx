@@ -1,0 +1,53 @@
+import { Download } from "lucide-react";
+import { requireStaff, canEdit } from "@/lib/auth/session";
+import { isMonthClosed, loadMasters, loadRateDiffs } from "@/lib/db/queries";
+import { exportUrls } from "@/lib/exports/urls";
+import { monthFromParam } from "@/lib/month";
+import { uuidSchema } from "@/lib/schemas/common";
+import { PageHeader } from "@/components/ui/page-header";
+import { buttonVariants } from "@/components/ui/button";
+import { RatesEditor } from "@/components/settings/rates/rates-editor";
+import { toRateMasters } from "@/components/settings/rates/helpers";
+
+export const metadata = { title: "ドライバー別単価" };
+
+/** クエリの id（uuid でなければ null） */
+function idParam(v: string | string[] | undefined): string | null {
+  const s = Array.isArray(v) ? v[0] : v;
+  return s && uuidSchema.safeParse(s).success ? s : null;
+}
+
+export default async function RatesSettingsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  const sp = await searchParams;
+  const month = monthFromParam(sp.m);
+  const initialDriverId = idParam(sp.driver);
+  const initialItemId = idParam(sp.item);
+  const { supabase, profile, company } = await requireStaff();
+
+  const [masters, closed] = await Promise.all([loadMasters(supabase, company.id), isMonthClosed(supabase, company.id, month)]);
+  const diffs = await loadRateDiffs(supabase, month, { closed });
+
+  return (
+    <div>
+      <PageHeader
+        title="ドライバー別単価"
+        description="ドライバー × 案件内容ごとに受注単価・支払単価を設定します。空欄は案件内容の標準単価を使います。"
+        actions={
+          <a href={exportUrls.ratesCsv()} download className={buttonVariants({ variant: "outline", size: "sm" })}>
+            <Download /> 単価表 CSV
+          </a>
+        }
+      />
+      <RatesEditor
+        masters={toRateMasters(masters)}
+        month={month}
+        closed={closed}
+        canEdit={canEdit(profile.role)}
+        diffs={diffs}
+        initialView={initialItemId && !initialDriverId ? "item" : "driver"}
+        initialDriverId={initialDriverId}
+        initialItemId={initialItemId}
+      />
+    </div>
+  );
+}

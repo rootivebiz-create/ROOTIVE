@@ -297,10 +297,12 @@ begin
     pay_rate = excluded.pay_rate, is_active = excluded.is_active, sort_order = excluded.sort_order;
   get diagnostics n = row_count; counts := counts || jsonb_build_object('project_items', n);
 
-  insert into public.driver_pay_overrides (company_id, driver_id, project_item_id, pay_rate)
-  select cid, (x->>'driver_id')::uuid, (x->>'project_item_id')::uuid, (x->>'pay_rate')::numeric
+  -- ドライバー別単価（bill_rate は 0007 で追加。どちらも無い行は取り込まない）
+  insert into public.driver_pay_overrides (company_id, driver_id, project_item_id, pay_rate, bill_rate)
+  select cid, (x->>'driver_id')::uuid, (x->>'project_item_id')::uuid, (x->>'pay_rate')::numeric, (x->>'bill_rate')::numeric
     from jsonb_array_elements(coalesce(p_data->'driver_pay_overrides','[]')) x
-  on conflict (driver_id, project_item_id) do update set pay_rate = excluded.pay_rate;
+   where x->>'pay_rate' is not null or x->>'bill_rate' is not null
+  on conflict (driver_id, project_item_id) do update set pay_rate = excluded.pay_rate, bill_rate = excluded.bill_rate;
   get diagnostics n = row_count; counts := counts || jsonb_build_object('driver_pay_overrides', n);
 
   insert into public.driver_recurring_adjustments (id, company_id, driver_id, label, amount, count_as_profit, is_active, sort_order)

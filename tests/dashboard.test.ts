@@ -4,6 +4,7 @@ import { extractFindings, normalizeFindings } from "@/lib/ai/findings";
 import { buildDashboardWarnings, buildTrend } from "@/lib/db/queries-dashboard";
 import { kpiDelta } from "@/components/dashboard/kpi-cards";
 import { compactYen } from "@/components/dashboard/profit-trend-chart";
+import type { RateDiff } from "@/lib/db/types";
 
 describe("ダッシュボードの純関数（所見の正規化・推移・警告）", () => {
   it("所見の正規化・抽出、12 か月推移、警告判定が仕様どおり", () => {
@@ -35,6 +36,11 @@ describe("ダッシュボードの純関数（所見の正規化・推移・警�
     assert.equal(trend[3].bill, 0);
 
     // --- warnings ---
+    const rateDiff = (over: Partial<RateDiff> = {}): RateDiff => ({
+      entry_id: "e1", driver_id: "d1", driver_name: "相曽慧", project_id: "p1", project_item_id: "i1", project_name: "三郷Amazon", item_name: "標準", qty: 21,
+      bill_rate: 23025, pay_rate: 21780, royalty_rate: 0.1, rounding_mode: "none",
+      master_bill_rate: 23025, master_pay_rate: 21780, master_royalty_rate: 0.1, master_rounding_mode: "none", ...over,
+    });
     const driver = (over: Record<string, unknown>) => ({
       company_id: "c", month: "2026-09-01", driver_id: "d", driver_name: "D", driver_sort_order: 0, driver_is_active: true, driver_default_mgmt_fee: 15000, driver_month_id: "dm", memo: "",
       entry_count: 1, active_entry_count: 1, bill: 0, pay: 0, margin: 0, royalty: 0, mgmt_fee_setting: 15000, mgmt_fee: 15000, adjustment_count: 0, adj_pay: 0, adj_profit: 0, payout: 0, driver_profit: 0, is_closed: false, ...over,
@@ -56,20 +62,34 @@ describe("ダッシュボードの純関数（所見の正規化・推移・警�
       activeDrivers: [{ id: "d1", name: "相曽慧" }, { id: "d2", name: "X" }, { id: "d3", name: "Z" }, { id: "d5", name: "高森豪介" }],
       openMonths: ["2026-08", "2026-07", "2026-09", "2026-10"],
       pastThreshold: "2026-09",
+      rateDiffs: [
+        rateDiff({ entry_id: "e1", driver_id: "d1", driver_name: "相曽慧", master_bill_rate: 23500, master_pay_rate: 21960 }),
+        rateDiff({ entry_id: "e3", driver_id: "d9", driver_name: "川島幹太", pay_rate: 0, master_pay_rate: 21780, royalty_rate: 0, master_royalty_rate: 0.1, rounding_mode: "none", master_rounding_mode: "round" }),
+      ],
     });
     assert.deepEqual(w.lossEntries.map((e) => e.id), ["e2"]); // 川島（支払 0）は該当しない
     assert.deepEqual(w.mgmtFeeMismatches.map((m) => [m.driverName, m.setting, m.defaultFee]), [["相曽慧", 14999, 15000]]); // Z は稼働ゼロなので除外
     assert.deepEqual(w.idleDrivers.map((d) => d.driverName), ["Z", "高森豪介"]);
     assert.deepEqual(w.zeroQtyEntries.map((e) => e.id), ["e4"]);
     assert.deepEqual(w.openPastMonths, ["2026-07", "2026-08"]);
+    // 単価・率の差分：変わる項目だけが整形される（稼働入力の describeRateDiff と同じ文言）
+    assert.deepEqual(w.rateDiffs, [
+      { entryId: "e1", driverId: "d1", driverName: "相曽慧", projectName: "三郷Amazon", itemName: "標準", changes: ["受注 ¥23,025 → ¥23,500", "支払 ¥21,780 → ¥21,960"] },
+      { entryId: "e3", driverId: "d9", driverName: "川島幹太", projectName: "三郷Amazon", itemName: "標準", changes: ["支払 ¥0 → ¥21,780", "ロイヤリティ率 0.0% → 10.0%", "端数処理 丸めない → 四捨五入"] },
+    ]);
 
     // 未来月：稼働ゼロ・数量 0 は警告しない
-    const wf = buildDashboardWarnings({ month: "2026-12", isClosed: false, isFuture: true, entryCount: 1, entries: [{ id: "e", driver_id: "d", driver_name: "D", project_name: "P", item_name: "標準", qty: 0, bill_rate: 1, pay_rate: 0 }], drivers: [], activeDrivers: [{ id: "d", name: "D" }], openMonths: [], pastThreshold: "2026-09" });
+    const wf = buildDashboardWarnings({ month: "2026-12", isClosed: false, isFuture: true, entryCount: 1, entries: [{ id: "e", driver_id: "d", driver_name: "D", project_name: "P", item_name: "標準", qty: 0, bill_rate: 1, pay_rate: 0 }], drivers: [], activeDrivers: [{ id: "d", name: "D" }], openMonths: [], pastThreshold: "2026-09", rateDiffs: [rateDiff({ master_bill_rate: 23500 })] });
     assert.equal(wf.idleDrivers.length, 0);
     assert.equal(wf.zeroQtyEntries.length, 0);
+    assert.equal(wf.rateDiffs.length, 1); // 未来月でも単価の差分は出す
     // データが無い月：稼働ゼロ警告なし
-    const we = buildDashboardWarnings({ month: "2026-09", isClosed: false, isFuture: false, entryCount: 0, entries: [], drivers: [], activeDrivers: [{ id: "d", name: "D" }], openMonths: [], pastThreshold: "2026-09" });
+    const we = buildDashboardWarnings({ month: "2026-09", isClosed: false, isFuture: false, entryCount: 0, entries: [], drivers: [], activeDrivers: [{ id: "d", name: "D" }], openMonths: [], pastThreshold: "2026-09", rateDiffs: [] });
     assert.equal(we.idleDrivers.length, 0);
+    assert.deepEqual(we.rateDiffs, []);
+    // 締め済み月：単価の差分は出ない（スナップショットが確定値）
+    const wc = buildDashboardWarnings({ month: "2026-08", isClosed: true, isFuture: false, entryCount: 1, entries: [], drivers: [], activeDrivers: [], openMonths: [], pastThreshold: "2026-09", rateDiffs: [rateDiff({ master_bill_rate: 23500 })] });
+    assert.deepEqual(wc.rateDiffs, []);
 
     // --- kpi delta ---
     assert.equal(kpiDelta("money", 100, null), null);

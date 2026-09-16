@@ -84,13 +84,14 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 
 | 項目 | 優先順 |
 |---|---|
-| 受注単価 | 案件内容.bill_rate |
-| 支払単価 | driver_pay_overrides → 案件内容.pay_rate |
+| 受注単価 | driver_pay_overrides.bill_rate（ドライバー別単価）→ 案件内容.bill_rate |
+| 支払単価 | driver_pay_overrides.pay_rate（ドライバー別単価）→ 案件内容.pay_rate |
 | ロイヤリティ率 | drivers.royalty_rate → companies.default_royalty_rate |
 | 端数処理 | drivers.rounding_mode → companies.rounding_mode |
 | 管理費 | driver_months.mgmt_fee（初回作成時に drivers.mgmt_fee を複写） |
 
 保存後は稼働行の値（スナップショット）が正となり、マスタ変更の影響を受けません。
+マスタを変えた後に未締め月の行を追従させたいときは、RPC `rate_diffs(month)`（スナップショットと現在のマスタが異なる行の一覧）と `apply_master_rates(month, driver_id?, project_item_id?, entry_ids?)`（該当行の単価・率・端数処理を現在のマスタの値に更新）を使います（稼働入力の「マスタの値に更新」、設定 → ドライバー別単価の「稼働に反映」、ダッシュボードの警告）。
 
 ---
 
@@ -106,7 +107,7 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 | `drivers` | name(会社内 unique), kana, is_active, royalty_rate(null=会社既定), mgmt_fee, rounding_mode(null=会社既定), phone, email, bank_info, memo, sort_order | |
 | `projects` | name(unique), client_name, is_active, memo, sort_order | 案件 |
 | `project_items` | project_id(restrict), name(既定「標準」, project 内 unique), unit(day/piece), bill_rate, pay_rate, is_active, sort_order | 内容（単価区分） |
-| `driver_pay_overrides` | pk(driver_id, project_item_id), pay_rate | ドライバー個別支払単価 |
+| `driver_pay_overrides` | pk(driver_id, project_item_id), bill_rate(null=標準), pay_rate(null=標準)、どちらか必須 | ドライバー別単価（案件内容ごとの受注単価・支払単価の上書き。`0007` で bill_rate 追加） |
 | `driver_recurring_adjustments` | driver_id, label, amount, count_as_profit, is_active, sort_order | 固定控除（毎月自動複写） |
 | `work_entries` | month, driver_id(restrict), project_item_id(restrict), qty≥0, bill_rate, pay_rate, royalty_rate(0..1), rounding_mode, memo, created_by, updated_by | 稼働行。index (company_id,month) (driver_id,month) (project_item_id,month) |
 | `driver_months` | month, driver_id, mgmt_fee, memo, unique(company_id,month,driver_id) | ドライバー × 月 |
@@ -125,11 +126,13 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 | `v_project_summary` | 案件内容 × 月（entry_count, driver_count, qty_total, bill, pay, margin, royalty, entry_profit, profit_rate） |
 | `v_month_list` | データがある月の一覧（月セレクタ・月締め画面用） |
 
-### RPC（`0004_rpc.sql`、`0005_portal_seed.sql`）
+### RPC（`0004_rpc.sql`、`0005_portal_seed.sql`、`0007_driver_rates.sql`）
 
 | 関数 | 権限 | 内容 |
 |---|---|---|
-| `entry_defaults(driver_id, project_item_id)` | staff | §2.5 の自動入力値 |
+| `entry_defaults(driver_id, project_item_id)` | staff | §2.5 の自動入力値（受注・支払ともドライバー別単価を優先） |
+| `rate_diffs(month)` | staff | その月の稼働行のうち、単価・率・端数処理のいずれかが現在のマスタと異なる行（スナップショットとマスタ値の両方を返す） |
+| `apply_master_rates(month, driver_id?, project_item_id?, entry_ids?)` | admin+ | 未締め月の該当行の単価・率・端数処理を現在のマスタの値に更新し、更新行数を返す（締め済みは MONTH_CLOSED） |
 | `copy_previous_month(month)` | admin+ | 前月の稼働行を数量 0 で複製（現在のマスタから単価を再取得。停止中は除外。冪等） |
 | `bulk_set_entries(month, project_item_id, rows)` | admin+ | 一括入力（既存は数量更新、0 は削除、新規はマスタから作成） |
 | `month_snapshot(month)` | staff | 締め時スナップショット JSON（summary / drivers / entries / adjustments / projects） |
@@ -265,6 +268,8 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 | 出力 | 実装 | 形式 |
 |---|---|---|
 | 稼働明細 CSV / 支払一覧 CSV / 個人明細 CSV | `app/api/export/{entries,payouts,statement}.csv` + `lib/exports/*` | UTF-8 BOM、Excel でそのまま開ける。数値は生の値（`rawNumber()`） |
+| 単価表 CSV | `app/api/export/rates.csv` + `lib/exports/rates-csv.ts` | 稼働中ドライバー × 稼働中案件内容の実効単価（受注・支払・差額・出所「個別／標準」・個別値） |
+| 全ドライバー明細 PDF（ZIP） | `app/api/export/statements.zip` + `lib/exports/zip.ts` | その月に明細があるドライバー全員の PDF を無圧縮 ZIP にまとめる（依存なしの自前 ZIP 生成）。`vercel.json` で maxDuration 60 秒 |
 | 弥生仕訳 CSV | `app/api/export/yayoi.csv` + `lib/yayoi/{accounts,build}.ts` | Shift_JIS（iconv-lite）、25 列、ヘッダー無し。売上：売掛金／売上高、外注費：外注費／未払金、ロイヤリティ・管理費・利益計上の調整：未払金／雑収入（補助科目）、利益計上なしの調整：立替金。科目・税区分・ドライバー分割・伝票日付は `companies.yayoi_accounts` で変更可 |
 | PDF 支払明細 | `app/api/export/statement.pdf` + `lib/pdf/statement.tsx` | A4 縦、Noto Sans JP（`public/fonts`）、日本語の禁則処理付き折り返し。会社利益は載せない。`vercel.json` で maxDuration 30 秒 |
 | 印刷用ページ | `/payouts/[driverId]/print` | ブラウザ印刷 |
@@ -290,7 +295,7 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 |---|---|---|
 | 単体（Vitest） | `npm test` | `lib/calc`（§2.6 の全ケース、誤差 0.01 円以内、端数処理 4 種、恒等式）、zod スキーマ、`lib/migrate` の変換と決定的 ID |
 | SQL 結合（psql） | `npm run test:sql` | ローカル PostgreSQL に `tests/sql/auth_stub.sql`（auth.uid() 等のスタブ）+ 全マイグレーションを適用し `tests/sql/test.sql` を実行。ビューの計算が §2.6 と一致、RLS（viewer / driver の拒否）、締めガード、招待制、復元・全削除 |
-| E2E（Playwright） | `npm run test:e2e` | Supabase 互換のテストサーバー（`supabase-lite`：PostgreSQL + GoTrue 相当 + PostgREST 相当の軽量実装）を自動起動し、iPhone 13 と Desktop Chrome の 2 プロジェクトで主要導線（招待ログイン → ダッシュボード → 稼働追加・複製・一括入力 → 支払明細・PDF → 設定 → 月締め・解除 → 閲覧者／ドライバーの権限 → 移行 JSON の取り込み）をブラウザで確認。8 spec・30 シナリオ × 2 プロジェクト = **60 件**。スクリーンショットを `docs/screenshots/` に保存。詳細は [docs/E2E.md](E2E.md) |
+| E2E（Playwright） | `npm run test:e2e` | Supabase 互換のテストサーバー（`supabase-lite`：PostgreSQL + GoTrue 相当 + PostgREST 相当の軽量実装）を自動起動し、iPhone 13 と Desktop Chrome の 2 プロジェクトで主要導線（招待ログイン → ダッシュボード → 稼働追加・複製・一括入力 → 支払明細・PDF → 設定 → 月締め・解除 → 閲覧者／ドライバーの権限 → 移行 JSON の取り込み）をブラウザで確認。8 spec・32 シナリオ × 2 プロジェクト = **64 件**。スクリーンショットを `docs/screenshots/` に保存。詳細は [docs/E2E.md](E2E.md) |
 | 静的 | `npm run typecheck` / `npm run lint` / `npm run build` | 型・Lint・本番ビルド |
 | まとめ | `npm run check` | typecheck + lint + test + build:sql |
 

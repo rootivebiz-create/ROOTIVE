@@ -33,8 +33,9 @@
 | オーナー | [docs/SETUP.md](docs/SETUP.md) | 本番公開の手順（ブラウザ操作のみ）。Supabase → Vercel → ログイン → 動作確認チェックリスト → SMTP → トラブル対応 |
 | オーナー・事務担当 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | 毎月の運用（複製 → 入力 → 管理費・調整 → 月締め → 明細送付 → 弥生 CSV → バックアップ）、マスタ変更、ユーザー追加、復元、移行、トラブル対応、オーナー確認事項 |
 | 開発者 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 全体構成、計算式、データモデル、権限とセキュリティ、認証フロー、出力、移行、テスト、既知の制限、環境変数、公開の仕組み |
-| 開発者 | [docs/E2E.md](docs/E2E.md) | ブラウザ E2E テスト（Playwright、8 spec・30 シナリオ × スマホ/PC = 60 件）の実行方法・各 spec の内容・スクリーンショット |
+| 開発者 | [docs/E2E.md](docs/E2E.md) | ブラウザ E2E テスト（Playwright、8 spec・32 シナリオ × スマホ/PC = 64 件）の実行方法・各 spec の内容・スクリーンショット |
 | 開発者 | [docs/SPEC.md](docs/SPEC.md) | 要件定義（オーナー指示書・原文） |
+| 全員 | [docs/CHANGELOG.md](docs/CHANGELOG.md) | 変更履歴（ドライバー別単価・単価の反映・全員分 PDF ZIP など） |
 | 開発者（AI 含む） | [CLAUDE.md](CLAUDE.md) | 実装規約・ディレクトリ・コマンド |
 | — | [supabase/email-templates/README.md](supabase/email-templates/README.md) | 認証メールの日本語テンプレート（token_hash 方式・`next={{ .RedirectTo }}`） |
 
@@ -49,7 +50,7 @@ npm run build && npm start  # 本番ビルドと起動
 
 npm test                    # Vitest（計算ロジック §2.6 の全ケース・スキーマ・移行変換）
 npm run test:sql            # SQL 結合テスト（ローカル PostgreSQL を自動起動。ビュー計算・RLS・締めガード・招待制・復元）
-npm run test:e2e            # Playwright（Supabase 互換テストサーバーを自動起動。スマホ / PC の主要導線 60 件。docs/E2E.md）
+npm run test:e2e            # Playwright（Supabase 互換テストサーバーを自動起動。スマホ / PC の主要導線 64 件。docs/E2E.md）
 npm run typecheck           # 型チェック
 npm run lint                # ESLint
 npm run check               # typecheck + lint + test + build:sql
@@ -72,9 +73,9 @@ app/
   (app)/entries, entries/bulk           稼働入力・一括入力
   (app)/payouts, payouts/[driverId]/statement   支払明細・個人明細
   (app)/projects                        案件別集計
-  (app)/settings/{drivers,projects,months,company,users,data,audit,account}   設定
+  (app)/settings/{drivers,projects,rates,months,company,users,data,audit,account}   設定（rates ＝ ドライバー別単価）
   driver/*                              ドライバーポータル（本人の締め済み明細。未締め月は「集計中」）
-  api/export/*                          CSV・弥生 CSV・PDF・バックアップ JSON
+  api/export/*                          CSV・弥生 CSV・PDF・単価表 CSV・全員分 PDF（ZIP）・バックアップ JSON
   api/cron/keepalive                    Supabase 一時停止防止（Vercel Cron、vercel.json。CRON_SECRET 必須）
 components/   UI 部品（ui/）、レイアウト（layout/）、画面ごとの部品
 lib/
@@ -85,7 +86,7 @@ lib/
   statement/  明細データ組み立て        pdf/       PDF 明細      yayoi/   弥生仕訳
   exports/    CSV                       migrate/   試作 JSON 変換  ai/      AI 月次分析
 supabase/
-  migrations/ 0001 スキーマ … 0006 Storage・権限     setup_all.sql   全結合（SQL Editor に 1 回貼るだけ）
+  migrations/ 0001 スキーマ … 0007 ドライバー別単価  setup_all.sql   全結合（SQL Editor に 1 回貼るだけ）
   seed/bootstrap_owner.sql  会社とオーナー招待         email-templates/  日本語メールテンプレート
 scripts/      setup-supabase.sh / deploy-vercel.sh / build-setup-sql.mjs / gen-db-types.mjs / migrate-prototype.ts
 .github/workflows/  deploy.yml（本番公開：Supabase + Vercel）、ci.yml

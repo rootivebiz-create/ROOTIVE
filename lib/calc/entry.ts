@@ -31,7 +31,8 @@ export function resolveRoundingMode(
 
 export interface EntryDefaultsSource {
   item: { billRate: number; payRate: number };
-  override?: { payRate: number } | null;
+  /** ドライバー別単価（driver_pay_overrides）。null／undefined の項目は案件内容の標準を使う */
+  override?: { billRate?: number | null; payRate?: number | null } | null;
   driver: { royaltyRate: number | null; roundingMode: RoundingMode | null };
   company: { defaultRoyaltyRate: number; roundingMode: RoundingMode };
 }
@@ -41,21 +42,30 @@ export interface EntryDefaults {
   payRate: number;
   royaltyRate: number;
   roundingMode: RoundingMode;
+  billRateSource: "override" | "item";
   payRateSource: "override" | "item";
   royaltySource: "driver" | "company";
   roundingSource: "driver" | "company";
 }
 
-/** マスタからの自動入力（§2.5） */
+/**
+ * マスタからの自動入力（§2.5）
+ * 受注単価・支払単価：ドライバー別単価（driver_pay_overrides）→ 案件内容の標準
+ * ロイヤリティ率・端数処理：ドライバー設定 → 会社設定
+ */
 export function resolveEntryDefaults(src: EntryDefaultsSource): EntryDefaults {
-  const payRateSource = src.override ? "override" : "item";
+  const overrideBill = src.override?.billRate ?? null;
+  const overridePay = src.override?.payRate ?? null;
+  const billRateSource = overrideBill != null ? "override" : "item";
+  const payRateSource = overridePay != null ? "override" : "item";
   const royaltySource = src.driver.royaltyRate != null ? "driver" : "company";
   const roundingSource = src.driver.roundingMode != null ? "driver" : "company";
   return {
-    billRate: src.item.billRate,
-    payRate: src.override ? src.override.payRate : src.item.payRate,
+    billRate: overrideBill ?? src.item.billRate,
+    payRate: overridePay ?? src.item.payRate,
     royaltyRate: src.driver.royaltyRate ?? src.company.defaultRoyaltyRate,
     roundingMode: src.driver.roundingMode ?? src.company.roundingMode,
+    billRateSource,
     payRateSource,
     royaltySource,
     roundingSource,

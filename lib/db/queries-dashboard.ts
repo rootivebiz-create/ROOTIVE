@@ -2,8 +2,9 @@
  * ダッシュボード（§4.1）のデータ取得。集計はすべて DB ビュー（v_*）から取り、画面側で再計算しない。
  */
 import type { ServerSupabase } from "@/lib/supabase/server";
-import type { AiInsight, DriverMonthSummary, MonthSummary } from "@/lib/db/types";
-import { loadMonthSummary } from "@/lib/db/queries";
+import type { AiInsight, DriverMonthSummary, MonthSummary, RateDiff } from "@/lib/db/types";
+import { loadMonthSummary, loadRateDiffs } from "@/lib/db/queries";
+import { describeRateDiff } from "@/components/entries/helpers";
 import { addMonths, compareMonth, currentMonthJST, dateToMonth, isFutureMonth, monthRange, monthToDate, prevMonth } from "@/lib/month";
 
 /** 利益の推移 1 か月分（データが無い月は 0 埋め） */
@@ -51,6 +52,17 @@ export interface ZeroQtyEntry {
   itemName: string;
 }
 
+/** 単価・率・端数処理が現在のマスタと異なる稼働行（RPC rate_diffs を整形したもの） */
+export interface RateDiffWarning {
+  entryId: string;
+  driverId: string;
+  driverName: string;
+  projectName: string;
+  itemName: string;
+  /** 変わる項目だけの文言（例：「受注 ¥23,025 → ¥23,500」）。describeRateDiff と同じ形式 */
+  changes: string[];
+}
+
 export interface DashboardWarnings {
   lossEntries: LossEntry[];
   mgmtFeeMismatches: MgmtFeeMismatch[];
@@ -58,6 +70,8 @@ export interface DashboardWarnings {
   zeroQtyEntries: ZeroQtyEntry[];
   /** 未締めの過去月（YYYY-MM、昇順） */
   openPastMonths: string[];
+  /** 現在のマスタと異なる稼働行（締め済み月は空） */
+  rateDiffs: RateDiffWarning[];
 }
 
 export interface DashboardData {
@@ -98,6 +112,8 @@ export interface BuildWarningsInput {
   openMonths: string[]; // YYYY-MM（status open かつ entry_count > 0）
   /** 「過去月」の基準（この月より前を過去とみなす） */
   pastThreshold: string;
+  /** RPC rate_diffs の結果（その月の稼働行のうち現在のマスタと異なる行） */
+  rateDiffs: RateDiff[];
 }
 
 /** 警告の判定（純関数。§4.1・§12-1） */
@@ -151,7 +167,19 @@ export function buildDashboardWarnings(input: BuildWarningsInput): DashboardWarn
 
   const openPastMonths = [...input.openMonths].filter((m) => compareMonth(m, input.pastThreshold) < 0).sort(compareMonth);
 
-  return { lossEntries, mgmtFeeMismatches, idleDrivers, zeroQtyEntries, openPastMonths };
+  // 単価・率・端数処理が現在のマスタと異なる行（締め済み月はスナップショットが確定値なので警告しない。未来月は出す）
+  const rateDiffs: RateDiffWarning[] = isClosed
+    ? []
+    : input.rateDiffs.map((d) => ({
+        entryId: d.entry_id,
+        driverId: d.driver_id,
+        driverName: d.driver_name,
+        projectName: d.project_name,
+        itemName: d.item_name,
+        changes: describeRateDiff(d),
+      }));
+
+  return { lossEntries, mgmtFeeMismatches, idleDrivers, zeroQtyEntries, openPastMonths, rateDiffs };
 }
 
 /** 直近 12 か月の推移（無い月は 0 埋め） */
@@ -179,7 +207,7 @@ export async function loadDashboardData(supabase: ServerSupabase, companyId: str
   // 「過去月」の基準：実際の当月より前（表示中の月に関わらず、締めていない過去の月をすべて警告する）
   const pastThreshold = now;
 
-  const [summary, prevRes, trendRes, driversRes, entriesRes, activeDriversRes, openMonthsRes, insightRes] = await Promise.all([
+  const [summary, prevRes, trendRes, driversRes, entriesRes, activeDriversRes, openMonthsRes, insightRes, rateDiffs] = await Promise.all([
     loadMonthSummary(supabase, companyId, month),
     supabase.from("v_month_summary").select("*").eq("company_id", companyId).eq("month", monthToDate(prev)).maybeSingle(),
     supabase
@@ -198,6 +226,8 @@ export async function loadDashboardData(supabase: ServerSupabase, companyId: str
     supabase.from("drivers").select("id, name").eq("company_id", companyId).eq("is_active", true).order("sort_order").order("name"),
     supabase.from("v_month_list").select("month, entry_count").eq("company_id", companyId).eq("status", "open").lt("month", monthToDate(pastThreshold)),
     supabase.from("ai_insights").select("*").eq("company_id", companyId).eq("month", monthDate).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+    // 締め済みかどうかは summary を見るまで分からないので常に取得し、buildDashboardWarnings で締め済み月は空にする
+    loadRateDiffs(supabase, month),
   ]);
   if (prevRes.error) throw prevRes.error;
   if (trendRes.error) throw trendRes.error;
@@ -221,6 +251,7 @@ export async function loadDashboardData(supabase: ServerSupabase, companyId: str
     activeDrivers: activeDriversRes.data ?? [],
     openMonths: (openMonthsRes.data ?? []).filter((m) => Number(m.entry_count ?? 0) > 0).map((m) => dateToMonth(m.month ?? "")),
     pastThreshold,
+    rateDiffs,
   });
 
   return {

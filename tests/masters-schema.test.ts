@@ -18,8 +18,8 @@ const baseDriver: DriverFormInput = {
   bank_info: "",
   memo: "",
   overrides: [
-    { project_item_id: UUID1, pay_rate: "21,780" },
-    { project_item_id: UUID2, pay_rate: "" },
+    { project_item_id: UUID1, bill_rate: "", pay_rate: "21,780" },
+    { project_item_id: UUID2, bill_rate: "23,500", pay_rate: "" },
   ],
   recurring: [{ id: null, label: "リース代", amount: "-30,000", count_as_profit: true, is_active: true }],
 };

@@ -19,7 +19,7 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
 - `lib/month.ts` 稼動月ユーティリティ、`lib/format.ts` 表示書式（円・%・数量）
 - `components/ui/*` UI 部品（shadcn/ui 相当）、`components/layout/*` シェル・ナビ・月セレクタ
 - `app/(app)/*` スタッフ画面、`app/driver/*` ドライバーポータル、`app/(auth)/*` ログイン・招待、`app/api/export/*` 出力
-- `supabase/migrations/*.sql` スキーマ（0001 テーブル、0002 認証・RLS、0003 ビュー、0004 RPC、0005 ポータル・初期データ、0006 Storage・権限）
+- `supabase/migrations/*.sql` スキーマ（0001 テーブル、0002 認証・RLS、0003 ビュー、0004 RPC、0005 ポータル・初期データ、0006 Storage・権限、0007 ドライバー別単価（bill_rate 上書き・rate_diffs・apply_master_rates））
 - `tests/` Vitest（`*.test.ts`）、`tests/sql/`（psql）、`tests/e2e/`（Playwright ＋ `supabase-lite` テストサーバー）
 
 ## 必ず守る規約
@@ -29,7 +29,7 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
 4. **稼動月**：URL の `?m=YYYY-MM`（`monthFromParam(searchParams.m)`）。DB は月初日 `YYYY-MM-01`（`monthToDate` / `dateToMonth`）。ナビのリンクは `MonthLink` / `useMonth().href()` で `?m` を引き継ぐ。
 5. **数値**：金額 numeric(12,2)、率 numeric(6,4)（0.1 = 10%）。表示は `yen()` / `pct()` / `qty()`（`components/ui/money.tsx` の `<Money>` は等幅・右寄せ・マイナス赤）。入力は全角・カンマ可（`parseNumberInput` / `parsePercentInput`、zod の `moneySchema` / `qtySchema` / `percentToRateSchema`）。CSV は `rawNumber()`（生の値）。
 6. **計算**：画面のプレビューは `lib/calc`（`calcEntry` / `calcDriverMonth` / `calcCompanyMonth`）、集計表示は DB ビュー（`v_work_entry_calc` / `v_driver_month_summary` / `v_month_summary` / `v_project_summary` / `v_month_list`）を使う。手計算・独自の丸めを書かない。
-7. **マスタからの自動入力**：`resolveEntryDefaults()`（§2.5）。保存後は稼働行のスナップショットが正。
+7. **マスタからの自動入力**：`resolveEntryDefaults()`（§2.5。受注単価・支払単価は `driver_pay_overrides`（ドライバー別単価。null は標準）→ 案件内容の順）。保存後は稼働行のスナップショットが正。マスタ変更を未締め月へ追従させるのは RPC `rate_diffs` / `apply_master_rates`（`lib/actions/rates.ts`）だけで、画面側で行を書き換えない。
 8. **サービスロール**（`lib/supabase/admin.ts`）はサーバー専用で、招待・招待リンクログイン・バックアップ保存・ユーザー管理のみに使う。
 9. **表記**：日本語のみ。通貨 ¥、カンマ区切り、率は小数 1 桁 %。エラーも日本語。
 10. **スマホ**：幅 375px で崩れないこと。表は `Table`（横スクロール）かカード表示。数値入力は `NumberInput`（テンキー）。ダイアログはスマホで下から全幅シート。
@@ -47,6 +47,6 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
 - `from(table|view).select("col, col2" | "*")` — **埋め込みリソース（`drivers(name)` など）は使わない**。名称が必要なら `v_*` ビューを使う
 - フィルタ：`eq / neq / gt / gte / lt / lte / in / is / like / ilike / or（単純な eq の組み合わせのみ）`、`order / limit / range`、`single / maybeSingle`、`{ count: "exact" }`
 - 書き込み：`insert / upsert({ onConflict }) / update().eq() / delete().eq()` と `.select()` で戻り値取得
-- RPC：`rpc("name", { p_xxx })`
+- RPC：`rpc("name", { p_xxx })`。引数はスカラー・JSON（jsonb）・スカラーの配列（`uuid[]` など。`p_entry_ids: string[]`）まで
 - Auth：`getUser / signInWithOtp / signInWithPassword / verifyOtp / exchangeCodeForSession / signOut / updateUser / resetPasswordForEmail`、admin：`createUser / listUsers / generateLink / getUserById / updateUserById`
 - Storage：`from("backups").upload / createSignedUrl / list / download`

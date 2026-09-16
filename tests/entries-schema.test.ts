@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { bulkRowSchema, bulkSetEntriesSchema, entryInputSchema } from "@/lib/schemas/entries";
-import { defaultsFor, filterActiveMasters, filterRows, isLossRow, isQtyEmpty, itemOptions, oldestEntryFor, projectDisplayName, toEntryRow, type EntryRow } from "@/components/entries/helpers";
-import type { Masters, WorkEntryCalc } from "@/lib/db/types";
+import { defaultsFor, describeRateDiff, filterActiveMasters, filterRows, isLossRow, isQtyEmpty, itemOptions, markMasterDiffs, oldestEntryFor, projectDisplayName, rateDiffLabel, toEntryRow, type EntryRow } from "@/components/entries/helpers";
+import type { Masters, RateDiff, WorkEntryCalc } from "@/lib/db/types";
 
 const DRIVER = "11111111-1111-4111-8111-111111111111";
 const DRIVER2 = "22222222-2222-4222-8222-222222222222";
@@ -123,6 +123,50 @@ describe("helpers", () => {
     expect(r.memo).toBe("");
     expect(r.bill).toBe(0);
     expect(r.entryProfit).toBe(71883);
+    expect(r.masterDiff).toBe(false);
+  });
+
+  function rateDiff(over: Partial<RateDiff> = {}): RateDiff {
+    return {
+      entry_id: "e1",
+      driver_id: DRIVER,
+      driver_name: "相曽慧",
+      project_id: PROJECT,
+      project_item_id: ITEM,
+      project_name: "三郷Amazon",
+      item_name: "標準",
+      qty: 21,
+      bill_rate: 23025,
+      pay_rate: 21780,
+      royalty_rate: 0.1,
+      rounding_mode: "none",
+      master_bill_rate: 23025,
+      master_pay_rate: 21780,
+      master_royalty_rate: 0.1,
+      master_rounding_mode: "none",
+      ...over,
+    };
+  }
+
+  it("markMasterDiffs は rate_diffs に含まれる行だけ masterDiff を true にする", () => {
+    const rows = [toEntryRow(viewRow()), toEntryRow(viewRow({ id: "e2" })), toEntryRow(viewRow({ id: "e3" }))];
+    const marked = markMasterDiffs(rows, [rateDiff({ entry_id: "e2" }), rateDiff({ entry_id: "zzz" })]);
+    expect(marked.map((r) => r.masterDiff)).toEqual([false, true, false]);
+    expect(rows.every((r) => !r.masterDiff)).toBe(true); // 元の配列は変えない
+    expect(markMasterDiffs(rows, []).some((r) => r.masterDiff)).toBe(false);
+  });
+
+  it("describeRateDiff は変わる項目だけを ¥・%・端数処理の文言で返す", () => {
+    expect(describeRateDiff(rateDiff())).toEqual([]);
+    expect(describeRateDiff(rateDiff({ master_bill_rate: 23500, master_pay_rate: 21960 }))).toEqual(["受注 ¥23,025 → ¥23,500", "支払 ¥21,780 → ¥21,960"]);
+    expect(describeRateDiff(rateDiff({ master_pay_rate: 21960 }))).toEqual(["支払 ¥21,780 → ¥21,960"]);
+    expect(describeRateDiff(rateDiff({ royalty_rate: 0.1, master_royalty_rate: 0.125 }))).toEqual(["ロイヤリティ率 10.0% → 12.5%"]);
+    expect(describeRateDiff(rateDiff({ rounding_mode: "none", master_rounding_mode: "round" }))).toEqual(["端数処理 丸めない → 四捨五入"]);
+    // 川島幹太（支払 0・率 0）の行がマスタ側で標準に戻った場合：すべて差分として出る（既定で全選択だが行ごとに外せる）
+    expect(describeRateDiff(rateDiff({ pay_rate: 0, royalty_rate: 0, master_rounding_mode: "floor" }))).toEqual(["支払 ¥0 → ¥21,780", "ロイヤリティ率 0.0% → 10.0%", "端数処理 丸めない → 切り捨て"]);
+    // 見出し：ドライバー名／案件（内容）
+    expect(rateDiffLabel(rateDiff())).toBe("相曽慧／三郷Amazon");
+    expect(rateDiffLabel(rateDiff({ driver_name: "今井皇輝", project_name: "和光ヤマト", item_name: "宅急便" }))).toBe("今井皇輝／和光ヤマト（宅急便）");
   });
 
   it("案件表示名：内容が「標準」以外なら「案件（内容）」", () => {
@@ -204,7 +248,7 @@ describe("helpers", () => {
         ],
       },
     ],
-    overrides: [{ company_id: COMPANY, driver_id: DRIVER2, project_item_id: ITEM, pay_rate: 21960, created_at: "", updated_at: "" }],
+    overrides: [{ company_id: COMPANY, driver_id: DRIVER2, project_item_id: ITEM, pay_rate: 21960, bill_rate: null, created_at: "", updated_at: "" }],
   };
 
   it("defaultsFor は §2.5 の優先順で自動入力する", () => {

@@ -16,6 +16,7 @@ const nextConfig: NextConfig = {
   // PDF 明細用の日本語フォントを Vercel のサーバーレス関数に同梱する
   outputFileTracingIncludes: {
     "/api/export/statement.pdf": ["./public/fonts/**/*"],
+    "/api/export/statements.zip": ["./public/fonts/**/*"],
   },
   experimental: {
     serverActions: { bodySizeLimit: "20mb" },

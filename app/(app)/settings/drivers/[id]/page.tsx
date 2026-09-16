@@ -27,7 +27,14 @@ export default async function DriverDetailPage({ params }: { params: Promise<{ i
   if (monthsRes.error) throw monthsRes.error;
   const driver = driverRes.data;
 
-  const overrides = masters.overrides.filter((o) => o.driver_id === id).map((o) => ({ project_item_id: o.project_item_id, pay_rate: Number(o.pay_rate ?? 0) }));
+  // null（標準）は null のまま渡す（0 に潰さない）
+  const overrides = masters.overrides
+    .filter((o) => o.driver_id === id)
+    .map((o) => ({
+      project_item_id: o.project_item_id,
+      bill_rate: o.bill_rate == null ? null : Number(o.bill_rate),
+      pay_rate: o.pay_rate == null ? null : Number(o.pay_rate),
+    }));
   const overrideIds = new Set(overrides.map((o) => o.project_item_id));
   // 有効な案件内容 ＋ 既に個別単価がある内容（停止中でも解除できるように表示）
   const projects: DriverFormProject[] = masters.projects

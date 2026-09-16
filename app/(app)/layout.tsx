@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 const SETTINGS_SUBNAV = [
   { href: "/settings/drivers", label: "ドライバー" },
   { href: "/settings/projects", label: "案件・単価" },
+  { href: "/settings/rates", label: "ドライバー別単価" },
   { href: "/settings/months", label: "月締め" },
   { href: "/settings/company", label: "会社設定", ownerOnly: true },
   { href: "/settings/users", label: "ユーザー管理", ownerOnly: true },

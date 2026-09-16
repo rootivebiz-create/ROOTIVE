@@ -28,6 +28,9 @@ export type MonthSummary = Views<"v_month_summary">;
 export type ProjectSummary = Views<"v_project_summary">;
 export type MonthListRow = Views<"v_month_list">;
 
+/** 稼働行のスナップショットと現在のマスタの差分（RPC rate_diffs の 1 行） */
+export type RateDiff = Database["public"]["Functions"]["rate_diffs"]["Returns"][number];
+
 export const ROLE_LABELS: Record<Role, string> = {
   owner: "オーナー",
   admin: "管理者",

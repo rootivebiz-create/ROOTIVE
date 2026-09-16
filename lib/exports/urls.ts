@@ -10,8 +10,12 @@ export const exportUrls = {
   statementPdf: (month: string, driverId: string) => `/api/export/statement.pdf?m=${encodeURIComponent(month)}&driver=${encodeURIComponent(driverId)}`,
   /** 印刷用ページ（ブラウザ印刷） */
   statementPrint: (month: string, driverId: string) => `/payouts/${encodeURIComponent(driverId)}/print?m=${encodeURIComponent(month)}`,
+  /** 全ドライバーの PDF 支払明細をまとめた ZIP（スタッフのみ） */
+  statementsZip: (month: string) => `/api/export/statements.zip?m=${encodeURIComponent(month)}`,
   /** 弥生会計 仕訳インポート CSV（Shift_JIS） */
   yayoiCsv: (month: string) => `/api/export/yayoi.csv?m=${encodeURIComponent(month)}`,
+  /** 単価表 CSV（稼働中のドライバー × 案件内容の実効単価と出所） */
+  ratesCsv: () => "/api/export/rates.csv",
   /** バックアップ JSON（全テーブル） */
   backupJson: () => `/api/export/backup.json`,
   /** 締め時バックアップのダウンロード（Storage の署名付き URL へリダイレクト） */

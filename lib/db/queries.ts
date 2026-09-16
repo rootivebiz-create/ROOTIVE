@@ -1,5 +1,5 @@
 import type { ServerSupabase } from "@/lib/supabase/server";
-import type { Masters, ProjectWithItems, MonthSummary, MonthListRow } from "@/lib/db/types";
+import type { Masters, ProjectWithItems, MonthSummary, MonthListRow, RateDiff } from "@/lib/db/types";
 import { monthToDate } from "@/lib/month";
 
 /** マスタ一式（稼働入力ダイアログ・一括入力・設定画面で共用） */
@@ -75,4 +75,12 @@ export async function isMonthClosed(supabase: ServerSupabase, companyId: string,
     .maybeSingle();
   if (error) throw error;
   return data?.status === "closed";
+}
+
+/** 稼働行のスナップショットと現在のマスタ（§2.5）の差分（RPC rate_diffs。締め済み月は空配列） */
+export async function loadRateDiffs(supabase: ServerSupabase, month: string, opts: { closed?: boolean } = {}): Promise<RateDiff[]> {
+  if (opts.closed) return [];
+  const { data, error } = await supabase.rpc("rate_diffs", { p_month: monthToDate(month) });
+  if (error) throw error;
+  return data ?? [];
 }

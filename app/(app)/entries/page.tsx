@@ -1,8 +1,8 @@
 import { canEdit, requireStaff } from "@/lib/auth/session";
-import { isMonthClosed, loadMasters } from "@/lib/db/queries";
+import { isMonthClosed, loadMasters, loadRateDiffs } from "@/lib/db/queries";
 import { monthFromParam, monthToDate } from "@/lib/month";
 import { EntriesView } from "@/components/entries/entries-view";
-import { filterActiveMasters, toEntryRow } from "@/components/entries/helpers";
+import { filterActiveMasters, markMasterDiffs, toEntryRow } from "@/components/entries/helpers";
 
 export const metadata = { title: "稼働入力" };
 
@@ -30,13 +30,15 @@ export default async function EntriesPage({ searchParams }: { searchParams: Prom
 
   const editable = canEdit(profile.role) && !closed;
   // ダイアログの選択肢は編集できるときだけ読み込む（編集時は停止中のマスタも表示するため全件）
-  const allMasters = editable ? await loadMasters(supabase, company.id) : null;
+  // 現在のマスタと異なる稼働行（締め済み月は空。閲覧者にも表示するが、更新ボタンは editable のときだけ）
+  const [allMasters, diffs] = await Promise.all([editable ? loadMasters(supabase, company.id) : null, loadRateDiffs(supabase, month, { closed })]);
   const masters = allMasters ? filterActiveMasters(allMasters) : null;
 
   return (
     <EntriesView
       month={month}
-      rows={(entriesRes.data ?? []).map(toEntryRow)}
+      rows={markMasterDiffs((entriesRes.data ?? []).map(toEntryRow), diffs)}
+      diffs={diffs}
       editable={editable}
       closed={closed}
       masters={masters}

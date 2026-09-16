@@ -242,10 +242,35 @@ describe("マスタからの自動入力（§2.5）", () => {
       payRate: 21960,
       royaltyRate: 0.125,
       roundingMode: "floor",
+      billRateSource: "item",
       payRateSource: "override",
       royaltySource: "driver",
       roundingSource: "driver",
     });
+  });
+  it("ドライバー別単価は受注単価も上書きできる（片方だけの上書きも可）", () => {
+    const both = resolveEntryDefaults({
+      item: { billRate: 23025, payRate: 21780 },
+      override: { billRate: 23500, payRate: 21960 },
+      driver: { royaltyRate: null, roundingMode: null },
+      company,
+    });
+    expect(both).toMatchObject({ billRate: 23500, payRate: 21960, billRateSource: "override", payRateSource: "override" });
+    const billOnly = resolveEntryDefaults({
+      item: { billRate: 23025, payRate: 21780 },
+      override: { billRate: 23100, payRate: null },
+      driver: { royaltyRate: null, roundingMode: null },
+      company,
+    });
+    expect(billOnly).toMatchObject({ billRate: 23100, payRate: 21780, billRateSource: "override", payRateSource: "item" });
+    const payZero = resolveEntryDefaults({
+      item: { billRate: 23025, payRate: 21780 },
+      override: { payRate: 0 },
+      driver: { royaltyRate: 0, roundingMode: null },
+      company,
+    });
+    // 支払 0（オーナー本人）は「上書きあり」として扱う
+    expect(payZero).toMatchObject({ billRate: 23025, payRate: 0, billRateSource: "item", payRateSource: "override" });
   });
   it("個別設定が無ければ標準値", () => {
     const d = resolveEntryDefaults({
@@ -255,9 +280,11 @@ describe("マスタからの自動入力（§2.5）", () => {
       company,
     });
     expect(d).toMatchObject({
+      billRate: 23025,
       payRate: 21780,
       royaltyRate: 0.1,
       roundingMode: "none",
+      billRateSource: "item",
       payRateSource: "item",
       royaltySource: "company",
       roundingSource: "company",

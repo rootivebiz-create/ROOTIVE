@@ -22,7 +22,7 @@ export interface DriverFormInput {
   email: string;
   bank_info: string;
   memo: string;
-  /** 案件内容ごとの個別支払単価。pay_rate が空欄なら標準（override 行を削除） */
+  /** 案件内容ごとのドライバー別単価。受注・支払の両方が空欄なら標準（override 行を削除） */
   overrides: DriverOverrideFormInput[];
   /** 固定控除。id が null なら新規。送られてこなかった既存 id は削除 */
   recurring: DriverRecurringFormInput[];
@@ -30,6 +30,9 @@ export interface DriverFormInput {
 
 export interface DriverOverrideFormInput {
   project_item_id: string;
+  /** 個別の受注単価（空欄＝案件内容の標準） */
+  bill_rate: string;
+  /** 個別の支払単価（空欄＝案件内容の標準） */
   pay_rate: string;
 }
 
@@ -53,6 +56,7 @@ export const optionalRoundingModeSchema = z.preprocess((v) => (v === "" || v == 
 
 export const driverOverrideSchema = z.object({
   project_item_id: uuidSchema,
+  bill_rate: optionalMoneySchema,
   pay_rate: optionalMoneySchema,
 });
 

@@ -151,6 +151,28 @@ test.describe("支払明細", () => {
     await expect(sheet).not.toContainText("会社利益");
   });
 
+  test("全員分の PDF（ZIP）：8 名分の PDF が 1 つの ZIP に入る", async ({ page }) => {
+    await page.goto("/payouts?m=2026-09");
+    const link = page.getByRole("link", { name: "全員分の PDF（ZIP）" });
+    await expect(link).toHaveAttribute("href", "/api/export/statements.zip?m=2026-09");
+    const res = await page.request.get("/api/export/statements.zip?m=2026-09");
+    expect(res.status()).toBe(200);
+    expect(res.headers()["content-type"]).toContain("application/zip");
+    expect(res.headers()["content-disposition"]).toContain(encodeURIComponent("支払明細_2026-09_全員.zip"));
+    const body = await res.body();
+    expect(body.subarray(0, 4).toString("latin1")).toBe("PK\x03\x04");
+    // 終端レコード（PK\x05\x06）のエントリ数 ＝ 明細のあるドライバー 8 名
+    const eocd = body.lastIndexOf(Buffer.from("PK\x05\x06", "latin1"));
+    expect(eocd).toBeGreaterThan(0);
+    expect(body.readUInt16LE(eocd + 10)).toBe(8);
+    expect(body.length).toBeGreaterThan(8 * 10 * 1024);
+    const names = body.toString("utf8");
+    expect(names).toContain("支払明細_2026-09_相曽慧.pdf");
+    expect(names).toContain("支払明細_2026-09_川島幹太.pdf");
+    // 存在しない月は 404
+    expect((await page.request.get("/api/export/statements.zip?m=2020-01")).status()).toBe(404);
+  });
+
   test("案件別：当月と全期間の切替", async ({ page }) => {
     await page.goto("/projects?m=2026-09");
     await expect(page.getByRole("heading", { name: "案件別" })).toBeVisible();

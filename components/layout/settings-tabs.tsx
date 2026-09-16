@@ -9,6 +9,7 @@ import type { Role } from "@/lib/db/types";
 const ITEMS: { href: string; label: string; roles?: Role[] }[] = [
   { href: "/settings/drivers", label: "ドライバー" },
   { href: "/settings/projects", label: "案件・単価" },
+  { href: "/settings/rates", label: "ドライバー別単価" },
   { href: "/settings/months", label: "月締め" },
   { href: "/settings/company", label: "会社設定", roles: ["owner"] },
   { href: "/settings/users", label: "ユーザー", roles: ["owner"] },

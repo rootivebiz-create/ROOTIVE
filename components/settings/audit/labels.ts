@@ -106,7 +106,7 @@ export const MAIN_KEYS: Record<string, string[]> = {
   drivers: ["name", "royalty_rate", "mgmt_fee", "rounding_mode", "is_active"],
   projects: ["name", "client_name", "is_active"],
   project_items: ["project_id", "name", "unit", "bill_rate", "pay_rate", "is_active"],
-  driver_pay_overrides: ["driver_id", "project_item_id", "pay_rate"],
+  driver_pay_overrides: ["driver_id", "project_item_id", "bill_rate", "pay_rate"],
   driver_recurring_adjustments: ["driver_id", "label", "amount", "count_as_profit", "is_active"],
   work_entries: ["month", "driver_id", "project_item_id", "qty", "bill_rate", "pay_rate", "royalty_rate", "memo"],
   driver_months: ["month", "driver_id", "mgmt_fee", "memo"],

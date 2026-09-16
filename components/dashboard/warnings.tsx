@@ -22,8 +22,9 @@ function LinkRow({ href, children }: { href: string; children: React.ReactNode }
 
 /** 警告（該当時のみ表示。各警告から該当画面へ遷移） §4.1・§12-1 */
 export function DashboardWarnings({ warnings }: { warnings: Warnings }) {
-  const { lossEntries, mgmtFeeMismatches, idleDrivers, zeroQtyEntries, openPastMonths } = warnings;
-  const count = (lossEntries.length ? 1 : 0) + (mgmtFeeMismatches.length ? 1 : 0) + (idleDrivers.length ? 1 : 0) + (zeroQtyEntries.length ? 1 : 0) + (openPastMonths.length ? 1 : 0);
+  const { lossEntries, mgmtFeeMismatches, idleDrivers, zeroQtyEntries, openPastMonths, rateDiffs } = warnings;
+  const count =
+    (lossEntries.length ? 1 : 0) + (mgmtFeeMismatches.length ? 1 : 0) + (idleDrivers.length ? 1 : 0) + (zeroQtyEntries.length ? 1 : 0) + (openPastMonths.length ? 1 : 0) + (rateDiffs.length ? 1 : 0);
   if (count === 0) return null;
 
   return (
@@ -78,6 +79,21 @@ export function DashboardWarnings({ warnings }: { warnings: Warnings }) {
                 {new Set(zeroQtyEntries.map((e) => e.driverName)).size > MAX_LIST && " ほか"}
               </LinkRow>
             </div>
+          </section>
+        )}
+
+        {rateDiffs.length > 0 && (
+          <section>
+            <p className="font-medium">単価・率が現在の設定と異なる稼働行が {rateDiffs.length} 件あります</p>
+            <div className="mt-1">
+              {rateDiffs.slice(0, MAX_LIST).map((d) => (
+                <LinkRow key={d.entryId} href={`/entries?q=${encodeURIComponent(d.driverName)}`}>
+                  {d.driverName}／{itemLabel(d.projectName, d.itemName)}：<span className="tabular-nums">{d.changes.join("、")}</span>
+                </LinkRow>
+              ))}
+              {rateDiffs.length > MAX_LIST && <LinkRow href="/entries">ほか {rateDiffs.length - MAX_LIST} 件を稼働入力で確認</LinkRow>}
+            </div>
+            <p className="mt-1 px-2 text-xs text-muted-foreground">稼働入力の「マスタの値に更新」でまとめて反映できます</p>
           </section>
         )}
 

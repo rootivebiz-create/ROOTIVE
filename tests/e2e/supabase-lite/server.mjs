@@ -185,8 +185,23 @@ function unquote(s) {
 }
 
 /** JSON の値を pg のパラメータ（テキスト）へ。型は PostgreSQL 側が列・引数から推論する */
+/** PostgreSQL の配列リテラル要素（"..." で囲み、\ と " をエスケープ） */
+function pgArrayElement(v) {
+  if (v === null || v === undefined) return "NULL";
+  if (typeof v === "boolean") return v ? "true" : "false";
+  return `"${String(v).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
+/**
+ * RPC 引数 → クエリパラメータ（テキスト）
+ * PostgREST と同様に、スカラーだけの配列（uuid[] / text[] / numeric[] など）は PostgreSQL の配列リテラル {..} に、
+ * オブジェクトやオブジェクトを含む配列（jsonb）は JSON 文字列にする
+ */
 function toParam(v) {
   if (v === undefined || v === null) return null;
+  if (Array.isArray(v) && v.every((x) => x === null || ["string", "number", "boolean"].includes(typeof x))) {
+    return `{${v.map(pgArrayElement).join(",")}}`;
+  }
   if (typeof v === "object") return JSON.stringify(v);
   if (typeof v === "boolean") return v ? "true" : "false";
   return String(v);

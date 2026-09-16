@@ -4,7 +4,7 @@ export const BACKUP_TABLE_LABELS: Record<string, string> = {
   drivers: "ドライバー",
   projects: "案件",
   project_items: "案件内容",
-  driver_pay_overrides: "個別単価",
+  driver_pay_overrides: "ドライバー別単価",
   driver_recurring_adjustments: "固定控除",
   work_entries: "稼働行",
   entries: "稼働行",

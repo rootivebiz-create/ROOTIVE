@@ -3,7 +3,7 @@
  * 前提：初期データがあること（seedInitialData は冪等）。テスト用に作るマスタは事前に消しておく
  */
 import { test, expect } from "@playwright/test";
-import { E2E, adminSql, listRow, loginViaMagicLink, readState, requireState, saveScreenshot, seedInitialData, toast, yen } from "./helpers";
+import { E2E, adminSql, driverIdByName, listRow, loginViaMagicLink, projectItemIdByName, readState, requireState, saveScreenshot, seedInitialData, setMonthClosed, toast, yen } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -174,5 +174,89 @@ test.describe("設定", () => {
     const upd = listRow(page, DRIVER_NAME).first();
     await expect(upd).toContainText("更新");
     await expect(upd).toContainText("状態");
+  });
+  test("ドライバー別単価：黒岩亜夢莉の三郷Amazon 受注 23,500 → 稼働入力の「マスタの値に更新」→ 単価表の「稼働に反映」→ 単価表 CSV", async ({ page }, testInfo) => {
+    await setMonthClosed("2026-09", false);
+    const driverId = driverIdByName("黒岩亜夢莉");
+    const itemId = projectItemIdByName("三郷Amazon");
+    const { companyId } = requireState();
+    const billRateInDb = () =>
+      adminSql(`select bill_rate from public.work_entries where company_id = '${companyId}' and month = '2026-09-01' and driver_id = '${driverId}' and project_item_id = '${itemId}'`);
+    const cleanup = () =>
+      adminSql(
+        `delete from public.driver_pay_overrides where driver_id = '${driverId}' and project_item_id = '${itemId}';
+         update public.work_entries set bill_rate = 23025 where company_id = '${companyId}' and month = '2026-09-01' and driver_id = '${driverId}' and project_item_id = '${itemId}';`,
+      );
+    cleanup();
+    try {
+      // 単価表（ドライバーごと）で受注単価だけ個別に設定
+      await page.goto(`/settings/rates?m=2026-09&driver=${driverId}`);
+      await expect(page.getByRole("heading", { name: "ドライバー別単価" })).toBeVisible();
+      await expect(page.getByRole("tab", { name: "ドライバーごと" })).toHaveAttribute("aria-selected", "true");
+      await expect(page.getByLabel("ドライバー", { exact: true })).toHaveValue(driverId);
+      const bill = page.getByLabel("三郷Amazon の受注単価");
+      await expect(bill).toHaveAttribute("placeholder", "23,025");
+      await expect(page.getByRole("button", { name: "保存する" })).toBeDisabled();
+      await bill.fill("23500");
+      await expect(page.getByText("変更 1 行")).toBeVisible();
+      await page.getByRole("button", { name: "保存する" }).click();
+      await expect(toast(page, "単価を保存しました")).toBeVisible();
+      await expect(page.getByText("個別", { exact: true }).first()).toBeVisible();
+      // 当月の稼働行（黒岩亜夢莉 三郷Amazon 21 日）が古い単価のまま → バナー
+      const banner = page.getByRole("alert").filter({ hasText: "2026年9月 の稼働 1 行が現在の単価・率と異なります" });
+      await expect(banner).toBeVisible();
+      await expect(banner).toContainText("受注 ¥23,025 → ¥23,500");
+      if (testInfo.project.name === "mobile") await saveScreenshot(page, "rates-mobile.png");
+
+      // ダッシュボードの警告
+      await page.goto("/dashboard?m=2026-09");
+      await expect(page.getByText("単価・率が現在の設定と異なる稼働行が 1 件あります")).toBeVisible();
+
+      // 稼働入力：バナー → 「マスタの値に更新」（行を選んで更新）
+      await page.goto("/entries?m=2026-09");
+      await expect(page.getByTestId("rate-diff-banner")).toContainText("単価・率が現在の設定と異なる稼働行が 1 件あります");
+      await expect(page.getByText("単価変更あり").filter({ visible: true }).first()).toBeVisible();
+      await page.getByRole("button", { name: "マスタの値に更新" }).click();
+      const dialog = page.getByRole("dialog");
+      await expect(dialog.getByRole("heading", { name: "マスタの値に更新" })).toBeVisible();
+      const check = dialog.getByRole("checkbox", { name: "黒岩亜夢莉／三郷Amazon" });
+      await expect(check).toBeChecked();
+      await expect(dialog).toContainText("受注 ¥23,025 → ¥23,500");
+      await dialog.getByRole("button", { name: "1 行を更新する" }).click();
+      await expect(toast(page, /1 行の単価・率をマスタの値に更新しました/)).toBeVisible();
+      await expect(page.getByTestId("rate-diff-banner")).toHaveCount(0);
+      expect(Number(billRateInDb())).toBe(23500);
+
+      // 単価表：もう一度変更（23,600）→ 「稼働に反映」
+      await page.goto(`/settings/rates?m=2026-09&driver=${driverId}`);
+      await expect(page.getByLabel("三郷Amazon の受注単価")).toHaveValue("23500");
+      await page.getByLabel("三郷Amazon の受注単価").fill("23600");
+      await page.getByRole("button", { name: "保存する" }).click();
+      await expect(toast(page, "単価を保存しました")).toBeVisible();
+      await expect(page.getByRole("alert").filter({ hasText: "2026年9月 の稼働 1 行が現在の単価・率と異なります" })).toBeVisible();
+      await page.getByRole("button", { name: /の稼働に反映$/ }).click();
+      const confirm = page.getByRole("dialog");
+      await expect(confirm.getByRole("heading", { name: "2026年9月 の稼働に反映しますか？" })).toBeVisible();
+      await confirm.getByRole("button", { name: "反映する" }).click();
+      await expect(toast(page, /1 行の単価・率をマスタの値に更新しました/)).toBeVisible();
+      await expect(page.getByRole("alert").filter({ hasText: "現在の単価・率と異なります" })).toHaveCount(0);
+      expect(Number(billRateInDb())).toBe(23600);
+
+      // 案件ごとの見方でも同じ値が見える
+      await page.getByRole("tab", { name: "案件ごと" }).click();
+      await page.getByLabel("案件内容").selectOption(itemId);
+      await expect(page.getByLabel("黒岩亜夢莉 の受注単価")).toHaveValue("23600");
+      await expect(page.getByLabel("黒岩亜夢莉 の支払単価")).toHaveAttribute("placeholder", "21,780");
+
+      // 単価表 CSV（実効単価と出所）
+      const csv = await page.request.get("/api/export/rates.csv");
+      expect(csv.status()).toBe(200);
+      const text = (await csv.body()).toString("utf8").replace(/^﻿/, "");
+      expect(text).toContain("ドライバー,案件,内容,区分,受注単価,支払単価,差額,受注単価の出所,支払単価の出所,個別受注単価,個別支払単価");
+      expect(text).toMatch(/^黒岩亜夢莉,三郷Amazon,標準,日給,23600,21780,1820,個別,標準,23600,$/m);
+      expect(text).toMatch(/^相曽慧,三郷Amazon,標準,日給,23025,21780,1245,標準,標準,,$/m);
+    } finally {
+      cleanup();
+    }
   });
 });

@@ -201,25 +201,28 @@ export type Database = {
           company_id: string
           driver_id: string
           project_item_id: string
-          pay_rate: number
+          pay_rate: number | null
           created_at: string
           updated_at: string
+          bill_rate: number | null
         }
         Insert: {
           company_id: string
           driver_id: string
           project_item_id: string
-          pay_rate: number
+          pay_rate?: number | null
           created_at?: string
           updated_at?: string
+          bill_rate?: number | null
         }
         Update: {
           company_id?: string
           driver_id?: string
           project_item_id?: string
-          pay_rate?: number
+          pay_rate?: number | null
           created_at?: string
           updated_at?: string
+          bill_rate?: number | null
         }
         Relationships: []
       }
@@ -717,6 +720,15 @@ export type Database = {
         }
         Returns: Database["public"]["Tables"]["profiles"]["Row"]
       }
+      apply_master_rates: {
+        Args: {
+          p_month: string
+          p_driver_id?: string
+          p_project_item_id?: string
+          p_entry_ids?: string[]
+        }
+        Returns: number
+      }
       bulk_set_entries: {
         Args: {
           p_month: string
@@ -847,6 +859,29 @@ export type Database = {
           p_month: string
         }
         Returns: Json
+      }
+      rate_diffs: {
+        Args: {
+          p_month: string
+        }
+        Returns: {
+          entry_id: string
+          driver_id: string
+          driver_name: string
+          project_id: string
+          project_item_id: string
+          project_name: string
+          item_name: string
+          qty: number
+          bill_rate: number
+          pay_rate: number
+          royalty_rate: number
+          rounding_mode: Database["public"]["Enums"]["rounding_mode"]
+          master_bill_rate: number
+          master_pay_rate: number
+          master_royalty_rate: number
+          master_rounding_mode: Database["public"]["Enums"]["rounding_mode"]
+        }[]
       }
       reopen_month: {
         Args: {

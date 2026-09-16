@@ -104,7 +104,7 @@ anon / service_role キーは同じ secret で署名した `{ role: "anon" | "se
 - `POST`（insert）：オブジェクトまたは配列。`Prefer: return=representation` で行を返す（201）、無ければ 201 空。`Prefer: resolution=merge-duplicates` ＋ `on_conflict=a,b`（省略時は主キー）で `on conflict do update set 全列 = excluded.列`、`ignore-duplicates` は `do nothing`。配列でキーが無い行はその列に `DEFAULT`
 - `PATCH` / `DELETE`：フィルタ必須（無いと 400）。`return=representation` で行を返す（200）、無ければ 204
 - エラー：PG エラーを `{ code: sqlstate, message, details, hint }` で返す（`42501` → 401/403、`23505`/`23503` → 409、`42P01`/`42883` → 404、その他 400）。RLS で 0 行の update/delete はエラーではない
-- RPC `POST /rest/v1/rpc/:fn`（GET も可）：body を名前付き引数で `fn(p_a := $1, …)`。戻り値は pg_proc から判定してキャッシュ：`void` → 204、スカラー／単一の複合型 → 値そのもの（`to_json`）、`setof` / `returns table` → 配列（`.single()` 可）
+- RPC `POST /rest/v1/rpc/:fn`（GET も可）：body を名前付き引数で `fn(p_a := $1, …)`。スカラーだけの配列（`uuid[]` / `text[]` など）は PostgreSQL の配列リテラル `{..}` に、オブジェクトを含む値は JSON 文字列にして渡す（PostgREST と同じ振る舞い）。戻り値は pg_proc から判定してキャッシュ：`void` → 204、スカラー／単一の複合型 → 値そのもの（`to_json`）、`setof` / `returns table` → 配列（`.single()` 可）
 
 ### GoTrue 互換 `/auth/v1`
 
@@ -155,7 +155,7 @@ anon / service_role キーは同じ secret で署名した `{ role: "anon" | "se
 ## 制限事項（本物の Supabase との違い）
 
 - 埋め込みリソース（`select("*, drivers(name)")`）、`cs` / `cd` / `ov` / `fts` などの配列・全文検索演算子、`referencedTable` 付きの order/limit、JSON パス（`col->>key`）、`Prefer: missing=default`、`tx=rollback`、CSV / GeoJSON / explain、Realtime、Edge Functions は未対応（CLAUDE.md の「supabase-js の使い方の制約」の範囲に限定）
-- 配列型の列（`text[]` など）への insert は未対応（本スキーマには無い）。JSON の値は文字列としてパラメータ渡しし、型は PostgreSQL が列・引数から推論する
+- 配列型の列（`text[]` など）への insert は未対応（本スキーマには無い）。JSON の値は文字列としてパラメータ渡しし、型は PostgreSQL が列・引数から推論する（RPC 引数のスカラー配列だけは配列リテラルに変換する）
 - 数値は JSON の number に変換されるため、`numeric` の桁数が 2^53 を超える値は丸められる（金額の範囲では問題なし）
 - セッション・OTP はメモリ保持（サーバー再起動で失効）。`auth.sessions` テーブルは使わない。MFA・OAuth・電話認証・レート制限・メール送信は無い
 - `GET /user` は JWT の署名と有効期限だけを検証する（ログアウト後でも有効期限内のアクセストークンは通る。本物の GoTrue と同じ挙動）

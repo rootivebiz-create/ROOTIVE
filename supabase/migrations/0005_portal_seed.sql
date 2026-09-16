@@ -116,7 +116,8 @@ begin
   insert into public.project_items (project_id, name, unit, bill_rate, pay_rate, sort_order) values (p_soka, '標準', 'day', 15000, 15000, 1) returning id into i_soka;
   insert into public.project_items (project_id, name, unit, bill_rate, pay_rate, sort_order) values (p_tatsumi, '標準', 'day', 8500, 0, 1) returning id into i_tatsumi;
 
-  insert into public.driver_pay_overrides (driver_id, project_item_id, pay_rate) values (d_yosh, i_misato, 21960), (d_taka, i_misato, 21960);
+  -- 個別単価：吉田・高森は三郷Amazon 21,960。川島幹太（オーナー本人）は支払 0 をマスタにも持たせる（稼働行のスナップショットと一致させる）
+  insert into public.driver_pay_overrides (driver_id, project_item_id, pay_rate) values (d_yosh, i_misato, 21960), (d_taka, i_misato, 21960), (d_kawa, i_misato, 0), (d_kawa, i_tatsumi, 0);
 
   if p_with_entries then
     -- §2.6 の 10 行（相曽慧の管理費は 14,999）

@@ -70,6 +70,12 @@ export default async function PayoutsPage({ searchParams }: { searchParams: Prom
               <Download className="h-4 w-4" />
               弥生 CSV
             </a>
+            {rows.length > 0 && (
+              <a href={exportUrls.statementsZip(month)} download className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+                <Download className="h-4 w-4" />
+                全員分の PDF（ZIP）
+              </a>
+            )}
           </>
         }
       />

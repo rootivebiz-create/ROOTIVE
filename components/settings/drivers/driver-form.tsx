@@ -21,7 +21,7 @@ import { deleteDriverAction, saveDriverAction } from "@/lib/actions/drivers";
 import { ROUNDING_LABELS, ROUNDING_MODES, UNIT_LABELS, type RoundingMode, type Unit } from "@/lib/calc/types";
 import { rateToPercent } from "@/lib/calc/parse";
 import type { Driver, DriverRecurringAdjustment } from "@/lib/db/types";
-import { pct, yen } from "@/lib/format";
+import { pct, yen, yenPlain } from "@/lib/format";
 import { useMonth } from "@/lib/hooks/use-month";
 import type { DriverFormInput } from "@/lib/schemas/drivers";
 import type { CompanyDefaults } from "./drivers-table";
@@ -49,9 +49,10 @@ export interface DriverFormProps {
   defaults: CompanyDefaults;
   /** null = 新規 */
   driver: Driver | null;
-  overrides: { project_item_id: string; pay_rate: number }[];
+  /** ドライバー別単価（null＝標準） */
+  overrides: { project_item_id: string; bill_rate: number | null; pay_rate: number | null }[];
   recurring: DriverRecurringAdjustment[];
-  /** 個別単価の対象（有効な案件内容 ＋ 既に個別単価がある内容） */
+  /** ドライバー別単価の対象（有効な案件内容 ＋ 既に個別単価がある内容） */
   projects: DriverFormProject[];
   /** このドライバーを参照する稼働行の件数（削除可否） */
   entryCount: number;
@@ -72,6 +73,14 @@ interface FormState {
   bank_info: string;
   memo: string;
 }
+
+/** ドライバー別単価の入力値（空欄＝標準） */
+interface OverrideValue {
+  bill: string;
+  pay: string;
+}
+
+const EMPTY_OVERRIDE: OverrideValue = { bill: "", pay: "" };
 
 interface RecurringRow {
   key: string;
@@ -116,8 +125,10 @@ export function DriverForm({ canEdit, defaults, driver, overrides, recurring, pr
   const set = (patch: Partial<FormState>) => setF((prev) => ({ ...prev, ...patch }));
 
   const originalOverrideIds = useMemo(() => new Set(overrides.map((o) => o.project_item_id)), [overrides]);
-  const [overrideValues, setOverrideValues] = useState<Record<string, string>>(() =>
-    Object.fromEntries(overrides.map((o) => [o.project_item_id, String(Number(o.pay_rate ?? 0))])),
+  const [overrideValues, setOverrideValues] = useState<Record<string, OverrideValue>>(() =>
+    Object.fromEntries(
+      overrides.map((o) => [o.project_item_id, { bill: o.bill_rate == null ? "" : String(o.bill_rate), pay: o.pay_rate == null ? "" : String(o.pay_rate) }]),
+    ),
   );
   const [recurringRows, setRecurringRows] = useState<RecurringRow[]>(() =>
     recurring.map((r) => ({
@@ -135,9 +146,16 @@ export function DriverForm({ canEdit, defaults, driver, overrides, recurring, pr
   const allItems = useMemo(() => projects.flatMap((p) => p.items.map((item) => ({ project: p, item }))), [projects]);
 
   const buildInput = (): DriverFormInput => {
+    // 入力がある内容 ＋ 元々個別単価があった内容（両方空欄なら「標準に戻す」として送る）
     const overrideInputs = allItems
-      .filter(({ item }) => (overrideValues[item.id] ?? "").trim() !== "" || originalOverrideIds.has(item.id))
-      .map(({ item }) => ({ project_item_id: item.id, pay_rate: overrideValues[item.id] ?? "" }));
+      .filter(({ item }) => {
+        const v = overrideValues[item.id] ?? EMPTY_OVERRIDE;
+        return v.bill.trim() !== "" || v.pay.trim() !== "" || originalOverrideIds.has(item.id);
+      })
+      .map(({ item }) => {
+        const v = overrideValues[item.id] ?? EMPTY_OVERRIDE;
+        return { project_item_id: item.id, bill_rate: v.bill, pay_rate: v.pay };
+      });
     return {
       id: driver?.id ?? null,
       name: f.name,
@@ -188,10 +206,12 @@ export function DriverForm({ canEdit, defaults, driver, overrides, recurring, pr
     });
   };
 
-  const overrideError = (itemId: string) => {
+  const overrideError = (itemId: string, field: "bill_rate" | "pay_rate") => {
     const idx = submittedOverrideIds.indexOf(itemId);
-    return idx >= 0 ? errors[`overrides.${idx}.pay_rate`] : undefined;
+    return idx >= 0 ? errors[`overrides.${idx}.${field}`] : undefined;
   };
+  const setOverride = (itemId: string, patch: Partial<OverrideValue>) =>
+    setOverrideValues((v) => ({ ...v, [itemId]: { ...(v[itemId] ?? EMPTY_OVERRIDE), ...patch } }));
 
   const addRecurring = () =>
     setRecurringRows((rows) => [...rows, { key: nextKey(), id: null, label: "", amount: "", count_as_profit: true, is_active: true }]);
@@ -330,11 +350,23 @@ export function DriverForm({ canEdit, defaults, driver, overrides, recurring, pr
         </CardContent>
       </Card>
 
-      {/* 個別支払単価 */}
+      {/* ドライバー別単価 */}
       <Card>
         <CardHeader>
-          <CardTitle>案件内容ごとの個別支払単価</CardTitle>
-          <CardDescription>空欄なら案件の標準支払単価を使います。このドライバーだけ単価が異なる内容に入力してください。</CardDescription>
+          <CardTitle>ドライバー別単価</CardTitle>
+          <CardDescription>
+            空欄なら案件内容の標準単価を使います。このドライバーだけ受注単価・支払単価が異なる内容に入力してください。
+            {driver && (
+              <>
+                {" "}
+                一覧で見る・まとめて直すには
+                <MonthLink href={`/settings/rates?driver=${driver.id}`} className="underline underline-offset-2">
+                  設定 → ドライバー別単価
+                </MonthLink>
+                へ。
+              </>
+            )}
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {projects.length === 0 && <p className="text-sm text-muted-foreground">有効な案件内容がありません。先に「案件・単価」で登録してください。</p>}
@@ -351,10 +383,12 @@ export function DriverForm({ canEdit, defaults, driver, overrides, recurring, pr
               </p>
               <ul className="divide-y rounded-md border">
                 {p.items.map((item) => {
-                  const value = overrideValues[item.id] ?? "";
-                  const hasOverride = value.trim() !== "";
+                  const value = overrideValues[item.id] ?? EMPTY_OVERRIDE;
+                  const hasOverride = value.bill.trim() !== "" || value.pay.trim() !== "";
+                  const billErrors = overrideError(item.id, "bill_rate");
+                  const payErrors = overrideError(item.id, "pay_rate");
                   return (
-                    <li key={item.id} className="flex items-center gap-2 p-2">
+                    <li key={item.id} className="flex flex-col gap-2 p-2 sm:flex-row sm:items-center sm:gap-3">
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-1.5 text-sm">
                           <span className="font-medium">{item.name}</span>
@@ -363,18 +397,39 @@ export function DriverForm({ canEdit, defaults, driver, overrides, recurring, pr
                           {hasOverride && <Badge variant="warning">個別</Badge>}
                         </div>
                         <p className="text-xs text-muted-foreground">
-                          標準 <Money value={item.pay_rate} />（受注 <Money value={item.bill_rate} />）
+                          標準 受注 <Money value={item.bill_rate} />／支払 <Money value={item.pay_rate} />
                         </p>
-                        <FieldError messages={overrideError(item.id)} />
+                        {billErrors && <p className="text-xs text-destructive">受注単価: {billErrors[0]}</p>}
+                        {payErrors && <p className="text-xs text-destructive">支払単価: {payErrors[0]}</p>}
                       </div>
-                      <NumberInput
-                        aria-label={`${p.name} ${item.name} の個別支払単価`}
-                        value={value}
-                        onChange={(e) => setOverrideValues((v) => ({ ...v, [item.id]: e.target.value }))}
-                        disabled={disabled}
-                        placeholder="標準"
-                        className="w-28 shrink-0 md:w-36"
-                      />
+                      <div className="flex shrink-0 items-end gap-2">
+                        <div className="space-y-0.5">
+                          <span className="block text-[11px] text-muted-foreground" aria-hidden="true">
+                            受注
+                          </span>
+                          <NumberInput
+                            aria-label={`${p.name} ${item.name} の受注単価`}
+                            value={value.bill}
+                            onChange={(e) => setOverride(item.id, { bill: e.target.value })}
+                            disabled={disabled}
+                            placeholder={yenPlain(item.bill_rate)}
+                            className="w-24 md:w-32"
+                          />
+                        </div>
+                        <div className="space-y-0.5">
+                          <span className="block text-[11px] text-muted-foreground" aria-hidden="true">
+                            支払
+                          </span>
+                          <NumberInput
+                            aria-label={`${p.name} ${item.name} の支払単価`}
+                            value={value.pay}
+                            onChange={(e) => setOverride(item.id, { pay: e.target.value })}
+                            disabled={disabled}
+                            placeholder={yenPlain(item.pay_rate)}
+                            className="w-24 md:w-32"
+                          />
+                        </div>
+                      </div>
                     </li>
                   );
                 })}

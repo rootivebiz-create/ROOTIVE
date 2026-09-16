@@ -105,6 +105,15 @@ function SourceBadge({ auto }: { auto: boolean }) {
   );
 }
 
+/** マスタの単価がドライバー別単価（driver_pay_overrides）から来ていることを示す */
+function OverrideNote() {
+  return (
+    <span className="whitespace-nowrap text-xs text-muted-foreground" title="このドライバーにはドライバー別単価が設定されています">
+      ドライバー別
+    </span>
+  );
+}
+
 function FieldError({ errors, name }: { errors: FieldErrors; name: string }) {
   const msg = errors[name]?.[0];
   return msg ? <p className="text-xs text-destructive">{msg}</p> : null;
@@ -341,17 +350,27 @@ function EntryForm({ onOpenChange, mode, month, masters, allMasters, entry, onSa
         {!defaults && <p className="mb-2 text-xs text-muted-foreground">ドライバーと案件を選ぶとマスタから自動入力されます。</p>}
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <div className="flex items-center justify-between gap-1">
+            <div className="flex flex-wrap items-center justify-between gap-1">
               <Label htmlFor="entry-bill">受注単価</Label>
-              {defaults && <SourceBadge auto={autoFlags.billRate} />}
+              {defaults && (
+                <span className="flex items-center gap-1">
+                  {defaults.billRateSource === "override" && <OverrideNote />}
+                  <SourceBadge auto={autoFlags.billRate} />
+                </span>
+              )}
             </div>
             <NumberInput id="entry-bill" value={form.billRate} onChange={(e) => setForm((f) => ({ ...f, billRate: e.target.value }))} disabled={pending} aria-invalid={!!errors.bill_rate} />
             <FieldError errors={errors} name="bill_rate" />
           </div>
           <div className="space-y-1.5">
-            <div className="flex items-center justify-between gap-1">
+            <div className="flex flex-wrap items-center justify-between gap-1">
               <Label htmlFor="entry-pay">支払単価</Label>
-              {defaults && <SourceBadge auto={autoFlags.payRate} />}
+              {defaults && (
+                <span className="flex items-center gap-1">
+                  {defaults.payRateSource === "override" && <OverrideNote />}
+                  <SourceBadge auto={autoFlags.payRate} />
+                </span>
+              )}
             </div>
             <NumberInput id="entry-pay" value={form.payRate} onChange={(e) => setForm((f) => ({ ...f, payRate: e.target.value }))} disabled={pending} aria-invalid={!!errors.pay_rate} className={cn(loss && "text-destructive")} />
             <FieldError errors={errors} name="pay_rate" />

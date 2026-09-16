@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronRight, Users, Briefcase, Lock, Building2, UserCog, Database, ScrollText, UserCircle } from "lucide-react";
+import { ChevronRight, Users, Briefcase, BadgeJapaneseYen, Lock, Building2, UserCog, Database, ScrollText, UserCircle } from "lucide-react";
 import { requireStaff } from "@/lib/auth/session";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card } from "@/components/ui/card";
@@ -10,6 +10,7 @@ export default async function SettingsIndexPage() {
   const items = [
     { href: "/settings/drivers", label: "ドライバー", desc: "名前・ロイヤリティ率・管理費・個別単価・固定控除", icon: Users },
     { href: "/settings/projects", label: "案件・単価", desc: "案件と内容（区分・受注単価・支払単価）", icon: Briefcase },
+    { href: "/settings/rates", label: "ドライバー別単価", desc: "ドライバー × 案件内容ごとの受注単価・支払単価", icon: BadgeJapaneseYen },
     { href: "/settings/months", label: "月締め", desc: "月の確定・ロック・締め時バックアップ", icon: Lock },
     ...(role === "owner" ? [{ href: "/settings/company", label: "会社設定", desc: "端数処理・標準値・振込日・弥生の勘定科目", icon: Building2 }] : []),
     ...(role === "owner" ? [{ href: "/settings/users", label: "ユーザー管理", desc: "招待・権限・無効化", icon: UserCog }] : []),

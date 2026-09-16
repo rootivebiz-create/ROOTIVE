@@ -174,6 +174,40 @@ select public.t_assert((select pay_rate from public.work_entries we join public.
 select public.t_assert((public.bulk_set_entries('2026-10-01', (select i.id from public.project_items i join public.projects p on p.id = i.project_id where p.name = 'Temu'),
     jsonb_build_array(jsonb_build_object('driver_id', (select id from public.drivers where name = '高森豪介'), 'qty', 0))))->>'deleted' = '1', '一括入力: 数量 0 で削除');
 
+\echo '== 6b. ドライバー別単価（受注単価の上書き）と未締め月への反映'
+select id as drv_yosh from public.drivers where name = '吉田雅一' \gset
+select id as drv_kuro from public.drivers where name = '黒岩亜夢莉' \gset
+select i.id as item_misato from public.project_items i join public.projects p on p.id = i.project_id where p.name = '三郷Amazon' \gset
+-- 吉田雅一 × 三郷Amazon：受注単価だけ上書き（支払 21,960 は維持）
+update public.driver_pay_overrides set bill_rate = 23500 where driver_id = :'drv_yosh' and project_item_id = :'item_misato';
+select public.t_assert((select bill_rate from public.entry_defaults(:'drv_yosh', :'item_misato')) = 23500, '受注単価の上書きが自動入力に反映される（§2.5）');
+select public.t_assert((select pay_rate from public.entry_defaults(:'drv_yosh', :'item_misato')) = 21960, '支払単価の上書きは維持される');
+-- 黒岩亜夢莉 × 三郷Amazon：受注だけの上書き行（支払 null ＝ 案件の標準）
+insert into public.driver_pay_overrides (driver_id, project_item_id, bill_rate) values (:'drv_kuro', :'item_misato', 23100);
+select public.t_assert((select bill_rate from public.entry_defaults(:'drv_kuro', :'item_misato')) = 23100, '受注だけの上書き行');
+select public.t_assert((select pay_rate from public.entry_defaults(:'drv_kuro', :'item_misato')) = 21780, '支払 null は案件内容の標準を使う');
+select public.t_expect_error(format($$insert into public.driver_pay_overrides (driver_id, project_item_id) values ('%s', (select id from public.project_items i join public.projects p on p.id = i.project_id where p.name = 'Temu'))$$, :'drv_kuro'), null, '受注・支払とも null の行は作れない');
+select public.t_expect_error(format($$update public.driver_pay_overrides set bill_rate = -1 where driver_id = '%s'$$, :'drv_kuro'), null, '受注単価はマイナス不可');
+-- 差分：2026-10 の複製行（吉田 23025 → 23500、黒岩 23025 → 23100）
+select public.t_assert((select count(*) from public.rate_diffs('2026-10-01')) = 2, 'マスタと異なる稼働行が 2 件');
+select public.t_assert((select master_bill_rate from public.rate_diffs('2026-10-01') where driver_id = :'drv_yosh') = 23500, '差分にマスタの受注単価が出る');
+select public.t_assert((select bill_rate from public.rate_diffs('2026-10-01') where driver_id = :'drv_yosh') = 23025, '差分に稼働行のスナップショットが出る');
+select public.t_assert((select count(*) from public.rate_diffs('2026-09-01')) = 2, '9 月の稼働行も差分に出る（この時点では未締め）');
+-- 反映：ドライバー指定 → 残り → 冪等
+select public.t_assert(public.apply_master_rates('2026-10-01', :'drv_yosh') = 1, 'ドライバー指定で 1 行を更新');
+select public.t_assert((select bill_rate from public.work_entries where month = '2026-10-01' and driver_id = :'drv_yosh') = 23500, '稼働行の受注単価がマスタの値になる');
+select public.t_assert((select count(*) from public.rate_diffs('2026-10-01')) = 1, '残りの差分は 1 件');
+select public.t_assert(public.apply_master_rates('2026-10-01', null, :'item_misato') = 1, '案件内容指定で残り 1 行を更新');
+select public.t_assert(public.apply_master_rates('2026-10-01') = 0, '2 回目は 0 行（冪等）');
+select public.t_assert((select count(*) from public.audit_logs where table_name = 'work_entries' and action = 'UPDATE' and (after->>'bill_rate')::numeric = 23500) >= 1, '反映は監査ログに残る');
+-- 元に戻す（以降の節の期待値を変えない）。標準に戻すと差分が再び出て、反映で元の単価に戻る
+delete from public.driver_pay_overrides where driver_id = :'drv_kuro' and project_item_id = :'item_misato';
+update public.driver_pay_overrides set bill_rate = null where driver_id = :'drv_yosh' and project_item_id = :'item_misato';
+select public.t_assert((select count(*) from public.rate_diffs('2026-10-01')) = 2, '標準に戻すと再び 2 件の差分');
+select public.t_assert(public.apply_master_rates('2026-10-01', null, null, array(select entry_id from public.rate_diffs('2026-10-01'))) = 2, '行 ID 指定で 2 行を更新');
+select public.t_assert((select count(*) from public.rate_diffs('2026-10-01')) = 0 and (select count(*) from public.rate_diffs('2026-09-01')) = 0, '差分なし');
+select public.t_expect_error($$select public.apply_master_rates('2026-10-15')$$, null, '月初日以外は拒否');
+
 \echo '== 7. 月締め：ガード・権限'
 select public.t_assert((public.close_month('2026-09-01', 'テスト締め'))->'summary'->>'bill' = '2559573.0000' or (public.close_month('2026-09-01', 'テスト締め')) is not null, '締め処理（スナップショット付き）') where false;
 select public.t_assert((public.close_month('2026-09-01', 'テスト締め'))->'summary' is not null, '締め処理（スナップショット付き）');
@@ -188,6 +222,7 @@ select public.t_expect_error($$update public.work_entries set month = '2026-11-0
 select public.t_expect_error($$update public.work_entries set month = '2026-09-01' where month = '2026-10-01'$$, 'MONTH_CLOSED', '他月から締め済み月への移動も拒否');
 select public.t_expect_error($$select public.close_month('2026-09-01')$$, 'ALREADY_CLOSED', '二重締めは拒否');
 select public.t_expect_error($$select public.copy_previous_month('2026-09-01')$$, 'MONTH_CLOSED', '締め済み月への複製は拒否');
+select public.t_expect_error($$select public.apply_master_rates('2026-09-01')$$, 'MONTH_CLOSED', '締め済み月への単価反映は拒否');
 select public.t_assert((select count(*) from public.audit_logs where action = 'close_month') = 1, '締めの監査ログ');
 
 \echo '== 8. admin の権限'
@@ -223,6 +258,8 @@ select public.t_assert(public.t_rowcount($$delete from public.work_entries where
 select public.t_assert(public.t_rowcount($$update public.drivers set memo = 'viewer' where name = '相曽慧'$$) = 0, 'viewer はマスタを編集できない');
 select public.t_expect_error(format($$insert into public.drivers (company_id, name) values ('%s', '新人')$$, :'company_a'), null, 'viewer はマスタを追加できない');
 select public.t_expect_error($$select public.copy_previous_month('2026-12-01')$$, 'FORBIDDEN', 'viewer は複製できない');
+select public.t_expect_error($$select public.apply_master_rates('2026-12-01')$$, 'FORBIDDEN', 'viewer は単価を反映できない');
+select public.t_assert(public.t_rowcount(format($$update public.driver_pay_overrides set bill_rate = 1 where driver_id = '%s'$$, :'drv_yosh')) = 0, 'viewer はドライバー別単価を編集できない');
 select public.t_expect_error($$select public.close_month('2026-11-01')$$, 'FORBIDDEN', 'viewer は締められない');
 select public.t_expect_error($$select public.bulk_set_entries('2026-11-01', (select id from public.project_items limit 1), '[]'::jsonb)$$, 'FORBIDDEN', 'viewer は一括入力できない');
 select public.t_expect_error($$select public.export_backup()$$, 'FORBIDDEN', 'viewer はバックアップを出力できない');
@@ -322,6 +359,7 @@ end $$;
 select public.t_expect_error(format($$insert into public.audit_logs (company_id, action, table_name) values ('%s', 'x', 'y')$$, :'company_a'), null, '監査ログは直接書けない');
 
 \echo '== 15. バックアップ → 全削除 → 復元（冪等）'
+update public.driver_pay_overrides set bill_rate = 23500 where driver_id = :'drv_yosh' and project_item_id = :'item_misato';
 create temporary table t_backup as select public.export_backup() as data;
 select public.t_assert((select jsonb_array_length(data->'work_entries') from t_backup) = 23, 'バックアップに稼働行 23 件');
 select public.t_assert((select jsonb_array_length(data->'month_closings') from t_backup) = 1, 'バックアップに締め記録');
@@ -335,6 +373,7 @@ select public.t_assert((select bill from public.v_month_summary where month = '2
 select public.t_assert((select payout from public.v_month_summary where month = '2026-09-01') = 1907082.7 + (21960 * 20 - 21960 * 20 * 0.1 - 15000 - 30000 + 5000), '復元後の支払が一致');
 select public.t_assert(public.is_month_closed(:'company_a', '2026-09-01'), '締め状態も復元される');
 select public.t_assert((select count(*) from public.adjustments) = 3, '調整も復元される');
+select public.t_assert((select bill_rate from public.driver_pay_overrides where driver_id = :'drv_yosh' and project_item_id = :'item_misato') = 23500 and (select pay_rate from public.driver_pay_overrides where driver_id = :'drv_yosh' and project_item_id = :'item_misato') = 21960, 'ドライバー別単価（受注・支払）も復元される');
 select public.t_assert((public.import_backup((select data from t_backup)))->>'work_entries' = '23', '同じバックアップの再取り込み');
 select public.t_assert((select count(*) from public.work_entries) = 23 and (select count(*) from public.drivers) = 10 and (select count(*) from public.adjustments) = 3, '再取り込みで重複しない（冪等）');
 select public.t_assert((select count(*) from public.audit_logs where action = 'import_backup') = 2, '復元の監査ログ');

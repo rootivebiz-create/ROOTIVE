@@ -232,7 +232,7 @@ export function convertPrototype(json: unknown, companyId: string): { backup: Ba
         warnings.push(`ドライバー「${dr.name}」の個別単価の参照先（${ref}）が見つからないため無視しました`);
         continue;
       }
-      overrides.push({ company_id: companyId, driver_id: driverId, project_item_id: itemId, pay_rate: rate });
+      overrides.push({ company_id: companyId, driver_id: driverId, project_item_id: itemId, pay_rate: rate, bill_rate: null });
     }
   }
 

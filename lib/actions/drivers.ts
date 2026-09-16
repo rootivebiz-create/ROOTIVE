@@ -11,6 +11,7 @@ import type { ServerSupabase } from "@/lib/supabase/server";
 /** ドライバー設定の変更が影響する画面 */
 function revalidateDriverPaths() {
   revalidatePath("/settings/drivers", "layout");
+  revalidatePath("/settings/rates");
   revalidatePath("/settings/users");
   revalidatePath("/entries");
   revalidatePath("/payouts", "layout");
@@ -66,11 +67,11 @@ export async function saveDriverAction(input: DriverFormInput): Promise<ActionRe
       driverId = unwrap(res).id;
     }
 
-    // 個別支払単価：空欄は削除、値ありは upsert
-    const overrideDeletes = parsed.overrides.filter((o) => o.pay_rate == null).map((o) => o.project_item_id);
+    // ドライバー別単価：受注・支払とも空欄なら削除、どちらかに値があれば upsert（null は標準）
+    const overrideDeletes = parsed.overrides.filter((o) => o.bill_rate == null && o.pay_rate == null).map((o) => o.project_item_id);
     const overrideUpserts = parsed.overrides
-      .filter((o): o is { project_item_id: string; pay_rate: number } => o.pay_rate != null)
-      .map((o) => ({ company_id: company.id, driver_id: driverId, project_item_id: o.project_item_id, pay_rate: o.pay_rate }));
+      .filter((o) => o.bill_rate != null || o.pay_rate != null)
+      .map((o) => ({ company_id: company.id, driver_id: driverId, project_item_id: o.project_item_id, bill_rate: o.bill_rate, pay_rate: o.pay_rate }));
     if (overrideDeletes.length > 0) {
       ensureNoError(await supabase.from("driver_pay_overrides").delete().eq("driver_id", driverId).in("project_item_id", overrideDeletes));
     }

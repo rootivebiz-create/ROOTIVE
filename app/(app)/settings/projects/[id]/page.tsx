@@ -3,6 +3,8 @@ import { requireStaff, canEdit } from "@/lib/auth/session";
 import { uuidSchema } from "@/lib/schemas/common";
 import { PageHeader } from "@/components/ui/page-header";
 import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
+import { MonthLink } from "@/components/layout/month-link";
 import { ProjectForm } from "@/components/settings/projects/project-form";
 
 export const metadata = { title: "案件の編集" };
@@ -36,7 +38,14 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       <PageHeader
         title={project.name}
         description={project.client_name || undefined}
-        actions={project.is_active ? <Badge variant="success">稼働中</Badge> : <Badge variant="secondary">停止中</Badge>}
+        actions={
+          <>
+            {project.is_active ? <Badge variant="success">稼働中</Badge> : <Badge variant="secondary">停止中</Badge>}
+            <MonthLink href={items[0] ? `/settings/rates?item=${items[0].id}` : "/settings/rates"} className={buttonVariants({ variant: "outline", size: "sm" })}>
+              ドライバー別単価
+            </MonthLink>
+          </>
+        }
       />
       <ProjectForm canEdit={canEdit(profile.role)} project={project} items={items} entryCounts={entryCounts} />
     </div>

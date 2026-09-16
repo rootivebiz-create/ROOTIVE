@@ -15,17 +15,20 @@ import { Money, Pct, Qty } from "@/components/ui/money";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { MonthLink } from "@/components/layout/month-link";
-import type { Masters } from "@/lib/db/types";
+import type { Masters, RateDiff } from "@/lib/db/types";
 import { sumMoney } from "@/lib/calc";
 import { formatMonthJa, prevMonth } from "@/lib/month";
 import { cn } from "@/lib/utils";
 import { copyPreviousMonthAction, deleteEntryAction } from "@/lib/actions/entries";
 import { EntryDialog } from "./entry-dialog";
+import { RateDiffBanner } from "./rate-diff-banner";
 import { filterRows, isLossRow, isQtyEmpty, projectDisplayName, unitSuffix, type EntryRow } from "./helpers";
 
 export interface EntriesViewProps {
   month: string;
   rows: EntryRow[];
+  /** 単価・率・端数処理が現在のマスタと異なる稼働行（締め済み月は空） */
+  diffs: RateDiff[];
   /** 編集可能（owner/admin かつ未締め） */
   editable: boolean;
   closed: boolean;
@@ -45,16 +48,21 @@ interface DialogState {
 function RowBadges({ row }: { row: EntryRow }) {
   const empty = isQtyEmpty(row);
   const loss = isLossRow(row);
-  if (!empty && !loss) return null;
+  if (!empty && !loss && !row.masterDiff) return null;
   return (
     <span className="inline-flex flex-wrap gap-1">
       {empty && <Badge variant="warning">未入力</Badge>}
       {loss && <Badge variant="destructive">赤字</Badge>}
+      {row.masterDiff && (
+        <Badge variant="warning" title="単価・率・端数処理が現在のマスタと異なります">
+          単価変更あり
+        </Badge>
+      )}
     </span>
   );
 }
 
-export function EntriesView({ month, rows, editable, closed, masters, allMasters, initialDriver = "", initialQuery = "" }: EntriesViewProps) {
+export function EntriesView({ month, rows, diffs, editable, closed, masters, allMasters, initialDriver = "", initialQuery = "" }: EntriesViewProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [driverFilter, setDriverFilter] = useState(initialDriver);
@@ -162,6 +170,9 @@ export function EntriesView({ month, rows, editable, closed, masters, allMasters
           </>
         }
       />
+
+      {/* 現在のマスタと異なる稼働行（締め済み月は出ない） */}
+      <RateDiffBanner month={month} diffs={diffs} editable={editable} />
 
       {/* 絞り込み・検索 */}
       {rows.length > 0 && (
