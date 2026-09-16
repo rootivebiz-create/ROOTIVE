@@ -1242,7 +1242,7 @@ async function serveFile(bucket, objectPath, metadata) {
   };
 }
 
-async function handleStorage(req, url, bodyBuf, ctxPromise) {
+async function handleStorage(req, url, bodyBuf, getCtx) {
   const sub = url.pathname.slice("/storage/v1/".length).replace(/\/+$/, "");
   const method = req.method;
 
@@ -1264,7 +1264,7 @@ async function handleStorage(req, url, bodyBuf, ctxPromise) {
     return serveFile(bucket, objectPath, meta);
   }
 
-  const ctx = await ctxPromise;
+  const ctx = await getCtx();
 
   if (sub === "bucket" && method === "GET") {
     return withTx(ctx, async (client) => {
@@ -1489,7 +1489,7 @@ async function route(req, url, bodyBuf) {
     return handleRest(req, url, bodyBuf, ctx);
   }
   if (p.startsWith("/auth/v1/")) return handleAuth(req, url, bodyBuf);
-  if (p.startsWith("/storage/v1/")) return handleStorage(req, url, bodyBuf, restContext(req).catch((e) => Promise.reject(e)));
+  if (p.startsWith("/storage/v1/")) return handleStorage(req, url, bodyBuf, () => restContext(req));
   return { status: 404, body: { message: `Not found: ${req.method} ${p}` } };
 }
 

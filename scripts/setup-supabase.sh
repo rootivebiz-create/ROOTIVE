@@ -103,7 +103,8 @@ api() {
     args+=(-H "Content-Type: application/json" --data-binary "@$bodyfile")
   fi
   if ! status="$(curl "${args[@]}")"; then
-    rm -f "$out" "${bodyfile:-/dev/null}"
+    rm -f "$out"
+    if [ -n "$bodyfile" ]; then rm -f "$bodyfile"; fi
     die "curl の実行に失敗しました（$method $path）。ネットワーク接続を確認してください。"
   fi
   if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
@@ -119,11 +120,13 @@ api() {
       404) echo "→ プロジェクト参照 ID（SUPABASE_PROJECT_REF）や組織 ID が正しいか確認してください。" >&2 ;;
       429) echo "→ API の呼び出し回数制限です。1 分ほど待ってから再実行してください。" >&2 ;;
     esac
-    rm -f "$out" "${bodyfile:-/dev/null}"
+    rm -f "$out"
+    if [ -n "$bodyfile" ]; then rm -f "$bodyfile"; fi
     exit 1
   fi
   cat "$out"
-  rm -f "$out" "${bodyfile:-/dev/null}"
+  rm -f "$out"
+  if [ -n "$bodyfile" ]; then rm -f "$bodyfile"; fi
 }
 
 # run_sql REF SQL_TEXT [LABEL] → SQL を実行し、結果 JSON（最後の文の行配列）を標準出力へ

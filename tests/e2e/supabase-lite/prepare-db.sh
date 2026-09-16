@@ -7,6 +7,7 @@
 #   TEST_PG_PORT（既定 54329）、PG_BIN（既定 /usr/lib/postgresql/<最新>/bin）
 # 最後に "PG_STARTED=0|1" と "DB_URL=..." を出力する（呼び出し側が読む）
 set -euo pipefail
+export PGOPTIONS="${PGOPTIONS:---client-min-messages=warning}"
 cd "$(dirname "$0")/../../.."
 ROOT="$(pwd)"
 PG_BIN="${PG_BIN:-$(ls -d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V | tail -1)}"

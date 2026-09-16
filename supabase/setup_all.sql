@@ -1527,9 +1527,9 @@ begin
   if not public.is_owner() then
     raise exception 'ユーザー招待はオーナーのみ可能です' using errcode = 'P0001', hint = 'OWNER_ONLY';
   end if;
-  -- 同じメールの未受諾招待は取り消す
+  -- 同じメールの、まだ招待リンクで使われていない招待はすべて取り消す（再招待で常に最新の 1 件だけが有効）
   update public.invitations set cancelled_at = now()
-   where company_id = cid and lower(email) = lower(p_email) and accepted_at is null and cancelled_at is null;
+   where company_id = cid and lower(email) = lower(trim(p_email)) and cancelled_at is null and link_used_at is null;
   insert into public.invitations (company_id, email, role, driver_id, display_name, invited_by)
   values (cid, lower(trim(p_email)), p_role, case when p_role = 'driver' then p_driver_id else null end, coalesce(p_display_name, ''), auth.uid())
   returning * into inv;

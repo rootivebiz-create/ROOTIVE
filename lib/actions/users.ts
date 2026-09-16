@@ -17,7 +17,7 @@ import {
 } from "@/lib/schemas/users";
 
 /** 招待リンク `/invite/<token>` の絶対 URL */
-export async function inviteLinkFor(token: string): Promise<string> {
+function inviteLinkFor(token: string): string {
   return `${appUrl()}/invite/${token}`;
 }
 
@@ -97,7 +97,7 @@ export async function inviteUserAction(input: InviteUserInput): Promise<ActionRe
 
     const mail = parsed.sendEmail ? await sendInviteEmail(supabase, company.id, parsed.email, parsed.displayName) : { sent: false, warning: null };
     revalidateUsers();
-    return { invitationId: inv.id, link: await inviteLinkFor(inv.token), emailSent: mail.sent, warning: mail.warning, expiresAt: inv.expires_at };
+    return { invitationId: inv.id, link: inviteLinkFor(inv.token), emailSent: mail.sent, warning: mail.warning, expiresAt: inv.expires_at };
   });
   return withWarningMessage(res, "招待を作成しました。");
 }
@@ -130,7 +130,7 @@ export async function resendInvitationAction(invitationId: string, sendEmail = f
 
     const mail = parsed.sendEmail ? await sendInviteEmail(supabase, company.id, old.email, old.display_name) : { sent: false, warning: null };
     revalidateUsers();
-    return { invitationId: inv.id, link: await inviteLinkFor(inv.token), emailSent: mail.sent, warning: mail.warning, expiresAt: inv.expires_at };
+    return { invitationId: inv.id, link: inviteLinkFor(inv.token), emailSent: mail.sent, warning: mail.warning, expiresAt: inv.expires_at };
   });
   return withWarningMessage(res, "招待リンクを再発行しました。");
 }
