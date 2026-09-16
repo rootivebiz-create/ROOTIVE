@@ -3,12 +3,14 @@
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useTheme } from "next-themes";
 import Link from "next/link";
+import { useRef } from "react";
 import { LogOut, Moon, Sun, UserCircle, Monitor } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { ROLE_LABELS, type Role } from "@/lib/db/types";
 
 export function UserMenu({ displayName, email, role }: { displayName: string; email: string; role: Role }) {
   const { theme, setTheme } = useTheme();
+  const signOutForm = useRef<HTMLFormElement>(null);
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
@@ -65,11 +67,16 @@ export function UserMenu({ displayName, email, role }: { displayName: string; em
               </Link>
             </DropdownMenu.Item>
           )}
-          <form action="/auth/signout" method="post">
-            <DropdownMenu.Item asChild>
-              <button type="submit" className="flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm outline-none hover:bg-muted">
-                <LogOut className="h-4 w-4" /> ログアウト
-              </button>
+          {/* Radix のメニュー項目は選択時に閉じるため、submit ボタンではなく onSelect でフォームを送信する */}
+          <form ref={signOutForm} action="/auth/signout" method="post">
+            <DropdownMenu.Item
+              className="flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm outline-none hover:bg-muted data-[highlighted]:bg-muted"
+              onSelect={(e) => {
+                e.preventDefault();
+                signOutForm.current?.requestSubmit();
+              }}
+            >
+              <LogOut className="h-4 w-4" /> ログアウト
             </DropdownMenu.Item>
           </form>
         </DropdownMenu.Content>

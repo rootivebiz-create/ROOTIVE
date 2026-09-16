@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { absoluteUrlFromRequest } from "@/lib/request-url";
 
 /** メール内リンク（token_hash 方式）。別端末で開いても検証できる */
 export async function GET(request: NextRequest) {
@@ -14,13 +15,13 @@ export async function GET(request: NextRequest) {
     const supabase = await createClient();
     const { error } = await supabase.auth.verifyOtp({ type, token_hash });
     if (!error) {
-      return NextResponse.redirect(new URL(next, request.url));
+      return NextResponse.redirect(absoluteUrlFromRequest(request, next));
     }
-    const login = new URL("/login", request.url);
+    const login = absoluteUrlFromRequest(request, "/login");
     login.searchParams.set("error", "リンクの有効期限が切れているか、無効です。もう一度ログインをお試しください。");
     return NextResponse.redirect(login);
   }
-  const login = new URL("/login", request.url);
+  const login = absoluteUrlFromRequest(request, "/login");
   login.searchParams.set("error", "リンクが不正です。");
   return NextResponse.redirect(login);
 }
