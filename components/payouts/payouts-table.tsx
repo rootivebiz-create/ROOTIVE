@@ -20,7 +20,12 @@ export interface PayoutRow {
   royalty: number;
   mgmtFee: number;
   adjPay: number;
+  /** 税抜の支払額 */
   payout: number;
+  /** 消費税（v_driver_month_summary.tax） */
+  tax: number;
+  /** 税込の支払額（v_driver_month_summary.payout_incl）。実際の振込額 */
+  payoutIncl: number;
   driverProfit: number;
 }
 
@@ -44,6 +49,8 @@ export function PayoutsTable({ rows }: { rows: PayoutRow[] }) {
     mgmtFee: sumMoney(rows.map((r) => r.mgmtFee)),
     adjPay: sumMoney(rows.map((r) => r.adjPay)),
     payout: sumMoney(rows.map((r) => r.payout)),
+    tax: sumMoney(rows.map((r) => r.tax)),
+    payoutIncl: sumMoney(rows.map((r) => r.payoutIncl)),
     driverProfit: sumMoney(rows.map((r) => r.driverProfit)),
   };
 
@@ -65,8 +72,11 @@ export function PayoutsTable({ rows }: { rows: PayoutRow[] }) {
                   </div>
                   <div className="flex items-center gap-1">
                     <div className="text-right">
-                      <p className="text-[11px] text-muted-foreground">支払額</p>
+                      <p className="text-[11px] text-muted-foreground">支払額（税抜）</p>
                       <Money value={r.payout} className="text-lg font-semibold" />
+                      <p className="text-[11px] text-muted-foreground">
+                        税込 <Money value={r.payoutIncl} className="font-medium text-foreground" />
+                      </p>
                     </div>
                     <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
                   </div>
@@ -96,7 +106,13 @@ export function PayoutsTable({ rows }: { rows: PayoutRow[] }) {
                       <Money value={r.adjPay} showZeroAsDash />
                     </dd>
                   </div>
-                  <div className="col-span-2 flex justify-between border-t pt-1">
+                  <div className="flex justify-between">
+                    <dt className="text-muted-foreground">消費税</dt>
+                    <dd>
+                      <Money value={r.tax} />
+                    </dd>
+                  </div>
+                  <div className="flex justify-between">
                     <dt className="text-muted-foreground">会社利益</dt>
                     <dd>
                       <Money value={r.driverProfit} className="font-medium" />
@@ -109,9 +125,15 @@ export function PayoutsTable({ rows }: { rows: PayoutRow[] }) {
         ))}
         <li>
           <Card className="bg-muted/50 p-3">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <p className="font-semibold">合計（{rows.length} 名・{total.entryCount} 件）</p>
-              <Money value={total.payout} className="text-lg font-semibold" />
+              <div className="text-right">
+                <p className="text-[11px] text-muted-foreground">支払額（税抜）</p>
+                <Money value={total.payout} className="text-lg font-semibold" />
+                <p className="text-[11px] text-muted-foreground">
+                  税込 <Money value={total.payoutIncl} className="font-medium text-foreground" />
+                </p>
+              </div>
             </div>
             <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
               <div className="flex justify-between">
@@ -138,7 +160,13 @@ export function PayoutsTable({ rows }: { rows: PayoutRow[] }) {
                   <Money value={total.adjPay} showZeroAsDash />
                 </dd>
               </div>
-              <div className="col-span-2 flex justify-between border-t pt-1">
+              <div className="flex justify-between">
+                <dt className="text-muted-foreground">消費税</dt>
+                <dd>
+                  <Money value={total.tax} />
+                </dd>
+              </div>
+              <div className="flex justify-between">
                 <dt className="text-muted-foreground">会社利益</dt>
                 <dd>
                   <Money value={total.driverProfit} className="font-medium" />
@@ -161,6 +189,8 @@ export function PayoutsTable({ rows }: { rows: PayoutRow[] }) {
               <TableHead className="text-right">管理費</TableHead>
               <TableHead className="text-right">調整</TableHead>
               <TableHead className="text-right">支払額</TableHead>
+              <TableHead className="text-right">消費税</TableHead>
+              <TableHead className="text-right">税込支払額</TableHead>
               <TableHead className="text-right">会社利益</TableHead>
               <TableHead className="w-8" />
             </TableRow>
@@ -197,7 +227,13 @@ export function PayoutsTable({ rows }: { rows: PayoutRow[] }) {
                   <Money value={r.adjPay} showZeroAsDash />
                 </TableCell>
                 <TableCell className="text-right">
-                  <Money value={r.payout} className="font-semibold" />
+                  <Money value={r.payout} />
+                </TableCell>
+                <TableCell className="text-right">
+                  <Money value={r.tax} />
+                </TableCell>
+                <TableCell className="text-right">
+                  <Money value={r.payoutIncl} className="font-semibold" />
                 </TableCell>
                 <TableCell className={cn("text-right")}>
                   <Money value={r.driverProfit} />
@@ -226,6 +262,12 @@ export function PayoutsTable({ rows }: { rows: PayoutRow[] }) {
               </TableCell>
               <TableCell className="text-right">
                 <Money value={total.payout} />
+              </TableCell>
+              <TableCell className="text-right">
+                <Money value={total.tax} />
+              </TableCell>
+              <TableCell className="text-right">
+                <Money value={total.payoutIncl} className="font-semibold" />
               </TableCell>
               <TableCell className="text-right">
                 <Money value={total.driverProfit} />

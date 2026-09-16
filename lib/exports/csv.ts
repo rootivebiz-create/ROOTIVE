@@ -96,10 +96,11 @@ export function entriesToCsv(rows: EntryCsvSource[]): string {
 // 支払一覧 CSV
 // ---------------------------------------------------------------------------
 
-export const PAYOUTS_CSV_HEADERS = ["稼動月", "ドライバー", "会社売上", "ドライバー売上", "単価差額利益", "ロイヤリティ", "管理費", "調整", "支払額", "会社利益"] as const;
+/** 支払額は税抜、消費税・税込支払額は v_driver_month_summary の tax / payout_incl（実際の振込額は税込支払額） */
+export const PAYOUTS_CSV_HEADERS = ["稼動月", "ドライバー", "会社売上", "ドライバー売上", "単価差額利益", "ロイヤリティ", "管理費", "調整", "支払額", "消費税", "税込支払額", "会社利益"] as const;
 
 /** v_driver_month_summary のうち CSV に必要な列 */
-export type PayoutCsvSource = Pick<DriverMonthSummary, "month" | "driver_name" | "bill" | "pay" | "margin" | "royalty" | "mgmt_fee" | "adj_pay" | "payout" | "driver_profit">;
+export type PayoutCsvSource = Pick<DriverMonthSummary, "month" | "driver_name" | "bill" | "pay" | "margin" | "royalty" | "mgmt_fee" | "adj_pay" | "payout" | "tax" | "payout_incl" | "driver_profit">;
 
 export function payoutToCsvRow(r: PayoutCsvSource): CsvValue[] {
   return [
@@ -112,6 +113,8 @@ export function payoutToCsvRow(r: PayoutCsvSource): CsvValue[] {
     rawNumber(r.mgmt_fee),
     rawNumber(r.adj_pay),
     rawNumber(r.payout),
+    rawNumber(r.tax),
+    rawNumber(r.payout_incl),
     rawNumber(r.driver_profit),
   ];
 }

@@ -171,6 +171,8 @@ export async function loadInsightSource(supabase: ServerSupabase, companyId: str
     reopened_at: null,
     backup_path: null,
     closing_note: null,
+    tax: 0,
+    payout_incl: 0,
   };
 
   return {

@@ -25,6 +25,8 @@ export default async function NewDriverPage() {
           default_royalty_rate: Number(company.default_royalty_rate ?? 0),
           default_mgmt_fee: Number(company.default_mgmt_fee ?? 0),
           rounding_mode: company.rounding_mode,
+          payout_month_offset: Number(company.payout_month_offset ?? 1),
+          payout_day: Number(company.payout_day ?? 0),
         }}
         driver={null}
         overrides={[]}

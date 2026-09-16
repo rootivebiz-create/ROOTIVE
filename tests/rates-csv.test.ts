@@ -17,7 +17,7 @@ const I_KASHIWA_STD = "30000000-0000-4000-8000-000000000004";
 const I_STOPPED = "30000000-0000-4000-8000-000000000005";
 
 function driver(id: string, name: string, sort_order: number, is_active = true): Driver {
-  return { id, company_id: COMPANY, name, kana: "", is_active, royalty_rate: null, mgmt_fee: 15000, rounding_mode: null, phone: "", email: "", bank_info: "", memo: "", sort_order, created_at: "", updated_at: "" };
+  return { id, company_id: COMPANY, name, kana: "", is_active, royalty_rate: null, mgmt_fee: 15000, rounding_mode: null, phone: "", email: "", bank_info: "", memo: "", sort_order, tax_mode: "taxable", invoice_reg_no: "", payout_month_offset: null, payout_day: null, created_at: "", updated_at: "" };
 }
 
 function item(id: string, project_id: string, name: string, unit: "day" | "piece", bill_rate: number, pay_rate: number, sort_order: number, is_active = true): ProjectItem {
@@ -48,6 +48,10 @@ const masters: Masters = {
     tel: "",
     driver_portal_show_royalty: true,
     yayoi_accounts: {},
+    tax_rate: 0.1,
+    tax_rounding: "floor",
+    logo_path: null,
+    seal_path: null,
     created_at: "",
     updated_at: "",
   },

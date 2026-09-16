@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select } from "@/components/ui/select";
 import { Money } from "@/components/ui/money";
-import { calcDriverMonth, parseNumberInput, type EntryInput } from "@/lib/calc";
+import { calcDriverMonth, parseNumberInput, taxRateLabel, type EntryInput, type TaxInput } from "@/lib/calc";
 import { yen } from "@/lib/format";
 import { saveDriverMonthAction } from "@/lib/actions/payouts";
 
@@ -45,6 +45,8 @@ export interface DriverMonthDialogProps {
   entries: EntryInput[];
   /** 有効な固定控除 */
   recurring: RecurringOption[];
+  /** 消費税の計算条件（明細データの taxMode / taxRate / taxRounding）。省略時は消費税を計算しない */
+  tax?: TaxInput | null;
 }
 
 type Kind = "deduct" | "add";
@@ -88,6 +90,9 @@ export function DriverMonthDialog(props: DriverMonthDialogProps) {
   const [rows, setRows] = useState<AdjRow[]>(() => toRows(props.adjustments));
   const seq = useRef(0);
   const nextKey = () => `new-${++seq.current}`;
+  const tax = props.tax ?? null;
+  const taxable = tax?.mode === "taxable";
+  const payoutLabel = taxable ? "お支払額（税込）" : "お支払額";
 
   const reset = () => {
     setMgmtFee(String(props.mgmtFee));
@@ -106,8 +111,9 @@ export function DriverMonthDialog(props: DriverMonthDialogProps) {
       entries: props.entries,
       mgmtFee: fee < 0 ? 0 : fee,
       adjustments: rows.map((r) => ({ amount: signedAmount(r), countAsProfit: r.countAsProfit })),
+      tax,
     });
-  }, [props.entries, mgmtFee, rows]);
+  }, [props.entries, mgmtFee, rows, tax]);
 
   const feeNum = parseNumberInput(mgmtFee);
   const feeDiffers = feeNum != null && feeNum !== props.driverDefaultMgmtFee;
@@ -181,7 +187,7 @@ export function DriverMonthDialog(props: DriverMonthDialogProps) {
             {/* 管理費 */}
             <section className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <Label htmlFor="dm-mgmt-fee">管理費（月額）</Label>
+                <Label htmlFor="dm-mgmt-fee">管理費（月額・税抜）</Label>
                 <span className="text-xs text-muted-foreground">ドライバー標準：{yen(props.driverDefaultMgmtFee)}</span>
               </div>
               <div className="flex gap-2">
@@ -204,7 +210,7 @@ export function DriverMonthDialog(props: DriverMonthDialogProps) {
             {/* 調整 */}
             <section className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label>調整（控除・加算）</Label>
+                <Label>調整（控除・加算、税込）</Label>
                 <span className="text-xs text-muted-foreground">控除は支払額から差し引き</span>
               </div>
               {rows.length === 0 && <p className="rounded-md border border-dashed p-3 text-center text-sm text-muted-foreground">調整はありません。</p>}
@@ -258,10 +264,12 @@ export function DriverMonthDialog(props: DriverMonthDialogProps) {
                   );
                 })}
               </div>
-              <p className="text-xs text-muted-foreground">「会社利益に計上」を外した調整（立替精算など）は支払額だけに反映され、会社利益には影響しません。</p>
+              <p className="text-xs text-muted-foreground">
+                調整は税込の金額として扱い、消費税の対象には含めません。「会社利益に計上」を外した調整（立替精算など）は支払額だけに反映され、会社利益には影響しません。
+              </p>
             </section>
 
-            {/* プレビュー */}
+            {/* プレビュー（lib/calc の calcDriverMonth。集計ビューと同じ計算） */}
             <section className="rounded-md bg-muted/60 p-3">
               <p className="mb-2 text-xs font-medium text-muted-foreground">支払額プレビュー</p>
               <dl className="space-y-1 text-sm">
@@ -283,20 +291,34 @@ export function DriverMonthDialog(props: DriverMonthDialogProps) {
                     <Money value={-preview.mgmtFee} />
                   </dd>
                 </div>
+                <div className="flex justify-between border-t pt-1 font-medium">
+                  <dt>小計（税抜）</dt>
+                  <dd>
+                    <Money value={preview.taxBase} />
+                  </dd>
+                </div>
+                {taxable && (
+                  <div className="flex justify-between">
+                    <dt>消費税（{taxRateLabel(tax.rate)}）</dt>
+                    <dd>
+                      <Money value={preview.tax} />
+                    </dd>
+                  </div>
+                )}
                 <div className="flex justify-between">
-                  <dt>調整</dt>
+                  <dt>調整（税込）</dt>
                   <dd>
                     <Money value={preview.adjPay} showZeroAsDash />
                   </dd>
                 </div>
                 <div className="flex items-center justify-between border-t pt-2 text-base font-semibold">
-                  <dt>お支払額</dt>
+                  <dt>{payoutLabel}</dt>
                   <dd>
-                    <Money value={preview.payout} className="text-lg" />
+                    <Money value={preview.payoutIncl} className="text-lg" />
                   </dd>
                 </div>
                 <div className="flex justify-between text-xs text-muted-foreground">
-                  <dt>会社利益（参考）</dt>
+                  <dt>会社利益（参考・税抜）</dt>
                   <dd>
                     <Money value={preview.driverProfit} />
                   </dd>

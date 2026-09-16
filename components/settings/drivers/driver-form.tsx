@@ -18,13 +18,15 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { MonthLink } from "@/components/layout/month-link";
 import { deleteDriverAction, saveDriverAction } from "@/lib/actions/drivers";
-import { ROUNDING_LABELS, ROUNDING_MODES, UNIT_LABELS, type RoundingMode, type Unit } from "@/lib/calc/types";
-import { rateToPercent } from "@/lib/calc/parse";
+import { ROUNDING_LABELS, ROUNDING_MODES, TAX_MODES, TAX_MODE_LABELS, UNIT_LABELS, type RoundingMode, type TaxMode, type Unit } from "@/lib/calc/types";
+import { parseNumberInput, rateToPercent } from "@/lib/calc/parse";
 import type { Driver, DriverRecurringAdjustment } from "@/lib/db/types";
 import { pct, yen, yenPlain } from "@/lib/format";
 import { useMonth } from "@/lib/hooks/use-month";
+import { formatDateJa, formatMonthJa, payoutDate } from "@/lib/month";
+import { PAYOUT_MONTH_OFFSETS, PAYOUT_MONTH_OFFSET_LABELS } from "@/lib/schemas/company";
 import type { DriverFormInput } from "@/lib/schemas/drivers";
-import type { CompanyDefaults } from "./drivers-table";
+import { payoutRuleLabel, type CompanyDefaults } from "./drivers-table";
 
 export interface DriverFormProjectItem {
   id: string;
@@ -72,7 +74,16 @@ interface FormState {
   email: string;
   bank_info: string;
   memo: string;
+  tax_mode: TaxMode;
+  invoice_reg_no: string;
+  /** true = 振込予定日は会社設定に従う */
+  followPayout: boolean;
+  payout_month_offset: string;
+  payout_day: string;
 }
+
+/** 振込予定日の「日」の選択肢（0 = 末日） */
+const PAYOUT_DAYS = Array.from({ length: 32 }, (_, i) => i);
 
 /** ドライバー別単価の入力値（空欄＝標準） */
 interface OverrideValue {
@@ -101,7 +112,7 @@ function FieldError({ messages }: { messages?: string[] }) {
 
 export function DriverForm({ canEdit, defaults, driver, overrides, recurring, projects, entryCount, monthCount }: DriverFormProps) {
   const router = useRouter();
-  const { href } = useMonth();
+  const { href, month } = useMonth();
   const [pending, startTransition] = useTransition();
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -121,8 +132,23 @@ export function DriverForm({ canEdit, defaults, driver, overrides, recurring, pr
     email: driver?.email ?? "",
     bank_info: driver?.bank_info ?? "",
     memo: driver?.memo ?? "",
+    tax_mode: driver?.tax_mode ?? "taxable",
+    invoice_reg_no: driver?.invoice_reg_no ?? "",
+    // 月・日のどちらかが null なら会社設定に従う（保存時も両方揃って初めて個別）
+    followPayout: driver ? driver.payout_month_offset == null || driver.payout_day == null : true,
+    payout_month_offset: String(driver?.payout_month_offset ?? defaults.payout_month_offset),
+    payout_day: String(driver?.payout_day ?? defaults.payout_day),
   }));
   const set = (patch: Partial<FormState>) => setF((prev) => ({ ...prev, ...patch }));
+
+  // 振込予定日のプレビュー（会社設定に従うなら会社の値、個別なら選択中の値）
+  const payoutOffsetNum = f.followPayout ? defaults.payout_month_offset : parseNumberInput(f.payout_month_offset);
+  const payoutDayNum = f.followPayout ? defaults.payout_day : parseNumberInput(f.payout_day);
+  const payoutPreview =
+    payoutOffsetNum != null && payoutDayNum != null && Number.isInteger(payoutOffsetNum) && Number.isInteger(payoutDayNum)
+      ? payoutDate(month, payoutOffsetNum, payoutDayNum)
+      : null;
+  const companyPayoutLabel = payoutRuleLabel(defaults.payout_month_offset, defaults.payout_day);
 
   const originalOverrideIds = useMemo(() => new Set(overrides.map((o) => o.project_item_id)), [overrides]);
   const [overrideValues, setOverrideValues] = useState<Record<string, OverrideValue>>(() =>
@@ -168,6 +194,10 @@ export function DriverForm({ canEdit, defaults, driver, overrides, recurring, pr
       email: f.email,
       bank_info: f.bank_info,
       memo: f.memo,
+      tax_mode: f.tax_mode,
+      invoice_reg_no: f.invoice_reg_no,
+      payout_month_offset: f.followPayout ? null : f.payout_month_offset,
+      payout_day: f.followPayout ? null : f.payout_day,
       overrides: overrideInputs,
       recurring: recurringRows.map((r) => ({ id: r.id, label: r.label, amount: r.amount, count_as_profit: r.count_as_profit, is_active: r.is_active })),
     };
@@ -315,6 +345,83 @@ export function DriverForm({ canEdit, defaults, driver, overrides, recurring, pr
               ))}
             </Select>
             <FieldError messages={errors.rounding_mode} />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 消費税・支払日 */}
+      <Card>
+        <CardHeader>
+          <CardTitle>消費税・支払日</CardTitle>
+          <CardDescription>支払明細（PDF・印刷・ポータル）の消費税の計算と振込予定日に使います。消費税率と端数処理は会社設定で変更します。</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="driver-tax-mode">課税区分</Label>
+            <Select id="driver-tax-mode" value={f.tax_mode} onChange={(e) => set({ tax_mode: e.target.value as TaxMode })} disabled={disabled}>
+              {TAX_MODES.map((m) => (
+                <option key={m} value={m}>
+                  {TAX_MODE_LABELS[m]}
+                </option>
+              ))}
+            </Select>
+            <p className="text-xs text-muted-foreground">課税：税抜の支払額に消費税を上乗せしてお支払いします。非課税・免税：消費税を上乗せしません。</p>
+            <FieldError messages={errors.tax_mode} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="driver-invoice">適格請求書登録番号（任意）</Label>
+            <Input
+              id="driver-invoice"
+              value={f.invoice_reg_no}
+              onChange={(e) => set({ invoice_reg_no: e.target.value })}
+              disabled={disabled}
+              placeholder="T1234567890123"
+              maxLength={30}
+              autoComplete="off"
+              className="max-w-[16rem]"
+            />
+            <p className="text-xs text-muted-foreground">ドライバーがインボイス登録事業者の場合に入力すると支払明細に印字します。</p>
+            <FieldError messages={errors.invoice_reg_no} />
+          </div>
+          <div className="space-y-2">
+            <p className="text-sm font-medium leading-none">振込予定日</p>
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox checked={f.followPayout} onCheckedChange={(c) => set({ followPayout: c === true })} disabled={disabled} />
+              振込予定日は会社設定に従う（現在：{companyPayoutLabel}）
+            </label>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="driver-payout-offset">支払月</Label>
+                <Select
+                  id="driver-payout-offset"
+                  value={f.payout_month_offset}
+                  onChange={(e) => set({ payout_month_offset: e.target.value })}
+                  disabled={disabled || f.followPayout}
+                >
+                  {PAYOUT_MONTH_OFFSETS.map((o) => (
+                    <option key={o} value={String(o)}>
+                      {PAYOUT_MONTH_OFFSET_LABELS[o]}
+                    </option>
+                  ))}
+                </Select>
+                <FieldError messages={errors.payout_month_offset} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="driver-payout-day">支払日</Label>
+                <Select id="driver-payout-day" value={f.payout_day} onChange={(e) => set({ payout_day: e.target.value })} disabled={disabled || f.followPayout}>
+                  {PAYOUT_DAYS.map((d) => (
+                    <option key={d} value={String(d)}>
+                      {d === 0 ? "末日" : `${d} 日`}
+                    </option>
+                  ))}
+                </Select>
+                <FieldError messages={errors.payout_day} />
+              </div>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              例: {formatMonthJa(month)}分 → <span className="num font-medium text-foreground">{payoutPreview ? formatDateJa(payoutPreview) : "—"}</span>
+              （その月に無い日付は末日になります）
+            </p>
           </div>
         </CardContent>
       </Card>

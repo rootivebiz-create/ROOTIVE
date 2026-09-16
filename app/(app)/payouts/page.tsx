@@ -46,6 +46,8 @@ export default async function PayoutsPage({ searchParams }: { searchParams: Prom
       mgmtFee: Number(r.mgmt_fee ?? 0),
       adjPay: Number(r.adj_pay ?? 0),
       payout: Number(r.payout ?? 0),
+      tax: Number(r.tax ?? 0),
+      payoutIncl: Number(r.payout_incl ?? 0),
       driverProfit: Number(r.driver_profit ?? 0),
     }));
 
@@ -80,7 +82,9 @@ export default async function PayoutsPage({ searchParams }: { searchParams: Prom
         }
       />
       <PayoutsTable rows={rows} />
-      <p className="mt-3 text-xs text-muted-foreground">行をタップすると支払明細を表示します。稼働も管理費・調整の登録もないドライバーは表示されません。</p>
+      <p className="mt-3 text-xs text-muted-foreground">
+        行をタップすると支払明細を表示します。支払額は税抜。実際の振込額は税込支払額です。稼働も管理費・調整の登録もないドライバーは表示されません。
+      </p>
       {missingDrivers.length > 0 && (
         <details className="mt-3 rounded-lg border p-3 text-sm">
           <summary className="cursor-pointer font-medium">この月に稼働のない稼働中ドライバー（{missingDrivers.length} 名）の管理費・調整を登録する</summary>

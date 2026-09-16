@@ -137,7 +137,7 @@ test.describe("ロール", () => {
     expect((own.data ?? []).every((r) => r.driver_id === driverId)).toBe(true);
     const months = await client.rpc("driver_portal_months");
     expect(months.error).toBeNull();
-    expect((months.data ?? []).map((m) => [m.month, Number(m.payout)])).toEqual([["2026-09-01", 396643]]);
+    expect((months.data ?? []).map((m) => [m.month, Number(m.payout), Number(m.payout_incl)])).toEqual([["2026-09-01", 396643, 436307]]);
   });
 
   /**
@@ -155,14 +155,16 @@ test.describe("ロール", () => {
     await expect(page.getByRole("heading", { name: "支払明細一覧" })).toBeVisible();
 
     const monthLink = page.getByRole("link", { name: /2026年9月/ });
-    await expect(monthLink).toContainText(yen(396643));
+    await expect(monthLink).toContainText(yen(436307)); // 税込
     await monthLink.click();
     await expect(page).toHaveURL(/\/driver\/statements\/2026-09/);
     await expect(page.getByRole("heading", { name: "2026年9月 支払明細", level: 1 })).toBeVisible();
 
     const main = page.locator("main");
-    await expect(main).toContainText("お支払額");
-    await expect(main).toContainText(yen(396643));
+    await expect(main).toContainText("お支払額（税込）");
+    await expect(main).toContainText(yen(436307));
+    await expect(main).toContainText("小計（税抜）");
+    await expect(main).toContainText(yen(39664));
     await expect(main).toContainText("振込予定日：2026年10月31日");
     await expect(main).toContainText("21日 × ¥21,780");
     await expect(main).toContainText(yen(-14999));

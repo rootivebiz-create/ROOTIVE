@@ -34,6 +34,9 @@ export default async function DriversSettingsPage() {
     mgmt_fee: Number(d.mgmt_fee ?? 0),
     rounding_mode: d.rounding_mode,
     memo: d.memo,
+    tax_mode: d.tax_mode,
+    payout_month_offset: d.payout_month_offset,
+    payout_day: d.payout_day,
     overrideCount: overrideCounts.get(d.id) ?? 0,
     recurringCount: recurringCounts.get(d.id) ?? 0,
   }));
@@ -59,6 +62,8 @@ export default async function DriversSettingsPage() {
           default_royalty_rate: Number(company.default_royalty_rate ?? 0),
           default_mgmt_fee: Number(company.default_mgmt_fee ?? 0),
           rounding_mode: company.rounding_mode,
+          payout_month_offset: Number(company.payout_month_offset ?? 1),
+          payout_day: Number(company.payout_day ?? 0),
         }}
         canEdit={editable}
       />

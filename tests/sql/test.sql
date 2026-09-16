@@ -208,6 +208,34 @@ select public.t_assert(public.apply_master_rates('2026-10-01', null, null, array
 select public.t_assert((select count(*) from public.rate_diffs('2026-10-01')) = 0 and (select count(*) from public.rate_diffs('2026-09-01')) = 0, '差分なし');
 select public.t_expect_error($$select public.apply_master_rates('2026-10-15')$$, null, '月初日以外は拒否');
 
+\echo '== 6c. 消費税（税抜の単価 → 明細で税込）・ドライバーごとの課税区分と支払日'
+-- 既定：税率 10%・切り捨て・全員 課税。相曽慧：pay 457,380 − royalty 45,738 − 管理費 14,999 = 396,643 → 消費税 39,664 → 税込 436,307
+select public.t_assert((select tax_rate = 0.10 and tax_rounding = 'floor' from public.companies where id = :'company_a'), '会社の既定は 10%・切り捨て');
+select public.t_assert((select tax_mode = 'taxable' and invoice_reg_no = '' and payout_month_offset is null and payout_day is null from public.drivers where name = '相曽慧'), 'ドライバーの既定は課税・支払日は会社設定');
+select public.t_assert((select tax_base = 396643 and tax = 39664 and payout_incl = 436307 from public.v_driver_month_summary where driver_name = '相曽慧' and month = '2026-09-01'), '相曽慧 税抜 396,643 / 消費税 39,664 / 税込 436,307');
+select public.t_assert((select tax = 0 and payout_incl = 0 from public.v_driver_month_summary where driver_name = '川島幹太' and month = '2026-09-01'), '川島幹太（支払 0）は消費税 0');
+select public.t_assert((select tax = (select sum(tax) from public.v_driver_month_summary where month = '2026-09-01') and payout_incl = payout + tax from public.v_month_summary where month = '2026-09-01'), '会社 × 月の消費税と税込支払額は合計');
+-- 吉田雅一（控除 30,000 と立替 5,000 の調整あり）：調整は税込のまま。税抜小計 = 439,200 − 43,920 − 15,000 = 380,280 → 税 38,028
+select public.t_assert((select tax_base = 380280 and tax = 38028 and payout_incl = payout + 38028 from public.v_driver_month_summary where driver_name = '吉田雅一' and month = '2026-09-01'), '調整は消費税の対象外');
+-- 端数処理：四捨五入に変えると 396,643 × 0.1 = 39,664.3 → 39,664、切り上げ 39,665、税率 8% にすると 31,731.44 → 切り捨て 31,731
+update public.companies set tax_rounding = 'round' where id = :'company_a';
+select public.t_assert((select tax = 39664 from public.v_driver_month_summary where driver_name = '相曽慧' and month = '2026-09-01'), '四捨五入');
+update public.companies set tax_rounding = 'ceil' where id = :'company_a';
+select public.t_assert((select tax = 39665 from public.v_driver_month_summary where driver_name = '相曽慧' and month = '2026-09-01'), '切り上げ');
+update public.companies set tax_rate = 0.08, tax_rounding = 'floor' where id = :'company_a';
+select public.t_assert((select tax = 31731 from public.v_driver_month_summary where driver_name = '相曽慧' and month = '2026-09-01'), '税率 8%');
+update public.companies set tax_rate = 0.10 where id = :'company_a';
+-- 非課税のドライバー
+update public.drivers set tax_mode = 'exempt' where name = '相曽慧';
+select public.t_assert((select tax = 0 and payout_incl = payout from public.v_driver_month_summary where driver_name = '相曽慧' and month = '2026-09-01'), '非課税・免税は消費税 0');
+update public.drivers set tax_mode = 'taxable' where name = '相曽慧';
+select public.t_expect_error($$update public.companies set tax_rate = 1.5$$, null, '税率は 0〜1');
+select public.t_expect_error($$update public.drivers set payout_day = 32 where name = '相曽慧'$$, null, '支払日は 0〜31');
+-- ドライバーごとの支払日
+update public.drivers set payout_month_offset = 2, payout_day = 15 where name = '相曽慧';
+select public.t_assert((select payout_month_offset = 2 and payout_day = 15 from public.drivers where name = '相曽慧'), 'ドライバー個別の支払日');
+update public.drivers set payout_month_offset = null, payout_day = null where name = '相曽慧';
+
 \echo '== 7. 月締め：ガード・権限'
 select public.t_assert((public.close_month('2026-09-01', 'テスト締め'))->'summary'->>'bill' = '2559573.0000' or (public.close_month('2026-09-01', 'テスト締め')) is not null, '締め処理（スナップショット付き）') where false;
 select public.t_assert((public.close_month('2026-09-01', 'テスト締め'))->'summary' is not null, '締め処理（スナップショット付き）');
@@ -224,6 +252,15 @@ select public.t_expect_error($$select public.close_month('2026-09-01')$$, 'ALREA
 select public.t_expect_error($$select public.copy_previous_month('2026-09-01')$$, 'MONTH_CLOSED', '締め済み月への複製は拒否');
 select public.t_expect_error($$select public.apply_master_rates('2026-09-01')$$, 'MONTH_CLOSED', '締め済み月への単価反映は拒否');
 select public.t_assert((select count(*) from public.audit_logs where action = 'close_month') = 1, '締めの監査ログ');
+-- 締めた月の消費税は固定される（会社設定・課税区分を変えても変わらない）
+select public.t_assert((select bool_and(tax_rate = 0.10 and tax_rounding = 'floor' and tax_mode = 'taxable') from public.driver_months where month = '2026-09-01'), '締め時に消費税の設定を driver_months に固定');
+update public.companies set tax_rate = 0.08, tax_rounding = 'round' where id = :'company_a';
+update public.drivers set tax_mode = 'exempt' where name = '相曽慧';
+select public.t_assert((select tax = 39664 and payout_incl = 436307 from public.v_driver_month_summary where driver_name = '相曽慧' and month = '2026-09-01'), '締め済み月の消費税は設定変更の影響を受けない');
+select public.t_assert((select tax_rate = 0.08 from public.v_driver_month_summary where driver_name = '藤田裕介' and month = '2026-10-01'), '未締め月は現在の設定に従う');
+update public.companies set tax_rate = 0.10, tax_rounding = 'floor' where id = :'company_a';
+update public.drivers set tax_mode = 'taxable' where name = '相曽慧';
+select public.t_assert((select count(*) from public.audit_logs where table_name = 'driver_months' and after ? 'tax_rate' and (after->>'tax_rate') is not null and action = 'UPDATE') = 0, '固定の書き込みは監査ログに残さない');
 
 \echo '== 8. admin の権限'
 select public.test_login(:'admin_a');
@@ -304,6 +341,7 @@ select public.t_assert((select email from public.invitations where display_name 
 select public.t_expect_error($$select public.create_invitation('drv@a.test', 'driver', null)$$, null, 'driver 招待にはドライバー ID が必要');
 select public.t_assert((select length(token) >= 32 from public.invitations where display_name = '新人'), 'トークンが生成される');
 select public.reopen_month('2026-09-01');
+select public.t_assert((select bool_and(tax_rate is null and tax_rounding is null and tax_mode is null) from public.driver_months where month = '2026-09-01'), '締め解除で固定を外す（現在の設定に従う）');
 select public.t_assert(not public.is_month_closed(:'company_a', '2026-09-01'), 'owner は締め解除できる');
 select public.t_assert((select count(*) from public.audit_logs where action = 'reopen_month') = 1, '締め解除の監査ログ');
 select public.t_assert(public.t_rowcount($$update public.work_entries set memo = '解除後に編集' where month = '2026-09-01' and qty = 21$$) >= 1, '解除後は編集できる');
@@ -360,6 +398,7 @@ select public.t_expect_error(format($$insert into public.audit_logs (company_id,
 
 \echo '== 15. バックアップ → 全削除 → 復元（冪等）'
 update public.driver_pay_overrides set bill_rate = 23500 where driver_id = :'drv_yosh' and project_item_id = :'item_misato';
+update public.drivers set payout_month_offset = 2, payout_day = 15, invoice_reg_no = 'T1234567890123' where name = '金島幸太';
 create temporary table t_backup as select public.export_backup() as data;
 select public.t_assert((select jsonb_array_length(data->'work_entries') from t_backup) = 23, 'バックアップに稼働行 23 件');
 select public.t_assert((select jsonb_array_length(data->'month_closings') from t_backup) = 1, 'バックアップに締め記録');
@@ -374,6 +413,8 @@ select public.t_assert((select payout from public.v_month_summary where month = 
 select public.t_assert(public.is_month_closed(:'company_a', '2026-09-01'), '締め状態も復元される');
 select public.t_assert((select count(*) from public.adjustments) = 3, '調整も復元される');
 select public.t_assert((select bill_rate from public.driver_pay_overrides where driver_id = :'drv_yosh' and project_item_id = :'item_misato') = 23500 and (select pay_rate from public.driver_pay_overrides where driver_id = :'drv_yosh' and project_item_id = :'item_misato') = 21960, 'ドライバー別単価（受注・支払）も復元される');
+select public.t_assert((select tax_mode = 'taxable' and payout_month_offset = 2 and payout_day = 15 and invoice_reg_no = 'T1234567890123' from public.drivers where name = '金島幸太'), 'ドライバーの課税区分・支払日・登録番号も復元される');
+select public.t_assert((select bool_and(tax_rate = 0.10 and tax_mode = 'taxable') from public.driver_months where month = '2026-09-01'), '締め時に固定した消費税の設定も復元される');
 select public.t_assert((public.import_backup((select data from t_backup)))->>'work_entries' = '23', '同じバックアップの再取り込み');
 select public.t_assert((select count(*) from public.work_entries) = 23 and (select count(*) from public.drivers) = 10 and (select count(*) from public.adjustments) = 3, '再取り込みで重複しない（冪等）');
 select public.t_assert((select count(*) from public.audit_logs where action = 'import_backup') = 2, '復元の監査ログ');

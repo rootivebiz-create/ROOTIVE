@@ -86,12 +86,20 @@ describe("稼働明細 CSV", () => {
 
 describe("支払一覧 CSV", () => {
   it("列並びが §8.1 のとおり", () => {
-    expect([...PAYOUTS_CSV_HEADERS]).toEqual(["稼動月", "ドライバー", "会社売上", "ドライバー売上", "単価差額利益", "ロイヤリティ", "管理費", "調整", "支払額", "会社利益"]);
-    const row: PayoutCsvSource = { month: "2026-09-01", driver_name: "相曽慧", bill: 483525, pay: 457380, margin: 26145, royalty: 45738, mgmt_fee: 14999, adj_pay: 0, payout: 396643, driver_profit: 86882 };
-    expect(payoutToCsvRow(row)).toEqual(["2026-09", "相曽慧", "483525", "457380", "26145", "45738", "14999", "0", "396643", "86882"]);
+    expect([...PAYOUTS_CSV_HEADERS]).toEqual(["稼動月", "ドライバー", "会社売上", "ドライバー売上", "単価差額利益", "ロイヤリティ", "管理費", "調整", "支払額", "消費税", "税込支払額", "会社利益"]);
+    // 支払額は税抜、消費税 = floor(396,643 × 10%) = 39,664、税込支払額 = 436,307（値はビューの列をそのまま出す）
+    const row: PayoutCsvSource = { month: "2026-09-01", driver_name: "相曽慧", bill: 483525, pay: 457380, margin: 26145, royalty: 45738, mgmt_fee: 14999, adj_pay: 0, payout: 396643, tax: 39664, payout_incl: 436307, driver_profit: 86882 };
+    expect(payoutToCsvRow(row)).toEqual(["2026-09", "相曽慧", "483525", "457380", "26145", "45738", "14999", "0", "396643", "39664", "436307", "86882"]);
+    expect(payoutToCsvRow(row).length).toBe(PAYOUTS_CSV_HEADERS.length);
     const lines = payoutsToCsv([row]).slice(1).split("\r\n");
     expect(lines[0]).toBe(PAYOUTS_CSV_HEADERS.join(","));
-    expect(lines[1]).toBe("2026-09,相曽慧,483525,457380,26145,45738,14999,0,396643,86882");
+    expect(lines[1]).toBe("2026-09,相曽慧,483525,457380,26145,45738,14999,0,396643,39664,436307,86882");
+  });
+
+  it("非課税のドライバーは消費税 0・税込支払額 = 支払額。null の列は 0", () => {
+    const row: PayoutCsvSource = { month: "2026-09-01", driver_name: "川島幹太", bill: 184200, pay: 0, margin: 184200, royalty: 0, mgmt_fee: 0, adj_pay: 0, payout: 0, tax: 0, payout_incl: 0, driver_profit: 184200 };
+    expect(payoutToCsvRow(row).slice(8, 11)).toEqual(["0", "0", "0"]);
+    expect(payoutToCsvRow({ ...row, tax: null, payout_incl: null }).slice(9, 11)).toEqual(["0", "0"]);
   });
 
   it("ファイル名の月部分", () => {
@@ -105,7 +113,17 @@ const statement: StatementData = {
   monthLabel: "2026年9月",
   driverId: "d1",
   driverName: "相曽慧",
-  company: { name: "株式会社ROOTIVE", address: "", tel: "", invoice_reg_no: "", statement_note: "", payout_month_offset: 1, payout_day: 0 },
+  company: { name: "株式会社ROOTIVE", address: "", tel: "", invoice_reg_no: "", statement_note: "", payout_month_offset: 1, payout_day: 0, logo_path: null, seal_path: null },
+  driverInvoiceRegNo: "",
+  payoutDateIsDriverSpecific: false,
+  taxMode: "taxable",
+  taxRate: 0.1,
+  taxRounding: "floor",
+  taxRateLabel: "10%",
+  // 税抜小計 = 457,380 − 45,738 − 14,999 = 396,643、消費税 = 切り捨て(396,643 × 10%) = 39,664、税込支払額 = 395,643 + 39,664 = 435,307
+  taxBase: 396643,
+  tax: 39664,
+  payoutIncl: 435307,
   payoutDate: "2026-10-31",
   payoutDateLabel: "2026年10月31日",
   issuedAt: "2026-09-16",
@@ -135,17 +153,30 @@ const statement: StatementData = {
 };
 
 describe("個人明細 CSV", () => {
-  it("種別・案件・内容・数量・単価・金額・備考 の順で、控除はマイナス、支払額の行を除いた金額の合計 ＝ 支払額", () => {
+  it("稼働 → ロイヤリティ → 管理費 → 小計（税抜）→ 消費税 → 調整 → 支払額（税込）の順。控除はマイナスで、小計・支払額が積み上げと一致する", () => {
     const rows = statementToCsvRows(statement);
     expect(rows[0]).toEqual([...STATEMENT_CSV_HEADERS]);
     expect(rows[1]).toEqual(["稼働", "三郷Amazon", "標準", "21", "21780", "457380", ""]);
     expect(rows[2]).toEqual(["ロイヤリティ", "", "率 10.0%", "", "", "-45738", ""]);
     expect(rows[3]).toEqual(["管理費", "", "", "", "", "-14999", ""]);
-    expect(rows[4]).toEqual(["調整", "", "リース代", "", "", "-3000", ""]);
-    expect(rows[5]).toEqual(["調整", "", "立替精算", "", "", "2000", ""]);
-    expect(rows[6]).toEqual(["支払額", "", "", "", "", "395643", "振込予定日 2026年10月31日"]);
-    const sum = rows.slice(1, -1).reduce((acc, r) => acc + Number(r[5]), 0);
-    expect(sum).toBe(395643);
+    expect(rows[4]).toEqual(["小計（税抜）", "", "", "", "", "396643", ""]);
+    expect(rows[5]).toEqual(["消費税（10%）", "", "", "", "", "39664", ""]);
+    expect(rows[6]).toEqual(["調整", "", "リース代", "", "", "-3000", ""]);
+    expect(rows[7]).toEqual(["調整", "", "立替精算", "", "", "2000", ""]);
+    expect(rows[8]).toEqual(["支払額（税込）", "", "", "", "", "435307", "振込予定日 2026年10月31日"]);
+    expect(rows.length).toBe(9);
+    // 稼働 ＋ ロイヤリティ ＋ 管理費 ＝ 小計（税抜）
+    expect(rows.slice(1, 4).reduce((acc, r) => acc + Number(r[5]), 0)).toBe(396643);
+    // 小計（税抜）＋ 消費税 ＋ 調整 ＝ 支払額（税込）
+    expect(rows.slice(4, 8).reduce((acc, r) => acc + Number(r[5]), 0)).toBe(435307);
+  });
+
+  it("非課税のドライバーは消費税の行を出さず、支払額の行は「支払額」", () => {
+    const rows = statementToCsvRows({ ...statement, taxMode: "exempt", tax: 0, payoutIncl: 395643 });
+    expect(rows.some((r) => String(r[0]).startsWith("消費税"))).toBe(false);
+    expect(rows[4]).toEqual(["小計（税抜）", "", "", "", "", "396643", ""]);
+    expect(rows[7]).toEqual(["支払額", "", "", "", "", "395643", "振込予定日 2026年10月31日"]);
+    expect(rows.length).toBe(8);
   });
 
   it("会社売上・利益・社内メモは含めない", () => {
@@ -156,10 +187,11 @@ describe("個人明細 CSV", () => {
     expect(csv).not.toContain("会社利益");
   });
 
-  it("ロイヤリティ率を隠せる（ドライバー向け）。管理費 0 の月は管理費の行を出さない", () => {
+  it("ロイヤリティ率を隠せる（ドライバー向け）。管理費 0 の月は管理費の行を出さない。ヘッダーは変わらない", () => {
     const rows = statementToCsvRows({ ...statement, mgmtFee: 0 }, { showRoyaltyRate: false });
     expect(rows[2][2]).toBe("");
     expect(rows.some((r) => r[0] === "管理費")).toBe(false);
+    expect([...STATEMENT_CSV_HEADERS]).toEqual(["種別", "案件", "内容", "数量", "単価", "金額", "備考"]);
   });
 });
 

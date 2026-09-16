@@ -102,6 +102,7 @@ export default async function StatementPage({
                 adjustments={s.adjustments.map((a) => ({ ...a, recurringId: recurringIdByAdjustment.get(a.id) ?? null }))}
                 entries={entriesForCalc}
                 recurring={recurring}
+                tax={{ mode: s.taxMode, rate: s.taxRate, rounding: s.taxRounding }}
               />
             )}
             <CopyStatementButton text={text} />

@@ -13,7 +13,9 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { updateCompanyAction } from "@/lib/actions/company";
 import { ROUNDING_LABELS, ROUNDING_MODES, type RoundingMode } from "@/lib/calc/types";
-import { parseNumberInput } from "@/lib/calc/parse";
+import { parseNumberInput, parsePercentInput } from "@/lib/calc/parse";
+import { calcTax } from "@/lib/calc/tax";
+import { yen } from "@/lib/format";
 import { formatDateJa, formatMonthJa, payoutDate } from "@/lib/month";
 import {
   PAYOUT_MONTH_OFFSETS,
@@ -33,6 +35,11 @@ function FieldError({ messages }: { messages?: string[] }) {
 
 const PAYOUT_DAYS = Array.from({ length: 32 }, (_, i) => i);
 
+/** 消費税額の端数処理は「丸めない」を選べない（税額は円単位） */
+const TAX_ROUNDING_MODES = ROUNDING_MODES.filter((m) => m !== "none");
+/** 消費税の計算例に使う税抜小計 */
+const TAX_EXAMPLE_BASE = 100_000;
+
 export function CompanyForm({ initial, currentMonth }: { initial: CompanyFormInput; currentMonth: string }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -44,6 +51,9 @@ export function CompanyForm({ initial, currentMonth }: { initial: CompanyFormInp
   const offsetNum = parseNumberInput(f.payout_month_offset);
   const dayNum = parseNumberInput(f.payout_day);
   const preview = offsetNum != null && dayNum != null && Number.isInteger(offsetNum) && Number.isInteger(dayNum) ? payoutDate(currentMonth, offsetNum, dayNum) : null;
+
+  const taxRateNum = parsePercentInput(f.tax_rate);
+  const taxExample = taxRateNum != null && taxRateNum >= 0 && taxRateNum <= 1 ? calcTax(TAX_EXAMPLE_BASE, { mode: "taxable", rate: taxRateNum, rounding: f.tax_rounding }) : null;
 
   const submit = () =>
     startTransition(async () => {
@@ -170,6 +180,39 @@ export function CompanyForm({ initial, currentMonth }: { initial: CompanyFormInp
           <p className="text-sm text-muted-foreground">
             例: {formatMonthJa(currentMonth)}分 → <span className="num font-medium text-foreground">{preview ? formatDateJa(preview) : "—"}</span>
             （その月に無い日付は末日になります）
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>消費税</CardTitle>
+          <CardDescription>
+            単価・管理費・ロイヤリティはすべて税抜で入力します。支払明細では税抜小計（稼働小計 − ロイヤリティ − 管理費）に消費税率を掛けて税込のお支払額を計算します。調整（固定控除・立替など）は税込の金額として扱い、消費税を計算しません。ドライバーごとの課税区分（課税／非課税・免税）はドライバー設定で変更できます。締めた月の税率・端数処理は締めた時点の値で固定されます。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="company-tax-rate">消費税率（%）</Label>
+              <NumberInput id="company-tax-rate" value={f.tax_rate} onChange={(e) => set({ tax_rate: e.target.value })} placeholder="10" disabled={pending} />
+              <FieldError messages={errors.tax_rate} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="company-tax-rounding">消費税額の端数処理</Label>
+              <Select id="company-tax-rounding" value={f.tax_rounding} onChange={(e) => set({ tax_rounding: e.target.value as RoundingMode })} disabled={pending}>
+                {TAX_ROUNDING_MODES.map((m) => (
+                  <option key={m} value={m}>
+                    {ROUNDING_LABELS[m]}
+                  </option>
+                ))}
+              </Select>
+              <FieldError messages={errors.tax_rounding} />
+            </div>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            例: 税抜小計 {yen(TAX_EXAMPLE_BASE)} → 消費税 <span className="num font-medium text-foreground">{taxExample != null ? yen(taxExample) : "—"}</span> → 税込{" "}
+            <span className="num font-medium text-foreground">{taxExample != null ? yen(TAX_EXAMPLE_BASE + taxExample) : "—"}</span>
           </p>
         </CardContent>
       </Card>

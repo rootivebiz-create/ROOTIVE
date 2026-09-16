@@ -3,7 +3,9 @@
  * 前提：初期データがあること（seedInitialData は冪等）。テスト用に作るマスタは事前に消しておく
  */
 import { test, expect } from "@playwright/test";
-import { E2E, adminSql, driverIdByName, listRow, loginViaMagicLink, projectItemIdByName, readState, requireState, saveScreenshot, seedInitialData, setMonthClosed, toast, yen } from "./helpers";
+import fs from "node:fs";
+import path from "node:path";
+import { E2E, ROOT_DIR, adminSql, driverIdByName, listRow, loginViaMagicLink, projectItemIdByName, readState, requireState, saveScreenshot, seedInitialData, setMonthClosed, toast, yen } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -44,7 +46,7 @@ test.describe("設定", () => {
     await page.getByLabel("名前（必須）").fill(DRIVER_NAME);
     await page.getByLabel("かな").fill("てすと たろう");
     // ロイヤリティ率：会社設定に従う → 個別に 10%
-    const follow = page.getByRole("checkbox", { name: /会社設定に従う/ });
+    const follow = page.getByRole("checkbox", { name: /^会社設定に従う/ });
     await expect(follow).toBeChecked();
     await follow.click();
     await expect(follow).not.toBeChecked();
@@ -257,6 +259,93 @@ test.describe("設定", () => {
       expect(text).toMatch(/^相曽慧,三郷Amazon,標準,日給,23025,21780,1245,標準,標準,,$/m);
     } finally {
       cleanup();
+    }
+  });
+  test("会社設定：消費税（税率 8%・四捨五入）を保存すると明細の消費税が変わる → 10%・切り捨てに戻す", async ({ page }) => {
+    await setMonthClosed("2026-09", false);
+    const driverId = driverIdByName("相曽慧");
+    const { companyId } = requireState();
+    const restore = () => adminSql(`update public.companies set tax_rate = 0.10, tax_rounding = 'floor' where id = '${companyId}'`);
+    restore();
+    try {
+      await page.goto("/settings/company");
+      await expect(page.getByRole("heading", { name: "消費税" })).toBeVisible();
+      await expect(page.getByLabel("消費税率（%）")).toHaveValue("10");
+      await page.getByLabel("消費税率（%）").fill("8");
+      await page.getByLabel("消費税額の端数処理").selectOption("round");
+      await page.getByRole("button", { name: "保存", exact: true }).first().click();
+      await expect(toast(page, "会社設定を保存しました")).toBeVisible();
+      // 相曽慧：税抜小計 396,643 × 8% = 31,731.44 → 四捨五入 31,731 → 税込 428,374
+      await page.goto(`/payouts/${driverId}/statement?m=2026-09`);
+      await expect(page.getByText("消費税（8%）")).toBeVisible();
+      await expect(page.getByText(yen(31731)).first()).toBeVisible();
+      await expect(page.locator("section").filter({ hasText: "お支払額" }).first()).toContainText(yen(428374));
+    } finally {
+      restore();
+    }
+  });
+
+  test("会社設定：ロゴをアップロード → /api/company-asset/logo が画像を返す → 印刷用ページに表示 → 削除", async ({ page }) => {
+    const { companyId } = requireState();
+    const driverId = driverIdByName("相曽慧");
+    adminSql(`update public.companies set logo_path = null, seal_path = null where id = '${companyId}'`);
+    await page.goto("/settings/company");
+    await expect(page.getByRole("heading", { name: "ロゴ・認印" })).toBeVisible();
+    expect((await page.request.get("/api/company-asset/logo")).status()).toBe(404);
+
+    await page.getByLabel("ロゴの画像ファイル").setInputFiles(path.join(ROOT_DIR, "public/icons/icon-192.png"));
+    await page.getByRole("button", { name: "ロゴをアップロード" }).click();
+    await expect(toast(page, "画像を保存しました")).toBeVisible();
+    await expect(page.getByRole("img", { name: "ロゴ" })).toBeVisible();
+
+    const res = await page.request.get("/api/company-asset/logo");
+    expect(res.status()).toBe(200);
+    expect(res.headers()["content-type"]).toContain("image/png");
+    expect((await res.body()).length).toBe(fs.statSync(path.join(ROOT_DIR, "public/icons/icon-192.png")).size); // アップロードした画像そのもの
+    expect(adminSql(`select logo_path from public.companies where id = '${companyId}'`)).toMatch(new RegExp(`^${companyId}/logo-.*\\.png$`));
+
+    // 印刷用ページと PDF にロゴが入る
+    await page.goto(`/payouts/${driverId}/print?m=2026-09`);
+    await expect(page.locator("article img[src^='/api/company-asset/logo']")).toBeVisible();
+    const pdf = await page.request.get(`/api/export/statement.pdf?m=2026-09&driver=${driverId}`);
+    expect(pdf.status()).toBe(200);
+    expect((await pdf.body()).length).toBeGreaterThan(10 * 1024);
+
+    // 削除
+    await page.goto("/settings/company");
+    await page.getByRole("button", { name: "ロゴを削除" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByRole("button", { name: "削除する" }).click();
+    await expect(toast(page, "画像を削除しました")).toBeVisible();
+    expect((await page.request.get("/api/company-asset/logo")).status()).toBe(404);
+    expect(adminSql(`select coalesce(logo_path, '') from public.companies where id = '${companyId}'`)).toBe("");
+  });
+
+  test("ドライバー設定：黒岩亜夢莉の振込予定日を翌々月 15 日にすると明細の振込予定日が変わる → 会社設定に戻す", async ({ page }) => {
+    await setMonthClosed("2026-09", false);
+    const driverId = driverIdByName("黒岩亜夢莉");
+    const restore = () => adminSql(`update public.drivers set payout_month_offset = null, payout_day = null, tax_mode = 'taxable' where id = '${driverId}'`);
+    restore();
+    try {
+      await page.goto(`/settings/drivers/${driverId}`);
+      await expect(page.getByRole("heading", { name: "消費税・支払日" })).toBeVisible();
+      await expect(page.getByLabel("課税区分")).toHaveValue("taxable");
+      const follow = page.getByRole("checkbox", { name: /振込予定日は会社設定に従う/ });
+      await expect(follow).toBeChecked();
+      await follow.click();
+      await page.getByLabel("支払月").selectOption("2");
+      await page.getByLabel("支払日", { exact: true }).selectOption("15");
+      await page.getByRole("button", { name: "保存する" }).click();
+      await expect(toast(page, /保存しました/)).toBeVisible();
+      expect(adminSql(`select payout_month_offset || '/' || payout_day from public.drivers where id = '${driverId}'`)).toBe("2/15");
+
+      await page.goto(`/payouts/${driverId}/statement?m=2026-09`);
+      await expect(page.locator("section").filter({ hasText: "お支払額" }).first()).toContainText("振込予定日：2026年11月15日");
+      // 他のドライバーは会社設定（翌月末）のまま
+      await page.goto(`/payouts/${driverIdByName("相曽慧")}/statement?m=2026-09`);
+      await expect(page.locator("section").filter({ hasText: "お支払額" }).first()).toContainText("振込予定日：2026年10月31日");
+    } finally {
+      restore();
     }
   });
 });

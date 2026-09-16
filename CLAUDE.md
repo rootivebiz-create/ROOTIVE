@@ -19,7 +19,7 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
 - `lib/month.ts` 稼動月ユーティリティ、`lib/format.ts` 表示書式（円・%・数量）
 - `components/ui/*` UI 部品（shadcn/ui 相当）、`components/layout/*` シェル・ナビ・月セレクタ
 - `app/(app)/*` スタッフ画面、`app/driver/*` ドライバーポータル、`app/(auth)/*` ログイン・招待、`app/api/export/*` 出力
-- `supabase/migrations/*.sql` スキーマ（0001 テーブル、0002 認証・RLS、0003 ビュー、0004 RPC、0005 ポータル・初期データ、0006 Storage・権限、0007 ドライバー別単価（bill_rate 上書き・rate_diffs・apply_master_rates））
+- `supabase/migrations/*.sql` スキーマ（0001 テーブル、0002 認証・RLS、0003 ビュー、0004 RPC、0005 ポータル・初期データ、0006 Storage・権限、0007 ドライバー別単価（bill_rate 上書き・rate_diffs・apply_master_rates）、0008 消費税・ロゴと認印・ドライバーごとの支払日）
 - `tests/` Vitest（`*.test.ts`）、`tests/sql/`（psql）、`tests/e2e/`（Playwright ＋ `supabase-lite` テストサーバー）
 
 ## 必ず守る規約
@@ -40,6 +40,9 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
 - 稼働行：bill = 受注単価 × 数量、pay = 支払単価 × 数量、margin = bill − pay、royalty = ROUND(pay × 率)、行の利益 = margin + royalty
 - ドライバー × 月：管理費は「数量 > 0 の行が 1 件以上ある月」だけ計上。payout = Σpay − Σroyalty − 管理費 + Σ調整。driver_profit = Σmargin + Σroyalty + 管理費 + Σ(利益計上の調整の −amount)
 - 端数処理の優先順：稼働行 ← ドライバー設定 ← 会社設定（既定「丸めない」）
+- **消費税（0008）**：単価・管理費・ロイヤリティはすべて税抜で入力する。tax_base = Σpay − Σroyalty − 管理費（調整は税込のまま対象外）、tax = 端数処理(tax_base × companies.tax_rate)（companies.tax_rounding、既定 切り捨て）、payout_incl = payout + tax。drivers.tax_mode が exempt なら tax = 0。締めた月は driver_months.tax_* に固定（close_month が書き、reopen_month が外す）。明細の「お支払額」は payout_incl。ダッシュボード・会社利益は税抜のまま
+- 振込予定日：drivers.payout_month_offset / payout_day（両方あり）→ companies の設定（`resolvePayoutDate`）
+- 会社のロゴ・認印：Storage `company-assets/<company_id>/…`（非公開）。書き込みはサービスロール（`lib/actions/company-assets.ts`）、表示は `/api/company-asset/<kind>`、PDF は `loadStatementAssets()`
 - 川島幹太はオーナー本人：支払単価 0・率 0%・管理費 0 が正常（警告を出さない）
 - ロール：owner（すべて）／admin（登録・編集・月締め・出力）／viewer（閲覧・CSV のみ）／driver（自分の締め済み月の明細のみ）
 

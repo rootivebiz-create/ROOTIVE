@@ -43,7 +43,7 @@ describe("ダッシュボードの純関数（所見の正規化・推移・警�
     });
     const driver = (over: Record<string, unknown>) => ({
       company_id: "c", month: "2026-09-01", driver_id: "d", driver_name: "D", driver_sort_order: 0, driver_is_active: true, driver_default_mgmt_fee: 15000, driver_month_id: "dm", memo: "",
-      entry_count: 1, active_entry_count: 1, bill: 0, pay: 0, margin: 0, royalty: 0, mgmt_fee_setting: 15000, mgmt_fee: 15000, adjustment_count: 0, adj_pay: 0, adj_profit: 0, payout: 0, driver_profit: 0, is_closed: false, ...over,
+      entry_count: 1, active_entry_count: 1, bill: 0, pay: 0, margin: 0, royalty: 0, mgmt_fee_setting: 15000, mgmt_fee: 15000, adjustment_count: 0, adj_pay: 0, adj_profit: 0, payout: 0, driver_profit: 0, is_closed: false, tax_mode: "taxable" as const, tax_rate: 0.1, tax_rounding: "floor" as const, tax_base: 0, tax: 0, payout_incl: 0, ...over,
     });
     const w = buildDashboardWarnings({
       month: "2026-09", isClosed: false, isFuture: false, entryCount: 3,

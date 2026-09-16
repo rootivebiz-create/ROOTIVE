@@ -103,7 +103,7 @@ export { ROLE_LABELS };
 
 /** INSERT／DELETE の要約に出す主要項目（テーブル別） */
 export const MAIN_KEYS: Record<string, string[]> = {
-  drivers: ["name", "royalty_rate", "mgmt_fee", "rounding_mode", "is_active"],
+  drivers: ["name", "royalty_rate", "mgmt_fee", "rounding_mode", "is_active", "tax_mode"],
   projects: ["name", "client_name", "is_active"],
   project_items: ["project_id", "name", "unit", "bill_rate", "pay_rate", "is_active"],
   driver_pay_overrides: ["driver_id", "project_item_id", "bill_rate", "pay_rate"],
@@ -112,7 +112,7 @@ export const MAIN_KEYS: Record<string, string[]> = {
   driver_months: ["month", "driver_id", "mgmt_fee", "memo"],
   adjustments: ["label", "amount", "count_as_profit"],
   month_closings: ["month", "status", "closed_at", "note"],
-  companies: ["name", "rounding_mode", "default_royalty_rate", "default_mgmt_fee"],
+  companies: ["name", "rounding_mode", "default_royalty_rate", "default_mgmt_fee", "tax_rate", "tax_rounding"],
   profiles: ["email", "display_name", "role", "driver_id", "is_active"],
   invitations: ["email", "role", "display_name", "driver_id", "expires_at"],
 };
@@ -121,7 +121,7 @@ export const MAIN_KEYS: Record<string, string[]> = {
 export const HIDDEN_KEYS = new Set(["updated_at", "created_at", "id", "company_id"]);
 
 export const MONEY_KEYS = new Set(["bill_rate", "pay_rate", "mgmt_fee", "amount", "default_mgmt_fee", "bill", "pay", "margin", "royalty", "adj_pay", "adj_profit", "payout", "profit"]);
-export const RATE_KEYS = new Set(["royalty_rate", "default_royalty_rate", "profit_rate"]);
+export const RATE_KEYS = new Set(["royalty_rate", "default_royalty_rate", "profit_rate", "tax_rate"]);
 export const QTY_KEYS = new Set(["qty"]);
 export const USER_KEYS = new Set(["created_by", "updated_by", "closed_by", "reopened_by", "invited_by"]);
 

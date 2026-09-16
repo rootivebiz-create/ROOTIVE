@@ -44,10 +44,11 @@ test.describe("支払明細", () => {
     await loginViaMagicLink(page, E2E.users.owner.email, "/payouts?m=2026-09");
   });
 
-  test("一覧（相曽慧 支払 ¥396,643）→ 明細ページ（お支払額・振込予定日・会社側の内訳）", async ({ page }) => {
+  test("一覧（相曽慧 税抜 ¥396,643／税込 ¥436,307）→ 明細ページ（お支払額（税込）・振込予定日・会社側の内訳）", async ({ page }) => {
     await expect(page.getByRole("heading", { name: "支払明細" })).toBeVisible();
     await expect(page.getByText("2026年9月 のドライバー別の支払額と会社利益")).toBeVisible();
     await expect(listRow(page, "相曽慧")).toContainText(yen(396643));
+    await expect(listRow(page, "相曽慧")).toContainText(yen(436307)); // 税込（消費税 39,664）
     await expect(listRow(page, /合計/)).toContainText(yen(1907083));
 
     await page.getByRole("link", { name: /相曽慧/ }).first().click();
@@ -61,8 +62,12 @@ test.describe("支払明細", () => {
     await expect(page.getByText(yen(-14999))).toBeVisible();
     await expect(page.getByText(/ドライバー標準 ¥15,000 と異なります/)).toBeVisible();
 
+    // 税抜小計 396,643 → 消費税 39,664（切り捨て）→ お支払額（税込）436,307
+    await expect(page.getByText("小計（税抜）")).toBeVisible();
+    await expect(page.getByText(yen(39664)).first()).toBeVisible();
     const payout = payoutSection(page);
-    await expect(payout).toContainText(yen(396643));
+    await expect(payout).toContainText("お支払額（税込）");
+    await expect(payout).toContainText(yen(436307));
     await expect(payout).toContainText("振込予定日：2026年10月31日");
 
     const breakdown = page.locator("div.rounded-lg").filter({ has: page.getByRole("heading", { name: "会社側の内訳" }) });
@@ -72,7 +77,7 @@ test.describe("支払明細", () => {
     await expect(breakdown).toContainText("18.0%"); // 利益率
   });
 
-  test("「管理費・調整を編集」：管理費 15,000・リース代 −30,000（利益計上）→ お支払額 ¥366,642", async ({ page }, testInfo) => {
+  test("「管理費・調整を編集」：管理費 15,000・リース代 −30,000（利益計上）→ 税抜 ¥366,642／税込 ¥406,306", async ({ page }, testInfo) => {
     await page.goto(statementUrl());
     await page.getByRole("button", { name: "管理費・調整を編集" }).click();
     const dialog = page.getByRole("dialog");
@@ -88,12 +93,13 @@ test.describe("支払明細", () => {
     await dialog.getByLabel("調整 1 の金額").fill("30000");
     await expect(dialog.getByRole("checkbox", { name: "会社利益に計上する" })).toBeChecked();
 
-    // プレビュー：457,380 − 45,738 − 15,000 − 30,000
-    await expect(dialog.getByText(yen(366642))).toBeVisible();
+    // プレビュー：税抜 457,380 − 45,738 − 15,000 − 30,000 = 366,642、消費税 (396,642 × 10%) = 39,664、税込 406,306
+    await expect(dialog.getByText(yen(396642))).toBeVisible(); // 小計（税抜）
+    await expect(dialog.getByText(yen(406306))).toBeVisible(); // お支払額（税込）
     await dialog.getByRole("button", { name: "保存", exact: true }).click();
     await expect(toast(page, "保存しました")).toBeVisible();
 
-    await expect(payoutSection(page)).toContainText(yen(366642));
+    await expect(payoutSection(page)).toContainText(yen(406306));
     await expect(page.getByText("リース代").first()).toBeVisible();
     await expect(page.getByText(/ドライバー標準 ¥15,000 と異なります/)).toHaveCount(0);
     const breakdown = page.locator("div.rounded-lg").filter({ has: page.getByRole("heading", { name: "会社側の内訳" }) });
@@ -114,8 +120,10 @@ test.describe("支払明細", () => {
     expect(text).toContain(`稼働小計：${yen(457380)}`);
     expect(text).toContain(`・ロイヤリティ（10.0%）：${yen(-45738)}`);
     expect(text).toContain(`・管理費：${yen(-15000)}`);
+    expect(text).toContain(`小計（税抜）：${yen(396642)}`);
+    expect(text).toContain(`消費税（10%）：${yen(39664)}`);
     expect(text).toContain(`・リース代：${yen(-30000)}`);
-    expect(text).toContain(`■ お支払額：${yen(366642)}`);
+    expect(text).toContain(`■ お支払額（税込）：${yen(406306)}`);
     expect(text).toContain("振込予定日：2026年10月31日");
     expect(text).not.toContain("会社利益");
   });
@@ -130,7 +138,9 @@ test.describe("支払明細", () => {
     expect(csvText).toContain("種別,案件,内容,数量,単価,金額,備考");
     expect(csvText).toMatch(/^稼働,三郷Amazon,標準,21,21780,457380,/m);
     expect(csvText).toMatch(/^調整,,リース代,,,-30000,/m);
-    expect(csvText).toMatch(/^支払額,,,,,366642,振込予定日 2026年10月31日/m);
+    expect(csvText).toMatch(/^小計（税抜）,,,,,396642,/m);
+    expect(csvText).toMatch(/^消費税（10%）,,,,,39664,/m);
+    expect(csvText).toMatch(/^支払額（税込）,,,,,406306,振込予定日 2026年10月31日/m);
     expect(csvText).not.toContain("会社利益");
 
     const pdf = await page.request.get(`/api/export/statement.pdf?m=2026-09&driver=${driverId}`);
@@ -146,7 +156,9 @@ test.describe("支払明細", () => {
     const sheet = page.locator("article");
     await expect(sheet).toContainText("相曽慧 様");
     await expect(sheet).toContainText(E2E.companyName);
-    await expect(sheet).toContainText(yen(366642));
+    await expect(sheet).toContainText("お支払額（税込）");
+    await expect(sheet).toContainText(yen(406306));
+    await expect(sheet).toContainText(yen(39664));
     await expect(sheet).toContainText("振込予定日：2026年10月31日");
     await expect(sheet).not.toContainText("会社利益");
   });

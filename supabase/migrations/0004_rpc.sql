@@ -266,19 +266,25 @@ begin
       address = coalesce(c->>'address', address),
       tel = coalesce(c->>'tel', tel),
       driver_portal_show_royalty = coalesce((c->>'driver_portal_show_royalty')::boolean, driver_portal_show_royalty),
-      yayoi_accounts = coalesce(c->'yayoi_accounts', yayoi_accounts)
+      yayoi_accounts = coalesce(c->'yayoi_accounts', yayoi_accounts),
+      -- 0008 で追加：消費税（ロゴ・認印の画像はバックアップに含まれないためパスは復元しない）
+      tax_rate = coalesce((c->>'tax_rate')::numeric, tax_rate),
+      tax_rounding = coalesce((c->>'tax_rounding')::public.rounding_mode, tax_rounding)
     where id = cid;
   end if;
 
-  insert into public.drivers (id, company_id, name, kana, is_active, royalty_rate, mgmt_fee, rounding_mode, phone, email, bank_info, memo, sort_order)
+  insert into public.drivers (id, company_id, name, kana, is_active, royalty_rate, mgmt_fee, rounding_mode, phone, email, bank_info, memo, sort_order,
+                              tax_mode, invoice_reg_no, payout_month_offset, payout_day)
   select (x->>'id')::uuid, cid, x->>'name', coalesce(x->>'kana',''), coalesce((x->>'is_active')::boolean, true),
          (x->>'royalty_rate')::numeric, coalesce((x->>'mgmt_fee')::numeric, 0), (x->>'rounding_mode')::public.rounding_mode,
-         coalesce(x->>'phone',''), coalesce(x->>'email',''), coalesce(x->>'bank_info',''), coalesce(x->>'memo',''), coalesce((x->>'sort_order')::integer, 0)
+         coalesce(x->>'phone',''), coalesce(x->>'email',''), coalesce(x->>'bank_info',''), coalesce(x->>'memo',''), coalesce((x->>'sort_order')::integer, 0),
+         coalesce((x->>'tax_mode')::public.tax_mode, 'taxable'), coalesce(x->>'invoice_reg_no',''), (x->>'payout_month_offset')::integer, (x->>'payout_day')::integer
     from jsonb_array_elements(coalesce(p_data->'drivers','[]')) x
   on conflict (id) do update set
     name = excluded.name, kana = excluded.kana, is_active = excluded.is_active, royalty_rate = excluded.royalty_rate,
     mgmt_fee = excluded.mgmt_fee, rounding_mode = excluded.rounding_mode, phone = excluded.phone, email = excluded.email,
-    bank_info = excluded.bank_info, memo = excluded.memo, sort_order = excluded.sort_order;
+    bank_info = excluded.bank_info, memo = excluded.memo, sort_order = excluded.sort_order,
+    tax_mode = excluded.tax_mode, invoice_reg_no = excluded.invoice_reg_no, payout_month_offset = excluded.payout_month_offset, payout_day = excluded.payout_day;
   get diagnostics n = row_count; counts := counts || jsonb_build_object('drivers', n);
 
   insert into public.projects (id, company_id, name, client_name, is_active, memo, sort_order)
@@ -314,11 +320,13 @@ begin
     is_active = excluded.is_active, sort_order = excluded.sort_order;
   get diagnostics n = row_count; counts := counts || jsonb_build_object('driver_recurring_adjustments', n);
 
-  insert into public.driver_months (id, company_id, month, driver_id, mgmt_fee, memo)
-  select (x->>'id')::uuid, cid, (x->>'month')::date, (x->>'driver_id')::uuid, coalesce((x->>'mgmt_fee')::numeric, 0), coalesce(x->>'memo','')
+  insert into public.driver_months (id, company_id, month, driver_id, mgmt_fee, memo, tax_rate, tax_rounding, tax_mode)
+  select (x->>'id')::uuid, cid, (x->>'month')::date, (x->>'driver_id')::uuid, coalesce((x->>'mgmt_fee')::numeric, 0), coalesce(x->>'memo',''),
+         (x->>'tax_rate')::numeric, (x->>'tax_rounding')::public.rounding_mode, (x->>'tax_mode')::public.tax_mode
     from jsonb_array_elements(coalesce(p_data->'driver_months','[]')) x
   on conflict (id) do update set
-    month = excluded.month, driver_id = excluded.driver_id, mgmt_fee = excluded.mgmt_fee, memo = excluded.memo;
+    month = excluded.month, driver_id = excluded.driver_id, mgmt_fee = excluded.mgmt_fee, memo = excluded.memo,
+    tax_rate = excluded.tax_rate, tax_rounding = excluded.tax_rounding, tax_mode = excluded.tax_mode;
   get diagnostics n = row_count; counts := counts || jsonb_build_object('driver_months', n);
 
   insert into public.adjustments (id, company_id, driver_month_id, label, amount, count_as_profit, recurring_id, sort_order)

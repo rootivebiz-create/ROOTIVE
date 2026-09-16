@@ -1,12 +1,14 @@
 import { calcEntry } from "./entry";
 import { fromS4, sumMoney, toS4 } from "./money";
+import { calcTax } from "./tax";
 import type { CompanyMonthCalc, DriverMonthCalc, DriverMonthInput } from "./types";
 
 /**
  * ドライバー × 月 の計算（§2.2）
  * mgmt_fee は数量 > 0 の稼働行が 1 件以上ある場合のみ計上
- * payout = Σpay − Σroyalty − mgmt_fee + adj_pay
+ * payout = Σpay − Σroyalty − mgmt_fee + adj_pay（税抜）
  * driver_profit = Σmargin + Σroyalty + mgmt_fee + adj_profit
+ * 消費税（0008）：tax_base = Σpay − Σroyalty − mgmt_fee（調整は税込のまま）、tax = 端数処理(tax_base × 税率)、payout_incl = payout + tax
  */
 export function calcDriverMonth(input: DriverMonthInput): DriverMonthCalc {
   const rows = input.entries.map(calcEntry);
@@ -22,6 +24,9 @@ export function calcDriverMonth(input: DriverMonthInput): DriverMonthCalc {
   const payout = fromS4(toS4(pay) - toS4(royalty) - toS4(mgmtFee) + toS4(adjPay));
   const driverProfit = fromS4(toS4(margin) + toS4(royalty) + toS4(mgmtFee) + toS4(adjProfit));
   const profitRate = bill !== 0 ? driverProfit / bill : 0;
+  const taxBase = fromS4(toS4(pay) - toS4(royalty) - toS4(mgmtFee));
+  const tax = input.tax ? calcTax(taxBase, input.tax) : 0;
+  const payoutIncl = fromS4(toS4(payout) + toS4(tax));
   return {
     entryCount: input.entries.length,
     activeEntryCount,
@@ -36,6 +41,9 @@ export function calcDriverMonth(input: DriverMonthInput): DriverMonthCalc {
     payout,
     driverProfit,
     profitRate,
+    taxBase,
+    tax,
+    payoutIncl,
   };
 }
 
@@ -56,5 +64,7 @@ export function calcCompanyMonth(drivers: DriverMonthCalc[]): CompanyMonthCalc {
     payout: sumMoney(drivers.map((d) => d.payout)),
     profit,
     profitRate: bill !== 0 ? profit / bill : 0,
+    tax: sumMoney(drivers.map((d) => d.tax)),
+    payoutIncl: sumMoney(drivers.map((d) => d.payoutIncl)),
   };
 }

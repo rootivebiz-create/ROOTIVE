@@ -179,6 +179,10 @@ export function convertPrototype(json: unknown, companyId: string): { backup: Ba
       bank_info: "",
       memo: dr.memo ?? "",
       sort_order: dr.order != null ? Number(dr.order) : idx + 1,
+      tax_mode: "taxable",
+      invoice_reg_no: "",
+      payout_month_offset: null,
+      payout_day: null,
     });
   });
 
@@ -244,7 +248,7 @@ export function convertPrototype(json: unknown, companyId: string): { backup: Ba
     driverIdMap.set(protoId, id);
     driverProtoById.set(id, protoId);
     const nm = uniqueName(name?.trim() || `不明なドライバー ${protoId.slice(0, 6)}`, usedDriverNames, warnings, "ドライバー");
-    drivers.push({ id, company_id: companyId, name: nm, kana: "", is_active: false, royalty_rate: null, mgmt_fee: 0, rounding_mode: null, phone: "", email: "", bank_info: "", memo: "試作データの参照切れから自動作成", sort_order: 999 });
+    drivers.push({ id, company_id: companyId, name: nm, kana: "", is_active: false, royalty_rate: null, mgmt_fee: 0, rounding_mode: null, phone: "", email: "", bank_info: "", memo: "試作データの参照切れから自動作成", sort_order: 999, tax_mode: "taxable", invoice_reg_no: "", payout_month_offset: null, payout_day: null });
     warnings.push(`稼働行が参照するドライバー（${protoId}）がマスタに無いため「${nm}」を停止中として作成しました`);
     return id;
   };
@@ -318,7 +322,7 @@ export function convertPrototype(json: unknown, companyId: string): { backup: Ba
     dmSeen.add(dmKey);
     const id = deterministicId("driver_month", `${dm.month}_${dm.driverId}`);
     const dmDriver = drivers.find((x) => x.id === driverId);
-    driverMonths.push({ id, company_id: companyId, month: monthToDate(dm.month), driver_id: driverId, mgmt_fee: dm.mgmtFee ?? dmDriver?.mgmt_fee ?? app.defMgmt ?? 0, memo: dm.memo ?? "" });
+    driverMonths.push({ id, company_id: companyId, month: monthToDate(dm.month), driver_id: driverId, mgmt_fee: dm.mgmtFee ?? dmDriver?.mgmt_fee ?? app.defMgmt ?? 0, memo: dm.memo ?? "", tax_rate: null, tax_rounding: null, tax_mode: null });
     (dm.adjustments ?? []).forEach((a, i) => {
       adjustments.push({
         id: deterministicId("adjustment", `${dm.month}_${dm.driverId}:${i}`),
@@ -347,6 +351,9 @@ export function convertPrototype(json: unknown, companyId: string): { backup: Ba
       driver_id: driverId,
       mgmt_fee: driver?.mgmt_fee ?? 0,
       memo: "",
+      tax_rate: null,
+      tax_rounding: null,
+      tax_mode: null,
     });
   }
 

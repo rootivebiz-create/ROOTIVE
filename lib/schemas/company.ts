@@ -42,6 +42,10 @@ export interface CompanyFormInput {
   tel: string;
   invoice_reg_no: string;
   driver_portal_show_royalty: boolean;
+  /** 消費税率（パーセント表記 "10"） */
+  tax_rate: string;
+  /** 消費税額の端数処理 */
+  tax_rounding: RoundingMode;
   yayoi_accounts: YayoiAccountsFormInput;
 }
 
@@ -97,6 +101,8 @@ export const companyInputSchema = z.object({
     .max(30, "30 文字以内で入力してください")
     .refine((s) => s === "" || /^T?\d{13}$/.test(s.replace(/[-\s]/g, "")), "適格請求書登録番号は T ＋ 13 桁の数字で入力してください"),
   driver_portal_show_royalty: z.boolean(),
+  tax_rate: percentToRateSchema,
+  tax_rounding: roundingModeSchema,
   yayoi_accounts: yayoiAccountsSchema,
 });
 

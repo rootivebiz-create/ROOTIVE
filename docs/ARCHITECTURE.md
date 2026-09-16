@@ -104,13 +104,13 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 | `companies` | name, rounding_mode, default_royalty_rate, default_mgmt_fee, payout_month_offset(0..3), payout_day(0=末日), statement_note, invoice_reg_no, address, tel, driver_portal_show_royalty, yayoi_accounts(jsonb) | 会社設定 |
 | `profiles` | id(=auth.users.id), company_id, email, display_name, role, driver_id, is_active | auth.users と 1:1。driver ロールは driver_id 必須 |
 | `invitations` | email, role, driver_id, display_name, token(unique), expires_at(既定 7 日), accepted_at, cancelled_at, link_used_at, invited_by | 招待。token は 24 バイト乱数 hex |
-| `drivers` | name(会社内 unique), kana, is_active, royalty_rate(null=会社既定), mgmt_fee, rounding_mode(null=会社既定), phone, email, bank_info, memo, sort_order | |
+| `drivers` | name(会社内 unique), kana, is_active, royalty_rate(null=会社既定), mgmt_fee, rounding_mode(null=会社既定), phone, email, bank_info, memo, sort_order, tax_mode(taxable/exempt), invoice_reg_no, payout_month_offset(null=会社既定), payout_day(null=会社既定) | 課税区分・登録番号・支払日は `0008` |
 | `projects` | name(unique), client_name, is_active, memo, sort_order | 案件 |
 | `project_items` | project_id(restrict), name(既定「標準」, project 内 unique), unit(day/piece), bill_rate, pay_rate, is_active, sort_order | 内容（単価区分） |
 | `driver_pay_overrides` | pk(driver_id, project_item_id), bill_rate(null=標準), pay_rate(null=標準)、どちらか必須 | ドライバー別単価（案件内容ごとの受注単価・支払単価の上書き。`0007` で bill_rate 追加） |
 | `driver_recurring_adjustments` | driver_id, label, amount, count_as_profit, is_active, sort_order | 固定控除（毎月自動複写） |
 | `work_entries` | month, driver_id(restrict), project_item_id(restrict), qty≥0, bill_rate, pay_rate, royalty_rate(0..1), rounding_mode, memo, created_by, updated_by | 稼働行。index (company_id,month) (driver_id,month) (project_item_id,month) |
-| `driver_months` | month, driver_id, mgmt_fee, memo, unique(company_id,month,driver_id) | ドライバー × 月 |
+| `driver_months` | month, driver_id, mgmt_fee, memo, tax_rate/tax_rounding/tax_mode(締め時に固定。未締めは null), unique(company_id,month,driver_id) | ドライバー × 月 |
 | `adjustments` | driver_month_id(cascade), label, amount(符号付き), count_as_profit, recurring_id, sort_order | 調整 |
 | `month_closings` | pk(company_id,month), status(open/closed), closed_at/by, reopened_at/by, snapshot(jsonb), backup_path, note | 月締め |
 | `audit_logs` | actor_id, action, table_name, record_id, before, after, created_at | 監査。書き込みはトリガーのみ |
@@ -126,6 +126,8 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 | `v_project_summary` | 案件内容 × 月（entry_count, driver_count, qty_total, bill, pay, margin, royalty, entry_profit, profit_rate） |
 | `v_month_list` | データがある月の一覧（月セレクタ・月締め画面用） |
 
+消費税（`0008`）：`v_driver_month_summary` は `tax_mode`（driver_months に固定値があればそれ、無ければ drivers）、`tax_rate` / `tax_rounding`（同じく companies）、`tax_base = pay − royalty − mgmt_fee`、`tax = round_by_mode(tax_base × tax_rate, tax_rounding)`（exempt は 0）、`payout_incl = payout + tax` を返す。`v_month_summary` は `tax` と `payout_incl` の合計を持つ。調整（adj_pay）は税込の金額として消費税の対象外。
+
 ### RPC（`0004_rpc.sql`、`0005_portal_seed.sql`、`0007_driver_rates.sql`）
 
 | 関数 | 権限 | 内容 |
@@ -136,16 +138,17 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 | `copy_previous_month(month)` | admin+ | 前月の稼働行を数量 0 で複製（現在のマスタから単価を再取得。停止中は除外。冪等） |
 | `bulk_set_entries(month, project_item_id, rows)` | admin+ | 一括入力（既存は数量更新、0 は削除、新規はマスタから作成） |
 | `month_snapshot(month)` | staff | 締め時スナップショット JSON（summary / drivers / entries / adjustments / projects） |
-| `close_month(month, note)` | admin+ | month_closings を closed に upsert しスナップショット保存。監査記録 |
+| `close_month(month, note)` | admin+ | その月の driver_months に消費税の設定（税率・端数処理・課税区分）を固定 → month_closings を closed に upsert しスナップショット保存。監査記録 |
 | `set_month_backup_path(month, path)` | admin+ | Storage へ保存したバックアップのパスを記録 |
-| `reopen_month(month)` | owner | closed → open。監査記録 |
+| `reopen_month(month)` | owner | closed → open、固定した消費税の設定を外す。監査記録 |
 | `export_backup()` | admin+ | 全テーブルのバックアップ JSON（§8.4） |
 | `import_backup(jsonb)` | owner | 復元・取り込み。ID 一致は上書き、他社 ID と衝突すれば拒否。締めガード・行単位監査を一時回避し、まとめて 1 件の監査を記録 |
 | `reset_company_data(会社名)` | owner | データ全削除（会社設定・ユーザー・招待は残す。driver ユーザーは無効な viewer に） |
 | `seed_initial_data(with_entries)` | admin+ | §8.6 の初期データ（ドライバーが 0 件の会社のみ） |
 | `create_invitation(email, role, driver_id, display_name)` | owner | 招待作成（同メールの未受諾招待は取消） |
 | `apply_invitation(user_id, email)` | security definer | 招待を照合して profiles を作成／更新（auth トリガーと招待リンクログインの両方から使用） |
-| `driver_portal_months()` / `driver_portal_statement(month)` | driver | 本人の締め済み月一覧・明細（会社売上・利益は含めない。率の表示は会社設定に従う） |
+| `driver_portal_months()` / `driver_portal_statement(month)` | driver | 本人の締め済み月一覧・明細（会社売上・利益は含めない。率の表示は会社設定に従う。税込支払額・消費税・支払日の個別設定・ロゴの有無を含む） |
+| `round_by_mode(value, mode)` | 全員 | SQL 側の端数処理（`lib/calc` の applyRounding と同じ規則） |
 | `current_company_id()` / `current_app_role()` / `current_driver_id()` / `is_owner()` / `is_admin()` / `is_staff()` / `is_driver_user()` / `is_month_closed()` | ヘルパー | security definer で profiles を参照（is_active 必須） |
 
 ### トリガー（`0001` / `0002`）
@@ -271,7 +274,8 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 | 単価表 CSV | `app/api/export/rates.csv` + `lib/exports/rates-csv.ts` | 稼働中ドライバー × 稼働中案件内容の実効単価（受注・支払・差額・出所「個別／標準」・個別値） |
 | 全ドライバー明細 PDF（ZIP） | `app/api/export/statements.zip` + `lib/exports/zip.ts` | その月に明細があるドライバー全員の PDF を無圧縮 ZIP にまとめる（依存なしの自前 ZIP 生成）。`vercel.json` で maxDuration 60 秒 |
 | 弥生仕訳 CSV | `app/api/export/yayoi.csv` + `lib/yayoi/{accounts,build}.ts` | Shift_JIS（iconv-lite）、25 列、ヘッダー無し。売上：売掛金／売上高、外注費：外注費／未払金、ロイヤリティ・管理費・利益計上の調整：未払金／雑収入（補助科目）、利益計上なしの調整：立替金。科目・税区分・ドライバー分割・伝票日付は `companies.yayoi_accounts` で変更可 |
-| PDF 支払明細 | `app/api/export/statement.pdf` + `lib/pdf/statement.tsx` | A4 縦、Noto Sans JP（`public/fonts`）、日本語の禁則処理付き折り返し。会社利益は載せない。`vercel.json` で maxDuration 30 秒 |
+| PDF 支払明細 | `app/api/export/statement.pdf` + `lib/pdf/statement.tsx` | A4 縦、Noto Sans JP（`public/fonts`）、日本語の禁則処理付き折り返し。会社利益は載せない。税抜小計・消費税・お支払額（税込）、ロゴ・認印（`lib/company-assets.ts` の `loadStatementAssets`）を印字。`vercel.json` で maxDuration 30 秒 |
+| 会社のロゴ・認印 | `app/api/company-asset/[kind]` + `lib/company-assets.ts` + `lib/actions/company-assets.ts` | Storage 非公開バケット `company-assets/<company_id>/<kind>-<timestamp>.<ext>`。書き込みはサービスロール（owner の Server Action、PNG/JPEG 2MB まで、先頭バイトで判定）、読み出しはログイン中の自社ユーザー。印刷用ページ・ポータルは `<img src="/api/company-asset/logo">` |
 | 印刷用ページ | `/payouts/[driverId]/print` | ブラウザ印刷 |
 | LINE 用テキスト | `lib/statement/statementToText()` | 会社利益を含まない |
 | バックアップ JSON | `app/api/export/backup.json` → `export_backup()` | §8.4 の形式 |
@@ -295,7 +299,7 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 |---|---|---|
 | 単体（Vitest） | `npm test` | `lib/calc`（§2.6 の全ケース、誤差 0.01 円以内、端数処理 4 種、恒等式）、zod スキーマ、`lib/migrate` の変換と決定的 ID |
 | SQL 結合（psql） | `npm run test:sql` | ローカル PostgreSQL に `tests/sql/auth_stub.sql`（auth.uid() 等のスタブ）+ 全マイグレーションを適用し `tests/sql/test.sql` を実行。ビューの計算が §2.6 と一致、RLS（viewer / driver の拒否）、締めガード、招待制、復元・全削除 |
-| E2E（Playwright） | `npm run test:e2e` | Supabase 互換のテストサーバー（`supabase-lite`：PostgreSQL + GoTrue 相当 + PostgREST 相当の軽量実装）を自動起動し、iPhone 13 と Desktop Chrome の 2 プロジェクトで主要導線（招待ログイン → ダッシュボード → 稼働追加・複製・一括入力 → 支払明細・PDF → 設定 → 月締め・解除 → 閲覧者／ドライバーの権限 → 移行 JSON の取り込み）をブラウザで確認。8 spec・32 シナリオ × 2 プロジェクト = **64 件**。スクリーンショットを `docs/screenshots/` に保存。詳細は [docs/E2E.md](E2E.md) |
+| E2E（Playwright） | `npm run test:e2e` | Supabase 互換のテストサーバー（`supabase-lite`：PostgreSQL + GoTrue 相当 + PostgREST 相当の軽量実装）を自動起動し、iPhone 13 と Desktop Chrome の 2 プロジェクトで主要導線（招待ログイン → ダッシュボード → 稼働追加・複製・一括入力 → 支払明細・PDF → 設定 → 月締め・解除 → 閲覧者／ドライバーの権限 → 移行 JSON の取り込み）をブラウザで確認。8 spec・35 シナリオ × 2 プロジェクト = **70 件**。スクリーンショットを `docs/screenshots/` に保存。詳細は [docs/E2E.md](E2E.md) |
 | 静的 | `npm run typecheck` / `npm run lint` / `npm run build` | 型・Lint・本番ビルド |
 | まとめ | `npm run check` | typecheck + lint + test + build:sql |
 

@@ -126,6 +126,10 @@ export type Database = {
           yayoi_accounts: Json
           created_at: string
           updated_at: string
+          tax_rate: number
+          tax_rounding: Database["public"]["Enums"]["rounding_mode"]
+          logo_path: string | null
+          seal_path: string | null
         }
         Insert: {
           id?: string
@@ -143,6 +147,10 @@ export type Database = {
           yayoi_accounts?: Json
           created_at?: string
           updated_at?: string
+          tax_rate?: number
+          tax_rounding?: Database["public"]["Enums"]["rounding_mode"]
+          logo_path?: string | null
+          seal_path?: string | null
         }
         Update: {
           id?: string
@@ -160,6 +168,10 @@ export type Database = {
           yayoi_accounts?: Json
           created_at?: string
           updated_at?: string
+          tax_rate?: number
+          tax_rounding?: Database["public"]["Enums"]["rounding_mode"]
+          logo_path?: string | null
+          seal_path?: string | null
         }
         Relationships: []
       }
@@ -173,6 +185,9 @@ export type Database = {
           memo: string
           created_at: string
           updated_at: string
+          tax_rate: number | null
+          tax_rounding: Database["public"]["Enums"]["rounding_mode"] | null
+          tax_mode: Database["public"]["Enums"]["tax_mode"] | null
         }
         Insert: {
           id?: string
@@ -183,6 +198,9 @@ export type Database = {
           memo?: string
           created_at?: string
           updated_at?: string
+          tax_rate?: number | null
+          tax_rounding?: Database["public"]["Enums"]["rounding_mode"] | null
+          tax_mode?: Database["public"]["Enums"]["tax_mode"] | null
         }
         Update: {
           id?: string
@@ -193,6 +211,9 @@ export type Database = {
           memo?: string
           created_at?: string
           updated_at?: string
+          tax_rate?: number | null
+          tax_rounding?: Database["public"]["Enums"]["rounding_mode"] | null
+          tax_mode?: Database["public"]["Enums"]["tax_mode"] | null
         }
         Relationships: []
       }
@@ -282,6 +303,10 @@ export type Database = {
           sort_order: number
           created_at: string
           updated_at: string
+          tax_mode: Database["public"]["Enums"]["tax_mode"]
+          invoice_reg_no: string
+          payout_month_offset: number | null
+          payout_day: number | null
         }
         Insert: {
           id?: string
@@ -299,6 +324,10 @@ export type Database = {
           sort_order?: number
           created_at?: string
           updated_at?: string
+          tax_mode?: Database["public"]["Enums"]["tax_mode"]
+          invoice_reg_no?: string
+          payout_month_offset?: number | null
+          payout_day?: number | null
         }
         Update: {
           id?: string
@@ -316,6 +345,10 @@ export type Database = {
           sort_order?: number
           created_at?: string
           updated_at?: string
+          tax_mode?: Database["public"]["Enums"]["tax_mode"]
+          invoice_reg_no?: string
+          payout_month_offset?: number | null
+          payout_day?: number | null
         }
         Relationships: []
       }
@@ -607,6 +640,12 @@ export type Database = {
           payout: number | null
           driver_profit: number | null
           is_closed: boolean | null
+          tax_mode: Database["public"]["Enums"]["tax_mode"] | null
+          tax_rate: number | null
+          tax_rounding: Database["public"]["Enums"]["rounding_mode"] | null
+          tax_base: number | null
+          tax: number | null
+          payout_incl: number | null
         }
         Relationships: []
       }
@@ -650,6 +689,8 @@ export type Database = {
           reopened_at: string | null
           backup_path: string | null
           closing_note: string | null
+          tax: number | null
+          payout_incl: number | null
         }
         Relationships: []
       }
@@ -782,6 +823,8 @@ export type Database = {
           mgmt_fee: number
           adj_pay: number
           closed_at: string
+          tax: number
+          payout_incl: number
         }[]
       }
       driver_portal_statement: {
@@ -895,6 +938,13 @@ export type Database = {
         }
         Returns: Json
       }
+      round_by_mode: {
+        Args: {
+          p_value: number
+          p_mode: Database["public"]["Enums"]["rounding_mode"]
+        }
+        Returns: number
+      }
       seed_initial_data: {
         Args: {
           p_with_entries?: boolean
@@ -945,6 +995,7 @@ export type Database = {
       item_unit: "day" | "piece"
       month_status: "open" | "closed"
       rounding_mode: "none" | "floor" | "round" | "ceil"
+      tax_mode: "taxable" | "exempt"
       user_role: "owner" | "admin" | "viewer" | "driver"
     }
     CompositeTypes: Record<string, never>

@@ -7,6 +7,9 @@ import {
   parseNumberInput,
   parsePercentInput,
   resolveEntryDefaults,
+  calcTax,
+  calcTaxBreakdown,
+  taxRateLabel,
   resolveRoundingMode,
   roundDisplay,
   sumMoney,
@@ -342,5 +345,63 @@ describe("稼動月ユーティリティ", () => {
     // 2026-09-30T23:00Z は日本では 10 月 1 日
     expect(currentMonthJST(new Date("2026-09-30T23:00:00Z"))).toBe("2026-10");
     expect(currentMonthJST(new Date("2026-09-30T14:59:00Z"))).toBe("2026-09");
+  });
+});
+
+describe("消費税（0008）：単価は税抜、明細で税込にする", () => {
+  const tax = { mode: "taxable" as const, rate: 0.1, rounding: "floor" as const };
+  it("相曽慧：税抜 396,643 → 消費税 39,664（切り捨て）→ 税込 436,307", () => {
+    const m = calcDriverMonth({
+      entries: [{ qty: 21, billRate: 23025, payRate: 21780, royaltyRate: 0.1, roundingMode: "none" }],
+      mgmtFee: 14999,
+      adjustments: [],
+      tax,
+    });
+    expect(m.payout).toBe(396643);
+    expect(m.taxBase).toBe(396643);
+    expect(m.tax).toBe(39664);
+    expect(m.payoutIncl).toBe(436307);
+  });
+  it("調整（リース代 −30,000・立替 +5,000）は税込のまま：消費税の対象に含めない", () => {
+    const m = calcDriverMonth({
+      entries: [{ qty: 20, billRate: 23025, payRate: 21960, royaltyRate: 0.1, roundingMode: "none" }],
+      mgmtFee: 15000,
+      adjustments: [
+        { amount: -30000, countAsProfit: true },
+        { amount: 5000, countAsProfit: false },
+      ],
+      tax,
+    });
+    expect(m.taxBase).toBe(380280);
+    expect(m.tax).toBe(38028);
+    expect(m.payout).toBe(355280);
+    expect(m.payoutIncl).toBe(393308);
+  });
+  it("端数処理と税率：四捨五入・切り上げ・8%、非課税は 0、tax 未指定は 0", () => {
+    expect(calcTax(396643, { ...tax, rounding: "round" })).toBe(39664);
+    expect(calcTax(396643, { ...tax, rounding: "ceil" })).toBe(39665);
+    expect(calcTax(396643, { ...tax, rate: 0.08 })).toBe(31731);
+    expect(calcTax(396643, { ...tax, rounding: "none" })).toBeCloseTo(39664.3, 6);
+    expect(calcTax(396643, { ...tax, mode: "exempt" })).toBe(0);
+    expect(calcTax(396643, null)).toBe(0);
+    expect(calcTax(-1000, tax)).toBe(-100);
+    const m = calcDriverMonth({ entries: [{ qty: 1, billRate: 100, payRate: 90, royaltyRate: 0, roundingMode: "none" }], mgmtFee: 0, adjustments: [] });
+    expect(m.tax).toBe(0);
+    expect(m.payoutIncl).toBe(m.payout);
+  });
+  it("calcTaxBreakdown と税率の表示", () => {
+    const b = calcTaxBreakdown({ pay: 457380, royalty: 45738, mgmtFee: 14999, payout: 366643 }, tax);
+    expect(b).toEqual({ taxBase: 396643, tax: 39664, payoutIncl: 406307 });
+    expect(taxRateLabel(0.1)).toBe("10%");
+    expect(taxRateLabel(0.08)).toBe("8%");
+    expect(taxRateLabel(0.075)).toBe("7.5%");
+  });
+  it("会社 × 月の合計にも消費税と税込支払額が入る", () => {
+    const a = calcDriverMonth({ entries: [{ qty: 21, billRate: 23025, payRate: 21780, royaltyRate: 0.1, roundingMode: "none" }], mgmtFee: 14999, adjustments: [], tax });
+    const b = calcDriverMonth({ entries: [{ qty: 8, billRate: 23025, payRate: 0, royaltyRate: 0, roundingMode: "none" }], mgmtFee: 0, adjustments: [], tax });
+    const c = calcCompanyMonth([a, b]);
+    expect(c.tax).toBe(39664);
+    expect(c.payoutIncl).toBe(436307);
+    expect(c.payout).toBe(396643);
   });
 });

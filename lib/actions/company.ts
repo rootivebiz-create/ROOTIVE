@@ -27,6 +27,8 @@ export async function updateCompanyAction(input: CompanyFormInput): Promise<Acti
         tel: parsed.tel,
         invoice_reg_no: parsed.invoice_reg_no,
         driver_portal_show_royalty: parsed.driver_portal_show_royalty,
+        tax_rate: parsed.tax_rate,
+        tax_rounding: parsed.tax_rounding,
         yayoi_accounts: yayoi,
       })
       .eq("id", company.id)

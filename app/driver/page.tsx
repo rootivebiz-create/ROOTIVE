@@ -17,7 +17,8 @@ export default async function DriverHomePage() {
   if (error) throw error;
   const rows = (data ?? [])
     .filter((r) => r.month)
-    .map((r) => ({ month: dateToMonth(r.month), status: r.status, payout: r.payout == null ? null : Number(r.payout), closedAt: r.closed_at ?? null }));
+    // お支払額は税込（payout_incl）。締め前の月は null
+    .map((r) => ({ month: dateToMonth(r.month), status: r.status, payoutIncl: r.payout_incl == null ? null : Number(r.payout_incl), closedAt: r.closed_at ?? null }));
 
   return (
     <div>
@@ -40,7 +41,7 @@ export default async function DriverHomePage() {
                   <div className="flex items-center gap-1">
                     <div className="text-right">
                       <p className="text-[11px] text-muted-foreground">お支払額</p>
-                      {r.status === "closed" ? <Money value={r.payout} className="text-lg font-semibold" /> : <Badge variant="outline">集計中</Badge>}
+                      {r.status === "closed" ? <Money value={r.payoutIncl} className="text-lg font-semibold" /> : <Badge variant="outline">集計中</Badge>}
                     </div>
                     <ChevronRight className="h-5 w-5 text-muted-foreground" />
                   </div>

@@ -53,6 +53,11 @@ export async function saveDriverAction(input: DriverFormInput): Promise<ActionRe
       email: parsed.email,
       bank_info: parsed.bank_info,
       memo: parsed.memo,
+      tax_mode: parsed.tax_mode,
+      invoice_reg_no: parsed.invoice_reg_no,
+      // 支払日は両方揃って個別、片方でも空なら会社設定に従う
+      payout_month_offset: parsed.payout_month_offset != null && parsed.payout_day != null ? parsed.payout_month_offset : null,
+      payout_day: parsed.payout_month_offset != null && parsed.payout_day != null ? parsed.payout_day : null,
     };
 
     let driverId: string;

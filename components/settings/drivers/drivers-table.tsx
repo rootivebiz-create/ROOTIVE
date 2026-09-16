@@ -12,9 +12,10 @@ import { Empty } from "@/components/ui/empty";
 import { Money } from "@/components/ui/money";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { reorderDriversAction } from "@/lib/actions/drivers";
-import { ROUNDING_LABELS, type RoundingMode } from "@/lib/calc/types";
+import { ROUNDING_LABELS, type RoundingMode, type TaxMode } from "@/lib/calc/types";
 import { pct } from "@/lib/format";
 import { useMonth } from "@/lib/hooks/use-month";
+import { PAYOUT_MONTH_OFFSET_LABELS } from "@/lib/schemas/company";
 import { cn } from "@/lib/utils";
 
 export interface DriverListRow {
@@ -26,6 +27,10 @@ export interface DriverListRow {
   mgmt_fee: number;
   rounding_mode: RoundingMode | null;
   memo: string;
+  tax_mode: TaxMode;
+  /** 振込予定日の個別設定（null = 会社設定に従う） */
+  payout_month_offset: number | null;
+  payout_day: number | null;
   overrideCount: number;
   recurringCount: number;
 }
@@ -35,6 +40,10 @@ export interface CompanyDefaults {
   default_royalty_rate: number;
   default_mgmt_fee: number;
   rounding_mode: RoundingMode;
+  /** 振込予定日：稼動月からのずれ（月） */
+  payout_month_offset: number;
+  /** 振込予定日：日（0 = 末日） */
+  payout_day: number;
 }
 
 export function royaltyLabel(rate: number | null, defaults: CompanyDefaults): string {
@@ -43,6 +52,17 @@ export function royaltyLabel(rate: number | null, defaults: CompanyDefaults): st
 
 export function roundingLabel(mode: RoundingMode | null, defaults: CompanyDefaults): string {
   return mode == null ? `会社設定（${ROUNDING_LABELS[defaults.rounding_mode]}）` : ROUNDING_LABELS[mode];
+}
+
+/** 振込予定日のルールを短く（例: 翌月末日／翌々月15日） */
+export function payoutRuleLabel(offset: number, day: number): string {
+  const monthLabel = (PAYOUT_MONTH_OFFSET_LABELS as Record<number, string | undefined>)[offset] ?? `${offset} か月後`;
+  return `${monthLabel}${day <= 0 ? "末日" : `${day}日`}`;
+}
+
+/** 個別の振込予定日があればそのラベル、会社設定に従うなら null */
+export function driverPayoutRuleLabel(row: Pick<DriverListRow, "payout_month_offset" | "payout_day">): string | null {
+  return row.payout_month_offset != null && row.payout_day != null ? payoutRuleLabel(row.payout_month_offset, row.payout_day) : null;
 }
 
 export function DriversTable({ rows, defaults, canEdit }: { rows: DriverListRow[]; defaults: CompanyDefaults; canEdit: boolean }) {
@@ -96,6 +116,7 @@ export function DriversTable({ rows, defaults, canEdit }: { rows: DriverListRow[
     ) : null;
 
   const statusBadge = (r: DriverListRow) => (r.is_active ? <Badge variant="success">稼働中</Badge> : <Badge variant="secondary">停止中</Badge>);
+  const exemptBadge = (r: DriverListRow) => (r.tax_mode === "exempt" ? <Badge variant="secondary">非課税</Badge> : null);
 
   return (
     <>
@@ -111,6 +132,7 @@ export function DriversTable({ rows, defaults, canEdit }: { rows: DriverListRow[
                   </Link>
                   {r.kana && <span className="text-xs text-muted-foreground">{r.kana}</span>}
                   {statusBadge(r)}
+                  {exemptBadge(r)}
                 </div>
                 <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-sm">
                   <dt className="text-muted-foreground">ロイヤリティ率</dt>
@@ -121,6 +143,12 @@ export function DriversTable({ rows, defaults, canEdit }: { rows: DriverListRow[
                   </dd>
                   <dt className="text-muted-foreground">端数処理</dt>
                   <dd className="text-right">{roundingLabel(r.rounding_mode, defaults)}</dd>
+                  {driverPayoutRuleLabel(r) && (
+                    <>
+                      <dt className="text-muted-foreground">支払日</dt>
+                      <dd className="text-right">{driverPayoutRuleLabel(r)}</dd>
+                    </>
+                  )}
                   <dt className="text-muted-foreground">個別単価</dt>
                   <dd className="text-right">{r.overrideCount > 0 ? `${r.overrideCount} 件` : "—"}</dd>
                   <dt className="text-muted-foreground">固定控除</dt>
@@ -160,6 +188,8 @@ export function DriversTable({ rows, defaults, canEdit }: { rows: DriverListRow[
                     {r.name}
                   </Link>
                   {r.kana && <span className="ml-2 text-xs text-muted-foreground">{r.kana}</span>}
+                  {r.tax_mode === "exempt" && <span className="ml-2 align-middle">{exemptBadge(r)}</span>}
+                  {driverPayoutRuleLabel(r) && <p className="mt-0.5 text-xs text-muted-foreground">支払日 {driverPayoutRuleLabel(r)}</p>}
                 </TableCell>
                 <TableCell className="num">{royaltyLabel(r.royalty_rate, defaults)}</TableCell>
                 <TableCell className="text-right">

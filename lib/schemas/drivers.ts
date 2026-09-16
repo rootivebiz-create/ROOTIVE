@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { memoSchema, moneySchema, nameSchema, percentToRateSchema, roundingModeSchema, signedMoneySchema, uuidSchema } from "./common";
-import type { RoundingMode } from "@/lib/calc/types";
+import { parseNumberInput } from "@/lib/calc/parse";
+import { TAX_MODES, type RoundingMode, type TaxMode } from "@/lib/calc/types";
 
 /**
  * ドライバー設定フォームの入力（クライアント → Server Action）。
@@ -22,6 +23,13 @@ export interface DriverFormInput {
   email: string;
   bank_info: string;
   memo: string;
+  /** 課税区分（taxable = 消費税を上乗せ／exempt = 上乗せしない） */
+  tax_mode: TaxMode;
+  /** ドライバーの適格請求書登録番号（任意。T ＋ 13 桁） */
+  invoice_reg_no: string;
+  /** 振込予定日：会社設定に従うなら null。個別なら "0"〜"3"（月）と "0"（末日）〜"31"（日） */
+  payout_month_offset: string | null;
+  payout_day: string | null;
   /** 案件内容ごとのドライバー別単価。受注・支払の両方が空欄なら標準（override 行を削除） */
   overrides: DriverOverrideFormInput[];
   /** 固定控除。id が null なら新規。送られてこなかった既存 id は削除 */
@@ -68,6 +76,18 @@ export const driverRecurringSchema = z.object({
   is_active: z.boolean(),
 });
 
+/** null／空欄は「会社設定に従う」、それ以外は整数として検証 */
+const optionalIntSchema = (min: number, max: number, label: string) =>
+  z.preprocess(
+    (v) => (v == null || (typeof v === "string" && v.trim() === "") ? null : typeof v === "string" ? parseNumberInput(v) : v),
+    z
+      .number({ error: `${label}を選択してください` })
+      .int(`${label}は整数で指定してください`)
+      .min(min, `${label}は ${min} 以上で指定してください`)
+      .max(max, `${label}は ${max} 以下で指定してください`)
+      .nullable(),
+  );
+
 export const driverInputSchema = z.object({
   id: uuidSchema.nullable(),
   name: nameSchema,
@@ -84,6 +104,14 @@ export const driverInputSchema = z.object({
     .refine((s) => s === "" || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s), "メールアドレスの形式が正しくありません"),
   bank_info: z.string().trim().max(500, "500 文字以内で入力してください"),
   memo: memoSchema,
+  tax_mode: z.enum(TAX_MODES, { error: "課税区分を選択してください" }),
+  invoice_reg_no: z
+    .string()
+    .trim()
+    .max(30, "30 文字以内で入力してください")
+    .refine((s) => s === "" || /^T?\d{13}$/.test(s.replace(/[-\s]/g, "")), "適格請求書登録番号は T ＋ 13 桁の数字で入力してください"),
+  payout_month_offset: optionalIntSchema(0, 3, "振込予定日（月）"),
+  payout_day: optionalIntSchema(0, 31, "振込予定日（日）"),
   overrides: z.array(driverOverrideSchema).max(500, "個別単価が多すぎます"),
   recurring: z.array(driverRecurringSchema).max(50, "固定控除が多すぎます"),
 });
