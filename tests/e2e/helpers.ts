@@ -9,9 +9,13 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "../../lib/db/database.types";
+import { yen } from "../../lib/format";
+
+/** 画面と同じ書式の金額文字列（"¥2,559,573"）。アサーションで使う */
+export { yen };
 
 export type E2ERole = "owner" | "admin" | "viewer";
 
@@ -189,4 +193,106 @@ export async function logout(page: Page): Promise<void> {
   await page.getByRole("button", { name: "ユーザーメニュー" }).click();
   await page.getByRole("menuitem", { name: "ログアウト" }).click();
   await page.waitForURL(/\/login/, { timeout: 30_000 });
+}
+
+// ---------------------------------------------------------------------------
+// データ状態の準備（各 spec が自分の前提を揃えるために使う）
+// ---------------------------------------------------------------------------
+
+/** owner としてログイン済みの supabase-js クライアント */
+async function ownerClient(): Promise<SupabaseClient<Database>> {
+  return sessionFor(E2E.users.owner.email);
+}
+
+/**
+ * 会社のデータを全削除して §8.6 の初期データ（10 名・7 案件・2026-09 の 10 行）を投入し直す。
+ * reset_company_data は締め済み月やドライバー利用者の有無に関わらず実行できる（owner の RPC）
+ */
+export async function resetToSeed(withEntries = true): Promise<void> {
+  const owner = await ownerClient();
+  const reset = await owner.rpc("reset_company_data", { p_company_name: E2E.companyName });
+  if (reset.error) throw new Error(`reset_company_data に失敗: ${reset.error.message}`);
+  const seed = await owner.rpc("seed_initial_data", { p_with_entries: withEntries });
+  if (seed.error) throw new Error(`seed_initial_data に失敗: ${seed.error.message}`);
+}
+
+const q = (s: string) => `'${s.replace(/'/g, "''")}'`;
+
+/** DB 上の月締め状態（month は "YYYY-MM"） */
+export function monthIsClosed(month: string): boolean {
+  const state = requireState();
+  return adminSql(`select status from public.month_closings where company_id = ${q(state.companyId)} and month = ${q(`${month}-01`)}`) === "closed";
+}
+
+/** 月締めの状態を owner の RPC（close_month / reopen_month）で揃える。既にその状態なら何もしない */
+export async function setMonthClosed(month: string, closed: boolean): Promise<void> {
+  if (monthIsClosed(month) === closed) return;
+  const owner = await ownerClient();
+  const res = closed ? await owner.rpc("close_month", { p_month: `${month}-01`, p_note: "E2E" }) : await owner.rpc("reopen_month", { p_month: `${month}-01` });
+  if (res.error) throw new Error(`${closed ? "close_month" : "reopen_month"} に失敗: ${res.error.message}`);
+}
+
+/** ドライバー名から ID を引く（自社のみ） */
+export function driverIdByName(name: string): string {
+  const state = requireState();
+  const id = adminSql(`select id from public.drivers where company_id = ${q(state.companyId)} and name = ${q(name)}`);
+  if (!/^[0-9a-f-]{36}$/.test(id)) throw new Error(`ドライバーが見つかりません: ${name}`);
+  return id;
+}
+
+/** 案件名・内容名から案件内容の ID を引く */
+export function projectItemIdByName(projectName: string, itemName = "標準"): string {
+  const state = requireState();
+  const id = adminSql(
+    `select i.id from public.project_items i join public.projects p on p.id = i.project_id
+      where p.company_id = ${q(state.companyId)} and p.name = ${q(projectName)} and i.name = ${q(itemName)}`,
+  );
+  if (!/^[0-9a-f-]{36}$/.test(id)) throw new Error(`案件内容が見つかりません: ${projectName}／${itemName}`);
+  return id;
+}
+
+/** 稼動月の稼働行の件数（DB） */
+export function countEntries(month: string): number {
+  const state = requireState();
+  return Number(adminSql(`select count(*) from public.work_entries where company_id = ${q(state.companyId)} and month = ${q(`${month}-01`)}`));
+}
+
+// ---------------------------------------------------------------------------
+// 画面のロケータ補助（スマホはカード表示、PC は表。どちらでも同じコードで通す）
+// ---------------------------------------------------------------------------
+
+/**
+ * 一覧の 1 行を、表示中の要素だけから文字列で探す。
+ * PC は `<tr>`、スマホは最も内側の Card（`div.rounded-lg`）にマッチする
+ */
+export function listRow(page: Page, text: string | RegExp): Locator {
+  return page
+    .locator("tr, div.rounded-lg:not(:has(div.rounded-lg))")
+    .filter({ hasText: text })
+    .filter({ visible: true });
+}
+
+/** ダッシュボードの KPI カード（ラベルの p 要素を持つ最も内側の Card） */
+export function kpiCard(page: Page, label: string): Locator {
+  return page
+    .locator("div.rounded-lg:not(:has(div.rounded-lg))")
+    .filter({ has: page.locator("p", { hasText: new RegExp(`^${label}$`) }) })
+    .filter({ visible: true })
+    .first();
+}
+
+/** sonner のトースト（表示された順の先頭） */
+export function toast(page: Page, text: string | RegExp): Locator {
+  return page.locator("[data-sonner-toast]").filter({ hasText: text }).first();
+}
+
+/** スクリーンショットの保存先（docs/screenshots） */
+export const SCREENSHOT_DIR = path.join(ROOT_DIR, "docs/screenshots");
+
+/** docs/screenshots に PNG を保存する（既定は fullPage。ダイアログなど固定要素はビューポートで撮る） */
+export async function saveScreenshot(page: Page, name: string, opts: { fullPage?: boolean } = {}): Promise<string> {
+  fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
+  const file = path.join(SCREENSHOT_DIR, name);
+  await page.screenshot({ path: file, fullPage: opts.fullPage ?? true });
+  return file;
 }

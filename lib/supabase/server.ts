@@ -5,8 +5,9 @@ import { assertPublicEnv, env } from "@/lib/env";
 
 /** Server Component / Server Action / Route Handler 用（Cookie セッション、RLS 適用） */
 export async function createClient() {
-  assertPublicEnv();
+  // cookies() を先に呼ぶことで、ビルド時の静的化対象から外れる（環境変数の検証はその後）
   const cookieStore = await cookies();
+  assertPublicEnv();
   return createServerClient<Database>(env.supabaseUrl, env.supabaseAnonKey, {
     cookies: {
       getAll() {

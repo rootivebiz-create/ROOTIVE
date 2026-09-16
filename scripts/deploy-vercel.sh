@@ -154,13 +154,28 @@ fi
 env_exists() {
   vc env ls production 2>/dev/null | awk '{print $1}' | grep -qx "$1"
 }
+# 新しい CLI は「資格情報に見える値」で保存方法を対話で聞くため、種別を明示して非対話にする
+TYPE_FLAG_SUPPORTED=0
+if "${VC[@]}" env add --help 2>&1 | grep -q -- '--type'; then
+  TYPE_FLAG_SUPPORTED=1
+fi
 set_env() { # set_env NAME VALUE [sensitive]
   local name="$1" value="$2" sensitive="${3:-0}"
+  local -a flags=()
   vc env rm "$name" production --yes >/dev/null 2>&1 || true
-  if [ "$sensitive" = "1" ] && [ "${#SENSITIVE_FLAG[@]}" -gt 0 ]; then
-    printf '%s' "$value" | vc env add "$name" production "${SENSITIVE_FLAG[@]}" >/dev/null
+  if [ "$sensitive" = "1" ]; then
+    if [ "$TYPE_FLAG_SUPPORTED" = "1" ]; then flags=(--type sensitive); elif [ "${#SENSITIVE_FLAG[@]}" -gt 0 ]; then flags=("${SENSITIVE_FLAG[@]}"); fi
   else
-    printf '%s' "$value" | vc env add "$name" production >/dev/null
+    if [ "$TYPE_FLAG_SUPPORTED" = "1" ]; then flags=(--type config); fi
+  fi
+  local out
+  if ! out="$(printf '%s' "$value" | vc env add "$name" production "${flags[@]}" 2>&1 </dev/stdin)"; then
+    # 種別フラグが受け付けられない場合はフラグ無しで再試行
+    out="$(printf '%s' "$value" | vc env add "$name" production 2>&1)" || true
+  fi
+  if ! env_exists "$name"; then
+    printf '%s\n' "$out" | sed 's/^/    /' >&2
+    die "環境変数 $name を Vercel に登録できませんでした。Vercel ダッシュボードの Settings → Environment Variables で手動登録してください。"
   fi
   log "  設定: $name"
 }
