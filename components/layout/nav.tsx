@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, ClipboardList, Wallet, Briefcase, Settings, type LucideIcon } from "lucide-react";
+import { Home, ClipboardList, Wallet, Briefcase, Settings, FileText, UserCircle, type LucideIcon } from "lucide-react";
 import { useMonth } from "@/lib/hooks/use-month";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +20,19 @@ export const MAIN_NAV: NavItem[] = [
   { href: "/settings", label: "設定", icon: Settings },
 ];
 
+/** ドライバーポータル用 */
+export const DRIVER_NAV: NavItem[] = [
+  { href: "/driver", label: "支払明細", icon: FileText },
+  { href: "/driver/account", label: "アカウント", icon: UserCircle },
+];
+
+export type NavVariant = "staff" | "driver";
+
+/** Server Component からは関数（アイコン）を渡せないため、種別の文字列で選ぶ */
+export function navItemsFor(variant: NavVariant | undefined): NavItem[] {
+  return variant === "driver" ? DRIVER_NAV : MAIN_NAV;
+}
+
 /** 現在のパスがナビ項目に該当するか。他の項目がより具体的に一致する場合（例: /driver と /driver/account）はそちらを優先 */
 function isActive(pathname: string, href: string, items: { href: string }[] = []) {
   if (pathname === href) return true;
@@ -28,7 +41,8 @@ function isActive(pathname: string, href: string, items: { href: string }[] = []
 }
 
 /** スマホ用 下タブナビ */
-export function BottomTabs({ items = MAIN_NAV }: { items?: NavItem[] }) {
+export function BottomTabs({ variant }: { variant?: NavVariant }) {
+  const items = navItemsFor(variant);
   const pathname = usePathname();
   const { href } = useMonth();
   return (
@@ -55,7 +69,8 @@ export function BottomTabs({ items = MAIN_NAV }: { items?: NavItem[] }) {
 }
 
 /** PC 用 サイドナビ */
-export function SideNav({ items = MAIN_NAV, sub }: { items?: NavItem[]; sub?: { parent: string; items: { href: string; label: string }[] } }) {
+export function SideNav({ variant, sub }: { variant?: NavVariant; sub?: { parent: string; items: { href: string; label: string }[] } }) {
+  const items = navItemsFor(variant);
   const pathname = usePathname();
   const { href } = useMonth();
   return (

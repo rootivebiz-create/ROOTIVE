@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import { BottomTabs, SideNav, type NavItem } from "./nav";
+import { BottomTabs, SideNav, type NavVariant } from "./nav";
 import { MonthSelector, type MonthOption } from "./month-selector";
 import { UserMenu } from "./user-menu";
 import type { Role } from "@/lib/db/types";
@@ -11,7 +11,7 @@ export function AppShell({
   email,
   role,
   months,
-  navItems,
+  navVariant,
   subNav,
   showMonthSelector = true,
   homeHref = "/dashboard",
@@ -22,7 +22,8 @@ export function AppShell({
   email: string;
   role: Role;
   months: MonthOption[];
-  navItems?: NavItem[];
+  /** ナビの種別（Server Component からアイコン関数を渡せないため文字列で指定） */
+  navVariant?: NavVariant;
   subNav?: { parent: string; items: { href: string; label: string }[] };
   showMonthSelector?: boolean;
   homeHref?: string;
@@ -46,14 +47,14 @@ export function AppShell({
       </header>
       <div className="flex flex-1">
         <Suspense fallback={<div className="hidden w-56 md:block" />}>
-          <SideNav items={navItems} sub={subNav} />
+          <SideNav variant={navVariant} sub={subNav} />
         </Suspense>
         <main className="min-w-0 flex-1 px-4 pb-24 pt-4 md:px-6 md:pb-8">
           <div className="mx-auto w-full max-w-6xl">{children}</div>
         </main>
       </div>
       <Suspense fallback={null}>
-        <BottomTabs items={navItems} />
+        <BottomTabs variant={navVariant} />
       </Suspense>
     </div>
   );

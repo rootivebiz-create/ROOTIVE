@@ -151,7 +151,7 @@ test.describe("ロール", () => {
    *   該当：app/driver/layout.tsx、components/layout/nav.tsx（BottomTabs / SideNav の items）
    *   直ったら test.fixme → test に戻す
    */
-  test.fixme("driver：ポータルに締め済みの自分の月だけ表示され、会社側の数字は出ない（/driver の描画）", async ({ page }, testInfo) => {
+  test("driver：ポータルに締め済みの自分の月だけ表示され、会社側の数字は出ない（/driver の描画）", async ({ page }, testInfo) => {
     await setMonthClosed("2026-09", true);
     const driverId = driverIdByName("相曽慧");
     const email = `driver-ui-${testInfo.project.name}-${Date.now()}@example.com`;
