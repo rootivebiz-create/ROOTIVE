@@ -192,6 +192,7 @@ Supabase 標準のメールは英語で、しかも「送信した端末でし�
    | `NEXT_PUBLIC_APP_URL` | 本番 URL（例 `https://rootive-profit.vercel.app`。まだ不明ならこの予定値。手順 9 で直します） |
    | `ANTHROPIC_API_KEY` | （任意）AI 月次分析を使う場合のみ。Anthropic Console で発行した `sk-ant-…` |
    | `ANTHROPIC_MODEL` | （任意）AI のモデル名を指定したい場合のみ。未設定なら既定のモデル |
+   | `CRON_SECRET` | （任意・推奨）定期アクセス（下の補足）を第三者が呼べないようにする合言葉。英数字 32 文字程度の適当な文字列（例：パスワード生成ツールで作る） |
 
 4. **「Deploy」** を押します。2〜4 分でビルドが終わり、「Congratulations!」の画面になります。
 5. **「Continue to Dashboard」** を押すと、**Domains** に本番 URL（`rootive-profit.vercel.app`）が表示されます。これを控えます。
@@ -199,6 +200,7 @@ Supabase 標準のメールは英語で、しかも「送信した端末でし�
 補足：
 
 - サーバーの場所は、リポジトリ内の [`vercel.json`](../vercel.json) の `"regions": ["hnd1"]` により **東京** になります（Supabase も東京なので速く動きます）。PDF 生成の処理時間の上限（30 秒）も同じファイルで設定済みです。
+- 同じ `vercel.json` の `crons` により、毎日 6 時（日本時間）に `/api/cron/keepalive` が自動で呼ばれ、Supabase 無料プランの「7 日間アクセスが無いと一時停止」を防ぎます（Project → Settings → Cron Jobs で確認できます）。
 - 以後、GitHub のリポジトリにコードが push されると Vercel が自動で再デプロイします。
 - 環境変数を後から変えるには、Vercel の Project → **「Settings」** → **「Environment Variables」** で編集し、**「Deployments」** タブ → 最新のデプロイの **「…」** → **「Redeploy」** を押します（環境変数の変更は再デプロイしないと反映されません）。
 
@@ -293,6 +295,7 @@ SendGrid・Amazon SES・Gmail（Google Workspace）でも同様に設定でき�
 | 「招待が必要です」「このメールアドレスは招待されていません」 | 招待されていないメールアドレスでログインしようとした／招待のメールアドレスと 1 文字違う／招待が取消・期限切れ | 設定 → ユーザー管理で招待のメールアドレスを確認（大文字小文字は区別しませんが、スペルは正確に）。必要なら再招待 |
 | 画面に「この操作を行う権限がありません（RLS）」 | 権限の無いロール（閲覧者・ドライバー）で操作した／ユーザーが無効化されている／手順 2 の SQL が途中で失敗している | オーナーがユーザー管理でロールと状態を確認。SQL Editor で `setup_all.sql` をもう一度 Run（安全） |
 | ログインしても真っ白・「データベースエラー」 | 手順 2 の SQL が未実行、または URL / anon キーの取り違え | Supabase の Table Editor に `companies` などのテーブルがあるか確認。Vercel の `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` を確認して Redeploy |
+| Supabase に「Project is paused」と表示される／急に動かなくなった | 無料プランは 7 日間アクセスが無いと一時停止する | Supabase ダッシュボード → 該当プロジェクト → **「Restore project」** を押して数分待つ。`vercel.json` の定期アクセス（毎日 6 時）が動いていれば通常は起きません |
 | Vercel のビルドが失敗する（Deployments が赤い） | 環境変数の入力ミス／Node.js のバージョン | Deployments → 失敗したデプロイ → **Build Logs** の赤い行を確認。Settings → General → **Node.js Version** を 20.x 以上にする。環境変数を直したら Redeploy |
 | 「Redirect URL が許可されていません」系のエラー | Redirect URLs に本番 URL が無い | 手順 4-2 の 3 つの URL を追加 |
 | PDF が出ない／タイムアウト | 生成に時間がかかる（大量の稼働行） | 30 秒以内なら待つ。続く場合は開発担当へ連絡（`vercel.json` の `maxDuration` を確認） |

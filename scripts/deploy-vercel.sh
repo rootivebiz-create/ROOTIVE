@@ -23,6 +23,7 @@
 #   NEXT_PUBLIC_APP_URL            任意。未指定なら Vercel の本番 URL を自動で使う
 #   ANTHROPIC_API_KEY              任意。AI 月次分析を使う場合
 #   ANTHROPIC_MODEL                任意。AI のモデル名を変える場合
+#   CRON_SECRET                    任意。定期アクセス（/api/cron/keepalive）の認証。未設定なら自動生成
 #   SUPABASE_ACCESS_TOKEN + SUPABASE_PROJECT_REF
 #                                  任意。両方あれば Supabase の Site URL / Redirect URLs を自動更新
 #
@@ -167,6 +168,12 @@ require_env SUPABASE_SERVICE_ROLE_KEY
 [ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ] && set_env SUPABASE_SERVICE_ROLE_KEY "$SUPABASE_SERVICE_ROLE_KEY" 1
 [ -n "${ANTHROPIC_API_KEY:-}" ] && set_env ANTHROPIC_API_KEY "$ANTHROPIC_API_KEY" 1
 [ -n "${ANTHROPIC_MODEL:-}" ] && set_env ANTHROPIC_MODEL "$ANTHROPIC_MODEL"
+# Vercel Cron（/api/cron/keepalive：Supabase の一時停止防止）の認証用。未設定なら生成する（Vercel が Bearer に自動付与）
+if [ -n "${CRON_SECRET:-}" ]; then
+  set_env CRON_SECRET "$CRON_SECRET" 1
+elif ! env_exists CRON_SECRET; then
+  set_env CRON_SECRET "$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32)" 1
+fi
 
 APP_URL_SOURCE="指定値"
 if [ -z "$NEXT_PUBLIC_APP_URL" ]; then

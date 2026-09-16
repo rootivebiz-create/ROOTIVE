@@ -2,12 +2,8 @@
 -- 最初の会社とオーナー招待を作成する（setup_all.sql の実行後に 1 回だけ実行）
 -- 実行後に表示される招待リンク（/invite/<token>）をブラウザで開くだけでログインできます
 -- =============================================================================
--- ▼ 必要に応じて書き換えてください
-\set owner_email 'rootive.biz@gmail.com'
-\set company_name '株式会社ROOTIVE'
-\set app_url 'https://rootive.vercel.app'
-
--- psql 変数が使えない環境（Supabase SQL Editor）向け：下の DO ブロック内の値を直接編集してください
+-- ▼ 必要に応じて DO ブロック内の 3 つの値（メール・会社名・本番 URL）を書き換えてください
+--    Supabase の SQL Editor にこのファイル全体を貼り付けて Run できます（psql でも実行可）
 do $$
 declare
   v_owner_email text := 'rootive.biz@gmail.com';
@@ -42,8 +38,8 @@ begin
   raise notice '==============================================================';
 end $$;
 
--- 招待リンクを確認したい場合（SQL Editor の結果に表示されます）
-select 'https://rootive.vercel.app/invite/' || token as invite_link, email, role, expires_at
+-- 招待リンクを確認したい場合（SQL Editor の結果に表示されます。URL 部分は本番 URL に読み替えてください）
+select '/invite/' || token as invite_path, email, role, expires_at
   from public.invitations
  where accepted_at is null and cancelled_at is null
  order by created_at desc

@@ -109,7 +109,7 @@ Supabase の値（URL・anon・service_role・プロジェクト参照 ID）は 
 処理内容:
 
 1. Vercel にログインできるか確認 → プロジェクト `rootive-profit` を作成（既にあれば再利用）してこのフォルダにリンク（`.vercel/` フォルダが作られます。Git には入りません）。
-2. 本番（production）の環境変数を設定：`NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY`（秘匿）/ `NEXT_PUBLIC_APP_URL` / 任意で `ANTHROPIC_API_KEY`・`ANTHROPIC_MODEL`。既にある変数は削除してから入れ直します。
+2. 本番（production）の環境変数を設定：`NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY`（秘匿）/ `NEXT_PUBLIC_APP_URL` / 任意で `ANTHROPIC_API_KEY`・`ANTHROPIC_MODEL`。`CRON_SECRET`（Supabase 一時停止防止の定期アクセス用）は未指定なら自動生成します。既にある変数は削除してから入れ直します。
    `NEXT_PUBLIC_APP_URL` を指定しなかった場合は、Vercel が割り当てた本番ドメイン（`https://rootive-profit.vercel.app` など）を自動で使います。
 3. `vercel --prod` で本番デプロイ（2〜4 分）。`vercel.json` により東京リージョン（`hnd1`）で動きます。
 4. 本番 URL を確定。手順 2 の時点で取得できなかった場合はここで `NEXT_PUBLIC_APP_URL` を設定して自動的にもう一度デプロイします。

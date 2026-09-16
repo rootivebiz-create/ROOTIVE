@@ -17,7 +17,8 @@ const HEAD_BG = "#eeeeee";
 const RED = "#b42318";
 
 const styles = StyleSheet.create({
-  page: { padding: 36, paddingBottom: 54, fontFamily: PDF_FONT_FAMILY, fontSize: 10, color: "#111111", lineHeight: 1.4 },
+  // 注意：Page に lineHeight を付けると position:absolute の fixed 要素（フッター）が描画されない（react-pdf 4.9 の挙動）
+  page: { padding: 36, paddingBottom: 54, fontFamily: PDF_FONT_FAMILY, fontSize: 10, color: "#111111" },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 },
   headerLeft: { flexGrow: 1, flexShrink: 1, paddingRight: 12 },
   headerRight: { width: 220, flexShrink: 0, textAlign: "right", fontSize: 9, color: GRAY },

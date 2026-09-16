@@ -6,5 +6,11 @@
     "app/api/export/statement.pdf/route.ts": {
       "maxDuration": 30
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/keepalive",
+      "schedule": "0 21 * * *"
+    }
+  ]
 }
