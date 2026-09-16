@@ -77,12 +77,15 @@ create table if not exists public.profiles (
   email text not null,
   display_name text not null default '',
   role public.user_role not null default 'viewer',
-  driver_id uuid references public.drivers(id) on delete set null,
+  driver_id uuid references public.drivers(id) on delete restrict,
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   check (role <> 'driver' or driver_id is not null)
 );
+-- ドライバー本人のユーザーが紐づくドライバーは削除不可（停止中にする）
+alter table public.profiles drop constraint if exists profiles_driver_id_fkey;
+alter table public.profiles add constraint profiles_driver_id_fkey foreign key (driver_id) references public.drivers(id) on delete restrict;
 create index if not exists profiles_company_idx on public.profiles (company_id);
 create index if not exists profiles_email_idx on public.profiles (lower(email));
 
@@ -92,7 +95,7 @@ create table if not exists public.invitations (
   company_id uuid not null references public.companies(id) on delete cascade,
   email text not null check (position('@' in email) > 1),
   role public.user_role not null default 'viewer',
-  driver_id uuid references public.drivers(id) on delete set null,
+  driver_id uuid references public.drivers(id) on delete cascade,
   display_name text not null default '',
   token text not null unique default encode(extensions.gen_random_bytes(24), 'hex'),
   expires_at timestamptz not null default now() + interval '7 days',
@@ -104,6 +107,9 @@ create table if not exists public.invitations (
   check (role <> 'driver' or driver_id is not null)
 );
 alter table public.invitations add column if not exists link_used_at timestamptz;
+-- ドライバー削除時は、そのドライバー宛の招待も削除する
+alter table public.invitations drop constraint if exists invitations_driver_id_fkey;
+alter table public.invitations add constraint invitations_driver_id_fkey foreign key (driver_id) references public.drivers(id) on delete cascade;
 create index if not exists invitations_company_idx on public.invitations (company_id, created_at desc);
 create index if not exists invitations_email_idx on public.invitations (lower(email));
 

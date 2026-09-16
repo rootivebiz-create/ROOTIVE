@@ -13,6 +13,10 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   serverExternalPackages: ["@react-pdf/renderer", "iconv-lite"],
+  // PDF 明細用の日本語フォントを Vercel のサーバーレス関数に同梱する
+  outputFileTracingIncludes: {
+    "/api/export/statement.pdf": ["./public/fonts/**/*"],
+  },
   experimental: {
     serverActions: { bodySizeLimit: "20mb" },
   },
