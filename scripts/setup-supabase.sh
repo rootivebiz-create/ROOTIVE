@@ -35,6 +35,8 @@ TEMPLATE_DIR="$ROOT/supabase/email-templates"
 MIGRATION_DIR="$ROOT/supabase/migrations"
 SETUP_ALL="$ROOT/supabase/setup_all.sql"
 
+# 貼り付け時に混入しがちな前後の空白・改行を除去
+SUPABASE_ACCESS_TOKEN="$(printf '%s' "${SUPABASE_ACCESS_TOKEN:-}" | tr -d '[:space:]')"
 OWNER_EMAIL="${OWNER_EMAIL:-rootive.biz@gmail.com}"
 COMPANY_NAME="${COMPANY_NAME:-株式会社ROOTIVE}"
 APP_URL="${APP_URL:-}"

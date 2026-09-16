@@ -71,6 +71,10 @@ if [ -f "$ENV_FILE" ]; then
 fi
 
 # ---------- 前提チェック ----------
+# 貼り付け時に混入しがちな前後の空白・改行を除去（Vercel CLI は改行入りトークンを拒否する）
+VERCEL_TOKEN="$(printf '%s' "${VERCEL_TOKEN:-}" | tr -d '[:space:]')"
+SUPABASE_ACCESS_TOKEN="$(printf '%s' "${SUPABASE_ACCESS_TOKEN:-}" | tr -d '[:space:]')"
+VERCEL_SCOPE="$(printf '%s' "${VERCEL_SCOPE:-}" | tr -d '[:space:]')"
 [ -n "${VERCEL_TOKEN:-}" ] || die "VERCEL_TOKEN が未設定です。Vercel → 右上のアイコン → Account Settings → Tokens → Create で発行し、export VERCEL_TOKEN=... を実行してください。"
 command -v curl >/dev/null 2>&1 || die "curl が見つかりません。"
 if command -v vercel >/dev/null 2>&1; then
