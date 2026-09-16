@@ -281,8 +281,9 @@ if [ -n "${SUPABASE_ACCESS_TOKEN:-}" ] && [ -n "${SUPABASE_PROJECT_REF:-}" ] && 
   api_base="https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_REF/config/auth"
   current="$(curl -sS -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" "$api_base" || true)"
   current_allow="$(jq -r '.uri_allow_list // ""' <<<"$current" 2>/dev/null || true)"
+  # 既存の許可 URL とマージ（仮の文字列 <本番URL> を含む古い項目は除去）
   new_allow="$(printf '%s,%s/auth/confirm,%s/auth/callback,%s/**' "$current_allow" "$PROD_URL" "$PROD_URL" "$PROD_URL" \
-    | tr ',' '\n' | sed '/^[[:space:]]*$/d' | awk '!seen[$0]++' | paste -sd, -)"
+    | tr ',' '\n' | sed '/^[[:space:]]*$/d' | grep -v '<' | grep -v '本番URL' | awk '!seen[$0]++' | paste -sd, -)"
   body="$(jq -cn --arg site "$PROD_URL" --arg allow "$new_allow" '{site_url: $site, uri_allow_list: $allow, disable_signup: true}')"
   status="$(curl -sS -o /tmp/deploy-vercel-auth.out -w '%{http_code}' -X PATCH "$api_base" \
     -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "Content-Type: application/json" --data-binary "$body" || echo 000)"
