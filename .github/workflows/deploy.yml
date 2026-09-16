@@ -78,7 +78,8 @@ jobs:
       - name: Supabase セットアップ（プロジェクト作成・スキーマ・招待・認証設定・キー取得）
         if: ${{ inputs.skip_supabase != 'true' }}
         run: |
-          bash scripts/setup-supabase.sh --write-env | tee supabase-setup.log
+          set -o pipefail
+          bash scripts/setup-supabase.sh --write-env 2>&1 | tee supabase-setup.log
           # service_role キーはログに出さない（.env.production.local にのみ保存）
           if [ -f .env.production.local ]; then
             SR="$(grep '^SUPABASE_SERVICE_ROLE_KEY=' .env.production.local | cut -d= -f2-)"
@@ -89,7 +90,8 @@ jobs:
 
       - name: Vercel デプロイ（環境変数の設定・本番デプロイ・Site URL 更新）
         run: |
-          bash scripts/deploy-vercel.sh | tee vercel-deploy.log
+          set -o pipefail
+          bash scripts/deploy-vercel.sh 2>&1 | tee vercel-deploy.log
 
       - name: 結果をまとめる
         if: always()

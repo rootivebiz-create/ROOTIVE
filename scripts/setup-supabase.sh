@@ -129,6 +129,26 @@ api() {
   if [ -n "$bodyfile" ]; then rm -f "$bodyfile"; fi
 }
 
+# api_try METHOD PATH JSON_BODY → 失敗しても終了しない。HTTP ステータスを標準出力へ、本文を API_TRY_BODY へ
+API_TRY_BODY=""
+api_try() {
+  local method="$1" path="$2" body="${3:-}"
+  local out bodyfile="" status
+  out="$(mktemp)"
+  local -a args=(-sS -o "$out" -w '%{http_code}' -X "$method" "$API$path"
+    -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "Accept: application/json")
+  if [ -n "$body" ]; then
+    bodyfile="$(mktemp)"
+    printf '%s' "$body" >"$bodyfile"
+    args+=(-H "Content-Type: application/json" --data-binary "@$bodyfile")
+  fi
+  status="$(curl "${args[@]}" || echo 000)"
+  API_TRY_BODY="$(cat "$out" 2>/dev/null || true)"
+  rm -f "$out"
+  if [ -n "$bodyfile" ]; then rm -f "$bodyfile"; fi
+  printf '%s' "$status"
+}
+
 # run_sql REF SQL_TEXT [LABEL] → SQL を実行し、結果 JSON（最後の文の行配列）を標準出力へ
 run_sql() {
   local ref="$1" sql="$2" label="${3:-SQL}"
@@ -301,16 +321,21 @@ if [ -n "$APP_URL" ]; then
 else
   new_allow="$current_allow"
 fi
-auth_body="$(jq -cn \
-  --arg site "$APP_URL" --arg allow "$new_allow" \
+# (4a) 基本設定：自由登録 OFF・Site URL・Redirect URLs（失敗したら終了）
+auth_body="$(jq -cn --arg site "$APP_URL" --arg allow "$new_allow" \
+  '{ disable_signup: true, external_email_enabled: true }
+   + (if $site != "" then {site_url: $site, uri_allow_list: $allow} else {} end)')"
+api PATCH "/projects/$PROJECT_REF/config/auth" "$auth_body" >/dev/null
+log "  自由登録を OFF にしました"
+
+# (4b) 日本語メールテンプレート（無料プランで標準メールを使う場合は API から変更できないため、失敗しても続行）
+tmpl_body="$(jq -cn \
   --rawfile magic "$TEMPLATE_DIR/magic-link.html" \
   --rawfile invite "$TEMPLATE_DIR/invite.html" \
   --rawfile recovery "$TEMPLATE_DIR/recovery.html" \
   --rawfile confirmation "$TEMPLATE_DIR/confirmation.html" \
   --rawfile change "$TEMPLATE_DIR/email-change.html" \
   '{
-    disable_signup: true,
-    external_email_enabled: true,
     mailer_subjects_magic_link: "【ROOTIVE 利益管理】ログイン用リンク",
     mailer_templates_magic_link_content: $magic,
     mailer_subjects_invite: "【ROOTIVE 利益管理】招待のご案内",
@@ -321,9 +346,15 @@ auth_body="$(jq -cn \
     mailer_templates_confirmation_content: $confirmation,
     mailer_subjects_email_change: "【ROOTIVE 利益管理】メールアドレス変更の確認",
     mailer_templates_email_change_content: $change
-  }
-  + (if $site != "" then {site_url: $site, uri_allow_list: $allow} else {} end)')"
-api PATCH "/projects/$PROJECT_REF/config/auth" "$auth_body" >/dev/null
+  }')"
+tmpl_status="$(api_try PATCH "/projects/$PROJECT_REF/config/auth" "$tmpl_body")"
+if [ "$tmpl_status" -ge 200 ] && [ "$tmpl_status" -lt 300 ]; then
+  log "  日本語メールテンプレートを設定しました"
+else
+  warn "メールテンプレートは API から設定できませんでした（HTTP $tmpl_status）。無料プランで Supabase 標準メールを使う場合はこの制限があります。"
+  warn "  → カスタム SMTP（Resend など）を設定すると API／画面から変更できます。それまでは Authentication → Email Templates に supabase/email-templates/*.html を手で貼り付けてください（docs/SETUP.md 手順 5）。"
+  [ -n "$API_TRY_BODY" ] && warn "  応答: $(printf '%s' "$API_TRY_BODY" | tr -d '\n' | cut -c1-200)"
+fi
 if [ -n "$APP_URL" ]; then
   log "  Site URL = $APP_URL / Redirect URLs = $new_allow"
 else

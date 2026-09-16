@@ -98,8 +98,15 @@ hr
 
 # ---------- (1) プロジェクトのリンク ----------
 log "(1/5) Vercel アカウントを確認します"
-who="$(vc whoami 2>/dev/null || true)"
-[ -n "$who" ] || die "Vercel にログインできません。VERCEL_TOKEN（と VERCEL_SCOPE）を確認してください。"
+who_err="$(mktemp)"
+who="$(vc whoami 2>"$who_err" || true)"
+if [ -z "$who" ]; then
+  warn "vercel whoami の出力:"
+  sed 's/^/    /' "$who_err" >&2 || true
+  rm -f "$who_err"
+  die "Vercel にログインできません。VERCEL_TOKEN（Account Settings → Tokens で発行、期限切れでないこと）と、チームのプロジェクトなら VERCEL_SCOPE（チームの slug）を確認してください。"
+fi
+rm -f "$who_err"
 log "  ユーザー: $who"
 
 log "(1/5) プロジェクトを作成・リンクします（既にあればそのまま使います）"
