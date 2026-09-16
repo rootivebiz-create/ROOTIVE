@@ -14,13 +14,13 @@ export type DataCounts = Record<string, number>;
 function parseJsonText(jsonText: string): unknown {
   const text = importJsonTextSchema.parse(jsonText);
   try {
-    return JSON.parse(text.replace(/^﻿/, ""));
+    return JSON.parse(text.replace(/^\uFEFF/, ""));
   } catch {
     throw new ActionError("JSON として読み取れませんでした。ファイルの内容を確認してください。");
   }
 }
 
-function toCounts(json: Json): DataCounts {
+function toCounts(json: Json | null | undefined): DataCounts {
   const out: DataCounts = {};
   if (json && typeof json === "object" && !Array.isArray(json)) {
     for (const [k, v] of Object.entries(json)) if (typeof v === "number") out[k] = v;
