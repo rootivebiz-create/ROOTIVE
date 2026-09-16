@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -168,6 +169,7 @@ export async function updateDisplayNameAction(_prev: AuthFormState, formData: Fo
   if (name.length < 1 || name.length > 50) return { error: "表示名は 1〜50 文字で入力してください。" };
   const { error } = await ctx.supabase.from("profiles").update({ display_name: name }).eq("id", ctx.user.id);
   if (error) return { error: error.message };
+  revalidatePath("/", "layout");
   return { ok: true, message: "表示名を更新しました。" };
 }
 

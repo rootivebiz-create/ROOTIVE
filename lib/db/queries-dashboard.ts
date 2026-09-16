@@ -119,7 +119,8 @@ export function buildDashboardWarnings(input: BuildWarningsInput): DashboardWarn
     }));
 
   // 今月の管理費がドライバー標準と異なる（稼働がある行のみ）
-  const mgmtFeeMismatches: MgmtFeeMismatch[] = drivers
+  // 締め済み月は数字が確定しているため警告しない
+  const mgmtFeeMismatches: MgmtFeeMismatch[] = (isClosed ? [] : drivers)
     .filter((d) => Number(d.active_entry_count ?? 0) > 0 && Number(d.mgmt_fee_setting ?? 0) !== Number(d.driver_default_mgmt_fee ?? 0))
     .map((d) => ({
       driverId: d.driver_id ?? "",
@@ -136,7 +137,7 @@ export function buildDashboardWarnings(input: BuildWarningsInput): DashboardWarn
   }
 
   // 数量 0 のままの行（未来月は「予定」なので除く）
-  const zeroQtyEntries: ZeroQtyEntry[] = isFuture
+  const zeroQtyEntries: ZeroQtyEntry[] = isFuture || isClosed
     ? []
     : entries
         .filter((e) => Number(e.qty ?? 0) === 0)
@@ -175,8 +176,8 @@ export async function loadDashboardData(supabase: ServerSupabase, companyId: str
   const monthDate = monthToDate(month);
   const prev = prevMonth(month);
   const now = currentMonthJST();
-  // 「過去月」の基準：表示中の月と実際の当月のうち早い方（未来月を表示していても当月を未締め扱いにしない）
-  const pastThreshold = compareMonth(month, now) < 0 ? month : now;
+  // 「過去月」の基準：実際の当月より前（表示中の月に関わらず、締めていない過去の月をすべて警告する）
+  const pastThreshold = now;
 
   const [summary, prevRes, trendRes, driversRes, entriesRes, activeDriversRes, openMonthsRes, insightRes] = await Promise.all([
     loadMonthSummary(supabase, companyId, month),

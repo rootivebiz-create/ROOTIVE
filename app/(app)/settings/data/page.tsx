@@ -90,6 +90,9 @@ export default async function DataSettingsPage({ searchParams }: { searchParams:
                   <DownloadLink href={exportUrls.yayoiCsv(month)}>
                     <Download /> 当月（{monthLabel}）
                   </DownloadLink>
+                  <DownloadLink href={exportUrls.yayoiCsv("all")}>
+                    <Download /> 全期間
+                  </DownloadLink>
                 </div>
               </section>
               {admin ? (

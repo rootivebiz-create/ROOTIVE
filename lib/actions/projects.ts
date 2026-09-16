@@ -12,7 +12,9 @@ import type { ServerSupabase } from "@/lib/supabase/server";
 /** 案件・単価の変更が影響する画面 */
 function revalidateProjectPaths() {
   revalidatePath("/settings/projects", "layout");
+  revalidatePath("/settings/drivers", "layout");
   revalidatePath("/entries");
+  revalidatePath("/payouts", "layout");
   revalidatePath("/projects");
   revalidatePath("/dashboard");
 }

@@ -11,8 +11,11 @@ import type { ServerSupabase } from "@/lib/supabase/server";
 /** ドライバー設定の変更が影響する画面 */
 function revalidateDriverPaths() {
   revalidatePath("/settings/drivers", "layout");
+  revalidatePath("/settings/users");
   revalidatePath("/entries");
-  revalidatePath("/payouts");
+  revalidatePath("/payouts", "layout");
+  revalidatePath("/projects");
+  revalidatePath("/driver", "layout");
   revalidatePath("/dashboard");
 }
 

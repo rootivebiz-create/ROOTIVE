@@ -160,8 +160,10 @@ if "${VC[@]}" env add --help 2>&1 | grep -q -- '--type'; then
   TYPE_FLAG_SUPPORTED=1
 fi
 # Vercel REST API 呼び出し（CLI の対話プロンプトを避けるため環境変数の登録はこちらを優先）
-VERCEL_API_STATUS=""
-vercel_api() { # vercel_api METHOD PATH [JSON_BODY] → 本文を標準出力へ。HTTP ステータスは VERCEL_API_STATUS
+# ステータスはコマンド置換（サブシェル）の中からでも受け取れるよう一時ファイルに書く
+VERCEL_API_STATUS_FILE="$(mktemp)"
+api_status() { cat "$VERCEL_API_STATUS_FILE" 2>/dev/null || echo 000; }
+vercel_api() { # vercel_api METHOD PATH [JSON_BODY] → 本文を標準出力へ。HTTP ステータスは api_status で取得
   local method="$1" path="$2" body="${3:-}"
   local url="https://api.vercel.com$path"
   case "$ORG_ID" in
@@ -173,7 +175,9 @@ vercel_api() { # vercel_api METHOD PATH [JSON_BODY] → 本文を標準出力へ
   out="$(mktemp)"
   local -a args=(-sS -o "$out" -w '%{http_code}' -X "$method" "$url" -H "Authorization: Bearer $VERCEL_TOKEN")
   if [ -n "$body" ]; then args+=(-H "Content-Type: application/json" --data-binary "$body"); fi
-  VERCEL_API_STATUS="$(curl "${args[@]}" || echo 000)"
+  local status
+  status="$(curl "${args[@]}" || echo 000)"
+  printf '%s' "$status" >"$VERCEL_API_STATUS_FILE"
   cat "$out"
   rm -f "$out"
 }
@@ -187,11 +191,13 @@ set_env() { # set_env NAME VALUE [sensitive]
     local body res
     body="$(jq -cn --arg k "$name" --arg v "$value" --arg t "$type" '{key: $k, value: $v, type: $t, target: ["production"]}')"
     res="$(vercel_api POST "/v10/projects/$PROJECT_ID/env?upsert=true" "$body")"
-    if [ "$VERCEL_API_STATUS" -ge 200 ] && [ "$VERCEL_API_STATUS" -lt 300 ]; then
+    local st
+    st="$(api_status)"
+    if [ "${st:-0}" -ge 200 ] 2>/dev/null && [ "${st:-0}" -lt 300 ] 2>/dev/null; then
       log "  設定: $name"
       return 0
     fi
-    warn "Vercel API での登録に失敗しました（HTTP $VERCEL_API_STATUS）: $(printf '%s' "$res" | tr -d '\n' | cut -c1-200)。CLI で再試行します"
+    warn "Vercel API での登録に失敗しました（HTTP ${st:-?}）: $(printf '%s' "$res" | tr -d '\n' | cut -c1-160)。CLI で再試行します"
   fi
   # (2) CLI（フォールバック）
   local -a flags=()

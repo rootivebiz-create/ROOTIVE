@@ -97,7 +97,7 @@ export function MonthsTable({ rows, currentMonth, canClose, canReopen }: { rows:
 
   const actions = (row: MonthRow) => (
     <div className="flex flex-wrap items-center gap-2">
-      {row.backupPath && (
+      {row.backupPath && canClose && (
         <a href={exportUrls.monthBackup(row.month)} className={cn(buttonVariants({ variant: "outline", size: "sm" }))} aria-label={`${formatMonthJa(row.month)} の締め時バックアップをダウンロード`}>
           <Download /> バックアップ
         </a>

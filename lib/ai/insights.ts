@@ -223,13 +223,13 @@ export async function requestInsights(source: InsightSource): Promise<InsightRes
   const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
   if (!apiKey) throw new ActionError("ANTHROPIC_API_KEY が設定されていません");
   const model = resolveAnthropicModel();
-  const client = new Anthropic({ apiKey, timeout: 60_000, maxRetries: 1 });
+  const client = new Anthropic({ apiKey, timeout: 50_000, maxRetries: 0 });
 
   let response: Anthropic.Message;
   try {
     response = await client.messages.create({
       model,
-      max_tokens: 1500,
+      max_tokens: 4096,
       system: INSIGHT_SYSTEM_PROMPT,
       messages: [{ role: "user", content: buildInsightUserMessage(source) }],
     });

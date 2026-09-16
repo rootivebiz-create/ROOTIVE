@@ -2,15 +2,24 @@
 -- 0005 ドライバーポータル用関数・初期データ投入・招待ユーティリティ
 -- =============================================================================
 
--- ドライバー本人：締め済み月の一覧（会社利益は含めない）
+-- ドライバー本人：月の一覧（締め済み月は金額付き、未締め月は「集計中」として金額なし。会社利益は含めない）
+drop function if exists public.driver_portal_months();
 create or replace function public.driver_portal_months()
-returns table (month date, payout numeric, pay numeric, royalty numeric, mgmt_fee numeric, adj_pay numeric, closed_at timestamptz)
+returns table (month date, status public.month_status, payout numeric, pay numeric, royalty numeric, mgmt_fee numeric, adj_pay numeric, closed_at timestamptz)
 language sql stable security definer set search_path = public as $$
-  select s.month, s.payout, s.pay, s.royalty, s.mgmt_fee, s.adj_pay, mc.closed_at
+  select s.month,
+         case when mc.status = 'closed' then 'closed'::public.month_status else 'open'::public.month_status end as status,
+         case when mc.status = 'closed' then s.payout end as payout,
+         case when mc.status = 'closed' then s.pay end as pay,
+         case when mc.status = 'closed' then s.royalty end as royalty,
+         case when mc.status = 'closed' then s.mgmt_fee end as mgmt_fee,
+         case when mc.status = 'closed' then s.adj_pay end as adj_pay,
+         case when mc.status = 'closed' then mc.closed_at end as closed_at
     from public.v_driver_month_summary s
-    join public.month_closings mc on mc.company_id = s.company_id and mc.month = s.month and mc.status = 'closed'
+    left join public.month_closings mc on mc.company_id = s.company_id and mc.month = s.month
    where s.driver_id = public.current_driver_id()
      and s.company_id = public.current_company_id()
+     and (mc.status = 'closed' or s.entry_count > 0)
    order by s.month desc;
 $$;
 

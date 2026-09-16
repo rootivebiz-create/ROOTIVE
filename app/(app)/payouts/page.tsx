@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { PayoutsTable, type PayoutRow } from "@/components/payouts/payouts-table";
 import { cn } from "@/lib/utils";
+import { MonthLink } from "@/components/layout/month-link";
 
 export const metadata = { title: "支払明細" };
 
@@ -16,7 +17,7 @@ export default async function PayoutsPage({ searchParams }: { searchParams: Prom
   const sp = await searchParams;
   const month = monthFromParam(sp.m);
 
-  const [rowsRes, closed] = await Promise.all([
+  const [rowsRes, closed, activeRes] = await Promise.all([
     supabase
       .from("v_driver_month_summary")
       .select("*")
@@ -25,8 +26,13 @@ export default async function PayoutsPage({ searchParams }: { searchParams: Prom
       .order("driver_sort_order")
       .order("driver_name"),
     isMonthClosed(supabase, company.id, month),
+    supabase.from("drivers").select("id, name").eq("company_id", company.id).eq("is_active", true).order("sort_order").order("name"),
   ]);
   if (rowsRes.error) throw rowsRes.error;
+  if (activeRes.error) throw activeRes.error;
+  const listed = new Set((rowsRes.data ?? []).map((r) => r.driver_id));
+  // 稼働も管理費・調整も無い稼働中ドライバー（締め済み月では登録できないので出さない）
+  const missingDrivers = closed ? [] : (activeRes.data ?? []).filter((d) => !listed.has(d.id));
 
   const rows: PayoutRow[] = (rowsRes.data ?? [])
     .filter((r) => r.driver_id)
@@ -69,6 +75,20 @@ export default async function PayoutsPage({ searchParams }: { searchParams: Prom
       />
       <PayoutsTable rows={rows} />
       <p className="mt-3 text-xs text-muted-foreground">行をタップすると支払明細を表示します。稼働も管理費・調整の登録もないドライバーは表示されません。</p>
+      {missingDrivers.length > 0 && (
+        <details className="mt-3 rounded-lg border p-3 text-sm">
+          <summary className="cursor-pointer font-medium">この月に稼働のない稼働中ドライバー（{missingDrivers.length} 名）の管理費・調整を登録する</summary>
+          <ul className="mt-2 flex flex-wrap gap-2">
+            {missingDrivers.map((d) => (
+              <li key={d.id}>
+                <MonthLink href={`/payouts/${d.id}/statement`} className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+                  {d.name}
+                </MonthLink>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
     </div>
   );
 }

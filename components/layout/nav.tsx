@@ -20,8 +20,11 @@ export const MAIN_NAV: NavItem[] = [
   { href: "/settings", label: "設定", icon: Settings },
 ];
 
-function isActive(pathname: string, href: string) {
-  return pathname === href || pathname.startsWith(href + "/");
+/** 現在のパスがナビ項目に該当するか。他の項目がより具体的に一致する場合（例: /driver と /driver/account）はそちらを優先 */
+function isActive(pathname: string, href: string, items: { href: string }[] = []) {
+  if (pathname === href) return true;
+  if (!pathname.startsWith(href + "/")) return false;
+  return !items.some((o) => o.href !== href && o.href.startsWith(href + "/") && (pathname === o.href || pathname.startsWith(o.href + "/")));
 }
 
 /** スマホ用 下タブナビ */
@@ -30,9 +33,9 @@ export function BottomTabs({ items = MAIN_NAV }: { items?: NavItem[] }) {
   const { href } = useMonth();
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t bg-card/95 backdrop-blur md:hidden pb-safe no-print" aria-label="メインナビゲーション">
-      <ul className="grid grid-cols-5">
+      <ul className="grid" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
         {items.map((item) => {
-          const active = isActive(pathname, item.href);
+          const active = isActive(pathname, item.href, items);
           return (
             <li key={item.href}>
               <Link
@@ -58,7 +61,7 @@ export function SideNav({ items = MAIN_NAV, sub }: { items?: NavItem[]; sub?: { 
   return (
     <nav className="hidden w-56 shrink-0 flex-col gap-1 border-r bg-card p-3 md:flex no-print" aria-label="メインナビゲーション">
       {items.map((item) => {
-        const active = isActive(pathname, item.href);
+        const active = isActive(pathname, item.href, items);
         return (
           <div key={item.href}>
             <Link

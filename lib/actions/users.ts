@@ -189,9 +189,24 @@ export async function setUserActiveAction(userId: string, isActive: boolean): Pr
     const parsed = setUserActiveSchema.parse({ userId, isActive });
     if (parsed.userId === user.id) throw new ActionError("自分自身のロール変更・無効化はできません。");
 
-    const res = await supabase.from("profiles").update({ is_active: parsed.isActive }).eq("id", parsed.userId).eq("company_id", company.id).select("id");
+    const res = await supabase.from("profiles").update({ is_active: parsed.isActive }).eq("id", parsed.userId).eq("company_id", company.id).select("id, email");
     ensureNoError(res);
     if ((res.data ?? []).length === 0) throw new ActionError("ユーザーが見つかりません。");
+    // 無効化したユーザー宛の未使用の招待リンクは取り消す（リンクで再有効化されるのを防ぐ）
+    if (!parsed.isActive) {
+      const email = res.data?.[0]?.email;
+      if (email) {
+        ensureNoError(
+          await supabase
+            .from("invitations")
+            .update({ cancelled_at: new Date().toISOString() })
+            .eq("company_id", company.id)
+            .eq("email", email.toLowerCase())
+            .is("cancelled_at", null)
+            .is("link_used_at", null),
+        );
+      }
+    }
     revalidateUsers();
     return null;
   }, isActive ? "ユーザーを有効にしました。" : "ユーザーを無効にしました。");

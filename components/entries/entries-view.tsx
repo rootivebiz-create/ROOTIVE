@@ -81,7 +81,9 @@ export function EntriesView({ month, rows, editable, closed, masters, allMasters
     return [...seen.entries()].map(([id, name]) => ({ id, name }));
   }, [rows]);
 
-  const filtered = useMemo(() => filterRows(rows, driverFilter, query), [rows, driverFilter, query]);
+  // 月を移動して選択中のドライバーの行が無い場合は絞り込みを解除する（一覧が空になるのを防ぐ）
+  const effectiveDriver = driverFilter && driverChoices.some((d) => d.id === driverFilter) ? driverFilter : "";
+  const filtered = useMemo(() => filterRows(rows, effectiveDriver, query), [rows, effectiveDriver, query]);
   const isFiltered = filtered.length !== rows.length;
 
   const totals = useMemo(
@@ -164,7 +166,7 @@ export function EntriesView({ month, rows, editable, closed, masters, allMasters
       {/* 絞り込み・検索 */}
       {rows.length > 0 && (
         <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
-          <Select value={driverFilter} onChange={(e) => setDriverFilter(e.target.value)} className="sm:w-56" aria-label="ドライバーで絞り込み">
+          <Select value={effectiveDriver} onChange={(e) => setDriverFilter(e.target.value)} className="sm:w-56" aria-label="ドライバーで絞り込み">
             <option value="">すべてのドライバー</option>
             {driverChoices.map((d) => (
               <option key={d.id} value={d.id}>

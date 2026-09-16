@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { ChevronRight, Lock } from "lucide-react";
+import { ChevronRight, Clock, Lock } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { requireDriver } from "@/lib/auth/session";
 import { dateToMonth, formatMonthJa } from "@/lib/month";
 import { formatDateOnlyJa } from "@/lib/format";
@@ -16,7 +17,7 @@ export default async function DriverHomePage() {
   if (error) throw error;
   const rows = (data ?? [])
     .filter((r) => r.month)
-    .map((r) => ({ month: dateToMonth(r.month), payout: Number(r.payout ?? 0), closedAt: r.closed_at ?? null }));
+    .map((r) => ({ month: dateToMonth(r.month), status: r.status, payout: r.payout == null ? null : Number(r.payout), closedAt: r.closed_at ?? null }));
 
   return (
     <div>
@@ -31,15 +32,15 @@ export default async function DriverHomePage() {
                 <Card className="flex items-center justify-between gap-3 p-4 active:bg-muted">
                   <div className="min-w-0">
                     <p className="flex items-center gap-1.5 font-medium">
-                      <Lock className="h-4 w-4 text-muted-foreground" aria-hidden />
+                      {r.status === "closed" ? <Lock className="h-4 w-4 text-muted-foreground" aria-hidden /> : <Clock className="h-4 w-4 text-muted-foreground" aria-hidden />}
                       {formatMonthJa(r.month)}
                     </p>
-                    <p className="text-xs text-muted-foreground">締め日：{formatDateOnlyJa(r.closedAt)}</p>
+                    <p className="text-xs text-muted-foreground">{r.status === "closed" ? `締め日：${formatDateOnlyJa(r.closedAt)}` : "集計中（月締め後に確定します）"}</p>
                   </div>
                   <div className="flex items-center gap-1">
                     <div className="text-right">
                       <p className="text-[11px] text-muted-foreground">お支払額</p>
-                      <Money value={r.payout} className="text-lg font-semibold" />
+                      {r.status === "closed" ? <Money value={r.payout} className="text-lg font-semibold" /> : <Badge variant="outline">集計中</Badge>}
                     </div>
                     <ChevronRight className="h-5 w-5 text-muted-foreground" />
                   </div>
@@ -49,7 +50,7 @@ export default async function DriverHomePage() {
           ))}
         </ul>
       )}
-      <p className="mt-3 text-xs text-muted-foreground">※ 未締めの月は集計中のため表示されません。</p>
+      <p className="mt-3 text-xs text-muted-foreground">※ 「集計中」の月は月締め後に金額が確定します。</p>
     </div>
   );
 }

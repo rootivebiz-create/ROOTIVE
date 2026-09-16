@@ -286,8 +286,10 @@ select public.t_assert((select count(*) from public.work_entries where month = '
 select public.t_assert((select count(*) from public.driver_months) = 1, 'driver_months も締め済み月のみ');
 select public.t_assert((select count(*) from public.projects) = 1 and (select count(*) from public.project_items) = 1, '関係する案件・内容だけ見える');
 select public.t_assert((select count(*) from public.audit_logs) = 0, 'driver は監査ログを読めない');
-select public.t_assert((select count(*) from public.driver_portal_months()) = 1, 'ポータル: 締め済み月 1 件');
-select public.t_assert((select payout from public.driver_portal_months()) = 396643, 'ポータル: 支払額 396,643');
+select public.t_assert((select count(*) from public.driver_portal_months() where status = 'closed') = 1, 'ポータル: 締め済み月 1 件');
+select public.t_assert((select count(*) from public.driver_portal_months() where status = 'open') >= 1, 'ポータル: 未締め月（稼働あり）は集計中として返る');
+select public.t_assert((select bool_and(payout is null) from public.driver_portal_months() where status = 'open'), 'ポータル: 未締め月は金額を返さない');
+select public.t_assert((select payout from public.driver_portal_months() where status = 'closed') = 396643, 'ポータル: 支払額 396,643');
 select public.t_assert((public.driver_portal_statement('2026-09-01'))->'summary'->>'payout' = '396643.00000000', 'ポータル明細: 支払額');
 select public.t_assert((public.driver_portal_statement('2026-09-01'))->'summary' ? 'bill' = false, 'ポータル明細に会社売上は含まれない');
 select public.t_assert((public.driver_portal_statement('2026-11-01'))->>'status' = 'open', '未締め月は集計中');
@@ -370,7 +372,7 @@ update public.profiles set role = 'driver', driver_id = (select id from public.d
 set role authenticated;
 select public.test_login(:'driver_a');
 select public.t_assert((select count(*) from public.month_closings) = 0, 'driver は month_closings（スナップショット）を読めない');
-select public.t_assert((select count(*) from public.driver_portal_months()) >= 1, 'driver はポータル関数で締め済み月を得られる');
+select public.t_assert((select count(*) from public.driver_portal_months() where status = 'closed') >= 1, 'driver はポータル関数で締め済み月を得られる');
 reset role;
 -- サービスロール（JWT role=service_role）とトリガー（JWT なし）からは apply_invitation を使える
 set role service_role;

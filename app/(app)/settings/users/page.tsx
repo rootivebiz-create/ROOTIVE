@@ -70,7 +70,7 @@ export default async function UsersSettingsPage() {
     const signedInAfter = Boolean(prof && lastSignInAvailable && prof.lastSignInAt && new Date(prof.lastSignInAt).getTime() > new Date(inv.created_at).getTime());
     let status: InvitationStatus;
     if (!inv.accepted_at) {
-      if (signedInAfter) continue;
+      // 未受諾の招待は（本人がログイン済みでも）有効なので一覧に残し、取り消せるようにする
       status = expired ? "expired" : "pending";
     } else {
       // メール招待で auth ユーザー作成済み（受諾扱い）だが、まだログインしていない人にはリンクを再案内できる

@@ -763,6 +763,7 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: {
           month: string
+          status: Database["public"]["Enums"]["month_status"]
           payout: number
           pay: number
           royalty: number
