@@ -1,0 +1,122 @@
+# =============================================================================
+# 本番公開（Supabase セットアップ → Vercel デプロイ）を GitHub Actions から実行する
+#
+# 事前準備（リポジトリの Settings → Secrets and variables → Actions）:
+#   SUPABASE_ACCESS_TOKEN  必須。Supabase の Personal Access Token（Account → Access Tokens）
+#   VERCEL_TOKEN           必須。Vercel のトークン（Account Settings → Tokens）
+#   SUPABASE_ORG_ID        任意。組織が複数ある場合のみ（組織の slug）
+#   ANTHROPIC_API_KEY      任意。AI 月次分析を使う場合のみ
+#
+# 実行: Actions タブ → 「本番公開（Supabase + Vercel）」→ Run workflow
+# 何度実行しても壊れません（Supabase は既存プロジェクトを再利用、Vercel は再デプロイ）
+# =============================================================================
+name: 本番公開（Supabase + Vercel）
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_url:
+        description: "本番 URL（未定なら空のまま。Vercel の URL を自動で使います）"
+        required: false
+        default: ""
+      owner_email:
+        description: "オーナーのメールアドレス"
+        required: false
+        default: "rootive.biz@gmail.com"
+      company_name:
+        description: "会社名"
+        required: false
+        default: "株式会社ROOTIVE"
+      skip_supabase:
+        description: "Supabase のセットアップを省略して Vercel の再デプロイだけ行う（true/false）"
+        required: false
+        default: "false"
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: セットアップとデプロイ
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_ORG_ID: ${{ secrets.SUPABASE_ORG_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OWNER_EMAIL: ${{ inputs.owner_email }}
+      COMPANY_NAME: ${{ inputs.company_name }}
+      APP_URL: ${{ inputs.app_url }}
+    steps:
+      - name: チェックアウト
+        uses: actions/checkout@v4
+
+      - name: Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 依存関係
+        run: npm ci
+
+      - name: 前提チェック
+        run: |
+          [ -n "$SUPABASE_ACCESS_TOKEN" ] || { echo "::error::Secrets に SUPABASE_ACCESS_TOKEN がありません"; exit 1; }
+          [ -n "$VERCEL_TOKEN" ] || { echo "::error::Secrets に VERCEL_TOKEN がありません"; exit 1; }
+          command -v jq >/dev/null && echo "jq OK"
+
+      - name: DB パスワードを生成（ログには出しません）
+        if: ${{ inputs.skip_supabase != 'true' }}
+        run: |
+          PW="$(openssl rand -base64 24 | tr -d '/+=' | cut -c1-28)"
+          echo "::add-mask::$PW"
+          echo "SUPABASE_DB_PASSWORD=$PW" >> "$GITHUB_ENV"
+
+      - name: Supabase セットアップ（プロジェクト作成・スキーマ・招待・認証設定・キー取得）
+        if: ${{ inputs.skip_supabase != 'true' }}
+        run: |
+          bash scripts/setup-supabase.sh --write-env | tee supabase-setup.log
+          # service_role キーはログに出さない（.env.production.local にのみ保存）
+          if [ -f .env.production.local ]; then
+            SR="$(grep '^SUPABASE_SERVICE_ROLE_KEY=' .env.production.local | cut -d= -f2-)"
+            [ -n "$SR" ] && echo "::add-mask::$SR"
+            REF="$(grep '^SUPABASE_PROJECT_REF=' .env.production.local | cut -d= -f2-)"
+            echo "SUPABASE_PROJECT_REF=$REF" >> "$GITHUB_ENV"
+          fi
+
+      - name: Vercel デプロイ（環境変数の設定・本番デプロイ・Site URL 更新）
+        run: |
+          bash scripts/deploy-vercel.sh | tee vercel-deploy.log
+
+      - name: 結果をまとめる
+        if: always()
+        run: |
+          {
+            echo "## 公開結果"
+            echo
+            if [ -f vercel-deploy.log ]; then
+              URL="$(grep -oE 'https://[a-z0-9.-]+\.vercel\.app' vercel-deploy.log | tail -1 || true)"
+              [ -n "$URL" ] && echo "- 本番 URL: $URL"
+            fi
+            if [ -f supabase-setup.log ]; then
+              REF="$(grep -E '参照 ID' supabase-setup.log | head -1 | sed -E 's/.*: *//')"
+              [ -n "$REF" ] && echo "- Supabase プロジェクト: https://supabase.com/dashboard/project/$REF"
+              TOKEN="$(grep -oE '/invite/[a-f0-9]{32,}' supabase-setup.log | head -1 | sed 's#/invite/##')"
+              if [ -n "$TOKEN" ]; then
+                if [ -n "${URL:-}" ]; then
+                  echo "- **招待リンク（開いて「ログインして始める」を押すだけでログインできます）**: $URL/invite/$TOKEN"
+                else
+                  echo "- 招待リンク: <本番URL>/invite/$TOKEN"
+                fi
+              fi
+            fi
+            echo
+            echo "詳細はこのジョブのログ（Supabase セットアップ／Vercel デプロイ）を参照してください。"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 一時ファイルの削除
+        if: always()
+        run: rm -f .env.production.local supabase-setup.log vercel-deploy.log
