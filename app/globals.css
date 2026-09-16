@@ -1,0 +1,127 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --background: #f7f7f8;
+  --foreground: #16181d;
+  --card: #ffffff;
+  --card-foreground: #16181d;
+  --muted: #eef0f3;
+  --muted-foreground: #5f6673;
+  --border: #dfe3e8;
+  --input: #dfe3e8;
+  --primary: #1f5eff;
+  --primary-foreground: #ffffff;
+  --accent: #e8efff;
+  --accent-foreground: #163a99;
+  --destructive: #d92d20;
+  --destructive-foreground: #ffffff;
+  --success: #1a7f4b;
+  --warning: #b45309;
+  --ring: #1f5eff;
+  --radius: 0.75rem;
+  --chart-1: #1f5eff;
+  --chart-2: #10a37f;
+  --chart-3: #f59e0b;
+  --chart-4: #8b5cf6;
+  --chart-5: #ec4899;
+}
+
+.dark {
+  --background: #0f1115;
+  --foreground: #e8eaef;
+  --card: #171a21;
+  --card-foreground: #e8eaef;
+  --muted: #21252e;
+  --muted-foreground: #9aa3b2;
+  --border: #2b303b;
+  --input: #2b303b;
+  --primary: #5b8cff;
+  --primary-foreground: #0b1020;
+  --accent: #1c2a4d;
+  --accent-foreground: #c7d6ff;
+  --destructive: #f04438;
+  --destructive-foreground: #ffffff;
+  --success: #34c17b;
+  --warning: #f5a524;
+  --ring: #5b8cff;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+  --font-sans: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+* {
+  border-color: var(--border);
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-feature-settings: "palt";
+  min-height: 100dvh;
+}
+
+/* 数字は等幅・右寄せ */
+.num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.neg {
+  color: var(--destructive);
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: #fff;
+    color: #000;
+  }
+}
+
+/* 下タブナビの安全領域 */
+.pb-safe {
+  padding-bottom: max(env(safe-area-inset-bottom), 0.5rem);
+}

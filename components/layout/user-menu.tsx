@@ -1,0 +1,79 @@
+"use client";
+
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { useTheme } from "next-themes";
+import Link from "next/link";
+import { LogOut, Moon, Sun, UserCircle, Monitor } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { ROLE_LABELS, type Role } from "@/lib/db/types";
+
+export function UserMenu({ displayName, email, role }: { displayName: string; email: string; role: Role }) {
+  const { theme, setTheme } = useTheme();
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
+        <button type="button" className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted" aria-label="ユーザーメニュー">
+          <UserCircle className="h-6 w-6" />
+          <span className="hidden max-w-[10rem] truncate text-sm font-medium md:inline">{displayName || email}</span>
+          <Badge variant="secondary" className="hidden md:inline-flex">
+            {ROLE_LABELS[role]}
+          </Badge>
+        </button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content align="end" sideOffset={6} className="z-50 min-w-[14rem] rounded-md border bg-card p-1 shadow-lg">
+          <div className="px-2 py-1.5">
+            <p className="truncate text-sm font-medium">{displayName || "（表示名なし）"}</p>
+            <p className="truncate text-xs text-muted-foreground">{email}</p>
+            <Badge variant="secondary" className="mt-1">
+              {ROLE_LABELS[role]}
+            </Badge>
+          </div>
+          <DropdownMenu.Separator className="my-1 h-px bg-border" />
+          <DropdownMenu.Label className="px-2 py-1 text-xs text-muted-foreground">表示テーマ</DropdownMenu.Label>
+          <div className="flex gap-1 px-2 pb-1">
+            {(
+              [
+                ["light", Sun, "ライト"],
+                ["dark", Moon, "ダーク"],
+                ["system", Monitor, "自動"],
+              ] as const
+            ).map(([key, Icon, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setTheme(key)}
+                className={`flex flex-1 items-center justify-center gap-1 rounded border px-2 py-1 text-xs ${theme === key ? "bg-accent text-accent-foreground" : "hover:bg-muted"}`}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {label}
+              </button>
+            ))}
+          </div>
+          <DropdownMenu.Separator className="my-1 h-px bg-border" />
+          {role !== "driver" && (
+            <DropdownMenu.Item asChild>
+              <Link href="/settings/account" className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm outline-none hover:bg-muted">
+                <UserCircle className="h-4 w-4" /> アカウント
+              </Link>
+            </DropdownMenu.Item>
+          )}
+          {role === "driver" && (
+            <DropdownMenu.Item asChild>
+              <Link href="/driver/account" className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm outline-none hover:bg-muted">
+                <UserCircle className="h-4 w-4" /> アカウント
+              </Link>
+            </DropdownMenu.Item>
+          )}
+          <form action="/auth/signout" method="post">
+            <DropdownMenu.Item asChild>
+              <button type="submit" className="flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm outline-none hover:bg-muted">
+                <LogOut className="h-4 w-4" /> ログアウト
+              </button>
+            </DropdownMenu.Item>
+          </form>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  );
+}

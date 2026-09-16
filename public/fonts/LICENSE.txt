@@ -1,0 +1,4 @@
+Noto Sans JP — Copyright 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'.
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+https://openfontlicense.org
+このフォントは PDF 支払明細の生成用に JIS X 0208 相当の文字集合へサブセット化しています。
