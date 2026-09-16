@@ -1,0 +1,19 @@
+<h2 style="font-family:sans-serif;color:#222;">ROOTIVE 利益管理 への招待</h2>
+<p style="font-family:sans-serif;color:#222;">
+  {{ .Email }} 宛に、ROOTIVE 利益管理システムへの招待が届いています。<br>
+  下のボタンを押すと、そのままログインして利用を開始できます。
+</p>
+<p style="margin:24px 0;">
+  <a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=invite"
+     style="display:inline-block;padding:12px 24px;background:#1f5eff;color:#fff;text-decoration:none;border-radius:6px;font-family:sans-serif;font-weight:bold;">
+    招待を受けてログインする
+  </a>
+</p>
+<p style="font-family:sans-serif;color:#555;font-size:13px;">
+  ボタンが押せない場合は、次の URL をブラウザに貼り付けてください。<br>
+  {{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=invite
+</p>
+<p style="font-family:sans-serif;color:#555;font-size:13px;">
+  次回からはログイン画面でメールアドレスを入力すると、ログイン用リンクが届きます。<br>
+  心当たりがない場合は、このメールを無視してください。
+</p>

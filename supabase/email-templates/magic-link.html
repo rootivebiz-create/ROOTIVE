@@ -1,0 +1,18 @@
+<h2 style="font-family:sans-serif;color:#222;">ROOTIVE 利益管理 ログイン用リンク</h2>
+<p style="font-family:sans-serif;color:#222;">
+  下のボタンを押すとログインできます。別の端末（スマホ・PC）で開いても構いません。
+</p>
+<p style="margin:24px 0;">
+  <a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=magiclink"
+     style="display:inline-block;padding:12px 24px;background:#1f5eff;color:#fff;text-decoration:none;border-radius:6px;font-family:sans-serif;font-weight:bold;">
+    ログインする
+  </a>
+</p>
+<p style="font-family:sans-serif;color:#555;font-size:13px;">
+  ボタンが押せない場合は、次の URL をブラウザに貼り付けてください。<br>
+  {{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=magiclink
+</p>
+<p style="font-family:sans-serif;color:#555;font-size:13px;">
+  このリンクは 1 回だけ有効で、しばらくすると期限切れになります。<br>
+  心当たりがない場合は、このメールを無視してください（ログインはされません）。
+</p>
