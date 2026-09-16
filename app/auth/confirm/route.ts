@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
   const token_hash = searchParams.get("token_hash");
   const type = searchParams.get("type") as EmailOtpType | null;
   const nextParam = searchParams.get("next") ?? "/";
-  const next = nextParam.startsWith("/") && !nextParam.startsWith("//") ? nextParam : "/";
+  const next = /^\/(?![\/\\])[^\s]*$/.test(nextParam) && !nextParam.includes("\\") ? nextParam : "/";
 
   if (token_hash && type) {
     const supabase = await createClient();
@@ -18,10 +18,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(absoluteUrlFromRequest(request, next));
     }
     const login = absoluteUrlFromRequest(request, "/login");
-    login.searchParams.set("error", "リンクの有効期限が切れているか、無効です。もう一度ログインをお試しください。");
+    login.searchParams.set("error", "expired");
     return NextResponse.redirect(login);
   }
   const login = absoluteUrlFromRequest(request, "/login");
-  login.searchParams.set("error", "リンクが不正です。");
+  login.searchParams.set("error", "invalid");
   return NextResponse.redirect(login);
 }

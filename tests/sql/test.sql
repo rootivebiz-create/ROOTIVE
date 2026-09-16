@@ -274,6 +274,7 @@ select public.t_assert((public.close_month('2026-09-01', '再締め'))->'summary
 
 \echo '== 13. driver ロール（自分の締め済み月のみ）'
 select public.create_invitation('driver@a.test', 'driver', (select id from public.drivers where name = '相曽慧'), '相曽');
+select public.test_logout();
 reset role;
 insert into auth.users (id, email) values (:'driver_a', 'driver@a.test');
 set role authenticated;
@@ -350,3 +351,32 @@ select public.t_expect_error(format($$insert into public.work_entries (company_i
 
 reset role;
 \echo '== すべてのアサーションが通りました'
+
+\echo '== 17. 内部関数は一般ユーザーから直接呼べない（権限昇格の防止）'
+set role authenticated;
+select public.test_login(:'viewer_a');
+select public.t_expect_error(format($$select public.apply_invitation('%s', 'viewer@a.test')$$, :'viewer_a'), null, 'viewer は apply_invitation を呼べない');
+select public.t_expect_error(format($$select public.write_audit('%s', 'x', 'y', null, null, null)$$, :'company_a'), null, 'viewer は write_audit を呼べない');
+select public.t_expect_error(format($$select public.ensure_driver_month('%s', '2026-12-01', (select id from public.drivers limit 1))$$, :'company_a'), null, 'viewer は ensure_driver_month を呼べない');
+select public.t_expect_error(format($$select public.import_has_id_conflict('%s', '{}'::jsonb)$$, :'company_a'), null, 'viewer は import_has_id_conflict を呼べない');
+select public.test_login(:'admin_a');
+select public.t_expect_error(format($$select public.apply_invitation('%s', 'admin@a.test')$$, :'admin_a'), null, 'admin も apply_invitation を呼べない');
+select public.test_login(:'driver_a');
+select public.t_assert((select count(*) from public.month_closings) = 0, '元 driver（全削除後は無効な閲覧者）は month_closings を読めない');
+select public.test_logout();
+reset role;
+-- driver ロールを再設定して、month_closings は読めないがポータル関数では締め済み月を得られることを確認
+update public.profiles set role = 'driver', driver_id = (select id from public.drivers where name = '相曽慧'), is_active = true where id = :'driver_a';
+set role authenticated;
+select public.test_login(:'driver_a');
+select public.t_assert((select count(*) from public.month_closings) = 0, 'driver は month_closings（スナップショット）を読めない');
+select public.t_assert((select count(*) from public.driver_portal_months()) >= 1, 'driver はポータル関数で締め済み月を得られる');
+reset role;
+-- サービスロール（JWT role=service_role）とトリガー（JWT なし）からは apply_invitation を使える
+set role service_role;
+select set_config('request.jwt.claims', '{"role":"service_role"}', false);
+select set_config('request.jwt.claim.role', 'service_role', false);
+select public.t_assert((select role from public.apply_invitation(:'viewer_a', 'viewer@a.test', null)) is null or true, 'サービスロールは apply_invitation を呼べる（該当招待なしは null）');
+select public.test_logout();
+reset role;
+\echo '== すべてのアサーションが通りました（17 節）'

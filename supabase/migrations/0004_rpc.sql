@@ -118,9 +118,9 @@ returns jsonb language sql stable security invoker set search_path = public as $
   );
 $$;
 
--- 月締め（admin+）
+-- 月締め（admin+）。監査ログ書き込みのため security definer（会社は current_company_id() で限定）
 create or replace function public.close_month(p_month date, p_note text default '')
-returns jsonb language plpgsql security invoker set search_path = public as $$
+returns jsonb language plpgsql security definer set search_path = public as $$
 declare
   cid uuid := public.current_company_id();
   snap jsonb;
@@ -137,13 +137,15 @@ begin
   on conflict (company_id, month) do update
     set status = 'closed', closed_at = now(), closed_by = auth.uid(), snapshot = excluded.snapshot,
         note = excluded.note, reopened_at = null, reopened_by = null;
+  perform set_config('app.audit_internal', 'on', true);
   perform public.write_audit(cid, 'close_month', 'month_closings', to_char(p_month, 'YYYY-MM'), null, jsonb_build_object('note', p_note, 'summary', snap->'summary'));
+  perform set_config('app.audit_internal', 'off', true);
   return snap;
 end $$;
 
 -- 締め時バックアップの保存先を記録（admin+）
 create or replace function public.set_month_backup_path(p_month date, p_path text)
-returns void language plpgsql security invoker set search_path = public as $$
+returns void language plpgsql security definer set search_path = public as $$
 begin
   if not public.is_admin() then
     raise exception '権限がありません' using errcode = 'P0001', hint = 'FORBIDDEN';
@@ -154,7 +156,7 @@ end $$;
 
 -- 締め解除（owner）
 create or replace function public.reopen_month(p_month date)
-returns void language plpgsql security invoker set search_path = public as $$
+returns void language plpgsql security definer set search_path = public as $$
 declare cid uuid := public.current_company_id();
 begin
   if not public.is_owner() then
@@ -165,7 +167,9 @@ begin
   end if;
   update public.month_closings set status = 'open', reopened_at = now(), reopened_by = auth.uid()
    where company_id = cid and month = p_month;
+  perform set_config('app.audit_internal', 'on', true);
   perform public.write_audit(cid, 'reopen_month', 'month_closings', to_char(p_month, 'YYYY-MM'), null, null);
+  perform set_config('app.audit_internal', 'off', true);
 end $$;
 
 -- バックアップ JSON（admin+）
@@ -209,7 +213,7 @@ $$;
 
 -- 復元／取り込み（owner）。ID 一致は上書き、他社の ID と衝突すれば拒否。締めガード・行単位監査は一時的に回避
 create or replace function public.import_backup(p_data jsonb)
-returns jsonb language plpgsql security invoker set search_path = public as $$
+returns jsonb language plpgsql security definer set search_path = public as $$
 declare
   cid uuid := public.current_company_id();
   c jsonb := p_data->'company';
@@ -347,13 +351,15 @@ begin
 
   perform set_config('app.skip_audit', 'off', true);
   perform set_config('app.bypass_closing', 'off', true);
+  perform set_config('app.audit_internal', 'on', true);
   perform public.write_audit(cid, 'import_backup', 'company', cid::text, null, counts);
+  perform set_config('app.audit_internal', 'off', true);
   return counts;
 end $$;
 
 -- データ全削除（owner。会社名の入力で確認）。ユーザー・招待・会社設定は残す
 create or replace function public.reset_company_data(p_company_name text)
-returns jsonb language plpgsql security invoker set search_path = public as $$
+returns jsonb language plpgsql security definer set search_path = public as $$
 declare
   cid uuid := public.current_company_id();
   actual text;
@@ -388,6 +394,8 @@ begin
   delete from public.drivers where company_id = cid; get diagnostics n = row_count; counts := counts || jsonb_build_object('drivers', n);
   perform set_config('app.skip_audit', 'off', true);
   perform set_config('app.bypass_closing', 'off', true);
+  perform set_config('app.audit_internal', 'on', true);
   perform public.write_audit(cid, 'reset_company_data', 'company', cid::text, counts, null);
+  perform set_config('app.audit_internal', 'off', true);
   return counts;
 end $$;

@@ -154,6 +154,7 @@ export function convertPrototype(json: unknown, companyId: string): { backup: Ba
 
   // ---- ドライバー ----
   const driverIdMap = new Map<string, string>(); // 試作 ID → uuid
+  const driverProtoById = new Map<string, string>(); // uuid → 試作 ID（driver_months の決定的 ID 用）
   const usedDriverNames = new Set<string>();
   const drivers: BackupDriver[] = [];
   const driverEntries = Object.entries(d.drivers).sort((a, b) => Number(a[1].order ?? 0) - Number(b[1].order ?? 0));
@@ -161,6 +162,7 @@ export function convertPrototype(json: unknown, companyId: string): { backup: Ba
     const protoId = dr.id ?? key;
     const id = deterministicId("driver", protoId);
     driverIdMap.set(protoId, id);
+    driverProtoById.set(id, protoId);
     if (dr.id && dr.id !== key) driverIdMap.set(key, id);
     drivers.push({
       id,
@@ -169,7 +171,8 @@ export function convertPrototype(json: unknown, companyId: string): { backup: Ba
       kana: "",
       is_active: dr.active ?? true,
       royalty_rate: dr.royaltyRate ?? null,
-      mgmt_fee: dr.mgmtFee ?? 0,
+      // 試作側で未設定なら試作の標準管理費（defMgmt）を採用
+      mgmt_fee: dr.mgmtFee ?? app.defMgmt ?? 0,
       rounding_mode: null,
       phone: "",
       email: "",
@@ -239,6 +242,7 @@ export function convertPrototype(json: unknown, companyId: string): { backup: Ba
     if (existing) return existing;
     const id = deterministicId("driver", protoId);
     driverIdMap.set(protoId, id);
+    driverProtoById.set(id, protoId);
     const nm = uniqueName(name?.trim() || `不明なドライバー ${protoId.slice(0, 6)}`, usedDriverNames, warnings, "ドライバー");
     drivers.push({ id, company_id: companyId, name: nm, kana: "", is_active: false, royalty_rate: null, mgmt_fee: 0, rounding_mode: null, phone: "", email: "", bank_info: "", memo: "試作データの参照切れから自動作成", sort_order: 999 });
     warnings.push(`稼働行が参照するドライバー（${protoId}）がマスタに無いため「${nm}」を停止中として作成しました`);
@@ -279,7 +283,9 @@ export function convertPrototype(json: unknown, companyId: string): { backup: Ba
     const driverId = ensureDriver(e.driverId, e.driverName);
     const itemId = ensureItem(e.projectId, e.itemId, e.projectName, e.itemName, e.unit, e.billRate ?? 0, e.payRate ?? 0);
     const protoId = e.id ?? key;
-    const rate = e.royaltyRate ?? app.defRoyalty ?? 0.1;
+    // 率のスナップショットが無い場合は §2.5 の優先順（ドライバー設定 → 会社既定）で補完
+    const driverRate = drivers.find((x) => x.id === driverId)?.royalty_rate;
+    const rate = e.royaltyRate ?? driverRate ?? app.defRoyalty ?? 0.1;
     workEntries.push({
       id: deterministicId("entry", protoId),
       company_id: companyId,
@@ -311,7 +317,8 @@ export function convertPrototype(json: unknown, companyId: string): { backup: Ba
     if (dmSeen.has(dmKey)) continue;
     dmSeen.add(dmKey);
     const id = deterministicId("driver_month", `${dm.month}_${dm.driverId}`);
-    driverMonths.push({ id, company_id: companyId, month: monthToDate(dm.month), driver_id: driverId, mgmt_fee: dm.mgmtFee ?? 0, memo: dm.memo ?? "" });
+    const dmDriver = drivers.find((x) => x.id === driverId);
+    driverMonths.push({ id, company_id: companyId, month: monthToDate(dm.month), driver_id: driverId, mgmt_fee: dm.mgmtFee ?? dmDriver?.mgmt_fee ?? app.defMgmt ?? 0, memo: dm.memo ?? "" });
     (dm.adjustments ?? []).forEach((a, i) => {
       adjustments.push({
         id: deterministicId("adjustment", `${dm.month}_${dm.driverId}:${i}`),
@@ -331,8 +338,10 @@ export function convertPrototype(json: unknown, companyId: string): { backup: Ba
     if (dmSeen.has(dmKey)) continue;
     dmSeen.add(dmKey);
     const driver = drivers.find((x) => x.id === driverId);
+    // driverMonths に項目がある場合と同じ鍵（月_試作ドライバーID）で ID を作り、後から driverMonths が増えても衝突しない
+    const protoDriverId = driverProtoById.get(driverId) ?? driverId;
     driverMonths.push({
-      id: deterministicId("driver_month", `${month}_auto_${driverId}`),
+      id: deterministicId("driver_month", `${month}_${protoDriverId}`),
       company_id: companyId,
       month: monthToDate(month),
       driver_id: driverId,

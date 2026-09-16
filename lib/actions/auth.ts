@@ -14,8 +14,9 @@ export interface AuthFormState {
   message?: string;
 }
 
+/** リダイレクト先は同一サイト内の絶対パスのみ許可（"//" や "/\\" による外部サイトへの誘導を防ぐ） */
 function safeNext(next: unknown): string {
-  return typeof next === "string" && next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
+  return typeof next === "string" && /^\/(?![\/\\])[^\s]*$/.test(next) && !next.includes("\\") ? next : "/dashboard";
 }
 
 function translateAuthError(message: string): string {
@@ -94,8 +95,21 @@ export async function acceptInviteAction(_prev: AuthFormState, formData: FormDat
 
   const email = inv.email.toLowerCase();
 
-  // 既存ユーザーか（profiles をサービスロールで検索）
-  const { data: existing } = await admin.from("profiles").select("id").ilike("email", email).maybeSingle();
+  // 招待リンクは 1 回限り：先に使用済みにする（同時アクセスでも 1 回しか通らない）
+  const { data: claimed, error: claimErr } = await admin
+    .from("invitations")
+    .update({ link_used_at: new Date().toISOString() })
+    .eq("id", inv.id)
+    .is("link_used_at", null)
+    .select("id");
+  if (claimErr) return { error: `招待の確認に失敗しました: ${claimErr.message}` };
+  if (!claimed || claimed.length === 0) return { error: "この招待リンクは既に使用されています。ログイン画面からメールアドレスでログインしてください。" };
+  const releaseClaim = async () => {
+    await admin.from("invitations").update({ link_used_at: null }).eq("id", inv.id);
+  };
+
+  // 既存ユーザーか（profiles をサービスロールで検索。メールは完全一致・小文字）
+  const { data: existing } = await admin.from("profiles").select("id").eq("email", email).maybeSingle();
   let userId = existing?.id ?? null;
 
   if (!userId) {
@@ -107,7 +121,10 @@ export async function acceptInviteAction(_prev: AuthFormState, formData: FormDat
         const { data: list } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
         userId = list?.users.find((u) => (u.email ?? "").toLowerCase() === email)?.id ?? null;
       }
-      if (!userId) return { error: `ユーザーの作成に失敗しました: ${translateAuthError(msg)}` };
+      if (!userId) {
+        await releaseClaim();
+        return { error: `ユーザーの作成に失敗しました: ${translateAuthError(msg)}` };
+      }
     } else {
       userId = created.user.id;
     }
@@ -117,18 +134,28 @@ export async function acceptInviteAction(_prev: AuthFormState, formData: FormDat
   const { data: prof } = await admin.from("profiles").select("id").eq("id", userId).maybeSingle();
   const { data: invAfter } = await admin.from("invitations").select("accepted_at").eq("id", inv.id).maybeSingle();
   if (!prof || !invAfter?.accepted_at) {
-    const { error: applyErr } = await admin.rpc("apply_invitation", { p_user_id: userId, p_email: email });
-    if (applyErr) return { error: `招待の適用に失敗しました: ${applyErr.message}` };
+    // トークンで特定した招待だけを適用する（同じメールの別の招待を誤って適用しない）
+    const { error: applyErr } = await admin.rpc("apply_invitation", { p_user_id: userId, p_email: email, p_token: token });
+    if (applyErr) {
+      await releaseClaim();
+      return { error: `招待の適用に失敗しました: ${applyErr.message}` };
+    }
   }
 
   // マジックリンクのトークンを発行し、その場で検証してログイン（メール送信なし）
   const { data: link, error: linkErr } = await admin.auth.admin.generateLink({ type: "magiclink", email });
-  if (linkErr || !link?.properties?.hashed_token) return { error: `ログイン用トークンの発行に失敗しました: ${linkErr?.message ?? "unknown"}` };
+  if (linkErr || !link?.properties?.hashed_token) {
+    await releaseClaim();
+    return { error: `ログイン用トークンの発行に失敗しました: ${linkErr?.message ?? "unknown"}` };
+  }
 
   const supabase = await createClient();
   const { error: verifyErr } = await supabase.auth.verifyOtp({ token_hash: link.properties.hashed_token, type: "magiclink" });
-  if (verifyErr) return { error: `ログインに失敗しました: ${translateAuthError(verifyErr.message)}` };
-  await admin.from("invitations").update({ link_used_at: new Date().toISOString(), accepted_at: inv.accepted_at ?? new Date().toISOString() }).eq("id", inv.id);
+  if (verifyErr) {
+    await releaseClaim();
+    return { error: `ログインに失敗しました: ${translateAuthError(verifyErr.message)}` };
+  }
+  await admin.from("invitations").update({ accepted_at: inv.accepted_at ?? new Date().toISOString() }).eq("id", inv.id);
 
   redirect(inv.role === "driver" ? "/driver" : "/dashboard");
 }

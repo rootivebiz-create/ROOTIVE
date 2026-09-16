@@ -33,11 +33,18 @@ alter default privileges in schema public revoke all on tables from anon;
 alter default privileges in schema public revoke all on functions from anon;
 alter default privileges in schema public revoke all on sequences from anon;
 
+-- 内部関数（トリガー・サーバー専用）は一般ユーザーから RPC で呼べないようにする
+revoke execute on function public.apply_invitation(uuid, text, text) from authenticated, anon, public;
+revoke execute on function public.write_audit(uuid, text, text, text, jsonb, jsonb) from authenticated, anon, public;
+revoke execute on function public.ensure_driver_month(uuid, date, uuid) from authenticated, anon, public;
+revoke execute on function public.import_has_id_conflict(uuid, jsonb) from authenticated, anon, public;
+revoke execute on function public.handle_new_auth_user() from authenticated, anon, public;
+
 -- 招待トリガー用：auth 管理ロールが関数を実行できること（security definer なのでテーブル権限は不要）
 do $$ begin
   if exists (select 1 from pg_roles where rolname = 'supabase_auth_admin') then
     grant usage on schema public to supabase_auth_admin;
     grant execute on function public.handle_new_auth_user() to supabase_auth_admin;
-    grant execute on function public.apply_invitation(uuid, text) to supabase_auth_admin;
+    grant execute on function public.apply_invitation(uuid, text, text) to supabase_auth_admin;
   end if;
 end $$;

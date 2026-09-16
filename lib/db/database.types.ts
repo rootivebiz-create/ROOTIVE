@@ -713,6 +713,7 @@ export type Database = {
         Args: {
           p_user_id: string
           p_email: string
+          p_token?: string
         }
         Returns: Database["public"]["Tables"]["profiles"]["Row"]
       }

@@ -42,11 +42,6 @@ export async function updateSession(request: NextRequest) {
     if (next !== "/") loginUrl.searchParams.set("next", next);
     return NextResponse.redirect(loginUrl);
   }
-  if (user && pathname === "/login") {
-    const home = request.nextUrl.clone();
-    home.pathname = "/dashboard";
-    home.search = "";
-    return NextResponse.redirect(home);
-  }
+  // ログイン済みユーザーが /login を開いた場合の振り分けは、ログインページ側（プロフィールの有効性を確認）で行う
   return response;
 }

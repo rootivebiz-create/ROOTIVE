@@ -57,22 +57,39 @@ $$;
 -- 監査ログ書き込み（トリガー・RPC からのみ使用）
 create or replace function public.write_audit(
   p_company_id uuid, p_action text, p_table text, p_record_id text, p_before jsonb, p_after jsonb
-) returns void language sql security definer set search_path = public as $$
+) returns void language plpgsql security definer set search_path = public as $$
+begin
+  -- 内部関数：トリガーと RPC（security definer）からのみ使う。一般ユーザーの直接呼び出しは拒否
+  if coalesce(current_setting('app.audit_internal', true), 'off') <> 'on' and auth.role() is not null and not public.is_service_role() then
+    raise exception '権限がありません' using errcode = 'P0001', hint = 'FORBIDDEN';
+  end if;
   insert into public.audit_logs (company_id, actor_id, action, table_name, record_id, before, after)
   values (p_company_id, auth.uid(), p_action, p_table, p_record_id, p_before, p_after);
-$$;
+end $$;
 
 -- ---------- 招待の適用（新規ユーザー作成トリガー・既存ユーザーへの再招待の両方で使用） ----------
-create or replace function public.apply_invitation(p_user_id uuid, p_email text)
+drop function if exists public.apply_invitation(uuid, text);
+create or replace function public.apply_invitation(p_user_id uuid, p_email text, p_token text default null)
 returns public.profiles language plpgsql security definer set search_path = public as $$
 declare
   inv public.invitations%rowtype;
   prof public.profiles;
 begin
-  select * into inv from public.invitations
-   where lower(email) = lower(p_email)
-     and accepted_at is null and cancelled_at is null and expires_at > now()
-   order by created_at desc limit 1;
+  -- 内部関数：auth.users のトリガー（JWT なし）またはサービスロールからのみ呼べる。一般ユーザーの RPC 呼び出しは拒否
+  if auth.role() is not null and not public.is_service_role() then
+    raise exception '権限がありません' using errcode = 'P0001', hint = 'FORBIDDEN';
+  end if;
+  if p_token is not null then
+    -- 招待リンク経由：トークンで特定した招待だけを適用する（メール一致も必須）
+    select * into inv from public.invitations
+     where token = p_token and lower(email) = lower(p_email)
+       and cancelled_at is null and expires_at > now();
+  else
+    select * into inv from public.invitations
+     where lower(email) = lower(p_email)
+       and accepted_at is null and cancelled_at is null and expires_at > now()
+     order by created_at desc limit 1;
+  end if;
   if not found then
     return null;
   end if;
@@ -89,7 +106,7 @@ begin
         display_name = case when public.profiles.display_name = '' then excluded.display_name else public.profiles.display_name end
   returning * into prof;
 
-  update public.invitations set accepted_at = now() where id = inv.id;
+  update public.invitations set accepted_at = coalesce(accepted_at, now()) where id = inv.id;
   perform set_config('app.bypass_profile_guard', 'off', true);
   return prof;
 end $$;
@@ -207,6 +224,12 @@ declare
   dm_id uuid;
   fee numeric(12,2);
 begin
+  -- 内部関数（トリガーから呼ぶ）。一般ユーザーが直接呼ぶ場合は自社かつ admin 以上に限定
+  if auth.role() is not null and not public.is_service_role() then
+    if p_company_id is distinct from public.current_company_id() or not public.is_admin() then
+      raise exception '権限がありません' using errcode = 'P0001', hint = 'FORBIDDEN';
+    end if;
+  end if;
   select id into dm_id from public.driver_months where company_id = p_company_id and month = p_month and driver_id = p_driver_id;
   if dm_id is not null then
     return dm_id;
@@ -263,7 +286,9 @@ begin
     when 'month_closings' then coalesce(a->>'month', b->>'month')
     else coalesce(a->>'id', b->>'id')
   end;
+  perform set_config('app.audit_internal', 'on', true);
   perform public.write_audit(cid, tg_op, tg_table_name, rid, b, a);
+  perform set_config('app.audit_internal', 'off', true);
   return coalesce(new, old);
 end $$;
 
@@ -379,7 +404,7 @@ create policy adjustments_select_driver on public.adjustments for select to auth
 -- month_closings：閲覧は全ロール、insert/update は admin+（closed→open はトリガーで owner に限定）、削除は owner
 drop policy if exists month_closings_select on public.month_closings;
 create policy month_closings_select on public.month_closings for select to authenticated
-  using (company_id = public.current_company_id());
+  using (company_id = public.current_company_id() and public.is_staff());
 drop policy if exists month_closings_insert on public.month_closings;
 create policy month_closings_insert on public.month_closings for insert to authenticated
   with check (company_id = public.current_company_id() and public.is_admin());

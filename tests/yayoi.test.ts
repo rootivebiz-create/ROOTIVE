@@ -155,3 +155,22 @@ describe("弥生 仕訳 CSV（§8.2）", () => {
     expect(text).toContain(',"a,b ""c""",');
   });
 });
+
+import { describe as describe2, expect as expect2, it as it2 } from "vitest";
+import { buildYayoiRows as buildRows2, yayoiPayableBalance as balance2 } from "@/lib/yayoi/build";
+import { DEFAULT_YAYOI_ACCOUNTS as ACC2 } from "@/lib/yayoi/accounts";
+
+describe2("弥生仕訳の端数調整", () => {
+  it2("行ごとの丸めで生じる ±1 円の差はロイヤリティ行に寄せ、未払金残高 ＝ 表示上の支払額 になる", () => {
+    // pay 100.5 / royalty 10.05 → 支払額 90.45 → 表示 90。行ごとの丸めだと 101 − 10 = 91 になるので、ロイヤリティを 11 に調整する
+    const rows = buildRows2({
+      month: "2026-09",
+      accounts: ACC2,
+      payoutDate: "2026-10-31",
+      drivers: [{ driverName: "端数太郎", bill: 200, pay: 100.5, royalty: 10.05, mgmtFee: 0, adjustments: [] } as never],
+    });
+    const royaltyRow = rows.find((r) => r[16].includes("ロイヤリティ"));
+    expect2(royaltyRow?.[8]).toBe("11");
+    expect2(balance2(rows, ACC2)).toBe(90);
+  });
+});

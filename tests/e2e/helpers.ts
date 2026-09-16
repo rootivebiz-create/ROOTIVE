@@ -289,10 +289,14 @@ export function toast(page: Page, text: string | RegExp): Locator {
 /** スクリーンショットの保存先（docs/screenshots） */
 export const SCREENSHOT_DIR = path.join(ROOT_DIR, "docs/screenshots");
 
-/** docs/screenshots に PNG を保存する（既定は fullPage。ダイアログなど固定要素はビューポートで撮る） */
+/**
+ * docs/screenshots に PNG を保存する（既定は fullPage。ダイアログなど固定要素はビューポートで撮る）。
+ * fullPage ではスマホの下タブナビ（position: fixed）がページ中央に写り込むため、撮影中だけ非表示にする
+ */
 export async function saveScreenshot(page: Page, name: string, opts: { fullPage?: boolean } = {}): Promise<string> {
   fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
   const file = path.join(SCREENSHOT_DIR, name);
-  await page.screenshot({ path: file, fullPage: opts.fullPage ?? true });
+  const fullPage = opts.fullPage ?? true;
+  await page.screenshot({ path: file, fullPage, style: fullPage ? "nav.fixed.bottom-0 { display: none !important; }" : undefined });
   return file;
 }

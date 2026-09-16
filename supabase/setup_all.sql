@@ -434,22 +434,39 @@ $$;
 -- 監査ログ書き込み（トリガー・RPC からのみ使用）
 create or replace function public.write_audit(
   p_company_id uuid, p_action text, p_table text, p_record_id text, p_before jsonb, p_after jsonb
-) returns void language sql security definer set search_path = public as $$
+) returns void language plpgsql security definer set search_path = public as $$
+begin
+  -- 内部関数：トリガーと RPC（security definer）からのみ使う。一般ユーザーの直接呼び出しは拒否
+  if coalesce(current_setting('app.audit_internal', true), 'off') <> 'on' and auth.role() is not null and not public.is_service_role() then
+    raise exception '権限がありません' using errcode = 'P0001', hint = 'FORBIDDEN';
+  end if;
   insert into public.audit_logs (company_id, actor_id, action, table_name, record_id, before, after)
   values (p_company_id, auth.uid(), p_action, p_table, p_record_id, p_before, p_after);
-$$;
+end $$;
 
 -- ---------- 招待の適用（新規ユーザー作成トリガー・既存ユーザーへの再招待の両方で使用） ----------
-create or replace function public.apply_invitation(p_user_id uuid, p_email text)
+drop function if exists public.apply_invitation(uuid, text);
+create or replace function public.apply_invitation(p_user_id uuid, p_email text, p_token text default null)
 returns public.profiles language plpgsql security definer set search_path = public as $$
 declare
   inv public.invitations%rowtype;
   prof public.profiles;
 begin
-  select * into inv from public.invitations
-   where lower(email) = lower(p_email)
-     and accepted_at is null and cancelled_at is null and expires_at > now()
-   order by created_at desc limit 1;
+  -- 内部関数：auth.users のトリガー（JWT なし）またはサービスロールからのみ呼べる。一般ユーザーの RPC 呼び出しは拒否
+  if auth.role() is not null and not public.is_service_role() then
+    raise exception '権限がありません' using errcode = 'P0001', hint = 'FORBIDDEN';
+  end if;
+  if p_token is not null then
+    -- 招待リンク経由：トークンで特定した招待だけを適用する（メール一致も必須）
+    select * into inv from public.invitations
+     where token = p_token and lower(email) = lower(p_email)
+       and cancelled_at is null and expires_at > now();
+  else
+    select * into inv from public.invitations
+     where lower(email) = lower(p_email)
+       and accepted_at is null and cancelled_at is null and expires_at > now()
+     order by created_at desc limit 1;
+  end if;
   if not found then
     return null;
   end if;
@@ -466,7 +483,7 @@ begin
         display_name = case when public.profiles.display_name = '' then excluded.display_name else public.profiles.display_name end
   returning * into prof;
 
-  update public.invitations set accepted_at = now() where id = inv.id;
+  update public.invitations set accepted_at = coalesce(accepted_at, now()) where id = inv.id;
   perform set_config('app.bypass_profile_guard', 'off', true);
   return prof;
 end $$;
@@ -584,6 +601,12 @@ declare
   dm_id uuid;
   fee numeric(12,2);
 begin
+  -- 内部関数（トリガーから呼ぶ）。一般ユーザーが直接呼ぶ場合は自社かつ admin 以上に限定
+  if auth.role() is not null and not public.is_service_role() then
+    if p_company_id is distinct from public.current_company_id() or not public.is_admin() then
+      raise exception '権限がありません' using errcode = 'P0001', hint = 'FORBIDDEN';
+    end if;
+  end if;
   select id into dm_id from public.driver_months where company_id = p_company_id and month = p_month and driver_id = p_driver_id;
   if dm_id is not null then
     return dm_id;
@@ -640,7 +663,9 @@ begin
     when 'month_closings' then coalesce(a->>'month', b->>'month')
     else coalesce(a->>'id', b->>'id')
   end;
+  perform set_config('app.audit_internal', 'on', true);
   perform public.write_audit(cid, tg_op, tg_table_name, rid, b, a);
+  perform set_config('app.audit_internal', 'off', true);
   return coalesce(new, old);
 end $$;
 
@@ -756,7 +781,7 @@ create policy adjustments_select_driver on public.adjustments for select to auth
 -- month_closings：閲覧は全ロール、insert/update は admin+（closed→open はトリガーで owner に限定）、削除は owner
 drop policy if exists month_closings_select on public.month_closings;
 create policy month_closings_select on public.month_closings for select to authenticated
-  using (company_id = public.current_company_id());
+  using (company_id = public.current_company_id() and public.is_staff());
 drop policy if exists month_closings_insert on public.month_closings;
 create policy month_closings_insert on public.month_closings for insert to authenticated
   with check (company_id = public.current_company_id() and public.is_admin());
@@ -1110,9 +1135,9 @@ returns jsonb language sql stable security invoker set search_path = public as $
   );
 $$;
 
--- 月締め（admin+）
+-- 月締め（admin+）。監査ログ書き込みのため security definer（会社は current_company_id() で限定）
 create or replace function public.close_month(p_month date, p_note text default '')
-returns jsonb language plpgsql security invoker set search_path = public as $$
+returns jsonb language plpgsql security definer set search_path = public as $$
 declare
   cid uuid := public.current_company_id();
   snap jsonb;
@@ -1129,13 +1154,15 @@ begin
   on conflict (company_id, month) do update
     set status = 'closed', closed_at = now(), closed_by = auth.uid(), snapshot = excluded.snapshot,
         note = excluded.note, reopened_at = null, reopened_by = null;
+  perform set_config('app.audit_internal', 'on', true);
   perform public.write_audit(cid, 'close_month', 'month_closings', to_char(p_month, 'YYYY-MM'), null, jsonb_build_object('note', p_note, 'summary', snap->'summary'));
+  perform set_config('app.audit_internal', 'off', true);
   return snap;
 end $$;
 
 -- 締め時バックアップの保存先を記録（admin+）
 create or replace function public.set_month_backup_path(p_month date, p_path text)
-returns void language plpgsql security invoker set search_path = public as $$
+returns void language plpgsql security definer set search_path = public as $$
 begin
   if not public.is_admin() then
     raise exception '権限がありません' using errcode = 'P0001', hint = 'FORBIDDEN';
@@ -1146,7 +1173,7 @@ end $$;
 
 -- 締め解除（owner）
 create or replace function public.reopen_month(p_month date)
-returns void language plpgsql security invoker set search_path = public as $$
+returns void language plpgsql security definer set search_path = public as $$
 declare cid uuid := public.current_company_id();
 begin
   if not public.is_owner() then
@@ -1157,7 +1184,9 @@ begin
   end if;
   update public.month_closings set status = 'open', reopened_at = now(), reopened_by = auth.uid()
    where company_id = cid and month = p_month;
+  perform set_config('app.audit_internal', 'on', true);
   perform public.write_audit(cid, 'reopen_month', 'month_closings', to_char(p_month, 'YYYY-MM'), null, null);
+  perform set_config('app.audit_internal', 'off', true);
 end $$;
 
 -- バックアップ JSON（admin+）
@@ -1201,7 +1230,7 @@ $$;
 
 -- 復元／取り込み（owner）。ID 一致は上書き、他社の ID と衝突すれば拒否。締めガード・行単位監査は一時的に回避
 create or replace function public.import_backup(p_data jsonb)
-returns jsonb language plpgsql security invoker set search_path = public as $$
+returns jsonb language plpgsql security definer set search_path = public as $$
 declare
   cid uuid := public.current_company_id();
   c jsonb := p_data->'company';
@@ -1339,13 +1368,15 @@ begin
 
   perform set_config('app.skip_audit', 'off', true);
   perform set_config('app.bypass_closing', 'off', true);
+  perform set_config('app.audit_internal', 'on', true);
   perform public.write_audit(cid, 'import_backup', 'company', cid::text, null, counts);
+  perform set_config('app.audit_internal', 'off', true);
   return counts;
 end $$;
 
 -- データ全削除（owner。会社名の入力で確認）。ユーザー・招待・会社設定は残す
 create or replace function public.reset_company_data(p_company_name text)
-returns jsonb language plpgsql security invoker set search_path = public as $$
+returns jsonb language plpgsql security definer set search_path = public as $$
 declare
   cid uuid := public.current_company_id();
   actual text;
@@ -1380,7 +1411,9 @@ begin
   delete from public.drivers where company_id = cid; get diagnostics n = row_count; counts := counts || jsonb_build_object('drivers', n);
   perform set_config('app.skip_audit', 'off', true);
   perform set_config('app.bypass_closing', 'off', true);
+  perform set_config('app.audit_internal', 'on', true);
   perform public.write_audit(cid, 'reset_company_data', 'company', cid::text, counts, null);
+  perform set_config('app.audit_internal', 'off', true);
   return counts;
 end $$;
 
@@ -1574,12 +1607,19 @@ alter default privileges in schema public revoke all on tables from anon;
 alter default privileges in schema public revoke all on functions from anon;
 alter default privileges in schema public revoke all on sequences from anon;
 
+-- 内部関数（トリガー・サーバー専用）は一般ユーザーから RPC で呼べないようにする
+revoke execute on function public.apply_invitation(uuid, text, text) from authenticated, anon, public;
+revoke execute on function public.write_audit(uuid, text, text, text, jsonb, jsonb) from authenticated, anon, public;
+revoke execute on function public.ensure_driver_month(uuid, date, uuid) from authenticated, anon, public;
+revoke execute on function public.import_has_id_conflict(uuid, jsonb) from authenticated, anon, public;
+revoke execute on function public.handle_new_auth_user() from authenticated, anon, public;
+
 -- 招待トリガー用：auth 管理ロールが関数を実行できること（security definer なのでテーブル権限は不要）
 do $$ begin
   if exists (select 1 from pg_roles where rolname = 'supabase_auth_admin') then
     grant usage on schema public to supabase_auth_admin;
     grant execute on function public.handle_new_auth_user() to supabase_auth_admin;
-    grant execute on function public.apply_invitation(uuid, text) to supabase_auth_admin;
+    grant execute on function public.apply_invitation(uuid, text, text) to supabase_auth_admin;
   end if;
 end $$;
 

@@ -85,7 +85,12 @@ export function BulkForm({ month, masters, rows, editable, closed, initialItemId
 
   const valueOf = (line: DriverLine) => edits[line.driverId] ?? line.initialQty;
   const qtyOf = (line: DriverLine) => parseNumberInput(valueOf(line)) ?? 0;
-  const isChanged = (line: DriverLine) => qtyOf(line) !== (line.existing?.qty ?? 0);
+  // 変更判定：数量が既存と異なる、または既存行（数量 0 の複製行を含む）を利用者が明示的に空欄／0 にした場合は「削除」として送る
+  const isChanged = (line: DriverLine) => {
+    const edited = edits[line.driverId] !== undefined;
+    const q = qtyOf(line);
+    return q !== (line.existing?.qty ?? 0) || (edited && line.existing != null && q === 0);
+  };
   const invalid = (line: DriverLine) => {
     const v = valueOf(line).trim();
     if (v === "") return false;

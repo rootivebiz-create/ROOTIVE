@@ -46,6 +46,8 @@ export async function createEntryAction(input: EntryInput): Promise<ActionResult
   return runAction(async () => {
     const ctx = await requireAdminAction();
     const v = entryInputSchema.parse(input);
+    // 数量 0 は「前月から複製」直後の未入力状態としてのみ許容する（§7）。手入力の新規行は 0 より大きいこと
+    if (!(v.qty > 0)) throw new ActionError("数量は 0 より大きい値を入力してください。", { qty: ["数量は 0 より大きい値を入力してください"] });
     await assertMastersExist(ctx, v.driver_id, v.project_item_id);
     const row = unwrap<{ id: string }>(await ctx.supabase.from("work_entries").insert(toRow(ctx, v)).select("id").single());
     revalidateEntries();

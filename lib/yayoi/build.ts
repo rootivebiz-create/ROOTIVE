@@ -9,7 +9,7 @@
  *     21 生成元, 22 仕訳メモ, 23 付箋1, 24 付箋2, 25 調整
  */
 import iconv from "iconv-lite";
-import { roundDisplay } from "@/lib/calc/money";
+import { roundDisplay, sumMoney } from "@/lib/calc/money";
 import { daysInMonth, formatMonthJa } from "@/lib/month";
 import type { YayoiAccounts } from "./accounts";
 
@@ -115,6 +115,21 @@ function buildJournalsFor(unit: YayoiDriverInput | null, input: YayoiBuildInput,
 
   const totals = unit ?? aggregate(input.drivers);
 
+  // 行ごとに整数へ丸めると、未払金残高が画面・明細の支払額（合計を丸めた値）と ±1 円ずれることがある。
+  // その端数差はロイヤリティ行（無ければ外注費行）に寄せて、未払金残高 ＝ 表示上の支払額 を保証する
+  const rPay = roundDisplay(totals.pay);
+  const rRoyalty = roundDisplay(totals.royalty);
+  const rMgmt = roundDisplay(totals.mgmtFee);
+  const rAdjSum = totals.adjustments.reduce((acc, adj) => acc + roundDisplay(adj.amount), 0);
+  const exactPayout = roundDisplay(sumMoney([totals.pay, -totals.royalty, -totals.mgmtFee, ...totals.adjustments.map((adj) => adj.amount)]));
+  const diff = exactPayout - (rPay - rRoyalty - rMgmt + rAdjSum);
+  let payAmount = rPay;
+  let royaltyAmount = rRoyalty;
+  if (diff !== 0) {
+    if (rRoyalty - diff > 0) royaltyAmount = rRoyalty - diff;
+    else payAmount = rPay + diff;
+  }
+
   // (a) 売上：借方 売掛金／貸方 売上高（会社売上）
   push({
     debitAccount: a.sales_debit,
@@ -134,7 +149,7 @@ function buildJournalsFor(unit: YayoiDriverInput | null, input: YayoiBuildInput,
     creditAccount: a.outsourcing_credit,
     creditSub: "",
     creditTax: a.tax_class_none,
-    amount: totals.pay,
+    amount: payAmount,
     summary: `${prefix} 稼働分 外注費`,
   });
   // (c) ロイヤリティ：借方 未払金／貸方 雑収入（補助 ロイヤリティ）
@@ -145,7 +160,7 @@ function buildJournalsFor(unit: YayoiDriverInput | null, input: YayoiBuildInput,
     creditAccount: a.royalty_credit,
     creditSub: a.royalty_sub,
     creditTax: a.tax_class_sales,
-    amount: totals.royalty,
+    amount: royaltyAmount,
     summary: `${prefix} ロイヤリティ`,
   });
   // (d) 管理費：借方 未払金／貸方 雑収入（補助 管理費）

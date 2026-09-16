@@ -18,6 +18,10 @@ export const GET = handleExport(async (req: NextRequest) => {
   if (error) throw error;
   const path = closing?.backup_path;
   if (!path) throw new ExportError(404, `${month} の締め時バックアップはありません。月締めを行うと自動で保存されます。`);
+  // 自社フォルダ（<company_id>/...）以外のパスは署名しない（backup_path が書き換えられた場合の他社データ参照を防ぐ）
+  if (!path.startsWith(`${company.id}/`) || path.includes("..")) {
+    throw new ExportError(403, "バックアップの保存先が不正です。");
+  }
 
   // サービスロールが無い環境では本人の権限（RLS：自社フォルダ・admin 以上）で署名する
   const storage = (hasServiceRoleKey() ? createAdminClient() : supabase).storage;

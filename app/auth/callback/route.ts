@@ -7,13 +7,13 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const code = searchParams.get("code");
   const nextParam = searchParams.get("next") ?? "/";
-  const next = nextParam.startsWith("/") && !nextParam.startsWith("//") ? nextParam : "/";
+  const next = /^\/(?![\/\\])[^\s]*$/.test(nextParam) && !nextParam.includes("\\") ? nextParam : "/";
   if (code) {
     const supabase = await createClient();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) return NextResponse.redirect(absoluteUrlFromRequest(request, next));
   }
   const login = absoluteUrlFromRequest(request, "/login");
-  login.searchParams.set("error", "ログインに失敗しました。もう一度お試しください。");
+  login.searchParams.set("error", "failed");
   return NextResponse.redirect(login);
 }
