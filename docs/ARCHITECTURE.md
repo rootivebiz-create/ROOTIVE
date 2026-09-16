@@ -200,6 +200,18 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 
 ブラウザへ渡す `NEXT_PUBLIC_*` には含めません。`next.config.ts` の `serverExternalPackages` と `server-only` で誤ってクライアントへ混入しない構成です。
 
+### 4-4. その他の防御（レビューで追加した対策）
+
+| 対策 | 実装 |
+|---|---|
+| **内部関数は RPC で呼べない** | `apply_invitation` / `write_audit` / `ensure_driver_month` / `import_has_id_conflict` / `handle_new_auth_user` は `0006_storage_grants.sql` で `authenticated` / `anon` / `public` から `execute` を剥奪。さらに `apply_invitation` は関数内で「JWT なし（auth トリガー）またはサービスロール」以外を例外で拒否（権限剥奪＋ガードの二重） |
+| **締めスナップショットはスタッフのみ** | `month_closings`（`snapshot` 列に会社売上・利益を含む）の SELECT ポリシーは `is_staff()`。driver ロールは `is_month_closed()`（security definer）経由で締め状態だけを知る |
+| **監査を書く RPC は security definer** | `close_month` / `reopen_month` / `import_backup` / `reset_company_data` / `set_month_backup_path` は監査ログ書き込みのため security definer。会社は必ず `current_company_id()` で限定し、関数冒頭で `is_admin()` / `is_owner()` を確認するので、他社のデータには触れない |
+| **招待リンクは同時使用不可** | `acceptInviteAction` は「`link_used_at is null` の行だけを使用済みに UPDATE（RETURNING）」してからログイン処理へ進む。同じリンクを同時に 2 回開いても 1 回しか通らない（失敗時は使用済みを解除） |
+| **ログアウトは CSRF 対策** | `app/auth/signout/route.ts` は POST のみで、`Origin`（無ければ `Referer`）のホストが自サイトと一致しないと 403 |
+| **リダイレクト先はサイト内のみ** | `?next=` は「`/` で始まり `//` や `\` を含まないパス」だけ許可（`safeNext` / ログイン画面）。メールリンクの `next={{ .RedirectTo }}` は `app/auth/confirm/route.ts` の `resolveNext()` が「サイト内パス、または同一ホストの絶対 URL」のみ受け付け、それ以外はトップへ |
+| **anon は何もできない** | `public` スキーマの全テーブル・関数・シーケンスから `anon` の権限を剥奪（既定権限も含む）。未ログインで API を叩いても RLS 以前に拒否される |
+
 ---
 
 ## 5. 認証フロー
@@ -218,19 +230,24 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
    → サーバー側で supabase.auth.verifyOtp({ token_hash, type: "magiclink" }) → Cookie セッション発行
    → invitations.link_used_at を記録（1 回限り）→ /dashboard または /driver へ
 
-③ メールでログイン（マジックリンク）   ログイン画面 → signInWithOtp({ shouldCreateUser: false })
-   メールのリンク = {{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=magiclink
+③ メールでログイン（マジックリンク）   ログイン画面 → signInWithOtp({ shouldCreateUser: false, emailRedirectTo: <本番URL>+next })
+   メールのリンク = {{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=magiclink&next={{ .RedirectTo }}
    → app/auth/confirm/route.ts が verifyOtp({ type, token_hash }) → セッション → next へ
    ※ token_hash 方式のため、受信した端末と別の端末で開いても検証できる
+   ※ {{ .RedirectTo }} = アプリが指定した遷移先（emailRedirectTo / redirectTo）。resolveNext() でサイト内に限定。
+     driver ロールはどこを指定されても /driver（アカウント系なら /driver/account）へ
 
-④ パスワード           signInWithPassword。設定は「アカウント」画面（updateUser）。再設定メールは type=recovery
+④ パスワード           signInWithPassword。設定は「アカウント」画面（updateUser）。
+                       再設定メールは type=recovery、redirectTo = /settings/account?reset=1（パスワード欄にフォーカス。driver は /driver/account）
 
 ⑤ PKCE                 app/auth/callback/route.ts（code → exchangeCodeForSession）。Supabase ダッシュボードからの操作や将来の OAuth 用に併設
 
 ⑥ 自由登録の禁止        Supabase 側 disable_signup + shouldCreateUser: false + auth.users トリガーで招待の無い登録を例外で拒否（三重）
+
+⑦ ログアウト           app/auth/signout/route.ts（POST のみ・Origin / Referer が自サイトのときだけ signOut → /login）
 ```
 
-セッションは `@supabase/ssr` の Cookie。`middleware.ts` が毎リクエストでトークンを更新し、未ログインなら `/login?next=…` へリダイレクト（`/login` `/invite` `/auth` `/manifest.webmanifest` `/icons` などは公開）。ロールに応じた入口は `app/page.tsx`（driver → `/driver`、それ以外 → `/dashboard`）。2 段階認証（Supabase TOTP）は将来ダッシュボードで有効化できる構成（UI は未実装）。
+セッションは `@supabase/ssr` の Cookie。`middleware.ts` が毎リクエストでトークンを更新し、未ログインなら `/login?next=…` へリダイレクト（`/login` `/invite` `/auth` `/api/cron` `/manifest.webmanifest` `/icons` などは公開。`/api/cron` は Cookie を持たない Vercel Cron から呼ばれるため公開扱いにし、認可は Route Handler 側の `CRON_SECRET` で行う）。ロールに応じた入口は `app/page.tsx`（driver → `/driver`、それ以外 → `/dashboard`）。2 段階認証（Supabase TOTP）は将来ダッシュボードで有効化できる構成（UI は未実装）。
 
 ---
 
@@ -273,7 +290,7 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 |---|---|---|
 | 単体（Vitest） | `npm test` | `lib/calc`（§2.6 の全ケース、誤差 0.01 円以内、端数処理 4 種、恒等式）、zod スキーマ、`lib/migrate` の変換と決定的 ID |
 | SQL 結合（psql） | `npm run test:sql` | ローカル PostgreSQL に `tests/sql/auth_stub.sql`（auth.uid() 等のスタブ）+ 全マイグレーションを適用し `tests/sql/test.sql` を実行。ビューの計算が §2.6 と一致、RLS（viewer / driver の拒否）、締めガード、招待制、復元・全削除 |
-| E2E（Playwright） | `npm run test:e2e` | Supabase 互換のテストサーバー（`supabase-lite`：PostgreSQL + GoTrue 相当 + PostgREST 相当の軽量実装）を自動起動し、iPhone 13 と Desktop Chrome の 2 プロジェクトで主要導線（ログイン → 稼働追加 → 支払明細 → 月締め → 閲覧者の編集不可）をブラウザで確認。スクリーンショットを `tests/e2e/screenshots/` に保存 |
+| E2E（Playwright） | `npm run test:e2e` | Supabase 互換のテストサーバー（`supabase-lite`：PostgreSQL + GoTrue 相当 + PostgREST 相当の軽量実装）を自動起動し、iPhone 13 と Desktop Chrome の 2 プロジェクトで主要導線（招待ログイン → ダッシュボード → 稼働追加・複製・一括入力 → 支払明細・PDF → 設定 → 月締め・解除 → 閲覧者／ドライバーの権限 → 移行 JSON の取り込み）をブラウザで確認。8 spec・30 シナリオ × 2 プロジェクト = **60 件**。スクリーンショットを `docs/screenshots/` に保存。詳細は [docs/E2E.md](E2E.md) |
 | 静的 | `npm run typecheck` / `npm run lint` / `npm run build` | 型・Lint・本番ビルド |
 | まとめ | `npm run check` | typecheck + lint + test + build:sql |
 
@@ -287,8 +304,8 @@ supabase-js の使い方は、E2E 用の互換サーバーが対応する範囲�
 2. **複数会社の UI は未対応**：データ構造（`company_id` + RLS）は多社対応ですが、ユーザーは 1 社にのみ所属し、会社の切替 UI はありません。
 3. **通知機能なし**：LINE / メールでの月締め通知・明細送付は手動（テキストコピー・PDF 送付）。
 4. **メール送信は Supabase 標準では 1 時間 2 通**：本番でマジックリンクを常用するにはカスタム SMTP が必要（[docs/SETUP.md](SETUP.md) 手順 12）。招待リンク＋パスワード運用なら不要。
-5. **Supabase 無料プランの休止**：7 日間 API アクセスが無いとプロジェクトが一時停止します（ダッシュボードの「Restore project」で再開可）。`vercel.json` の `crons` が毎日 `/api/cron/keepalive`（service_role で `companies` を 1 件数えるだけ）を呼び出して防止します。`CRON_SECRET` を設定すると Vercel が付与する Bearer トークンを検証します。念のため月 1 回の手動バックアップを推奨。
-6. **PDF のフォント**：`public/fonts/NotoSansJP-*.ttf` を実行時にファイルとして読み込みます。Vercel でフォントが見つからないエラーが出る場合は `next.config.ts` の `outputFileTracingIncludes` で `public/fonts/**` を含める対応が必要です。
+5. **Supabase 無料プランの休止**：7 日間 API アクセスが無いとプロジェクトが一時停止します（ダッシュボードの「Restore project」で再開可）。`vercel.json` の `crons` が毎日（UTC 21:00 = 日本時間 6:00）`/api/cron/keepalive`（service_role で `companies` を 1 件数えるだけ）を呼び出して防止します。**`CRON_SECRET` は必須**で、未設定だと Route Handler が 503 を返して定期アクセスは無効になります（設定済みなら Vercel が付与する `Authorization: Bearer <CRON_SECRET>` を照合）。`scripts/deploy-vercel.sh` と GitHub Actions は未指定時に自動生成します。念のため月 1 回の手動バックアップを推奨。
+6. **PDF のフォント**：`public/fonts/NotoSansJP-*.ttf` を実行時にファイルとして読み込みます。`next.config.ts` の `outputFileTracingIncludes` で `/api/export/statement.pdf` に `public/fonts/**` を同梱する設定済みです。フォントが見つからないエラーが出た場合は、この設定と `public/fonts/` の中身を確認してください。
 7. **2 段階認証の UI なし**（Supabase 側で有効化できる構成のみ）。
 
 ---
@@ -315,6 +332,18 @@ supabase-js の使い方は、E2E 用の互換サーバーが対応する範囲�
 | `SUPABASE_SERVICE_ROLE_KEY` | service_role（secret）キー | **サーバー専用** |
 | `NEXT_PUBLIC_APP_URL` | 本番 URL（招待リンク・メールのリダイレクト先）。未設定時は `VERCEL_PROJECT_PRODUCTION_URL` → `VERCEL_URL` → localhost | ブラウザにも渡る |
 | `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` | 任意。AI 月次分析 | サーバー専用 |
-| `CRON_SECRET` | 任意。Vercel Cron → `/api/cron/keepalive` の Bearer 検証（未設定なら検証なし） | サーバー専用 |
+| `CRON_SECRET` | **必須**（本番）。Vercel Cron → `/api/cron/keepalive` の Bearer 検証。未設定だと 503 を返し定期アクセスは無効。32 文字以上のランダム文字列（deploy スクリプト／GitHub Actions が自動生成） | サーバー専用 |
 
-公開手順は [docs/SETUP.md](SETUP.md)、自動化は [docs/QUICKSTART.md](QUICKSTART.md)、日々の運用は [docs/OPERATIONS.md](OPERATIONS.md) を参照してください。
+---
+
+## 13. 公開の仕組み
+
+| 方法 | 実装 | 内容 |
+|---|---|---|
+| GitHub Actions（推奨・実績あり） | `.github/workflows/deploy.yml`（`workflow_dispatch`） | Secrets `SUPABASE_ACCESS_TOKEN` / `VERCEL_TOKEN`（任意で `SUPABASE_ORG_ID` / `ANTHROPIC_API_KEY`）を使い、下の 2 スクリプトを順に実行。入力 `app_url` / `owner_email` / `company_name` / `skip_supabase`。DB パスワードと service_role キーはログにマスクし、`.env.production.local` は最後に削除。ジョブサマリーに本番 URL・Supabase プロジェクト・招待リンクを出力 |
+| `scripts/setup-supabase.sh` | Supabase Management API（curl + jq） | プロジェクト作成（東京・Free、同名は再利用）→ `supabase/migrations/*.sql` を順に適用 → 会社とオーナー招待（有効な招待は再利用）→ 認証設定（`disable_signup`、Site URL / Redirect URLs）→ メールテンプレート（無料プラン＋標準メールでは HTTP 400 になるため警告して続行）→ API キー取得（`--write-env` で `.env.production.local`） |
+| `scripts/deploy-vercel.sh` | Vercel CLI + Vercel REST API | `vercel link` → 環境変数を REST API（`/v10/projects/:id/env?upsert=true`）で登録（CLI の対話プロンプトを避ける。API 不可時のみ CLI）→ `CRON_SECRET` を未指定なら生成 → `vercel deploy --prod` → 本番 URL（エイリアス `https://rootive-profit.vercel.app`）を `NEXT_PUBLIC_APP_URL` に設定（未確定なら再デプロイ）→ `SUPABASE_ACCESS_TOKEN` + `SUPABASE_PROJECT_REF` があれば Supabase の Site URL / Redirect URLs を更新。トークンの前後の空白・改行は自動で除去 |
+
+実際の本番：Vercel `rootive-profit`（`https://rootive-profit.vercel.app`、東京 `hnd1`）＋ Supabase `rmchixgmeqtszqsdvxrj`（東京 `ap-northeast-1`）。
+
+公開手順は [docs/SETUP.md](SETUP.md)、自動化は [docs/QUICKSTART.md](QUICKSTART.md)、日々の運用は [docs/OPERATIONS.md](OPERATIONS.md)、E2E テストは [docs/E2E.md](E2E.md) を参照してください。

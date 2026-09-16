@@ -67,7 +67,7 @@ npx playwright show-report                # HTML レポート（playwright-repor
 | `settings-drivers-mobile.png` | 設定 › ドライバー一覧（テスト太郎を追加した直後） |
 | `closing-months-mobile.png` | 設定 › 月締め（2026年9月 を締めた直後） |
 | `import-preview-mobile.png` | 設定 › データの取り込みプレビュー（試作アプリ JSON） |
-| `driver-portal-mobile.png` | ドライバーポータルの支払明細（下記の既知の不具合が直り、`60-roles.spec.ts` の fixme を解除すると生成されます） |
+| `driver-portal-mobile.png` | ドライバーポータルの支払明細（driver ロールで見える範囲だけ。会社側の数字は出ない） |
 
 ### ダッシュボード（スマホ／PC）
 
@@ -95,13 +95,15 @@ npx playwright show-report                # HTML レポート（playwright-repor
 
 ![import-preview-mobile](screenshots/import-preview-mobile.png)
 
-## 既知の不具合（test.fixme で残しているテスト）
+### ドライバーポータル（スマホ）
 
-| テスト | 内容 |
-|---|---|
-| `60-roles.spec.ts` › driver：ポータルに締め済みの自分の月だけ表示され、会社側の数字は出ない（/driver の描画） | **本番ビルドで `/driver` が「エラーが発生しました」になる。** 再現：driver ロールで招待リンクからログイン → `/driver`。期待：「支払明細一覧」に締め済み月（2026年9月 ¥396,643）が表示される。実際：Server Components render error（digest 975715775）「Functions cannot be passed directly to Client Components…」。原因：`app/driver/layout.tsx` が `navItems` の `icon` に lucide のコンポーネント（関数）を渡し、`components/layout/app-shell.tsx` → `components/layout/nav.tsx`（`"use client"`）の境界を関数が越えている。直したら `test.fixme` を `test` に戻す |
+![driver-portal-mobile](screenshots/driver-portal-mobile.png)
 
-driver ロールのうち画面の描画に依存しない部分（招待ログイン → `/driver` へのリダイレクト、PDF の権限、スタッフ画面・出力の拒否、RLS）は別のテストで通しています。
+## 既知の不具合
+
+現在 `test.fixme` / `test.skip` で残しているテストはありません（60 件すべて通過）。
+
+以前 `60-roles.spec.ts` の「driver：ポータルに締め済みの自分の月だけ表示され…」を fixme にしていた不具合（本番ビルドで `/driver` が「エラーが発生しました」になる。`app/driver/layout.tsx` が lucide のアイコン関数を `"use client"` の `nav.tsx` に渡していたため）は、レイアウトが `navVariant="driver"` を渡し、`nav.tsx` 側で `navItemsFor()` により項目を組み立てる形に変更して解消済みです。
 
 ## 失敗したときの見方
 

@@ -121,7 +121,7 @@ test.describe("ロール", () => {
     expect((await page.request.get("/api/export/entries.csv?m=2026-09")).status()).toBe(403);
     expect((await page.request.get("/api/export/backup.json")).status()).toBe(403);
 
-    // スタッフ画面は /driver へ（URL のみ。画面の描画は下の fixme を参照）
+    // スタッフ画面は /driver へ（URL のみ。画面の描画は次のテストで確認）
     await page.goto("/dashboard");
     await expect(page).toHaveURL(/\/driver(\?|$)/);
     await page.goto("/entries?m=2026-09");
@@ -141,15 +141,9 @@ test.describe("ロール", () => {
   });
 
   /**
-   * FIXME（アプリの不具合）：本番ビルドで /driver（ドライバーポータル）が「エラーが発生しました」になる。
-   *   再現：driver ロールで招待リンクからログイン → /driver を開く
-   *   期待：「支払明細一覧」に締め済み月（2026年9月 ¥396,643）が表示される
-   *   実際：Server Components render error（digest 975715775）
-   *         "Functions cannot be passed directly to Client Components unless you explicitly expose it by marking it with 'use server'"
-   *   原因：app/driver/layout.tsx が navItems の icon に lucide のコンポーネント（関数）を渡し、
-   *         components/layout/app-shell.tsx → nav.tsx（"use client"）の境界を関数が越えている
-   *   該当：app/driver/layout.tsx、components/layout/nav.tsx（BottomTabs / SideNav の items）
-   *   直ったら test.fixme → test に戻す
+   * 以前は本番ビルドで /driver が「エラーが発生しました」になる不具合（lucide のアイコン関数が
+   * Server → Client 境界を越えていた）で test.fixme にしていた。app/driver/layout.tsx を
+   * navVariant="driver" 指定に変更して解消済み（コミット 040e127）。
    */
   test("driver：ポータルに締め済みの自分の月だけ表示され、会社側の数字は出ない（/driver の描画）", async ({ page }, testInfo) => {
     await setMonthClosed("2026-09", true);
