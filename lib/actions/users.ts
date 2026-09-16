@@ -59,7 +59,7 @@ async function sendInviteEmail(supabase: ServerSupabase, companyId: string, emai
     return { sent: false, warning: "サーバーの設定（SUPABASE_SERVICE_ROLE_KEY）が無いため招待メールを送信できません。招待リンクを直接送ってください。" };
   }
   const { error } = await admin.auth.admin.inviteUserByEmail(email, {
-    redirectTo: `${appUrl()}/auth/confirm?next=/`,
+    redirectTo: `${appUrl()}/`,
     data: displayName ? { display_name: displayName } : undefined,
   });
   if (!error) return { sent: true, warning: null };

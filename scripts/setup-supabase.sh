@@ -428,13 +428,13 @@ echo "■ 次のステップ"
 echo "  1. Vercel のトークンを用意して scripts/deploy-vercel.sh を実行します（docs/QUICKSTART.md 参照）:"
 echo "       export VERCEL_TOKEN=..."
 if [ "$WRITE_ENV" = "1" ]; then
-  echo "       export SUPABASE_ACCESS_TOKEN=$SUPABASE_ACCESS_TOKEN"
+  echo "       export SUPABASE_ACCESS_TOKEN=<Personal Access Token>   # 値はログに残さないこと"
   echo "       bash scripts/deploy-vercel.sh        # .env.production.local の値を自動で読み込みます"
 else
   echo "       export NEXT_PUBLIC_SUPABASE_URL=$SUPABASE_URL"
   echo "       export NEXT_PUBLIC_SUPABASE_ANON_KEY=...   # 上の値"
   echo "       export SUPABASE_SERVICE_ROLE_KEY=...       # 上の値"
-  echo "       export SUPABASE_PROJECT_REF=$PROJECT_REF SUPABASE_ACCESS_TOKEN=..."
+  echo "       export SUPABASE_PROJECT_REF=$PROJECT_REF SUPABASE_ACCESS_TOKEN=<Personal Access Token>"
   echo "       bash scripts/deploy-vercel.sh"
 fi
 echo "  2. デプロイ後に表示される本番 URL で招待リンクを開き、ログインします"

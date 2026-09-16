@@ -210,7 +210,7 @@ set_env() { # set_env NAME VALUE [sensitive]
     if [ "$TYPE_FLAG_SUPPORTED" = "1" ]; then flags=(--type config); fi
   fi
   local out
-  if ! out="$(printf '%s' "$value" | vc env add "$name" production "${flags[@]}" 2>&1 </dev/stdin)"; then
+  if ! out="$(printf '%s' "$value" | vc env add "$name" production ${flags[@]+"${flags[@]}"} 2>&1 </dev/stdin)"; then
     # 種別フラグが受け付けられない場合はフラグ無しで再試行
     out="$(printf '%s' "$value" | vc env add "$name" production 2>&1)" || true
   fi

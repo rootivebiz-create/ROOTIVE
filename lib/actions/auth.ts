@@ -40,7 +40,8 @@ export async function sendMagicLinkAction(_prev: AuthFormState, formData: FormDa
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithOtp({
     email: parsed.data,
-    options: { shouldCreateUser: false, emailRedirectTo: `${appUrl()}/auth/confirm?next=${encodeURIComponent(next)}` },
+    // メールテンプレートは {{ .SiteURL }}/auth/confirm?...&next={{ .RedirectTo }} を組み立てるため、ここには最終的な遷移先を渡す
+    options: { shouldCreateUser: false, emailRedirectTo: `${appUrl()}${next}` },
   });
   if (error) return { error: translateAuthError(error.message) };
   return { ok: true, message: `${parsed.data} にログイン用のリンクを送信しました。メールを開いてリンクをタップしてください（届かない場合は迷惑メールフォルダも確認してください）。` };
@@ -63,7 +64,7 @@ export async function sendPasswordResetAction(_prev: AuthFormState, formData: Fo
   const parsed = emailSchema.safeParse(formData.get("email"));
   if (!parsed.success) return { error: "メールアドレスの形式が正しくありません。" };
   const supabase = await createClient();
-  const { error } = await supabase.auth.resetPasswordForEmail(parsed.data, { redirectTo: `${appUrl()}/auth/confirm?next=${encodeURIComponent("/settings/account?reset=1")}` });
+  const { error } = await supabase.auth.resetPasswordForEmail(parsed.data, { redirectTo: `${appUrl()}/settings/account?reset=1` });
   if (error) return { error: translateAuthError(error.message) };
   return { ok: true, message: "パスワード再設定用のリンクを送信しました。" };
 }

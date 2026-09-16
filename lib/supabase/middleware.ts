@@ -2,7 +2,8 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import type { Database } from "@/lib/db/database.types";
 
-const PUBLIC_PREFIXES = ["/login", "/invite", "/auth", "/manifest.webmanifest", "/icons", "/sw.js", "/offline"];
+// /api/cron は Vercel Cron（Cookie なし）から呼ばれるため公開扱い。認可は Route Handler 側の CRON_SECRET で行う
+const PUBLIC_PREFIXES = ["/login", "/invite", "/auth", "/api/cron", "/manifest.webmanifest", "/icons", "/sw.js", "/offline"];
 
 function isPublicPath(pathname: string) {
   return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/") || pathname.startsWith(p + "?"));

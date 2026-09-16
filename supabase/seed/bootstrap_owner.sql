@@ -8,7 +8,7 @@ do $$
 declare
   v_owner_email text := 'rootive.biz@gmail.com';
   v_company_name text := '株式会社ROOTIVE';
-  v_app_url text := 'https://rootive.vercel.app';
+  v_app_url text := 'https://rootive-profit.vercel.app';
   v_company_id uuid;
   v_token text;
 begin
