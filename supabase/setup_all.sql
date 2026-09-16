@@ -485,7 +485,8 @@ create trigger on_auth_user_created after insert on auth.users for each row exec
 create or replace function public.protect_profile_columns()
 returns trigger language plpgsql security definer set search_path = public as $$
 begin
-  if coalesce(current_setting('app.bypass_profile_guard', true), 'off') = 'on' or public.is_service_role() then
+  -- API 経由でないセッション（SQL Editor・psql・サービスロール）は制限しない。JWT のある通常ユーザーのみ保護する
+  if coalesce(current_setting('app.bypass_profile_guard', true), 'off') = 'on' or public.is_service_role() or auth.role() is null then
     return new;
   end if;
   if new.id <> old.id then
@@ -510,7 +511,7 @@ create trigger t10_protect_profile before update on public.profiles for each row
 create or replace function public.protect_month_closings()
 returns trigger language plpgsql security definer set search_path = public as $$
 begin
-  if public.is_service_role() then
+  if public.is_service_role() or auth.role() is null then
     return coalesce(new, old);
   end if;
   if tg_op = 'DELETE' then
@@ -678,7 +679,7 @@ create policy companies_update on public.companies for update to authenticated
 -- profiles
 drop policy if exists profiles_select on public.profiles;
 create policy profiles_select on public.profiles for select to authenticated
-  using (id = auth.uid() or (company_id = public.current_company_id() and public.is_admin()));
+  using ((id = auth.uid() and is_active) or (company_id = public.current_company_id() and public.is_admin()));
 drop policy if exists profiles_update on public.profiles;
 create policy profiles_update on public.profiles for update to authenticated
   using ((id = auth.uid() and public.current_company_id() is not null) or (company_id = public.current_company_id() and public.is_owner()))
@@ -950,25 +951,29 @@ left join public.month_closings mc on mc.company_id = m.company_id and mc.month 
 create or replace view public.v_project_summary
 with (security_invoker = true) as
 select
-  company_id,
-  month,
-  project_id,
-  project_item_id,
-  project_name,
-  client_name,
-  item_name,
-  unit,
+  c.company_id,
+  c.month,
+  c.project_id,
+  c.project_item_id,
+  c.project_name,
+  c.client_name,
+  c.item_name,
+  c.unit,
+  p.sort_order as project_sort_order,
+  pi.sort_order as item_sort_order,
   count(*)::integer as entry_count,
-  count(distinct driver_id)::integer as driver_count,
-  coalesce(sum(qty), 0)::numeric as qty_total,
-  coalesce(sum(bill), 0)::numeric as bill,
-  coalesce(sum(pay), 0)::numeric as pay,
-  coalesce(sum(margin), 0)::numeric as margin,
-  coalesce(sum(royalty), 0)::numeric as royalty,
-  coalesce(sum(entry_profit), 0)::numeric as entry_profit,
-  case when coalesce(sum(bill), 0) <> 0 then round(sum(entry_profit) / sum(bill), 6) else 0 end as profit_rate
-from public.v_work_entry_calc
-group by company_id, month, project_id, project_item_id, project_name, client_name, item_name, unit;
+  count(distinct c.driver_id)::integer as driver_count,
+  coalesce(sum(c.qty), 0)::numeric as qty_total,
+  coalesce(sum(c.bill), 0)::numeric as bill,
+  coalesce(sum(c.pay), 0)::numeric as pay,
+  coalesce(sum(c.margin), 0)::numeric as margin,
+  coalesce(sum(c.royalty), 0)::numeric as royalty,
+  coalesce(sum(c.entry_profit), 0)::numeric as entry_profit,
+  case when coalesce(sum(c.bill), 0) <> 0 then round(sum(c.entry_profit) / sum(c.bill), 6) else 0 end as profit_rate
+from public.v_work_entry_calc c
+join public.projects p on p.id = c.project_id
+join public.project_items pi on pi.id = c.project_item_id
+group by c.company_id, c.month, c.project_id, c.project_item_id, c.project_name, c.client_name, c.item_name, c.unit, p.sort_order, pi.sort_order;
 
 -- データがある月の一覧
 create or replace view public.v_month_list
@@ -1013,6 +1018,9 @@ begin
   if extract(day from p_month) <> 1 then
     raise exception '稼動月は月初日で指定してください' using errcode = 'P0001';
   end if;
+  if public.is_month_closed(cid, p_month) then
+    raise exception '締め済みの月（%）は変更できません', to_char(p_month, 'YYYY-MM') using errcode = 'P0001', hint = 'MONTH_CLOSED';
+  end if;
   insert into public.work_entries (company_id, month, driver_id, project_item_id, qty, bill_rate, pay_rate, royalty_rate, rounding_mode, memo)
   select distinct on (we.driver_id, we.project_item_id)
          cid, p_month, we.driver_id, we.project_item_id, 0, ed.bill_rate, ed.pay_rate, ed.royalty_rate, ed.rounding_mode, ''
@@ -1040,10 +1048,14 @@ declare
   v_driver uuid;
   v_qty numeric;
   existing uuid;
+  n integer;
   ins integer := 0; upd integer := 0; del integer := 0;
 begin
   if not public.is_admin() then
     raise exception '権限がありません' using errcode = 'P0001', hint = 'FORBIDDEN';
+  end if;
+  if public.is_month_closed(cid, p_month) then
+    raise exception '締め済みの月（%）は変更できません', to_char(p_month, 'YYYY-MM') using errcode = 'P0001', hint = 'MONTH_CLOSED';
   end if;
   for r in select * from jsonb_array_elements(coalesce(p_rows, '[]'::jsonb)) loop
     v_driver := (r->>'driver_id')::uuid;
@@ -1061,7 +1073,8 @@ begin
       end if;
     elsif existing is not null then
       update public.work_entries set qty = v_qty where id = existing and qty <> v_qty;
-      upd := upd + 1;
+      get diagnostics n = row_count;
+      upd := upd + n;
     else
       insert into public.work_entries (company_id, month, driver_id, project_item_id, qty, bill_rate, pay_rate, royalty_rate, rounding_mode)
       select cid, p_month, v_driver, p_project_item_id, v_qty, ed.bill_rate, ed.pay_rate, ed.royalty_rate, ed.rounding_mode
@@ -1166,6 +1179,20 @@ begin
   );
 end $$;
 
+-- 他社の ID と衝突するか（RLS を越えて確認するため security definer）
+create or replace function public.import_has_id_conflict(p_company_id uuid, p_data jsonb)
+returns boolean language sql stable security definer set search_path = public as $$
+  select
+       exists (select 1 from jsonb_array_elements(coalesce(p_data->'drivers','[]')) x join public.drivers t on t.id = (x->>'id')::uuid where t.company_id <> p_company_id)
+    or exists (select 1 from jsonb_array_elements(coalesce(p_data->'projects','[]')) x join public.projects t on t.id = (x->>'id')::uuid where t.company_id <> p_company_id)
+    or exists (select 1 from jsonb_array_elements(coalesce(p_data->'project_items','[]')) x join public.project_items t on t.id = (x->>'id')::uuid where t.company_id <> p_company_id)
+    or exists (select 1 from jsonb_array_elements(coalesce(p_data->'driver_recurring_adjustments','[]')) x join public.driver_recurring_adjustments t on t.id = (x->>'id')::uuid where t.company_id <> p_company_id)
+    or exists (select 1 from jsonb_array_elements(coalesce(p_data->'work_entries','[]')) x join public.work_entries t on t.id = (x->>'id')::uuid where t.company_id <> p_company_id)
+    or exists (select 1 from jsonb_array_elements(coalesce(p_data->'driver_months','[]')) x join public.driver_months t on t.id = (x->>'id')::uuid where t.company_id <> p_company_id)
+    or exists (select 1 from jsonb_array_elements(coalesce(p_data->'adjustments','[]')) x join public.adjustments t on t.id = (x->>'id')::uuid where t.company_id <> p_company_id)
+    or exists (select 1 from jsonb_array_elements(coalesce(p_data->'driver_pay_overrides','[]')) x join public.driver_pay_overrides t on t.driver_id = (x->>'driver_id')::uuid and t.project_item_id = (x->>'project_item_id')::uuid where t.company_id <> p_company_id);
+$$;
+
 -- 復元／取り込み（owner）。ID 一致は上書き、他社の ID と衝突すれば拒否。締めガード・行単位監査は一時的に回避
 create or replace function public.import_backup(p_data jsonb)
 returns jsonb language plpgsql security invoker set search_path = public as $$
@@ -1183,15 +1210,8 @@ begin
     raise exception 'バックアップ JSON の形式が不正です' using errcode = 'P0001';
   end if;
 
-  -- 他社 ID との衝突チェック
-  if exists (select 1 from jsonb_array_elements(coalesce(p_data->'drivers','[]')) x join public.drivers t on t.id = (x->>'id')::uuid where t.company_id <> cid)
-     or exists (select 1 from jsonb_array_elements(coalesce(p_data->'projects','[]')) x join public.projects t on t.id = (x->>'id')::uuid where t.company_id <> cid)
-     or exists (select 1 from jsonb_array_elements(coalesce(p_data->'project_items','[]')) x join public.project_items t on t.id = (x->>'id')::uuid where t.company_id <> cid)
-     or exists (select 1 from jsonb_array_elements(coalesce(p_data->'driver_recurring_adjustments','[]')) x join public.driver_recurring_adjustments t on t.id = (x->>'id')::uuid where t.company_id <> cid)
-     or exists (select 1 from jsonb_array_elements(coalesce(p_data->'work_entries','[]')) x join public.work_entries t on t.id = (x->>'id')::uuid where t.company_id <> cid)
-     or exists (select 1 from jsonb_array_elements(coalesce(p_data->'driver_months','[]')) x join public.driver_months t on t.id = (x->>'id')::uuid where t.company_id <> cid)
-     or exists (select 1 from jsonb_array_elements(coalesce(p_data->'adjustments','[]')) x join public.adjustments t on t.id = (x->>'id')::uuid where t.company_id <> cid)
-  then
+  -- 他社 ID との衝突チェック（RLS を越えて確認）
+  if public.import_has_id_conflict(cid, p_data) then
     raise exception '他社のデータと ID が衝突するため取り込めません' using errcode = 'P0001', hint = 'ID_CONFLICT';
   end if;
 
@@ -1342,10 +1362,13 @@ begin
   delete from public.ai_insights where company_id = cid; get diagnostics n = row_count; counts := counts || jsonb_build_object('ai_insights', n);
   delete from public.driver_pay_overrides where company_id = cid; get diagnostics n = row_count; counts := counts || jsonb_build_object('driver_pay_overrides', n);
   delete from public.driver_recurring_adjustments where company_id = cid; get diagnostics n = row_count; counts := counts || jsonb_build_object('driver_recurring_adjustments', n);
-  update public.profiles set driver_id = null where company_id = cid and role <> 'driver';
-  delete from public.profiles where company_id = cid and role = 'driver' and id <> auth.uid();
-  update public.invitations set driver_id = null where company_id = cid and role <> 'driver';
+  -- ドライバー本人のユーザーは、対応ドライバーが消えるため「無効な閲覧者」に変更する（再招待で復帰できる）
+  perform set_config('app.bypass_profile_guard', 'on', true);
+  update public.profiles set role = 'viewer', driver_id = null, is_active = false where company_id = cid and role = 'driver';
+  update public.profiles set driver_id = null where company_id = cid and driver_id is not null;
+  perform set_config('app.bypass_profile_guard', 'off', true);
   delete from public.invitations where company_id = cid and role = 'driver';
+  update public.invitations set driver_id = null where company_id = cid and driver_id is not null;
   delete from public.project_items where company_id = cid; get diagnostics n = row_count; counts := counts || jsonb_build_object('project_items', n);
   delete from public.projects where company_id = cid; get diagnostics n = row_count; counts := counts || jsonb_build_object('projects', n);
   delete from public.drivers where company_id = cid; get diagnostics n = row_count; counts := counts || jsonb_build_object('drivers', n);

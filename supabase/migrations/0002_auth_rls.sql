@@ -114,7 +114,8 @@ create trigger on_auth_user_created after insert on auth.users for each row exec
 create or replace function public.protect_profile_columns()
 returns trigger language plpgsql security definer set search_path = public as $$
 begin
-  if coalesce(current_setting('app.bypass_profile_guard', true), 'off') = 'on' or public.is_service_role() then
+  -- API 経由でないセッション（SQL Editor・psql・サービスロール）は制限しない。JWT のある通常ユーザーのみ保護する
+  if coalesce(current_setting('app.bypass_profile_guard', true), 'off') = 'on' or public.is_service_role() or auth.role() is null then
     return new;
   end if;
   if new.id <> old.id then
@@ -139,7 +140,7 @@ create trigger t10_protect_profile before update on public.profiles for each row
 create or replace function public.protect_month_closings()
 returns trigger language plpgsql security definer set search_path = public as $$
 begin
-  if public.is_service_role() then
+  if public.is_service_role() or auth.role() is null then
     return coalesce(new, old);
   end if;
   if tg_op = 'DELETE' then
@@ -307,7 +308,7 @@ create policy companies_update on public.companies for update to authenticated
 -- profiles
 drop policy if exists profiles_select on public.profiles;
 create policy profiles_select on public.profiles for select to authenticated
-  using (id = auth.uid() or (company_id = public.current_company_id() and public.is_admin()));
+  using ((id = auth.uid() and is_active) or (company_id = public.current_company_id() and public.is_admin()));
 drop policy if exists profiles_update on public.profiles;
 create policy profiles_update on public.profiles for update to authenticated
   using ((id = auth.uid() and public.current_company_id() is not null) or (company_id = public.current_company_id() and public.is_owner()))

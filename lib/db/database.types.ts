@@ -328,9 +328,9 @@ export type Database = {
           expires_at: string
           accepted_at: string | null
           cancelled_at: string | null
+          link_used_at: string | null
           invited_by: string | null
           created_at: string
-          link_used_at: string | null
         }
         Insert: {
           id?: string
@@ -343,9 +343,9 @@ export type Database = {
           expires_at?: string
           accepted_at?: string | null
           cancelled_at?: string | null
+          link_used_at?: string | null
           invited_by?: string | null
           created_at?: string
-          link_used_at?: string | null
         }
         Update: {
           id?: string
@@ -358,9 +358,9 @@ export type Database = {
           expires_at?: string
           accepted_at?: string | null
           cancelled_at?: string | null
+          link_used_at?: string | null
           invited_by?: string | null
           created_at?: string
-          link_used_at?: string | null
         }
         Relationships: []
       }
@@ -660,6 +660,8 @@ export type Database = {
           client_name: string | null
           item_name: string | null
           unit: Database["public"]["Enums"]["item_unit"] | null
+          project_sort_order: number | null
+          item_sort_order: number | null
           entry_count: number | null
           driver_count: number | null
           qty_total: number | null
@@ -804,6 +806,13 @@ export type Database = {
         }
         Returns: Json
       }
+      import_has_id_conflict: {
+        Args: {
+          p_company_id: string
+          p_data: Json
+        }
+        Returns: boolean
+      }
       is_admin: {
         Args: Record<PropertyKey, never>
         Returns: boolean
@@ -861,6 +870,27 @@ export type Database = {
           p_path: string
         }
         Returns: undefined
+      }
+      t_assert: {
+        Args: {
+          cond: boolean
+          msg: string
+        }
+        Returns: undefined
+      }
+      t_expect_error: {
+        Args: {
+          sql: string
+          expected_hint?: string
+          msg?: string
+        }
+        Returns: undefined
+      }
+      t_rowcount: {
+        Args: {
+          sql: string
+        }
+        Returns: number
       }
       write_audit: {
         Args: {

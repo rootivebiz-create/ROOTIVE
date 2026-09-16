@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "exportedAt": "2026-09-15T10:00:00.000Z",
+  "data": {
+    "settings": { "app": { "companyName": "株式会社ROOTIVE", "rounding": "none", "defRoyalty": 0.1, "defMgmt": 15000 } },
+    "drivers": {
+      "d1": { "id": "d1", "name": "相曽慧", "active": true, "royaltyRate": 0.1, "mgmtFee": 15000, "rateOverrides": {}, "memo": "", "order": 1 },
+      "d2": { "id": "d2", "name": "金島幸太", "active": true, "royaltyRate": 0.1, "mgmtFee": 0, "rateOverrides": {}, "memo": "", "order": 2 },
+      "d3": { "id": "d3", "name": "沼田基", "active": true, "royaltyRate": 0.1, "mgmtFee": 15000, "rateOverrides": {}, "memo": "", "order": 3 },
+      "d4": { "id": "d4", "name": "今井皇輝", "active": true, "royaltyRate": 0.1, "mgmtFee": 15000, "rateOverrides": {}, "memo": "", "order": 4 },
+      "d5": { "id": "d5", "name": "石田泰典", "active": true, "royaltyRate": 0.125, "mgmtFee": 15000, "rateOverrides": {}, "memo": "", "order": 5 },
+      "d6": { "id": "d6", "name": "黒岩亜夢莉", "active": true, "royaltyRate": 0.125, "mgmtFee": 15000, "rateOverrides": {}, "memo": "", "order": 6 },
+      "d7": { "id": "d7", "name": "藤田裕介", "active": true, "royaltyRate": 0.1, "mgmtFee": 0, "rateOverrides": {}, "memo": "", "order": 7 },
+      "d8": { "id": "d8", "name": "吉田雅一", "active": true, "royaltyRate": 0.1, "mgmtFee": 15000, "rateOverrides": { "p1|p1i1": 21960 }, "memo": "", "order": 8 },
+      "d9": { "id": "d9", "name": "川島幹太", "active": true, "royaltyRate": 0, "mgmtFee": 0, "rateOverrides": {}, "memo": "オーナー", "order": 9 },
+      "d10": { "id": "d10", "name": "高森豪介", "active": true, "royaltyRate": 0.1, "mgmtFee": 15000, "rateOverrides": { "p1|p1i1": 21960 }, "memo": "", "order": 10 }
+    },
+    "projects": {
+      "p1": { "id": "p1", "name": "三郷Amazon", "client": "", "active": true, "memo": "", "order": 1, "items": [ { "id": "p1i1", "name": "標準", "unit": "day", "billRate": 23025, "payRate": 21780 } ] },
+      "p2": { "id": "p2", "name": "川口領家Amazon", "client": "", "active": true, "memo": "", "order": 2, "items": [ { "id": "p2i1", "name": "標準", "unit": "day", "billRate": 21133, "payRate": 20250 } ] },
+      "p3": { "id": "p3", "name": "Temu", "client": "", "active": true, "memo": "", "order": 3, "items": [ { "id": "p3i1", "name": "標準", "unit": "day", "billRate": 23025, "payRate": 21960 } ] },
+      "p4": { "id": "p4", "name": "にほんばし蔵前郵便局", "client": "株式会社GALLOP9", "active": true, "memo": "", "order": 4, "items": [ { "id": "p4i1", "name": "標準", "unit": "piece", "billRate": 180, "payRate": 162 } ] },
+      "p5": { "id": "p5", "name": "和光ヤマト", "client": "", "active": true, "memo": "", "order": 5, "items": [ { "id": "p5i1", "name": "宅急便", "unit": "piece", "billRate": 180, "payRate": 162 }, { "id": "p5i2", "name": "ネコポス", "unit": "piece", "billRate": 50, "payRate": 50 } ] },
+      "p6": { "id": "p6", "name": "草加→鎌ヶ谷", "client": "", "active": true, "memo": "", "order": 6, "items": [ { "id": "p6i1", "name": "標準", "unit": "day", "billRate": 15000, "payRate": 15000 } ] },
+      "p7": { "id": "p7", "name": "辰巳屋興業", "client": "", "active": true, "memo": "", "order": 7, "items": [ { "id": "p7i1", "name": "標準", "unit": "day", "billRate": 8500, "payRate": 0 } ] }
+    },
+    "entries": {
+      "e1": { "id": "e1", "month": "2026-09", "driverId": "d1", "driverName": "相曽慧", "projectId": "p1", "projectName": "三郷Amazon", "itemId": "p1i1", "itemName": "標準", "unit": "day", "qty": 21, "billRate": 23025, "payRate": 21780, "royaltyRate": 0.1, "memo": "" },
+      "e2": { "id": "e2", "month": "2026-09", "driverId": "d2", "driverName": "金島幸太", "projectId": "p4", "projectName": "にほんばし蔵前郵便局", "itemId": "p4i1", "itemName": "標準", "unit": "piece", "qty": 803, "billRate": 180, "payRate": 162, "royaltyRate": 0.1, "memo": "" },
+      "e3": { "id": "e3", "month": "2026-09", "driverId": "d3", "driverName": "沼田基", "projectId": "p4", "projectName": "にほんばし蔵前郵便局", "itemId": "p4i1", "itemName": "標準", "unit": "piece", "qty": 803, "billRate": 180, "payRate": 162, "royaltyRate": 0.1, "memo": "" },
+      "e4": { "id": "e4", "month": "2026-09", "driverId": "d4", "driverName": "今井皇輝", "projectId": "p5", "projectName": "和光ヤマト", "itemId": "p5i1", "itemName": "宅急便", "unit": "piece", "qty": 1398, "billRate": 180, "payRate": 162, "royaltyRate": 0.1, "memo": "" },
+      "e5": { "id": "e5", "month": "2026-09", "driverId": "d4", "driverName": "今井皇輝", "projectId": "p5", "projectName": "和光ヤマト", "itemId": "p5i2", "itemName": "ネコポス", "unit": "piece", "qty": 749, "billRate": 50, "payRate": 50, "royaltyRate": 0.1, "memo": "" },
+      "e6": { "id": "e6", "month": "2026-09", "driverId": "d7", "driverName": "藤田裕介", "projectId": "p3", "projectName": "Temu", "itemId": "p3i1", "itemName": "標準", "unit": "day", "qty": 21, "billRate": 23025, "payRate": 21960, "royaltyRate": 0.1, "memo": "" },
+      "e7": { "id": "e7", "month": "2026-09", "driverId": "d5", "driverName": "石田泰典", "projectId": "p2", "projectName": "川口領家Amazon", "itemId": "p2i1", "itemName": "標準", "unit": "day", "qty": 16, "billRate": 21133, "payRate": 20250, "royaltyRate": 0.125, "memo": "" },
+      "e8": { "id": "e8", "month": "2026-09", "driverId": "d6", "driverName": "黒岩亜夢莉", "projectId": "p1", "projectName": "三郷Amazon", "itemId": "p1i1", "itemName": "標準", "unit": "day", "qty": 21, "billRate": 23025, "payRate": 21780, "royaltyRate": 0.125, "memo": "" },
+      "e9": { "id": "e9", "month": "2026-09", "driverId": "d9", "driverName": "川島幹太", "projectId": "p1", "projectName": "三郷Amazon", "itemId": "p1i1", "itemName": "標準", "unit": "day", "qty": 8, "billRate": 23025, "payRate": 0, "royaltyRate": 0, "memo": "" },
+      "e10": { "id": "e10", "month": "2026-09", "driverId": "d9", "driverName": "川島幹太", "projectId": "p7", "projectName": "辰巳屋興業", "itemId": "p7i1", "itemName": "標準", "unit": "day", "qty": 1, "billRate": 8500, "payRate": 0, "royaltyRate": 0, "memo": "" }
+    },
+    "driverMonths": {
+      "2026-09_d1": { "month": "2026-09", "driverId": "d1", "mgmtFee": 14999, "memo": "", "adjustments": [] },
+      "2026-09_d2": { "month": "2026-09", "driverId": "d2", "mgmtFee": 0, "memo": "", "adjustments": [] },
+      "2026-09_d3": { "month": "2026-09", "driverId": "d3", "mgmtFee": 15000, "memo": "", "adjustments": [] },
+      "2026-09_d4": { "month": "2026-09", "driverId": "d4", "mgmtFee": 15000, "memo": "", "adjustments": [] },
+      "2026-09_d5": { "month": "2026-09", "driverId": "d5", "mgmtFee": 15000, "memo": "", "adjustments": [] },
+      "2026-09_d6": { "month": "2026-09", "driverId": "d6", "mgmtFee": 15000, "memo": "", "adjustments": [] },
+      "2026-09_d7": { "month": "2026-09", "driverId": "d7", "mgmtFee": 0, "memo": "", "adjustments": [] },
+      "2026-09_d9": { "month": "2026-09", "driverId": "d9", "mgmtFee": 0, "memo": "", "adjustments": [] }
+    },
+    "months": { "2026-09": { "status": "open", "closedAt": null } }
+  }
+}

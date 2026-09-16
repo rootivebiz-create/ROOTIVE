@@ -170,25 +170,29 @@ left join public.month_closings mc on mc.company_id = m.company_id and mc.month 
 create or replace view public.v_project_summary
 with (security_invoker = true) as
 select
-  company_id,
-  month,
-  project_id,
-  project_item_id,
-  project_name,
-  client_name,
-  item_name,
-  unit,
+  c.company_id,
+  c.month,
+  c.project_id,
+  c.project_item_id,
+  c.project_name,
+  c.client_name,
+  c.item_name,
+  c.unit,
+  p.sort_order as project_sort_order,
+  pi.sort_order as item_sort_order,
   count(*)::integer as entry_count,
-  count(distinct driver_id)::integer as driver_count,
-  coalesce(sum(qty), 0)::numeric as qty_total,
-  coalesce(sum(bill), 0)::numeric as bill,
-  coalesce(sum(pay), 0)::numeric as pay,
-  coalesce(sum(margin), 0)::numeric as margin,
-  coalesce(sum(royalty), 0)::numeric as royalty,
-  coalesce(sum(entry_profit), 0)::numeric as entry_profit,
-  case when coalesce(sum(bill), 0) <> 0 then round(sum(entry_profit) / sum(bill), 6) else 0 end as profit_rate
-from public.v_work_entry_calc
-group by company_id, month, project_id, project_item_id, project_name, client_name, item_name, unit;
+  count(distinct c.driver_id)::integer as driver_count,
+  coalesce(sum(c.qty), 0)::numeric as qty_total,
+  coalesce(sum(c.bill), 0)::numeric as bill,
+  coalesce(sum(c.pay), 0)::numeric as pay,
+  coalesce(sum(c.margin), 0)::numeric as margin,
+  coalesce(sum(c.royalty), 0)::numeric as royalty,
+  coalesce(sum(c.entry_profit), 0)::numeric as entry_profit,
+  case when coalesce(sum(c.bill), 0) <> 0 then round(sum(c.entry_profit) / sum(c.bill), 6) else 0 end as profit_rate
+from public.v_work_entry_calc c
+join public.projects p on p.id = c.project_id
+join public.project_items pi on pi.id = c.project_item_id
+group by c.company_id, c.month, c.project_id, c.project_item_id, c.project_name, c.client_name, c.item_name, c.unit, p.sort_order, pi.sort_order;
 
 -- データがある月の一覧
 create or replace view public.v_month_list

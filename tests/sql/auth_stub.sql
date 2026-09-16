@@ -90,14 +90,15 @@ grant all on storage.buckets, storage.objects to authenticated, service_role;
 -- テスト用：JWT クレームを設定して指定ユーザーとして振る舞う
 create or replace function public.test_login(p_user_id uuid, p_role text default 'authenticated') returns void language plpgsql security definer as $$
 begin
-  perform set_config('request.jwt.claims', json_build_object('sub', p_user_id, 'role', p_role, 'email', (select email from auth.users where id = p_user_id))::text, true);
-  perform set_config('request.jwt.claim.sub', p_user_id::text, true);
-  perform set_config('request.jwt.claim.role', p_role, true);
+  -- セッション全体に適用（テストはオートコミットで進めるため）
+  perform set_config('request.jwt.claims', json_build_object('sub', p_user_id, 'role', p_role, 'email', (select email from auth.users where id = p_user_id))::text, false);
+  perform set_config('request.jwt.claim.sub', p_user_id::text, false);
+  perform set_config('request.jwt.claim.role', p_role, false);
 end $$;
 create or replace function public.test_logout() returns void language plpgsql as $$
 begin
-  perform set_config('request.jwt.claims', '', true);
-  perform set_config('request.jwt.claim.sub', '', true);
-  perform set_config('request.jwt.claim.role', '', true);
+  perform set_config('request.jwt.claims', '', false);
+  perform set_config('request.jwt.claim.sub', '', false);
+  perform set_config('request.jwt.claim.role', '', false);
 end $$;
 grant execute on function public.test_login(uuid, text), public.test_logout() to anon, authenticated, service_role;

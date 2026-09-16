@@ -1,4 +1,4 @@
-import type { PostgrestError } from "@supabase/supabase-js";
+import type { PostgrestError, PostgrestMaybeSingleResponse, PostgrestResponse, PostgrestSingleResponse } from "@supabase/supabase-js";
 import { ZodError } from "zod";
 
 export type ActionResult<T = null> =
@@ -85,7 +85,9 @@ export async function runAction<T>(fn: () => Promise<T>, successMessage?: string
   }
 }
 
-/** supabase の { data, error } を検査して data を返す */
+/** supabase の { data, error } を検査して data を返す（.single() / .maybeSingle() / 一覧のいずれにも使える） */
+export function unwrap<T>(res: PostgrestSingleResponse<T> | PostgrestMaybeSingleResponse<T> | PostgrestResponse<T>, notFoundMessage?: string): T;
+export function unwrap<T>(res: { data: T | null; error: PostgrestError | null }, notFoundMessage?: string): T;
 export function unwrap<T>(res: { data: T | null; error: PostgrestError | null }, notFoundMessage = "データが見つかりません。"): T {
   if (res.error) throw res.error;
   if (res.data == null) throw new ActionError(notFoundMessage);

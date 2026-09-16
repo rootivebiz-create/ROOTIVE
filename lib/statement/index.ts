@@ -29,6 +29,9 @@ export interface StatementAdjustment {
   label: string;
   amount: number;
   countAsProfit: boolean;
+  /** 固定控除から複写された場合の driver_recurring_adjustments.id */
+  recurringId: string | null;
+  sortOrder: number;
 }
 
 export interface StatementData {
@@ -134,7 +137,7 @@ export function buildStatementData(input: {
       entryProfit: Number(e.entry_profit ?? 0),
       memo: e.memo ?? "",
     })),
-    adjustments: adjustments.map((a) => ({ id: a.id, label: a.label, amount: Number(a.amount), countAsProfit: a.count_as_profit })),
+    adjustments: adjustments.map((a) => ({ id: a.id, label: a.label, amount: Number(a.amount), countAsProfit: a.count_as_profit, recurringId: a.recurring_id ?? null, sortOrder: a.sort_order })),
     pay: Number(summary?.pay ?? 0),
     royalty: Number(summary?.royalty ?? 0),
     mgmtFee: Number(summary?.mgmt_fee ?? 0),
