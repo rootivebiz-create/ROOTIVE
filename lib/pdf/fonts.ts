@@ -25,17 +25,31 @@ function isCjk(ch: string): boolean {
   );
 }
 
+/** 英数の連続がこの長さを超える場合は ASCII_CHUNK 文字ごとに折り返し候補を入れる（URL など） */
+const ASCII_CHUNK_THRESHOLD = 16;
+const ASCII_CHUNK = 8;
+
 /**
- * 単語（空白区切り）を折り返し単位に分ける。
- * 和文は 1 文字ずつ、英数は連続したまま 1 単位にし、各単位の後ろに空文字列を置く。
- * react-pdf（textkit）は空文字列の要素を幅 0 のグルーとして扱うため、ハイフンを挿入せずにそこで改行できる。
+ * 単語を折り返し単位に分ける（Font.registerHyphenationCallback 用）。
+ * react-pdf は文字種（漢字／かな／英数／記号）ごとの run に分けてから空白で区切り、その 1 つ 1 つを「単語」として渡してくる
+ * （例：「備考が長い場合」→「備考」「が」「長」「い」「場合」。句読点・閉じ括弧は直前の run に付く）。
+ * 和文は 1 文字ずつ、英数は連続したまま 1 単位にし、**すべての単位の後ろに空文字列を置く**。
+ * textkit は空文字列の要素を幅 0 のグルーとして扱うため、ハイフンを挿入せずにそこで改行できる。
+ * 逆に末尾に空文字列が無い単位の後ろにはハイフネーション用のペナルティ（改行時に "-" を挿入）が置かれてしまうため、
+ * 1 文字だけの単語でも必ず空文字列を付ける。
  */
 export function splitJapaneseWord(word: string): string[] {
+  // 空白はそのまま返す（textkit が空白グルーとして扱う）
+  if (word.trim() === "") return [word];
   const chars = Array.from(word);
   const chunks: string[] = [];
   let ascii = "";
   const flushAscii = () => {
-    if (ascii) chunks.push(ascii);
+    if (ascii.length > ASCII_CHUNK_THRESHOLD) {
+      for (let i = 0; i < ascii.length; i += ASCII_CHUNK) chunks.push(ascii.slice(i, i + ASCII_CHUNK));
+    } else if (ascii) {
+      chunks.push(ascii);
+    }
     ascii = "";
   };
   for (const ch of chars) {
@@ -56,7 +70,6 @@ export function splitJapaneseWord(word: string): string[] {
     if (prev !== undefined && (NO_BREAK_BEFORE.has(first) || NO_BREAK_AFTER.has(prevLast))) merged[merged.length - 1] = prev + c;
     else merged.push(c);
   }
-  if (merged.length <= 1) return [word];
   return merged.flatMap((c) => [c, ""]);
 }
 
