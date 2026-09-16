@@ -379,8 +379,8 @@ NEXT_PUBLIC_SUPABASE_URL=$SUPABASE_URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY=$ANON_KEY
 # サーバー専用。絶対に公開しない（ブラウザ・Git・チャットに貼らない）
 SUPABASE_SERVICE_ROLE_KEY=$SERVICE_KEY
-# 公開 URL（Vercel の本番 URL。deploy-vercel.sh が自動設定します）
-NEXT_PUBLIC_APP_URL=${APP_URL:-https://<本番URL>}
+# 公開 URL（Vercel の本番 URL。未定なら空のまま。deploy-vercel.sh が自動設定します）
+NEXT_PUBLIC_APP_URL=${APP_URL:-}
 # 任意：AI 月次分析を使う場合のみ
 # ANTHROPIC_API_KEY=sk-ant-...
 # ANTHROPIC_MODEL=

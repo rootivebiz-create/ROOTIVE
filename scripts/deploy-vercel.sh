@@ -94,6 +94,8 @@ vc() { "${VC[@]}" "$@" "${VC_ARGS[@]}"; }
 
 NEXT_PUBLIC_APP_URL="${NEXT_PUBLIC_APP_URL:-}"
 NEXT_PUBLIC_APP_URL="${NEXT_PUBLIC_APP_URL%/}"
+# 未確定を示す仮の値（<本番URL> など）は未設定として扱う
+case "$NEXT_PUBLIC_APP_URL" in *'<'* | *'>'* | *本番URL*) NEXT_PUBLIC_APP_URL="" ;; esac
 
 cd "$ROOT"
 hr
