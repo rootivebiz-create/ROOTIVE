@@ -14,8 +14,8 @@ export interface ProjectFormInput {
   client_id: string | null;
   is_active: boolean;
   memo: string;
-  /** 目標利益率（パーセント表記の文字列。"" / null = 判定しない） */
-  target_margin: string | null;
+  /** 目標利益率（パーセント表記の文字列。"" / null / 未指定 = 判定しない） */
+  target_margin?: string | null;
   /** 内容の行。id が null なら新規。送られてこなかった既存 id は削除 */
   items: ProjectItemFormInput[];
 }
