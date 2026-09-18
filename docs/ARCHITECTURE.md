@@ -122,6 +122,7 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 | `invoices` | client_id, month, invoice_no(会社内 unique), status(draft/issued/paid), issue_date, due_date, subtotal, tax_rate, tax_rounding, tax, total, paid_on, note, created_by, unique(company_id,client_id,month) | 請求書（`0009`）。合計はトリガーが再計算 |
 | `invoice_items` | invoice_id(cascade), project_id, project_item_id, name, unit, qty, unit_price, amount(自動計算), sort_order | 請求明細（`0009`） |
 | `month_targets` | pk(company_id,month), bill_target, profit_target, memo | 月次目標（`0009`） |
+| `cash_snapshots` | as_of(会社内 unique), balance, memo, created_by | 資金繰りの起点になる現金残高（`0010`） |
 
 ### ビュー（`0003_views.sql`、`security_invoker = true`：呼び出し元の RLS が適用）
 
@@ -140,6 +141,7 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 | `v_month_pl` | 会社 × 月の損益：`v_month_summary` ＋ 経費（固定／変動／合計）＋ `operating_profit = profit − expense_total` ＋ `operating_margin` ＋ 月次目標（`0009`） |
 | `v_client_month_summary` | 取引先 × 月の売上（取引先を設定した案件のみ）（`0009`） |
 | `v_invoice_list` | 請求書 ＋ 取引先名・明細数（`0009`） |
+| `v_project_pl` | 案件 × 月の損益：稼働の利益 − 案件に直課した経費 ＝ 案件利益、利益率、目標利益率との判定（`0010`） |
 
 消費税（`0008`）：`v_driver_month_summary` は `tax_mode`（driver_months に固定値があればそれ、無ければ drivers）、`tax_rate` / `tax_rounding`（同じく companies）、`tax_base = pay − royalty − mgmt_fee`、`tax = round_by_mode(tax_base × tax_rate, tax_rounding)`（exempt は 0）、`payout_incl = payout + tax` を返す。`v_month_summary` は `tax` と `payout_incl` の合計を持つ。調整（adj_pay）は税込の金額として消費税の対象外。
 
@@ -171,6 +173,7 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 | `build_invoice(client_id, month)` | admin+ | その月・その取引先の稼働から請求書と明細を作り直す（番号は `YYYYMM-NN`。発行済みは hint `INVOICE_ISSUED`）（`0009`） |
 | `set_invoice_status(invoice_id, status, paid_on)` | admin+ | 請求書の状態変更（paid 以外にすると入金日を消す）（`0009`） |
 | `recalc_invoice(invoice_id)` | admin+ | 請求書の小計・消費税・合計を計算し直す（通常はトリガーが自動で行う）（`0009`） |
+| `cash_forecast(from, to)` | staff | 入金予定（未入金の請求書）・入金実績・ドライバーへの支払予定（税込）・経費（実績と未計上の固定費）を日付順に返す。入金は ＋、支払は −（`0010`） |
 | `driver_portal_current()` | driver | 本人の最新の未締め月の暫定額（速報）。会社設定 `driver_portal_show_open_month` が off なら null（`0009`） |
 | `default_expense_categories(company_id)` | 内部 | 既定の経費カテゴリ 12 件を投入（会社作成トリガーから使用）（`0009`） |
 | `current_company_id()` / `current_app_role()` / `current_driver_id()` / `is_owner()` / `is_admin()` / `is_staff()` / `is_driver_user()` / `is_month_closed()` | ヘルパー | security definer で profiles を参照（is_active 必須） |
@@ -308,6 +311,9 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 | 経費 CSV | `app/api/export/expenses.csv` + `lib/exports/expenses-csv.ts` | その月（または全月）の経費明細（カテゴリ・区分・金額・課税区分・発生日・ドライバー・案件・支払先） |
 | 請求書 PDF | `app/api/export/invoice.pdf` + `lib/pdf/invoice.tsx` + `lib/invoice/index.ts` | A4 縦、Noto Sans JP。取引先名＋敬称、請求書番号、ご請求金額（税込）、明細、小計・消費税・合計、自社情報＋ロゴ・認印 |
 | 請求書一覧 CSV | `app/api/export/invoices.csv` + `lib/exports/invoices-csv.ts` | 請求書番号・取引先・状態・発行日・入金予定日・小計・消費税・合計・入金日 |
+| 資金繰り CSV | `app/api/export/cashflow.csv` + `lib/exports/cashflow-csv.ts` | 期間内の入金予定・支払予定・経費と、その日の残高 |
+| 案件別採算 CSV | `app/api/export/projects.csv` + `lib/exports/projects-csv.ts` | 案件ごとの売上・直課経費・案件利益・利益率・目標判定（当月／全期間） |
+| ドライバー別採算 CSV | `app/api/export/drivers-pl.csv` + `lib/exports/drivers-pl-csv.ts` | ドライバーごとの売上・支払・会社利益・利益率・税込支払額（合計行つき） |
 | 年次レポート CSV | `app/api/export/report.csv` + `lib/exports/report-csv.ts` | 月次推移（売上・会社利益・経費・営業利益・営業利益率・消費税・税込支払額・状態）＋合計行 |
 | バックアップ JSON | `app/api/export/backup.json` → `export_backup()` | §8.4 の形式（version 2 で経費・取引先・請求書・月次目標を含む。ロゴ・認印の画像は含まない） |
 
@@ -330,7 +336,7 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 |---|---|---|
 | 単体（Vitest） | `npm test` | `lib/calc`（§2.6 の全ケース、誤差 0.01 円以内、端数処理 4 種、恒等式）、zod スキーマ、`lib/migrate` の変換と決定的 ID |
 | SQL 結合（psql） | `npm run test:sql` | ローカル PostgreSQL に `tests/sql/auth_stub.sql`（auth.uid() 等のスタブ）+ 全マイグレーションを適用し `tests/sql/test.sql` を実行。ビューの計算が §2.6 と一致、RLS（viewer / driver の拒否）、締めガード、招待制、復元・全削除、経費と営業利益（`v_month_pl`）、取引先と請求書（`build_invoice` / 合計の自動計算 / 状態）、ポータルの速報。19 節 |
-| E2E（Playwright） | `npm run test:e2e` | Supabase 互換のテストサーバー（`supabase-lite`：PostgreSQL + GoTrue 相当 + PostgREST 相当の軽量実装）を自動起動し、iPhone 13 と Desktop Chrome の 2 プロジェクトで主要導線（招待ログイン → ダッシュボード → 稼働追加・複製・一括入力 → 支払明細・PDF → 設定 → 月締め・解除 → 経費と営業利益 → 取引先と請求書（PDF・入金） → 年次レポートと月次目標 → ナビとコマンドパレット・ポータルの速報 → 閲覧者／ドライバーの権限 → 移行 JSON の取り込み）をブラウザで確認。12 spec・54 シナリオ × 2 プロジェクト = **108 件**。スクリーンショットを `docs/screenshots/` に保存。詳細は [docs/E2E.md](E2E.md) |
+| E2E（Playwright） | `npm run test:e2e` | Supabase 互換のテストサーバー（`supabase-lite`：PostgreSQL + GoTrue 相当 + PostgREST 相当の軽量実装）を自動起動し、iPhone 13 と Desktop Chrome の 2 プロジェクトで主要導線（招待ログイン → ダッシュボード → 稼働追加・複製・一括入力 → 支払明細・PDF → 設定 → 月締め・解除 → 経費と営業利益 → 取引先と請求書（PDF・入金） → 年次レポートと月次目標 → ナビとコマンドパレット・ポータルの速報 → 閲覧者／ドライバーの権限 → 移行 JSON の取り込み）をブラウザで確認。13 spec・61 シナリオ × 2 プロジェクト = **122 件**。スクリーンショットを `docs/screenshots/` に保存。詳細は [docs/E2E.md](E2E.md) |
 | 静的 | `npm run typecheck` / `npm run lint` / `npm run build` | 型・Lint・本番ビルド |
 | まとめ | `npm run check` | typecheck + lint + test + build:sql |
 

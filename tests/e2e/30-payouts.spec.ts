@@ -189,17 +189,17 @@ test.describe("支払明細", () => {
     await page.goto("/projects?m=2026-09");
     await expect(page.getByRole("heading", { name: "案件別" })).toBeVisible();
     await expect(page.getByRole("tab", { name: "当月" })).toHaveAttribute("aria-selected", "true");
-    await expect(page.getByText("2026年9月 の案件（内容）ごとの集計")).toBeVisible();
-    // 三郷Amazon：21 + 21 + 8 = 50 日 × 23,025
-    await expect(listRow(page, "三郷Amazon")).toContainText(yen(1151250));
-    await expect(listRow(page, "和光ヤマト（ネコポス）")).toContainText(yen(37450));
-    await expect(listRow(page, /合計/)).toContainText(yen(2559573));
+    await expect(page.getByRole("heading", { name: "案件（内容）ごとの集計" })).toBeVisible();
+    // 三郷Amazon：21 + 21 + 8 = 50 日 × 23,025（0010 で上に「案件ごとの採算」が増えたため、内容ごとの表は後ろ側）
+    await expect(listRow(page, "三郷Amazon").last()).toContainText(yen(1151250));
+    await expect(listRow(page, "和光ヤマト（ネコポス）").last()).toContainText(yen(37450));
+    await expect(listRow(page, /合計/).last()).toContainText(yen(2559573));
 
     await page.getByRole("tab", { name: "全期間" }).click();
     await expect(page).toHaveURL(/scope=all/);
     await expect(page.getByRole("tab", { name: "全期間" })).toHaveAttribute("aria-selected", "true");
-    await expect(page.getByText("全期間の案件（内容）ごとの集計")).toBeVisible();
-    await expect(listRow(page, /合計/)).toContainText(yen(2559573));
+    await expect(page.getByRole("heading", { name: "案件（内容）ごとの集計" })).toBeVisible();
+    await expect(listRow(page, /合計/).last()).toContainText(yen(2559573));
     await expect(page.getByText("ドライバー数は月ごとの人数のため、全期間では表示しません")).toBeVisible();
   });
 });

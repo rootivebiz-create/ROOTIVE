@@ -6,6 +6,7 @@ import { currentMonthJST, monthFromParam, monthToDate } from "@/lib/month";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Empty } from "@/components/ui/empty";
+import { MonthLink } from "@/components/layout/month-link";
 import { PageHeader } from "@/components/ui/page-header";
 import { cn } from "@/lib/utils";
 import {
@@ -89,6 +90,9 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
         actions={
           <>
             <YearSelector year={year} years={years} />
+            <MonthLink href="/drivers-pl" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+              ドライバー別の採算
+            </MonthLink>
             <a href={exportUrls.reportCsv(year)} download className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
               <Download className="h-4 w-4" />
               CSV

@@ -33,8 +33,8 @@ export function DriverTrend({ driverName, points }: { driverName: string; points
         <TableRow>
           <TableHead className="sticky left-0 bg-card">稼動月</TableHead>
           <TableHead className="text-right">件数</TableHead>
-          <TableHead className="min-w-32 text-right">売上</TableHead>
-          <TableHead className="min-w-32 text-right">会社利益</TableHead>
+          <TableHead className="min-w-24 text-right">売上</TableHead>
+          <TableHead className="min-w-24 text-right">会社利益</TableHead>
           <TableHead className="text-right">利益率</TableHead>
         </TableRow>
       </TableHeader>

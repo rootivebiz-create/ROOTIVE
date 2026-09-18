@@ -61,7 +61,7 @@ export function TimelineList({ timeline, today }: TimelineListProps) {
               const past = day.date < today;
               return day.events.map((e, i) => (
                 <TableRow key={e.key} className={cn(past && "opacity-60", day.balance < 0 && "bg-destructive/5")}>
-                  <TableCell className={cn(i > 0 && "text-transparent")}>{i === 0 ? <DayLabel date={day.date} /> : null}</TableCell>
+                  <TableCell>{i === 0 ? <DayLabel date={day.date} /> : null}</TableCell>
                   <TableCell>
                     <KindBadge row={e} />
                   </TableCell>

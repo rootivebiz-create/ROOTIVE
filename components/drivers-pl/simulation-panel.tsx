@@ -245,7 +245,7 @@ export function SimulationPanel({ drivers, selectedDriverId, selectedDriverName 
       <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
         <p className="font-medium text-foreground">試算だけです。単価は保存されません。</p>
         <p className="mt-1">
-          実際に単価を変えるときは、設定 → ドライバー別単価（`/settings/rates`）や 設定 → 案件・単価 で保存し、未締め月の稼働行には「単価をマスタに合わせる」で反映してください。
+          実際に単価を変えるときは、設定 → ドライバー別単価（または 設定 → 案件・単価）で保存し、未締め月の稼働行には稼働入力の「単価をマスタに合わせる」で反映してください。
         </p>
         <p className="mt-1">単価は小数 2 桁・ロイヤリティ率は 0〜100%・管理費は 0 円以上に丸めて計算します（マイナスになる場合は 0）。</p>
       </div>
