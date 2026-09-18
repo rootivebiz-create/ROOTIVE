@@ -55,6 +55,13 @@ for f in supabase/migrations/*.sql; do
   psql "$DB_URL" -v ON_ERROR_STOP=1 -q -f "$f"
 done
 
+# 本番（setup-supabase.sh）は毎回すべてのマイグレーションを順番に再適用するため、
+# 2 回目の適用でも壊れないことを確認する（create or replace view で列を減らせない等の検出）
+log "再適用（冪等の確認）"
+for f in supabase/migrations/*.sql; do
+  psql "$DB_URL" -v ON_ERROR_STOP=1 -q -f "$f" > /dev/null
+done
+
 log "テストを実行: tests/sql/test.sql"
 psql "$DB_URL" -v ON_ERROR_STOP=1 -q -f tests/sql/test.sql
 log "すべての SQL テストが通りました"

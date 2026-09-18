@@ -125,6 +125,8 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 
 ### ビュー（`0003_views.sql`、`security_invoker = true`：呼び出し元の RLS が適用）
 
+`0003_views.sql` は先頭で全ビューを `drop view ... cascade` してから作り直します。公開スクリプトは毎回すべてのマイグレーションを順番に再適用するため、あとのマイグレーション（`0008` / `0009`）で列が増えたビューに `create or replace view` を実行すると「cannot drop columns from view」で失敗するためです。`npm run test:sql` はマイグレーションを 2 回適用して、この再適用の安全性を確認します。
+
 | ビュー | 内容 |
 |---|---|
 | `v_work_entry_calc` | 稼働行 + bill/pay/margin/royalty/entry_profit + ドライバー名・案件名・内容名・区分 |

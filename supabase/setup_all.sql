@@ -815,6 +815,23 @@ create policy ai_insights_write on public.ai_insights for all to authenticated
 -- 計算仕様 §2 を SQL 側でも実装し、画面とテストの両方から使う
 -- =============================================================================
 
+-- 既存のビューは作り直す（create or replace は列を減らせないため、あとのマイグレーションで
+-- 列が増えたビューに対して 0003 を再適用すると「cannot drop columns from view」になる）。
+-- すべてのマイグレーションは毎回順番に再適用されるので、後続ファイルのビューもここで落として作り直す
+drop view if exists
+  public.v_month_list,
+  public.v_month_pl,
+  public.v_month_summary,
+  public.v_driver_month_summary,
+  public.v_project_summary,
+  public.v_client_month_summary,
+  public.v_invoice_list,
+  public.v_expense_list,
+  public.v_expense_summary,
+  public.v_recurring_expense_list,
+  public.v_work_entry_calc
+cascade;
+
 -- 稼働行 ＋ 計算値 ＋ 名称
 create or replace view public.v_work_entry_calc
 with (security_invoker = true) as
