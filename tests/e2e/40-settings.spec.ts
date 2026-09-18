@@ -86,7 +86,8 @@ test.describe("設定", () => {
     await expect(page.getByRole("heading", { name: "案件を追加" })).toBeVisible();
 
     await page.getByLabel("案件名（必須）").fill(PROJECT_NAME);
-    await page.getByLabel("荷主・元請").fill("テスト荷主");
+    // 取引先はセレクト（0009）。この時点では取引先マスタが空なので「未設定」のまま登録する
+    await expect(page.getByLabel("取引先")).toHaveValue("");
     // 内容 1：配送A（日給 10,000／9,000）
     await page.getByLabel("内容名").nth(0).fill("配送A");
     await page.getByLabel("区分").nth(0).selectOption("day");

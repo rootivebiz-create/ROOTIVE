@@ -51,14 +51,14 @@ const styles = StyleSheet.create({
   muted: { color: GRAY, fontSize: 9 },
   note: { fontSize: 9, color: "#333333", lineHeight: 1.5 },
   issuer: { flexDirection: "row", justifyContent: "flex-end", marginTop: 14 },
-  issuerBlock: { alignItems: "flex-end" },
+  issuerBlock: { width: 260, alignItems: "flex-end" },
   // ロゴ：高さ 40pt 以内・幅は自動（右寄せで描く）
   logo: { maxHeight: 40, objectFit: "contain", objectPositionX: "100%", marginBottom: 4 },
-  companyRow: { flexDirection: "row", justifyContent: "flex-end", alignItems: "flex-start" },
-  companyInfo: { flexShrink: 1, textAlign: "right", fontSize: 9, color: GRAY },
+  companyRow: { flexDirection: "row", justifyContent: "flex-end", alignItems: "flex-start", width: "100%" },
+  companyInfo: { flexGrow: 1, flexShrink: 1, flexBasis: 0, textAlign: "right", fontSize: 9, color: GRAY },
   companyName: { fontSize: 11, fontWeight: 700, color: "#111111", marginBottom: 2 },
   // 認印：会社情報の右にやや重ねる
-  seal: { width: 44, height: 44, flexShrink: 0, marginLeft: -4, marginTop: -6 },
+  seal: { width: 44, height: 44, flexShrink: 0, marginLeft: 2, marginTop: -6 },
   footer: { position: "absolute", left: 36, right: 36, bottom: 24, flexDirection: "row", justifyContent: "space-between", fontSize: 8, color: GRAY },
 });
 
@@ -150,15 +150,6 @@ export function InvoicePdf({ data: d, assets }: InvoicePdfProps) {
               </View>
             ))
           )}
-          <View style={[styles.tr, styles.trTotal]} wrap={false}>
-            <Text style={[styles.cell, styles.colName]}>小計（税抜）</Text>
-            <Text style={[styles.cell, styles.colQty]} />
-            <Text style={[styles.cell, styles.colUnit]} />
-            <Text style={[styles.cell, styles.colRate]} />
-            <View style={[styles.cell, styles.colAmount]}>
-              <Amount value={d.subtotal} bold />
-            </View>
-          </View>
         </View>
 
         {/* 小計・消費税・合計 */}

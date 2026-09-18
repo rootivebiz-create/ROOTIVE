@@ -85,7 +85,12 @@ test.describe("月締め", () => {
     expect(res.status()).toBe(200);
     const json = JSON.parse(await res.text()) as Record<string, unknown>;
     expect(json.app).toBe("rootive-profit");
-    expect(json.version).toBe(1);
+    // 0009 でバックアップは version 2（経費・取引先・請求書・月次目標を含む）
+    expect(json.version).toBe(2);
+    expect(Array.isArray(json.expenses)).toBe(true);
+    expect(Array.isArray(json.clients)).toBe(true);
+    expect(Array.isArray(json.invoices)).toBe(true);
+    expect(Array.isArray(json.month_targets)).toBe(true);
     expect(Array.isArray(json.drivers)).toBe(true);
     expect((json.drivers as unknown[]).length).toBeGreaterThanOrEqual(10);
     expect(Array.isArray(json.work_entries)).toBe(true);

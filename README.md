@@ -3,6 +3,7 @@
 株式会社ROOTIVE（軽貨物運送・業務委託ドライバー）の社内アプリ。
 月ごとに「ドライバー × 案件」の稼働（日数・個数）を入力するだけで、**会社売上・会社利益・各ドライバーへの支払額**が自動で確定します。
 スマホ最優先の日本語 UI、招待制ログイン、月締め・監査ログ・バックアップ、PDF 明細・弥生会計 CSV 出力、試作アプリからのデータ移行を備えています。
+経費と営業利益、取引先への請求書（インボイス対応）、年次レポート、月次目標、ドライバーポータルの当月速報とコマンドパレット（⌘K）も使えます。
 
 - 技術：Next.js 15（App Router / Server Actions）+ Supabase（PostgreSQL・Auth・RLS・Storage）、TypeScript、Tailwind CSS
 - 公開先：Vercel（東京 `hnd1`）+ Supabase（東京 `ap-northeast-1`）。どちらも無料プランで動作
@@ -33,7 +34,7 @@
 | オーナー | [docs/SETUP.md](docs/SETUP.md) | 本番公開の手順（ブラウザ操作のみ）。Supabase → Vercel → ログイン → 動作確認チェックリスト → SMTP → トラブル対応 |
 | オーナー・事務担当 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | 毎月の運用（複製 → 入力 → 管理費・調整 → 月締め → 明細送付 → 弥生 CSV → バックアップ）、マスタ変更、ユーザー追加、復元、移行、トラブル対応、オーナー確認事項 |
 | 開発者 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 全体構成、計算式、データモデル、権限とセキュリティ、認証フロー、出力、移行、テスト、既知の制限、環境変数、公開の仕組み |
-| 開発者 | [docs/E2E.md](docs/E2E.md) | ブラウザ E2E テスト（Playwright、8 spec・35 シナリオ × スマホ/PC = 70 件）の実行方法・各 spec の内容・スクリーンショット |
+| 開発者 | [docs/E2E.md](docs/E2E.md) | ブラウザ E2E テスト（Playwright、12 spec・54 シナリオ × スマホ/PC = 108 件）の実行方法・各 spec の内容・スクリーンショット |
 | 開発者 | [docs/SPEC.md](docs/SPEC.md) | 要件定義（オーナー指示書・原文） |
 | 全員 | [docs/CHANGELOG.md](docs/CHANGELOG.md) | 変更履歴（ドライバー別単価・単価の反映・全員分 PDF ZIP など） |
 | 開発者（AI 含む） | [CLAUDE.md](CLAUDE.md) | 実装規約・ディレクトリ・コマンド |
@@ -50,7 +51,7 @@ npm run build && npm start  # 本番ビルドと起動
 
 npm test                    # Vitest（計算ロジック §2.6 の全ケース・スキーマ・移行変換）
 npm run test:sql            # SQL 結合テスト（ローカル PostgreSQL を自動起動。ビュー計算・RLS・締めガード・招待制・復元）
-npm run test:e2e            # Playwright（Supabase 互換テストサーバーを自動起動。スマホ / PC の主要導線 70 件。docs/E2E.md）
+npm run test:e2e            # Playwright（Supabase 互換テストサーバーを自動起動。スマホ / PC の主要導線 108 件。docs/E2E.md）
 npm run typecheck           # 型チェック
 npm run lint                # ESLint
 npm run check               # typecheck + lint + test + build:sql

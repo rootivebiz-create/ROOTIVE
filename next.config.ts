@@ -17,6 +17,7 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/api/export/statement.pdf": ["./public/fonts/**/*"],
     "/api/export/statements.zip": ["./public/fonts/**/*"],
+    "/api/export/invoice.pdf": ["./public/fonts/**/*"],
   },
   experimental: {
     serverActions: { bodySizeLimit: "20mb" },

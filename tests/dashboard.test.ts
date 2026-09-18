@@ -4,7 +4,8 @@ import { extractFindings, normalizeFindings } from "@/lib/ai/findings";
 import { buildDashboardWarnings, buildTrend } from "@/lib/db/queries-dashboard";
 import { kpiDelta } from "@/components/dashboard/kpi-cards";
 import { compactYen } from "@/components/dashboard/profit-trend-chart";
-import type { RateDiff } from "@/lib/db/types";
+import { expenseBreakdown, hasTarget, needsExpenseWarning, targetProgress } from "@/components/dashboard/helpers";
+import type { ExpenseSummaryRow, RateDiff } from "@/lib/db/types";
 
 describe("ダッシュボードの純関数（所見の正規化・推移・警告）", () => {
   it("所見の正規化・抽出、12 か月推移、警告判定が仕様どおり", () => {
@@ -107,5 +108,78 @@ describe("ダッシュボードの純関数（所見の正規化・推移・警�
     assert.equal(compactYen(150000000), "1.5億");
     console.log("all dashboard checks passed");
 
+  });
+});
+
+describe("月次目標の進捗と経費内訳の純関数", () => {
+  const expense = (over: Partial<ExpenseSummaryRow> = {}): ExpenseSummaryRow => ({
+    company_id: "c", month: "2026-09-01", category_id: "c1", category_name: "燃料費", kind: "variable", category_sort_order: 0,
+    expense_count: 1, amount: 0, taxable_amount: 0, ...over,
+  });
+
+  it("達成率・残り金額・バーの幅", () => {
+    // 目標未設定（0）は達成率 null
+    assert.deepEqual(targetProgress(500000, 0), { target: 0, actual: 500000, rate: null, remaining: 0, achieved: false, barRatio: 0 });
+    assert.equal(targetProgress(0, 0).rate, null);
+    assert.equal(hasTarget(0, 0), false);
+    assert.equal(hasTarget(0, 300000), true);
+    assert.equal(hasTarget(2600000, 0), true);
+
+    // 未達：残りは目標 − 実績、バーは達成率そのまま
+    const p = targetProgress(1_300_000, 2_600_000);
+    assert.equal(p.rate, 0.5);
+    assert.equal(p.remaining, 1_300_000);
+    assert.equal(p.achieved, false);
+    assert.equal(p.barRatio, 0.5);
+
+    // 小数の残り（金額は誤差なく引く）
+    assert.equal(targetProgress(452490.3, 500000).remaining, 47509.7);
+
+    // 達成：残り 0、バーは 100% で頭打ち
+    const done = targetProgress(3_000_000, 2_600_000);
+    assert.equal(done.achieved, true);
+    assert.equal(done.remaining, 0);
+    assert.equal(done.barRatio, 1);
+    assert.ok(done.rate != null && done.rate > 1);
+    assert.equal(targetProgress(2_600_000, 2_600_000).achieved, true);
+
+    // 実績がマイナス（赤字）でもバーは 0 以上
+    const loss = targetProgress(-100_000, 500_000);
+    assert.equal(loss.barRatio, 0);
+    assert.equal(loss.achieved, false);
+    assert.equal(loss.remaining, 600_000);
+  });
+
+  it("経費内訳は上位 5 件 ＋ その他、合計はカテゴリの合計", () => {
+    const rows = [
+      expense({ category_id: "c1", category_name: "燃料費", amount: 60000 }),
+      expense({ category_id: "c1", category_name: "燃料費", amount: 40000.5, expense_count: 2 }),
+      expense({ category_id: "c2", category_name: "地代家賃", kind: "fixed", amount: 150000 }),
+      expense({ category_id: "c3", category_name: "通信費", kind: "fixed", amount: 9500 }),
+      expense({ category_id: "c4", category_name: "保険料", kind: "fixed", amount: 8000 }),
+      expense({ category_id: "c5", category_name: "リース料", kind: "fixed", amount: 7000 }),
+      expense({ category_id: "c6", category_name: "消耗品費", amount: 6000 }),
+      expense({ category_id: "c7", category_name: "雑費", amount: 5000 }),
+    ];
+    const b = expenseBreakdown(rows);
+    assert.deepEqual(b.rows.map((r) => r.categoryName), ["地代家賃", "燃料費", "通信費", "保険料", "リース料"]);
+    assert.equal(b.rows[1].amount, 100000.5);
+    assert.equal(b.rows[1].expenseCount, 3);
+    assert.equal(b.othersCount, 2);
+    assert.equal(b.othersAmount, 11000);
+    assert.equal(b.total, 285500.5);
+    assert.ok(Math.abs(b.rows[0].share - 150000 / 285500.5) < 1e-12);
+
+    // 上位件数を変えられる／経費が無い月
+    assert.equal(expenseBreakdown(rows, 2).rows.length, 2);
+    assert.equal(expenseBreakdown(rows, 2).othersCount, 5);
+    assert.deepEqual(expenseBreakdown([]), { rows: [], othersAmount: 0, othersCount: 0, total: 0 });
+  });
+
+  it("「経費が 1 件も登録されていません」は未締め月かつ稼働行があるときだけ", () => {
+    assert.equal(needsExpenseWarning({ isClosed: false, entryCount: 12, expenseCount: 0 }), true);
+    assert.equal(needsExpenseWarning({ isClosed: false, entryCount: 12, expenseCount: 3 }), false);
+    assert.equal(needsExpenseWarning({ isClosed: true, entryCount: 12, expenseCount: 0 }), false);
+    assert.equal(needsExpenseWarning({ isClosed: false, entryCount: 0, expenseCount: 0 }), false);
   });
 });

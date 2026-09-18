@@ -327,8 +327,8 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 | 種類 | コマンド | 内容 |
 |---|---|---|
 | 単体（Vitest） | `npm test` | `lib/calc`（§2.6 の全ケース、誤差 0.01 円以内、端数処理 4 種、恒等式）、zod スキーマ、`lib/migrate` の変換と決定的 ID |
-| SQL 結合（psql） | `npm run test:sql` | ローカル PostgreSQL に `tests/sql/auth_stub.sql`（auth.uid() 等のスタブ）+ 全マイグレーションを適用し `tests/sql/test.sql` を実行。ビューの計算が §2.6 と一致、RLS（viewer / driver の拒否）、締めガード、招待制、復元・全削除 |
-| E2E（Playwright） | `npm run test:e2e` | Supabase 互換のテストサーバー（`supabase-lite`：PostgreSQL + GoTrue 相当 + PostgREST 相当の軽量実装）を自動起動し、iPhone 13 と Desktop Chrome の 2 プロジェクトで主要導線（招待ログイン → ダッシュボード → 稼働追加・複製・一括入力 → 支払明細・PDF → 設定 → 月締め・解除 → 閲覧者／ドライバーの権限 → 移行 JSON の取り込み）をブラウザで確認。8 spec・35 シナリオ × 2 プロジェクト = **70 件**。スクリーンショットを `docs/screenshots/` に保存。詳細は [docs/E2E.md](E2E.md) |
+| SQL 結合（psql） | `npm run test:sql` | ローカル PostgreSQL に `tests/sql/auth_stub.sql`（auth.uid() 等のスタブ）+ 全マイグレーションを適用し `tests/sql/test.sql` を実行。ビューの計算が §2.6 と一致、RLS（viewer / driver の拒否）、締めガード、招待制、復元・全削除、経費と営業利益（`v_month_pl`）、取引先と請求書（`build_invoice` / 合計の自動計算 / 状態）、ポータルの速報。19 節 |
+| E2E（Playwright） | `npm run test:e2e` | Supabase 互換のテストサーバー（`supabase-lite`：PostgreSQL + GoTrue 相当 + PostgREST 相当の軽量実装）を自動起動し、iPhone 13 と Desktop Chrome の 2 プロジェクトで主要導線（招待ログイン → ダッシュボード → 稼働追加・複製・一括入力 → 支払明細・PDF → 設定 → 月締め・解除 → 経費と営業利益 → 取引先と請求書（PDF・入金） → 年次レポートと月次目標 → ナビとコマンドパレット・ポータルの速報 → 閲覧者／ドライバーの権限 → 移行 JSON の取り込み）をブラウザで確認。12 spec・54 シナリオ × 2 プロジェクト = **108 件**。スクリーンショットを `docs/screenshots/` に保存。詳細は [docs/E2E.md](E2E.md) |
 | 静的 | `npm run typecheck` / `npm run lint` / `npm run build` | 型・Lint・本番ビルド |
 | まとめ | `npm run check` | typecheck + lint + test + build:sql |
 

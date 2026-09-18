@@ -15,7 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { saveInvoiceItemsAction } from "@/lib/actions/invoices";
 import { applyRounding, mulMoney, sumMoney } from "@/lib/calc/money";
 import { parseNumberInput } from "@/lib/calc/parse";
-import { UNIT_LABELS, type RoundingMode, type Unit } from "@/lib/calc/types";
+import { UNIT_LABELS, type Unit } from "@/lib/calc/types";
 import { itemUnitLabel, type InvoiceData } from "@/lib/invoice";
 import { qty as qtyText } from "@/lib/format";
 import type { InvoiceItemFormInput } from "@/lib/schemas/invoices";
@@ -73,7 +73,7 @@ export function InvoiceItemsEditor({ invoice, canEdit }: InvoiceItemsEditorProps
   const addRow = () => setRows((rs) => [...rs, { key: nextKey(), id: null, name: "", unit: rs[rs.length - 1]?.unit ?? "day", qty: "", unit_price: "" }]);
 
   const subtotal = sumMoney(rows.map(rowAmount));
-  const tax = applyRounding(subtotal * invoice.taxRate, invoice.taxRounding as RoundingMode);
+  const tax = applyRounding(subtotal * invoice.taxRate, invoice.taxRounding);
   const total = sumMoney([subtotal, tax]);
 
   const save = () => {
@@ -164,7 +164,7 @@ export function InvoiceItemsEditor({ invoice, canEdit }: InvoiceItemsEditorProps
               />
               <FieldError messages={errors[`items.${i}.name`]} />
             </div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               <div className="space-y-1">
                 <Label htmlFor={`item-unit-${r.key}`}>区分</Label>
                 <Select id={`item-unit-${r.key}`} value={r.unit} onChange={(e) => updateRow(r.key, { unit: e.target.value as Unit | "" })} disabled={pending}>

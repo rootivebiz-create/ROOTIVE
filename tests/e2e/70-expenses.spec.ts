@@ -84,7 +84,7 @@ test.describe("経費", () => {
   test("毎月かかる経費を設定してその月に計上できる（二重計上しない）", async ({ page }) => {
     await loginViaMagicLink(page, E2E.users.owner.email, `/settings/expenses?m=${MONTH}`);
     await expect(page.getByRole("heading", { name: "経費の設定" })).toBeVisible();
-    await expect(page.getByText("経費カテゴリ")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "経費カテゴリ" })).toBeVisible();
 
     await page.getByRole("button", { name: "毎月かかる経費を追加" }).click();
     await page.getByLabel("カテゴリ").last().selectOption({ label: "保険料" });

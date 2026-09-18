@@ -15,7 +15,7 @@ import {
   type InvoiceItemFormInput,
   type InvoiceStatusInput,
 } from "@/lib/schemas/invoices";
-import type { InvoiceStatus } from "@/lib/db/types";
+import { INVOICE_STATUS_LABELS, type InvoiceStatus } from "@/lib/db/types";
 import { monthToDate } from "@/lib/month";
 import type { ServerSupabase } from "@/lib/supabase/server";
 
@@ -131,6 +131,8 @@ export async function saveInvoiceItemsAction(invoiceId: string, rows: InvoiceIte
 
 /** 状態変更（下書き・発行済み・入金済み。RPC set_invoice_status） */
 export async function setInvoiceStatusAction(input: InvoiceStatusInput): Promise<ActionResult<{ id: string }>> {
+  // 完了メッセージに新しい状態を入れる（検証は runAction の中の zod で行う）
+  const label = INVOICE_STATUS_LABELS[input?.status as InvoiceStatus] as string | undefined;
   return runAction(async () => {
     const { supabase } = await requireAdminAction();
     const parsed = invoiceStatusInputSchema.parse(input);
@@ -140,7 +142,7 @@ export async function setInvoiceStatusAction(input: InvoiceStatusInput): Promise
     if (res.error) throwRpcError(res.error);
     revalidateInvoicePaths();
     return { id: parsed.id };
-  }, "状態を変更しました");
+  }, label ? `${label}にしました` : "状態を変更しました");
 }
 
 /** 請求書の削除（下書きのみ。明細も一緒に削除される） */
