@@ -27,7 +27,9 @@ const MAIN_PAGES: { href: string; label: string; keywords: string[] }[] = [
   { href: "/payouts", label: "支払", keywords: ["payout", "しはらい", "支払明細", "振込"] },
   { href: "/invoices", label: "請求", keywords: ["invoice", "せいきゅう", "請求書"] },
   { href: "/expenses", label: "経費", keywords: ["expense", "けいひ", "経費入力"] },
+  { href: "/cashflow", label: "資金繰り", keywords: ["cashflow", "しきんぐり", "入金", "残高", "資金"] },
   { href: "/projects", label: "案件", keywords: ["project", "あんけん", "案件別"] },
+  { href: "/drivers-pl", label: "ドライバー別の採算", keywords: ["driver", "どらいばー", "採算", "利益", "シミュレーション", "単価"] },
   { href: "/reports", label: "レポート", keywords: ["report", "れぽーと", "年次", "分析"] },
   { href: "/settings", label: "設定", keywords: ["settings", "せってい", "マスタ"] },
 ];

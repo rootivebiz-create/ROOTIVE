@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Empty } from "@/components/ui/empty";
-import { Money } from "@/components/ui/money";
+import { Money, Pct } from "@/components/ui/money";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { reorderProjectsAction } from "@/lib/actions/projects";
 import { subMoney } from "@/lib/calc/money";
@@ -32,6 +32,8 @@ export interface ProjectListRow {
   client_name: string;
   is_active: boolean;
   memo: string;
+  /** 目標利益率（0.2 = 20%）。null = 判定しない */
+  target_margin: number | null;
   items: ProjectListItem[];
 }
 
@@ -103,6 +105,11 @@ export function ProjectsTable({ rows, canEdit }: { rows: ProjectListRow[]; canEd
                   {projectBadge(p)}
                 </div>
                 {p.client_name && <p className="text-xs text-muted-foreground">{p.client_name}</p>}
+                {p.target_margin != null && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    目標利益率 <Pct value={p.target_margin} className="font-semibold" />
+                  </p>
+                )}
                 <ul className="mt-2 divide-y rounded-md border text-sm">
                   {p.items.length === 0 && <li className="p-2 text-xs text-muted-foreground">内容が登録されていません</li>}
                   {p.items.map((it) => {
@@ -154,6 +161,7 @@ export function ProjectsTable({ rows, canEdit }: { rows: ProjectListRow[]; canEd
               {canEdit && <TableHead className="w-10">並び</TableHead>}
               <TableHead>案件</TableHead>
               <TableHead>取引先</TableHead>
+              <TableHead className="text-right">目標利益率</TableHead>
               <TableHead>内容</TableHead>
               <TableHead>区分</TableHead>
               <TableHead className="text-right">受注単価</TableHead>
@@ -180,6 +188,9 @@ export function ProjectsTable({ rows, canEdit }: { rows: ProjectListRow[]; canEd
                   </TableCell>
                   <TableCell className="align-top text-muted-foreground" rowSpan={span}>
                     {p.client_name || "—"}
+                  </TableCell>
+                  <TableCell className="align-top text-right" rowSpan={span}>
+                    {p.target_margin != null ? <Pct value={p.target_margin} /> : <span className="num text-muted-foreground">—</span>}
                   </TableCell>
                 </>
               );

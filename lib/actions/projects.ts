@@ -16,6 +16,7 @@ function revalidateProjectPaths() {
   revalidatePath("/entries");
   revalidatePath("/payouts", "layout");
   revalidatePath("/projects");
+  revalidatePath("/expenses");
   revalidatePath("/invoices", "layout");
   revalidatePath("/settings/clients");
   revalidatePath("/dashboard");
@@ -51,6 +52,7 @@ export async function saveProjectAction(input: ProjectFormInput): Promise<Action
       ...(parsed.client_id == null ? { client_name: "" } : {}),
       is_active: parsed.is_active,
       memo: parsed.memo,
+      target_margin: parsed.target_margin,
     };
     let projectId: string;
     if (parsed.id) {

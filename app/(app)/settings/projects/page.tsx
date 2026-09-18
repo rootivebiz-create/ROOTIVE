@@ -17,6 +17,7 @@ export default async function ProjectsSettingsPage() {
     client_name: p.client_name,
     is_active: p.is_active,
     memo: p.memo,
+    target_margin: p.target_margin == null ? null : Number(p.target_margin),
     items: p.items.map((i) => ({
       id: i.id,
       name: i.name,

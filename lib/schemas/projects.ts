@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { memoSchema, moneySchema, nameSchema, unitSchema, uuidSchema } from "./common";
+import { memoSchema, moneySchema, nameSchema, percentToRateSchema, unitSchema, uuidSchema } from "./common";
 import type { Unit } from "@/lib/calc/types";
 
 /**
@@ -14,6 +14,8 @@ export interface ProjectFormInput {
   client_id: string | null;
   is_active: boolean;
   memo: string;
+  /** 目標利益率（パーセント表記の文字列。"" / null = 判定しない） */
+  target_margin: string | null;
   /** 内容の行。id が null なら新規。送られてこなかった既存 id は削除 */
   items: ProjectItemFormInput[];
 }
@@ -50,6 +52,8 @@ export const projectInputSchema = z
     client_id: z.preprocess((v) => (v === "" || v == null ? null : v), uuidSchema.nullable()),
     is_active: z.boolean(),
     memo: memoSchema,
+    // 目標利益率：空欄・未入力は null（判定しない）。入力はパーセント、値は率（0.2 = 20%）
+    target_margin: z.preprocess((v) => (v == null || (typeof v === "string" && v.trim() === "") ? null : v), percentToRateSchema.nullable()),
     items: z.array(projectItemSchema).min(1, "内容を 1 件以上登録してください").max(100, "内容が多すぎます"),
   })
   .superRefine((val, ctx) => {

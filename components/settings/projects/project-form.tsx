@@ -18,7 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { MonthLink } from "@/components/layout/month-link";
 import { deleteProjectAction, saveProjectAction } from "@/lib/actions/projects";
 import { subMoney } from "@/lib/calc/money";
-import { parseNumberInput } from "@/lib/calc/parse";
+import { parseNumberInput, rateToPercent } from "@/lib/calc/parse";
 import { UNIT_LABELS, type Unit } from "@/lib/calc/types";
 import type { Client, Project, ProjectItem } from "@/lib/db/types";
 import { useMonth } from "@/lib/hooks/use-month";
@@ -42,6 +42,8 @@ interface FormState {
   client_id: string;
   is_active: boolean;
   memo: string;
+  /** 目標利益率（パーセント表記）。"" = 判定しない */
+  target_margin: string;
 }
 
 interface ItemRow {
@@ -98,6 +100,7 @@ export function ProjectForm({ canEdit, project, items, entryCounts, clients }: P
     client_id: project?.client_id ?? "",
     is_active: project?.is_active ?? true,
     memo: project?.memo ?? "",
+    target_margin: project?.target_margin != null ? String(rateToPercent(Number(project.target_margin))) : "",
   }));
   const set = (patch: Partial<FormState>) => setF((prev) => ({ ...prev, ...patch }));
 
@@ -128,6 +131,7 @@ export function ProjectForm({ canEdit, project, items, entryCounts, clients }: P
       client_id: f.client_id === "" ? null : f.client_id,
       is_active: f.is_active,
       memo: f.memo,
+      target_margin: f.target_margin.trim() === "" ? null : f.target_margin,
       items: rows.map((r) => ({ id: r.id, name: r.name, unit: r.unit, bill_rate: r.bill_rate, pay_rate: r.pay_rate, is_active: r.is_active })),
     };
     startTransition(async () => {
@@ -195,6 +199,25 @@ export function ProjectForm({ canEdit, project, items, entryCounts, clients }: P
               請求書は取引先ごとに作ります。候補にないときは「設定 → 取引先」で登録してください。
             </p>
             <FieldError messages={errors.client_id} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="project-target-margin">目標利益率（任意）</Label>
+            <div className="flex items-center gap-2">
+              <NumberInput
+                id="project-target-margin"
+                value={f.target_margin}
+                onChange={(e) => set({ target_margin: e.target.value })}
+                disabled={disabled}
+                className="w-28"
+                placeholder="例: 20"
+                aria-describedby="project-target-margin-help"
+              />
+              <span className="text-sm text-muted-foreground">％</span>
+            </div>
+            <p id="project-target-margin-help" className="text-xs text-muted-foreground">
+              案件別の採算（案件利益 ÷ 売上）がこの率を下回ると「目標未達」として知らせます。空欄なら判定しません。
+            </p>
+            <FieldError messages={errors.target_margin} />
           </div>
           <div className="flex items-center justify-between gap-3 rounded-md border p-3">
             <div>

@@ -18,6 +18,7 @@ import { DriverSummaryTable, type DriverSummaryRow } from "@/components/dashboar
 import { DashboardWarnings } from "@/components/dashboard/warnings";
 import { AiInsightsCard } from "@/components/dashboard/ai-insights-card";
 import { TargetCard } from "@/components/dashboard/target-card";
+import { ForecastCard } from "@/components/dashboard/forecast-card";
 import { ExpenseCard } from "@/components/dashboard/expense-card";
 import { expenseBreakdown, needsExpenseWarning } from "@/components/dashboard/helpers";
 
@@ -88,6 +89,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           noExpenses={needsExpenseWarning({ isClosed: data.isClosed, entryCount: Number(data.summary.entry_count ?? 0), expenseCount: Number(pl.expense_count ?? 0) })}
         />
       </Suspense>
+
+      <ForecastCard month={month} monthLabel={formatMonthJa(month)} pl={pl} isClosed={data.isClosed} />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <TargetCard

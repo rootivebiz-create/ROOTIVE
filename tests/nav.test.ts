@@ -81,10 +81,10 @@ describe("コマンドパレットの検索（filterCommands）", () => {
 });
 
 describe("ナビの定義", () => {
-  it("PC のサイドナビは 8 項目（ホーム・稼働・支払・請求・経費・案件・レポート・設定）", () => {
-    expect(MAIN_NAV).toHaveLength(8);
-    expect(MAIN_NAV.map((i) => i.href)).toEqual(["/dashboard", "/entries", "/payouts", "/invoices", "/expenses", "/projects", "/reports", "/settings"]);
-    expect(MAIN_NAV.map((i) => i.label)).toEqual(["ホーム", "稼働", "支払", "請求", "経費", "案件", "レポート", "設定"]);
+  it("PC のサイドナビは 9 項目（ホーム・稼働・支払・請求・経費・資金繰り・案件・レポート・設定）", () => {
+    expect(MAIN_NAV).toHaveLength(9);
+    expect(MAIN_NAV.map((i) => i.href)).toEqual(["/dashboard", "/entries", "/payouts", "/invoices", "/expenses", "/cashflow", "/projects", "/reports", "/settings"]);
+    expect(MAIN_NAV.map((i) => i.label)).toEqual(["ホーム", "稼働", "支払", "請求", "経費", "資金繰り", "案件", "レポート", "設定"]);
   });
 
   it("スマホの下タブは 4 項目 ＋ メニューで 5 つ", () => {
@@ -95,8 +95,8 @@ describe("ナビの定義", () => {
     expect(BOTTOM_NAV.map((i) => i.label)).toEqual(["ホーム", "稼働", "支払", "請求"]);
   });
 
-  it("メニューシートには下タブに入らない 4 項目が入り、合計はサイドナビと一致する", () => {
-    expect(MORE_NAV.map((i) => i.href)).toEqual(["/expenses", "/projects", "/reports", "/settings"]);
+  it("メニューシートには下タブに入らない 5 項目が入り、合計はサイドナビと一致する", () => {
+    expect(MORE_NAV.map((i) => i.href)).toEqual(["/expenses", "/cashflow", "/projects", "/reports", "/settings"]);
     expect(BOTTOM_NAV.length + MORE_NAV.length).toBe(MAIN_NAV.length);
     expect(MORE_NAV.some((m) => BOTTOM_NAV.some((b) => b.href === m.href))).toBe(false);
   });

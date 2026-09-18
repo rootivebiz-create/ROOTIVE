@@ -18,6 +18,10 @@ export const exportUrls = {
   ratesCsv: () => "/api/export/rates.csv",
   /** 経費 CSV（その月の経費明細） */
   expensesCsv: (month: string) => `/api/export/expenses.csv?m=${encodeURIComponent(month)}`,
+  /** 案件別採算 CSV。month は "YYYY-MM" または "all" */
+  projectsCsv: (month: string) => `/api/export/projects.csv?m=${encodeURIComponent(month)}`,
+  /** 資金繰り CSV（期間内の入金・支払の明細と残高） */
+  cashflowCsv: (from: string, to: string) => `/api/export/cashflow.csv?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
   /** 請求書 PDF（A4 縦） */
   invoicePdf: (invoiceId: string) => `/api/export/invoice.pdf?id=${encodeURIComponent(invoiceId)}`,
   /** 請求書の印刷用ページ */
@@ -26,6 +30,8 @@ export const exportUrls = {
   invoicesCsv: (month: string) => `/api/export/invoices.csv?m=${encodeURIComponent(month)}`,
   /** 年次レポート CSV（月次推移）。year は西暦 4 桁 */
   reportCsv: (year: number) => `/api/export/report.csv?y=${encodeURIComponent(String(year))}`,
+  /** ドライバー別の採算 CSV（その月。inactive で停止中も含める） */
+  driversPlCsv: (month: string, includeInactive = false) => `/api/export/drivers-pl.csv?m=${encodeURIComponent(month)}${includeInactive ? "&inactive=1" : ""}`,
   /** バックアップ JSON（全テーブル） */
   backupJson: () => `/api/export/backup.json`,
   /** 締め時バックアップのダウンロード（Storage の署名付き URL へリダイレクト） */
