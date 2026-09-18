@@ -590,6 +590,64 @@ select public.t_assert((select count(*) from public.expenses where company_id = 
 select public.t_assert((select subtotal = 240250 and total = 264275 from public.invoices where company_id = :'company_a' and month = '2026-12-01'), '復元後も請求書の合計は同じ');
 select public.t_assert((select count(*) from public.invoice_items it join public.invoices i on i.id = it.invoice_id where i.company_id = :'company_a') = 2, '復元後も明細は 2 行');
 
+\echo '== 20. 案件別採算（v_project_pl）と資金繰り（cash_forecast）'
+select public.test_login(:'owner_a');
+
+-- 案件 × 月の損益（2026-12 の三郷Amazon：売上 230,250／単価差額 12,450 ＋ ロイヤリティ 21,780 ＝ 34,230）
+select public.t_assert((select bill = 230250 and entry_profit = 34230 and expense_direct = 0 and project_profit = 34230
+                          from public.v_project_pl where company_id = :'company_a' and month = '2026-12-01' and project_name = '三郷Amazon'), '案件 × 月の損益');
+select public.t_assert((select project_margin = round(34230::numeric / 230250, 6)
+                          from public.v_project_pl where company_id = :'company_a' and month = '2026-12-01' and project_name = '三郷Amazon'), '案件の利益率');
+select public.t_assert((select not below_target from public.v_project_pl where company_id = :'company_a' and month = '2026-12-01' and project_name = '三郷Amazon'), '目標未設定なら警告しない');
+
+-- 目標利益率 20% を設定すると下回りの警告が出る
+update public.projects set target_margin = 0.2 where company_id = :'company_a' and name = '三郷Amazon';
+select public.t_assert((select below_target from public.v_project_pl where company_id = :'company_a' and month = '2026-12-01' and project_name = '三郷Amazon'), '目標利益率を下回ると警告');
+update public.projects set target_margin = 0.1 where company_id = :'company_a' and name = '三郷Amazon';
+select public.t_assert((select not below_target from public.v_project_pl where company_id = :'company_a' and month = '2026-12-01' and project_name = '三郷Amazon'), '目標を上回れば警告しない');
+
+-- 案件に紐づけた経費は案件利益から引く
+insert into public.expenses (company_id, month, category_id, label, amount, project_id)
+values (:'company_a', '2026-12-01', (select id from public.expense_categories where company_id = :'company_a' and name = '高速・有料道路'), '三郷の高速代', 4230,
+        (select id from public.projects where company_id = :'company_a' and name = '三郷Amazon'));
+select public.t_assert((select expense_direct = 4230 and project_profit = 30000 from public.v_project_pl where company_id = :'company_a' and month = '2026-12-01' and project_name = '三郷Amazon'), '直課した経費を引いた案件利益 30,000');
+select public.t_assert((select not below_target from public.v_project_pl where company_id = :'company_a' and month = '2026-12-01' and project_name = '三郷Amazon'), '経費を引いても利益率 13.0% は目標 10% を上回る');
+update public.projects set target_margin = 0.15 where company_id = :'company_a' and name = '三郷Amazon';
+select public.t_assert((select below_target and project_margin = round(30000::numeric / 230250, 6) from public.v_project_pl where company_id = :'company_a' and month = '2026-12-01' and project_name = '三郷Amazon'), '目標 15% にすると下回りの警告が出る');
+update public.projects set target_margin = 0.1 where company_id = :'company_a' and name = '三郷Amazon';
+
+-- 資金繰り：入金予定・支払予定・経費を日付順に並べる
+select public.t_assert((select count(*) = 1 and sum(amount) = 264275 and min(event_date) = '2027-01-31'
+                          from public.cash_forecast('2026-12-01', '2027-02-28') where kind = 'invoice'), '請求書の入金予定（2027-01-31 に 264,275）');
+select public.t_assert((select f.amount = -(select s.payout_incl from public.v_driver_month_summary s where s.company_id = :'company_a' and s.month = '2026-12-01' and s.driver_name = '相曽慧')
+                          from public.cash_forecast('2026-12-01', '2027-02-28') f where f.kind = 'payout' and f.month = '2026-12-01' and f.label = '相曽慧'), 'ドライバーへの支払は税込額のマイナスで載る');
+select public.t_assert((select event_date = '2027-01-31' from public.cash_forecast('2026-12-01', '2027-02-28') where kind = 'payout' and month = '2026-12-01' and label = '相曽慧'), '支払予定日は翌月末');
+select public.t_assert((select sum(amount) = -204230 from public.cash_forecast('2026-12-01', '2027-02-28') where kind = 'expense' and status = 'done'), '計上済みの経費 204,230 はマイナスの実績');
+select public.t_assert((select count(*) = 2 and sum(amount) = -60000 from public.cash_forecast('2026-12-01', '2027-02-28') where kind = 'expense' and status = 'planned'), '未計上の固定費 2 か月分が予定として出る');
+select public.t_assert((select count(*) = 0 from public.cash_forecast('2027-03-01', '2027-03-31') where kind = 'invoice'), '範囲外の入金予定は出ない');
+select public.t_assert((select status = 'confirmed' from public.cash_forecast('2026-12-01', '2027-02-28') where kind = 'invoice' limit 1), '発行済みの請求書は confirmed');
+
+-- 現金残高のスナップショット
+insert into public.cash_snapshots (company_id, as_of, balance, memo) values (:'company_a', '2026-12-01', 1500000, '期首残高');
+select public.t_assert((select balance = 1500000 from public.cash_snapshots where company_id = :'company_a' and as_of = '2026-12-01'), '現金残高のスナップショット');
+select public.t_expect_error(format($$insert into public.cash_snapshots (company_id, as_of, balance) values ('%s', '2026-12-01', 1)$$, :'company_a'), null, '同じ日の残高は 1 件だけ');
+
+-- 権限
+select public.test_login(:'viewer_a');
+select public.t_assert((select count(*) = 1 from public.cash_snapshots), 'viewer は残高を閲覧できる');
+select public.t_expect_error(format($$insert into public.cash_snapshots (company_id, as_of, balance) values ('%s', '2027-01-01', 1)$$, :'company_a'), null, 'viewer は残高を登録できない');
+select public.test_login(:'owner_b');
+select public.t_assert((select count(*) = 0 from public.cash_snapshots), '他社の残高は見えない');
+select public.t_assert((select count(*) = 0 from public.v_project_pl), '他社の案件損益は見えない');
+select public.test_login(:'owner_a');
+
+-- バックアップ（version 3）に含まれる
+select public.t_assert((public.export_backup()->>'version') = '3', 'バックアップは version 3');
+select public.t_assert(jsonb_array_length(public.export_backup()->'cash_snapshots') = 1, 'バックアップに現金残高が入る');
+select public.t_assert((select count(*) from public.import_backup(public.export_backup())) >= 0, '復元（同じデータ）');
+select public.t_assert((select count(*) = 1 and max(balance) = 1500000 from public.cash_snapshots where company_id = :'company_a'), '復元後も現金残高は同じ');
+select public.t_assert((select target_margin = 0.1 from public.projects where company_id = :'company_a' and name = '三郷Amazon'), '復元後も案件の目標利益率は同じ');
+
 -- driver ロールは経費・請求書・取引先を読めない（社外秘）
 select public.test_login(:'owner_a');
 update public.profiles set role = 'driver', driver_id = (select id from public.drivers where company_id = :'company_a' and name = '相曽慧'), is_active = true where id = :'driver_a';
@@ -617,4 +675,4 @@ update public.companies set driver_portal_show_open_month = true where id = :'co
 
 select public.test_logout();
 reset role;
-\echo '== すべてのアサーションが通りました（18・19 節）'
+\echo '== すべてのアサーションが通りました（18〜20 節）'

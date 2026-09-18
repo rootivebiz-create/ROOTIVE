@@ -10,6 +10,9 @@ import type {
   ExpenseListRow,
   ExpenseSummaryRow,
   Client,
+  ProjectPl,
+  CashEvent,
+  CashSnapshot,
 } from "@/lib/db/types";
 import { monthToDate } from "@/lib/month";
 
@@ -189,6 +192,47 @@ export async function loadClients(supabase: ServerSupabase, companyId: string, o
   let q = supabase.from("clients").select("*").eq("company_id", companyId).order("sort_order").order("name");
   if (opts.activeOnly) q = q.eq("is_active", true);
   const { data, error } = await q;
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** 案件 × 月の損益（直課した経費を含む） */
+export async function loadProjectPl(supabase: ServerSupabase, companyId: string, month: string): Promise<ProjectPl[]> {
+  const { data, error } = await supabase
+    .from("v_project_pl")
+    .select("*")
+    .eq("company_id", companyId)
+    .eq("month", monthToDate(month))
+    .order("project_sort_order")
+    .order("project_name");
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** 期間内（from 〜 to、いずれも "YYYY-MM"）の案件 × 月の損益 */
+export async function loadProjectPlRange(supabase: ServerSupabase, companyId: string, from: string, to: string): Promise<ProjectPl[]> {
+  const { data, error } = await supabase
+    .from("v_project_pl")
+    .select("*")
+    .eq("company_id", companyId)
+    .gte("month", monthToDate(from))
+    .lte("month", monthToDate(to))
+    .order("month")
+    .order("project_sort_order");
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** 資金繰り（入金予定・支払予定・経費）。日付は "YYYY-MM-DD" */
+export async function loadCashForecast(supabase: ServerSupabase, from: string, to: string): Promise<CashEvent[]> {
+  const { data, error } = await supabase.rpc("cash_forecast", { p_from: from, p_to: to });
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** 現金残高のスナップショット（新しい順） */
+export async function loadCashSnapshots(supabase: ServerSupabase, companyId: string, limit = 12): Promise<CashSnapshot[]> {
+  const { data, error } = await supabase.from("cash_snapshots").select("*").eq("company_id", companyId).order("as_of", { ascending: false }).limit(limit);
   if (error) throw error;
   return data ?? [];
 }

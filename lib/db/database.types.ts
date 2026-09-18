@@ -109,6 +109,39 @@ export type Database = {
         }
         Relationships: []
       }
+      cash_snapshots: {
+        Row: {
+          id: string
+          company_id: string
+          as_of: string
+          balance: number
+          memo: string
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          as_of: string
+          balance: number
+          memo?: string
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          as_of?: string
+          balance?: number
+          memo?: string
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       clients: {
         Row: {
           id: string
@@ -826,6 +859,7 @@ export type Database = {
           created_at: string
           updated_at: string
           client_id: string | null
+          target_margin: number | null
         }
         Insert: {
           id?: string
@@ -838,6 +872,7 @@ export type Database = {
           created_at?: string
           updated_at?: string
           client_id?: string | null
+          target_margin?: number | null
         }
         Update: {
           id?: string
@@ -850,6 +885,7 @@ export type Database = {
           created_at?: string
           updated_at?: string
           client_id?: string | null
+          target_margin?: number | null
         }
         Relationships: []
       }
@@ -870,6 +906,7 @@ export type Database = {
           sort_order: number
           created_at: string
           updated_at: string
+          payment_day: number | null
         }
         Insert: {
           id?: string
@@ -887,6 +924,7 @@ export type Database = {
           sort_order?: number
           created_at?: string
           updated_at?: string
+          payment_day?: number | null
         }
         Update: {
           id?: string
@@ -904,6 +942,7 @@ export type Database = {
           sort_order?: number
           created_at?: string
           updated_at?: string
+          payment_day?: number | null
         }
         Relationships: []
       }
@@ -1152,6 +1191,34 @@ export type Database = {
         }
         Relationships: []
       }
+      v_project_pl: {
+        Row: {
+          company_id: string | null
+          month: string | null
+          project_id: string | null
+          project_name: string | null
+          client_id: string | null
+          client_name: string | null
+          project_is_active: boolean | null
+          project_sort_order: number | null
+          target_margin: number | null
+          entry_count: number | null
+          driver_count: number | null
+          qty_total: number | null
+          bill: number | null
+          pay: number | null
+          margin: number | null
+          royalty: number | null
+          entry_profit: number | null
+          expense_direct: number | null
+          expense_count: number | null
+          project_profit: number | null
+          project_margin: number | null
+          below_target: boolean | null
+          is_closed: boolean | null
+        }
+        Relationships: []
+      }
       v_project_summary: {
         Row: {
           company_id: string | null
@@ -1272,6 +1339,22 @@ export type Database = {
           p_rows: Json
         }
         Returns: Json
+      }
+      cash_forecast: {
+        Args: {
+          p_from: string
+          p_to: string
+        }
+        Returns: {
+          event_date: string
+          kind: string
+          label: string
+          detail: string
+          amount: number
+          ref_id: string
+          status: string
+          month: string
+        }[]
       }
       close_month: {
         Args: {

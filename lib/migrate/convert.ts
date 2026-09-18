@@ -204,6 +204,7 @@ export function convertPrototype(json: unknown, companyId: string): { backup: Ba
       name: uniqueName(p.name, usedProjectNames, warnings, "案件"),
       client_name: p.client ?? "",
       client_id: null,
+      target_margin: null,
       is_active: p.active ?? true,
       memo: p.memo ?? "",
       sort_order: p.order != null ? Number(p.order) : idx + 1,
@@ -262,7 +263,7 @@ export function convertPrototype(json: unknown, companyId: string): { backup: Ba
       projectId = deterministicId("project", projectProtoId);
       projectIdMap.set(projectProtoId, projectId);
       const nm = uniqueName(projectName?.trim() || `不明な案件 ${projectProtoId.slice(0, 6)}`, usedProjectNames, warnings, "案件");
-      projects.push({ id: projectId, company_id: companyId, name: nm, client_name: "", client_id: null, is_active: false, memo: "試作データの参照切れから自動作成", sort_order: 999 });
+      projects.push({ id: projectId, company_id: companyId, name: nm, client_name: "", client_id: null, target_margin: null, is_active: false, memo: "試作データの参照切れから自動作成", sort_order: 999 });
       warnings.push(`稼働行が参照する案件（${projectProtoId}）がマスタに無いため「${nm}」を停止中として作成しました`);
     }
     const itemId = deterministicId("item", k);

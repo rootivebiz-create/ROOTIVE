@@ -30,6 +30,7 @@ export type Expense = Tables<"expenses">;
 export type Invoice = Tables<"invoices">;
 export type InvoiceItem = Tables<"invoice_items">;
 export type MonthTarget = Tables<"month_targets">;
+export type CashSnapshot = Tables<"cash_snapshots">;
 
 export type WorkEntryCalc = Views<"v_work_entry_calc">;
 export type DriverMonthSummary = Views<"v_driver_month_summary">;
@@ -42,6 +43,24 @@ export type RecurringExpenseRow = Views<"v_recurring_expense_list">;
 export type MonthPl = Views<"v_month_pl">;
 export type ClientMonthSummary = Views<"v_client_month_summary">;
 export type InvoiceListRow = Views<"v_invoice_list">;
+export type ProjectPl = Views<"v_project_pl">;
+
+/** 資金繰りの 1 件（RPC cash_forecast の 1 行） */
+export type CashEvent = Database["public"]["Functions"]["cash_forecast"]["Returns"][number];
+
+/** 資金繰りの種別 */
+export const CASH_KIND_LABELS: Record<string, string> = {
+  invoice: "入金",
+  payout: "ドライバー支払",
+  expense: "経費",
+};
+
+/** 資金繰りの状態 */
+export const CASH_STATUS_LABELS: Record<string, string> = {
+  planned: "予定",
+  confirmed: "確定",
+  done: "実績",
+};
 
 /** 稼働行のスナップショットと現在のマスタの差分（RPC rate_diffs の 1 行） */
 export type RateDiff = Database["public"]["Functions"]["rate_diffs"]["Returns"][number];

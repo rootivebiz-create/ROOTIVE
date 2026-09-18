@@ -9,6 +9,7 @@
 drop view if exists
   public.v_month_list,
   public.v_month_pl,
+  public.v_project_pl,
   public.v_month_summary,
   public.v_driver_month_summary,
   public.v_project_summary,

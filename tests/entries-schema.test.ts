@@ -243,6 +243,7 @@ describe("helpers", () => {
         name: "三郷Amazon",
         client_name: "",
         client_id: null,
+        target_margin: null,
         is_active: true,
         memo: "",
         sort_order: 1,
