@@ -235,6 +235,20 @@ export function CompanyForm({ initial, currentMonth }: { initial: CompanyFormInp
             </div>
             <Switch id="company-portal-royalty" checked={f.driver_portal_show_royalty} onCheckedChange={(v) => set({ driver_portal_show_royalty: v })} disabled={pending} />
           </div>
+          <div className="flex items-center justify-between gap-3 rounded-md border p-3">
+            <div>
+              <Label htmlFor="company-portal-open-month">未締め月の速報を表示する</Label>
+              <p className="mt-1 text-xs text-muted-foreground">
+                オンにすると、ドライバーポータルに未締め月の暫定のお支払予定額（速報）を表示します。締め前のため金額は変わることがあります。
+              </p>
+            </div>
+            <Switch
+              id="company-portal-open-month"
+              checked={f.driver_portal_show_open_month}
+              onCheckedChange={(v) => set({ driver_portal_show_open_month: v })}
+              disabled={pending}
+            />
+          </div>
         </CardContent>
       </Card>
 

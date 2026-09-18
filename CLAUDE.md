@@ -18,8 +18,8 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
 - `lib/schemas/*.ts` zod スキーマ（サーバー・クライアント共用）
 - `lib/month.ts` 稼動月ユーティリティ、`lib/format.ts` 表示書式（円・%・数量）
 - `components/ui/*` UI 部品（shadcn/ui 相当）、`components/layout/*` シェル・ナビ・月セレクタ
-- `app/(app)/*` スタッフ画面、`app/driver/*` ドライバーポータル、`app/(auth)/*` ログイン・招待、`app/api/export/*` 出力
-- `supabase/migrations/*.sql` スキーマ（0001 テーブル、0002 認証・RLS、0003 ビュー、0004 RPC、0005 ポータル・初期データ、0006 Storage・権限、0007 ドライバー別単価（bill_rate 上書き・rate_diffs・apply_master_rates）、0008 消費税・ロゴと認印・ドライバーごとの支払日）
+- `app/(app)/*` スタッフ画面（ホーム・稼働・支払・請求・経費・案件・レポート・設定）、`app/driver/*` ドライバーポータル、`app/(auth)/*` ログイン・招待、`app/api/export/*` 出力
+- `supabase/migrations/*.sql` スキーマ（0001 テーブル、0002 認証・RLS、0003 ビュー、0004 RPC、0005 ポータル・初期データ、0006 Storage・権限、0007 ドライバー別単価（bill_rate 上書き・rate_diffs・apply_master_rates）、0008 消費税・ロゴと認印・ドライバーごとの支払日、0009 経費と営業利益・取引先と請求書・月次目標）
 - `tests/` Vitest（`*.test.ts`）、`tests/sql/`（psql）、`tests/e2e/`（Playwright ＋ `supabase-lite` テストサーバー）
 
 ## 必ず守る規約
@@ -43,6 +43,9 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
 - **消費税（0008）**：単価・管理費・ロイヤリティはすべて税抜で入力する。tax_base = Σpay − Σroyalty − 管理費（調整は税込のまま対象外）、tax = 端数処理(tax_base × companies.tax_rate)（companies.tax_rounding、既定 切り捨て）、payout_incl = payout + tax。drivers.tax_mode が exempt なら tax = 0。締めた月は driver_months.tax_* に固定（close_month が書き、reopen_month が外す）。明細の「お支払額」は payout_incl。ダッシュボード・会社利益は税抜のまま
 - 振込予定日：drivers.payout_month_offset / payout_day（両方あり）→ companies の設定（`resolvePayoutDate`）
 - 会社のロゴ・認印：Storage `company-assets/<company_id>/…`（非公開）。書き込みはサービスロール（`lib/actions/company-assets.ts`）、表示は `/api/company-asset/<kind>`、PDF は `loadStatementAssets()`
+- **経費と営業利益（0009）**：経費（`expenses`）の金額はすべて税抜。カテゴリ（`expense_categories`）は固定費／変動費の 2 区分で、会社を作ると既定 12 件が入る。毎月かかる経費（`recurring_expenses`）は RPC `apply_recurring_expenses(month)` でその月に計上（二重計上しない）。締め済み月の経費は変更不可（`t05_guard_month_closed`）。**営業利益 = 会社利益 − 経費**（ビュー `v_month_pl`。ダッシュボード・レポート・AI 分析はこのビューを使う）
+- **取引先と請求書（0009）**：案件に取引先（`projects.client_id`）を紐づけると、その月の稼働から RPC `build_invoice(client_id, month)` で請求書と明細を作る（案件内容 × 受注単価ごとに 1 行）。請求書の小計・消費税・合計はトリガーが自動計算（明細の金額 = 数量 × 単価）。状態は 下書き → 発行済み → 入金済み（RPC `set_invoice_status`）。発行済みの請求書は作り直せない（hint `INVOICE_ISSUED`）。`projects.client_name` はトリガーが取引先名と同期するのでアプリから書かない
+- **月次目標（0009）**：`month_targets`（売上・営業利益）。ダッシュボードの進捗バーと `v_month_pl` で使う
 - 川島幹太はオーナー本人：支払単価 0・率 0%・管理費 0 が正常（警告を出さない）
 - ロール：owner（すべて）／admin（登録・編集・月締め・出力）／viewer（閲覧・CSV のみ）／driver（自分の締め済み月の明細のみ）
 

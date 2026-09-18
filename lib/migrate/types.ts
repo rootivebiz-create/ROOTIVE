@@ -17,8 +17,17 @@ export type BackupDriverMonth = Omit<Tables<"driver_months">, "created_at" | "up
 export type BackupAdjustment = Omit<Tables<"adjustments">, "created_at" | "updated_at"> & Partial<Pick<Tables<"adjustments">, "created_at" | "updated_at">>;
 export type BackupMonthClosing = Omit<Tables<"month_closings">, "created_at" | "updated_at" | "snapshot"> & Partial<Pick<Tables<"month_closings">, "created_at" | "updated_at">>;
 
+export type BackupClient = Omit<Tables<"clients">, "created_at" | "updated_at"> & Partial<Pick<Tables<"clients">, "created_at" | "updated_at">>;
+export type BackupExpenseCategory = Omit<Tables<"expense_categories">, "created_at" | "updated_at"> & Partial<Pick<Tables<"expense_categories">, "created_at" | "updated_at">>;
+export type BackupRecurringExpense = Omit<Tables<"recurring_expenses">, "created_at" | "updated_at"> & Partial<Pick<Tables<"recurring_expenses">, "created_at" | "updated_at">>;
+export type BackupExpense = Omit<Tables<"expenses">, "created_at" | "updated_at"> & Partial<Pick<Tables<"expenses">, "created_at" | "updated_at">>;
+export type BackupInvoice = Omit<Tables<"invoices">, "created_at" | "updated_at"> & Partial<Pick<Tables<"invoices">, "created_at" | "updated_at">>;
+export type BackupInvoiceItem = Omit<Tables<"invoice_items">, "created_at" | "updated_at"> & Partial<Pick<Tables<"invoice_items">, "created_at" | "updated_at">>;
+export type BackupMonthTarget = Omit<Tables<"month_targets">, "created_at" | "updated_at"> & Partial<Pick<Tables<"month_targets">, "created_at" | "updated_at">>;
+
 export interface BackupJson {
-  version: 1;
+  /** 1 = 0006 まで、2 = 0009（経費・取引先・請求書・月次目標）を含む */
+  version: 1 | 2;
   app: string;
   exported_at: string;
   company: BackupCompany | null;
@@ -31,6 +40,14 @@ export interface BackupJson {
   driver_months: BackupDriverMonth[];
   adjustments: BackupAdjustment[];
   month_closings: BackupMonthClosing[];
+  /** 0009 で追加。古いバックアップには無い */
+  clients?: BackupClient[];
+  expense_categories?: BackupExpenseCategory[];
+  recurring_expenses?: BackupRecurringExpense[];
+  expenses?: BackupExpense[];
+  invoices?: BackupInvoice[];
+  invoice_items?: BackupInvoiceItem[];
+  month_targets?: BackupMonthTarget[];
 }
 
 export interface MigratePreviewMonth {
@@ -55,6 +72,13 @@ export interface MigratePreview {
     driver_months: number;
     adjustments: number;
     month_closings: number;
+    clients: number;
+    expense_categories: number;
+    recurring_expenses: number;
+    expenses: number;
+    invoices: number;
+    invoice_items: number;
+    month_targets: number;
   };
   months: MigratePreviewMonth[];
   totals: { bill: number; profit: number; payout: number };

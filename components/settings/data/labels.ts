@@ -12,6 +12,13 @@ export const BACKUP_TABLE_LABELS: Record<string, string> = {
   adjustments: "調整",
   month_closings: "月締め",
   ai_insights: "AI 分析",
+  clients: "取引先",
+  expense_categories: "経費カテゴリ",
+  recurring_expenses: "毎月かかる経費",
+  expenses: "経費",
+  invoices: "請求書",
+  invoice_items: "請求明細",
+  month_targets: "月次目標",
 };
 
 /** 件数表の表示順 */
@@ -25,6 +32,13 @@ export const BACKUP_COUNT_ORDER = [
   "driver_months",
   "adjustments",
   "month_closings",
+  "clients",
+  "expense_categories",
+  "recurring_expenses",
+  "expenses",
+  "invoices",
+  "invoice_items",
+  "month_targets",
 ] as const;
 
 export function tableLabel(key: string): string {

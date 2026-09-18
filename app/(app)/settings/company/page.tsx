@@ -29,6 +29,7 @@ export default async function CompanySettingsPage({ searchParams }: { searchPara
     tel: company.tel ?? "",
     invoice_reg_no: company.invoice_reg_no ?? "",
     driver_portal_show_royalty: Boolean(company.driver_portal_show_royalty),
+    driver_portal_show_open_month: Boolean(company.driver_portal_show_open_month),
     tax_rate: pctText(company.tax_rate),
     tax_rounding: company.tax_rounding,
     yayoi_accounts: yayoiAccountsToForm(resolveYayoiAccounts(company.yayoi_accounts)),

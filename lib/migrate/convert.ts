@@ -203,6 +203,7 @@ export function convertPrototype(json: unknown, companyId: string): { backup: Ba
       company_id: companyId,
       name: uniqueName(p.name, usedProjectNames, warnings, "案件"),
       client_name: p.client ?? "",
+      client_id: null,
       is_active: p.active ?? true,
       memo: p.memo ?? "",
       sort_order: p.order != null ? Number(p.order) : idx + 1,
@@ -261,7 +262,7 @@ export function convertPrototype(json: unknown, companyId: string): { backup: Ba
       projectId = deterministicId("project", projectProtoId);
       projectIdMap.set(projectProtoId, projectId);
       const nm = uniqueName(projectName?.trim() || `不明な案件 ${projectProtoId.slice(0, 6)}`, usedProjectNames, warnings, "案件");
-      projects.push({ id: projectId, company_id: companyId, name: nm, client_name: "", is_active: false, memo: "試作データの参照切れから自動作成", sort_order: 999 });
+      projects.push({ id: projectId, company_id: companyId, name: nm, client_name: "", client_id: null, is_active: false, memo: "試作データの参照切れから自動作成", sort_order: 999 });
       warnings.push(`稼働行が参照する案件（${projectProtoId}）がマスタに無いため「${nm}」を停止中として作成しました`);
     }
     const itemId = deterministicId("item", k);
@@ -411,6 +412,14 @@ const backupSchema = z.object({
   driver_months: z.array(z.record(z.string(), z.unknown())).default([]),
   adjustments: z.array(z.record(z.string(), z.unknown())).default([]),
   month_closings: z.array(z.record(z.string(), z.unknown())).default([]),
+  // 0009 で追加（古いバックアップには無い）
+  clients: z.array(z.record(z.string(), z.unknown())).default([]),
+  expense_categories: z.array(z.record(z.string(), z.unknown())).default([]),
+  recurring_expenses: z.array(z.record(z.string(), z.unknown())).default([]),
+  expenses: z.array(z.record(z.string(), z.unknown())).default([]),
+  invoices: z.array(z.record(z.string(), z.unknown())).default([]),
+  invoice_items: z.array(z.record(z.string(), z.unknown())).default([]),
+  month_targets: z.array(z.record(z.string(), z.unknown())).default([]),
 });
 
 /** 本システムのバックアップ JSON を検証して正規化する */
@@ -432,8 +441,14 @@ export function normalizeBackup(json: unknown): BackupJson {
   requireId(b.work_entries, "work_entries");
   requireId(b.driver_months, "driver_months");
   requireId(b.adjustments, "adjustments");
+  requireId(b.clients, "clients");
+  requireId(b.expense_categories, "expense_categories");
+  requireId(b.recurring_expenses, "recurring_expenses");
+  requireId(b.expenses, "expenses");
+  requireId(b.invoices, "invoices");
+  requireId(b.invoice_items, "invoice_items");
   return {
-    version: 1,
+    version: b.version === 2 ? 2 : 1,
     app: b.app ?? "rootive-profit",
     exported_at: b.exported_at ?? new Date().toISOString(),
     company: (b.company ?? null) as BackupJson["company"],
@@ -446,6 +461,13 @@ export function normalizeBackup(json: unknown): BackupJson {
     driver_months: b.driver_months as unknown as BackupDriverMonth[],
     adjustments: b.adjustments as unknown as BackupAdjustment[],
     month_closings: b.month_closings as unknown as BackupMonthClosing[],
+    clients: b.clients as unknown as BackupJson["clients"],
+    expense_categories: b.expense_categories as unknown as BackupJson["expense_categories"],
+    recurring_expenses: b.recurring_expenses as unknown as BackupJson["recurring_expenses"],
+    expenses: b.expenses as unknown as BackupJson["expenses"],
+    invoices: b.invoices as unknown as BackupJson["invoices"],
+    invoice_items: b.invoice_items as unknown as BackupJson["invoice_items"],
+    month_targets: b.month_targets as unknown as BackupJson["month_targets"],
   };
 }
 
@@ -525,6 +547,13 @@ export function previewBackup(backup: BackupJson, format: "prototype" | "backup"
       driver_months: backup.driver_months.length,
       adjustments: backup.adjustments.length,
       month_closings: backup.month_closings.length,
+      clients: backup.clients?.length ?? 0,
+      expense_categories: backup.expense_categories?.length ?? 0,
+      recurring_expenses: backup.recurring_expenses?.length ?? 0,
+      expenses: backup.expenses?.length ?? 0,
+      invoices: backup.invoices?.length ?? 0,
+      invoice_items: backup.invoice_items?.length ?? 0,
+      month_targets: backup.month_targets?.length ?? 0,
     },
     months,
     totals: {

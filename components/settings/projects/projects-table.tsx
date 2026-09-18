@@ -153,7 +153,7 @@ export function ProjectsTable({ rows, canEdit }: { rows: ProjectListRow[]; canEd
             <TableRow>
               {canEdit && <TableHead className="w-10">並び</TableHead>}
               <TableHead>案件</TableHead>
-              <TableHead>荷主・元請</TableHead>
+              <TableHead>取引先</TableHead>
               <TableHead>内容</TableHead>
               <TableHead>区分</TableHead>
               <TableHead className="text-right">受注単価</TableHead>

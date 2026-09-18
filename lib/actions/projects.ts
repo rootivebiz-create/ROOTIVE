@@ -16,6 +16,8 @@ function revalidateProjectPaths() {
   revalidatePath("/entries");
   revalidatePath("/payouts", "layout");
   revalidatePath("/projects");
+  revalidatePath("/invoices", "layout");
+  revalidatePath("/settings/clients");
   revalidatePath("/dashboard");
 }
 
@@ -42,7 +44,14 @@ export async function saveProjectAction(input: ProjectFormInput): Promise<Action
       throw new ActionError("同じ名前の案件が既に登録されています。", { name: ["同じ名前の案件が既に登録されています"] });
     }
 
-    const fields = { name: parsed.name, client_name: parsed.client_name, is_active: parsed.is_active, memo: parsed.memo };
+    // 取引先を外すときは client_name も空にする（残っていると DB トリガーが同名の取引先へ再リンクするため）
+    const fields = {
+      name: parsed.name,
+      client_id: parsed.client_id,
+      ...(parsed.client_id == null ? { client_name: "" } : {}),
+      is_active: parsed.is_active,
+      memo: parsed.memo,
+    };
     let projectId: string;
     if (parsed.id) {
       const res = await supabase.from("projects").update(fields).eq("id", parsed.id).eq("company_id", company.id).select("id").single();

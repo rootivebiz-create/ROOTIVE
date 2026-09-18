@@ -462,3 +462,159 @@ select public.t_assert((select role from public.apply_invitation(:'viewer_a', 'v
 select public.test_logout();
 reset role;
 \echo '== すべてのアサーションが通りました（17 節）'
+
+\echo '== 18. 経費・営業利益・月次目標'
+set role authenticated;
+select public.test_login(:'owner_a');
+update public.companies set tax_rate = 0.10, tax_rounding = 'floor' where id = :'company_a';
+
+-- 既定の経費カテゴリ（会社を作ったときにトリガーが用意する）
+select public.t_assert((select count(*) from public.expense_categories where company_id = :'company_a') = 12, '既定の経費カテゴリ 12 件');
+select public.t_assert((select count(*) from public.expense_categories where company_id = :'company_a' and kind = 'fixed') = 5, 'うち固定費 5 件');
+
+-- 未締め月（2026-12）に稼働を 1 件（bill 230,250 / pay 217,800 / royalty 21,780）
+insert into public.work_entries (company_id, month, driver_id, project_item_id, qty, bill_rate, pay_rate, royalty_rate, rounding_mode)
+values (:'company_a', '2026-12-01',
+        (select id from public.drivers where company_id = :'company_a' and name = '相曽慧'),
+        (select pi.id from public.project_items pi join public.projects p on p.id = pi.project_id where p.company_id = :'company_a' and p.name = '三郷Amazon' limit 1),
+        10, 23025, 21780, 0.1, 'none');
+select public.t_assert((select bill = 230250 and pay = 217800 and royalty = 21780 from public.v_month_summary where company_id = :'company_a' and month = '2026-12-01'), '2026-12 の売上 230,250');
+
+-- 経費（金額は税抜）
+insert into public.expenses (company_id, month, category_id, label, amount, tax_mode)
+values (:'company_a', '2026-12-01', (select id from public.expense_categories where company_id = :'company_a' and name = '車両リース・レンタル'), '軽バン 3 台', 120000, 'taxable'),
+       (:'company_a', '2026-12-01', (select id from public.expense_categories where company_id = :'company_a' and name = '燃料費'), 'ガソリン代', 50000, 'taxable');
+select public.t_assert((select count(*) = 2 and sum(amount) = 170000 from public.v_expense_list where company_id = :'company_a' and month = '2026-12-01'), '経費 2 件・合計 170,000');
+select public.t_assert((select amount = 120000 and kind = 'fixed' from public.v_expense_summary where company_id = :'company_a' and month = '2026-12-01' and category_name = '車両リース・レンタル'), 'カテゴリ別の集計（固定費）');
+
+-- 営業利益 ＝ 会社利益 − 経費
+select public.t_assert((select expense_total = 170000 and expense_fixed = 120000 and expense_variable = 50000 from public.v_month_pl where company_id = :'company_a' and month = '2026-12-01'), 'v_month_pl の経費の内訳');
+select public.t_assert((select operating_profit = profit - 170000 from public.v_month_pl where company_id = :'company_a' and month = '2026-12-01'), '営業利益 ＝ 会社利益 − 経費');
+select public.t_assert((select operating_margin = round(operating_profit / 230250, 6) from public.v_month_pl where company_id = :'company_a' and month = '2026-12-01'), '営業利益率');
+select public.t_assert((select expense_total = 0 and operating_profit = profit from public.v_month_pl where company_id = :'company_a' and month = '2026-09-01'), '経費が無い月は営業利益 ＝ 会社利益');
+
+-- 毎月かかる経費（テンプレ）→ その月に計上（冪等）
+insert into public.recurring_expenses (company_id, category_id, label, amount, sort_order)
+values (:'company_a', (select id from public.expense_categories where company_id = :'company_a' and name = '保険料'), '自動車保険', 30000, 1);
+select public.t_assert(public.apply_recurring_expenses('2026-12-01') = 1, '毎月かかる経費を 1 件計上');
+select public.t_assert(public.apply_recurring_expenses('2026-12-01') = 0, '二重計上しない（冪等）');
+select public.t_assert((select expense_total = 200000 from public.v_month_pl where company_id = :'company_a' and month = '2026-12-01'), '計上後の経費合計 200,000');
+select public.t_expect_error($$select public.apply_recurring_expenses('2026-09-01')$$, 'MONTH_CLOSED', '締め済み月には計上できない');
+
+-- 締め済み月の経費は変更できない
+select public.t_expect_error(format($$insert into public.expenses (company_id, month, category_id, label, amount) values ('%s', '2026-09-01', (select id from public.expense_categories where company_id = '%s' limit 1), 'あとから経費', 1000)$$, :'company_a', :'company_a'), 'MONTH_CLOSED', '締め済み月に経費は足せない');
+
+-- 月次目標
+insert into public.month_targets (company_id, month, bill_target, profit_target, memo)
+values (:'company_a', '2026-12-01', 3000000, 500000, '年末は件数を増やす')
+on conflict (company_id, month) do update set bill_target = excluded.bill_target, profit_target = excluded.profit_target;
+select public.t_assert((select bill_target = 3000000 and profit_target = 500000 and target_memo = '年末は件数を増やす' from public.v_month_pl where company_id = :'company_a' and month = '2026-12-01'), '月次目標がビューに出る');
+
+-- viewer は経費を書けない
+select public.test_login(:'viewer_a');
+select public.t_assert((select count(*) from public.v_expense_list where month = '2026-12-01') = 3, 'viewer は経費を閲覧できる');
+select public.t_expect_error(format($$insert into public.expenses (company_id, month, category_id, label, amount) values ('%s', '2026-12-01', (select id from public.expense_categories limit 1), 'だめ', 1)$$, :'company_a'), null, 'viewer は経費を追加できない');
+select public.t_expect_error($$select public.apply_recurring_expenses('2026-12-01')$$, 'FORBIDDEN', 'viewer は固定費を計上できない');
+
+\echo '== 19. 取引先と請求書（インボイス）・入金管理'
+select public.test_login(:'owner_a');
+
+-- 取引先マスタと案件の紐づけ（client_name はトリガーが同期する）
+insert into public.clients (company_id, name, honorific, payment_month_offset, payment_day, invoice_reg_no)
+values (:'company_a', '株式会社テスト物流', '御中', 1, 0, 'T9999999999999');
+update public.projects set client_id = (select id from public.clients where company_id = :'company_a' and name = '株式会社テスト物流')
+ where company_id = :'company_a' and name = '三郷Amazon';
+select public.t_assert((select client_name = '株式会社テスト物流' from public.projects where company_id = :'company_a' and name = '三郷Amazon'), '案件の取引先名が同期される');
+update public.clients set name = '株式会社テスト運輸' where company_id = :'company_a' and name = '株式会社テスト物流';
+select public.t_assert((select client_name = '株式会社テスト運輸' from public.projects where company_id = :'company_a' and name = '三郷Amazon'), '取引先の改名も案件に反映される');
+
+-- 取引先名だけ入れると取引先が自動で作られる
+insert into public.projects (company_id, name, client_name, sort_order) values (:'company_a', 'テスト案件', '新規取引先', 99);
+select public.t_assert((select count(*) = 1 from public.clients where company_id = :'company_a' and name = '新規取引先'), '取引先名から取引先を自動作成');
+select public.t_assert((select client_id is not null from public.projects where company_id = :'company_a' and name = 'テスト案件'), '自動作成した取引先が案件に紐づく');
+
+-- 取引先 × 月の売上
+select public.t_assert((select bill = 230250 and entry_count = 1 from public.v_client_month_summary where company_id = :'company_a' and month = '2026-12-01' and client_name = '株式会社テスト運輸'), '取引先 × 月の売上 230,250');
+
+-- 請求書の作成（稼働から明細を作る）
+select public.t_assert(public.build_invoice((select id from public.clients where company_id = :'company_a' and name = '株式会社テスト運輸'), '2026-12-01') is not null, '請求書を作成');
+select public.t_assert((select count(*) = 1 from public.invoices where company_id = :'company_a' and month = '2026-12-01'), '請求書 1 件');
+select public.t_assert((select count(*) = 1 and sum(qty) = 10 and max(unit_price) = 23025 and sum(amount) = 230250 from public.invoice_items it join public.invoices i on i.id = it.invoice_id where i.company_id = :'company_a' and i.month = '2026-12-01'), '明細 1 行（数量 10 × 単価 23,025）');
+select public.t_assert((select subtotal = 230250 and tax = 23025 and total = 253275 and status = 'draft' from public.invoices where company_id = :'company_a' and month = '2026-12-01'), '小計 230,250／消費税 23,025／合計 253,275');
+select public.t_assert((select due_date = '2027-01-31' and issue_date = '2026-12-31' from public.invoices where company_id = :'company_a' and month = '2026-12-01'), '発行日は月末・入金予定日は翌月末');
+select public.t_assert((select invoice_no = '202612-01' from public.invoices where company_id = :'company_a' and month = '2026-12-01'), '請求書番号は YYYYMM-01');
+
+-- 作り直しても増えない（冪等）
+select public.t_assert(public.build_invoice((select id from public.clients where company_id = :'company_a' and name = '株式会社テスト運輸'), '2026-12-01') is not null, '請求書を作り直す');
+select public.t_assert((select count(*) = 1 from public.invoice_items it join public.invoices i on i.id = it.invoice_id where i.company_id = :'company_a' and i.month = '2026-12-01'), '作り直しても明細は 1 行');
+
+-- 明細を手で足すと合計が自動で計算し直される（金額は数量 × 単価）
+insert into public.invoice_items (company_id, invoice_id, name, qty, unit_price, sort_order)
+values (:'company_a', (select id from public.invoices where company_id = :'company_a' and month = '2026-12-01'), '追加作業', 2, 5000, 90);
+select public.t_assert((select amount = 10000 from public.invoice_items where name = '追加作業'), '明細の金額は数量 × 単価');
+select public.t_assert((select subtotal = 240250 and tax = 24025 and total = 264275 from public.invoices where company_id = :'company_a' and month = '2026-12-01'), '合計と消費税が自動で計算し直される');
+
+-- 状態（下書き → 発行済み → 入金済み）
+select public.set_invoice_status((select id from public.invoices where company_id = :'company_a' and month = '2026-12-01'), 'issued');
+select public.t_expect_error(format($$select public.build_invoice((select id from public.clients where company_id = '%s' and name = '株式会社テスト運輸'), '2026-12-01')$$, :'company_a'), 'INVOICE_ISSUED', '発行済みの請求書は作り直せない');
+select public.set_invoice_status((select id from public.invoices where company_id = :'company_a' and month = '2026-12-01'), 'paid', '2027-01-30');
+select public.t_assert((select status = 'paid' and paid_on = '2027-01-30' from public.invoices where company_id = :'company_a' and month = '2026-12-01'), '入金済みと入金日');
+select public.set_invoice_status((select id from public.invoices where company_id = :'company_a' and month = '2026-12-01'), 'issued');
+select public.t_assert((select status = 'issued' and paid_on is null from public.invoices where company_id = :'company_a' and month = '2026-12-01'), '発行済みに戻すと入金日は消える');
+
+-- 一覧ビュー
+select public.t_assert((select client_name = '株式会社テスト運輸' and item_count = 2 from public.v_invoice_list where company_id = :'company_a' and month = '2026-12-01'), '請求書一覧ビュー');
+
+-- 権限
+select public.test_login(:'viewer_a');
+select public.t_expect_error(format($$select public.build_invoice((select id from public.clients where company_id = '%s' limit 1), '2026-12-01')$$, :'company_a'), 'FORBIDDEN', 'viewer は請求書を作れない');
+select public.t_expect_error(format($$insert into public.clients (company_id, name) values ('%s', 'だめ取引先')$$, :'company_a'), null, 'viewer は取引先を追加できない');
+
+-- 会社分離
+select public.test_login(:'owner_b');
+select public.t_assert((select count(*) from public.clients) = 0, '他社の取引先は見えない');
+select public.t_assert((select count(*) from public.v_invoice_list) = 0, '他社の請求書は見えない');
+select public.t_assert((select count(*) from public.v_expense_list) = 0, '他社の経費は見えない');
+select public.t_assert((select count(*) from public.expense_categories) = 12, '自社の既定カテゴリは見える');
+
+-- バックアップに含まれる
+select public.test_login(:'owner_a');
+select public.t_assert(jsonb_array_length(public.export_backup()->'expenses') = 3, 'バックアップに経費が入る');
+select public.t_assert(jsonb_array_length(public.export_backup()->'invoices') = 1 and jsonb_array_length(public.export_backup()->'invoice_items') = 2, 'バックアップに請求書と明細が入る');
+select public.t_assert(jsonb_array_length(public.export_backup()->'clients') >= 2, 'バックアップに取引先が入る');
+select public.t_assert(jsonb_array_length(public.export_backup()->'month_targets') = 1, 'バックアップに月次目標が入る');
+
+-- バックアップ → 復元（冪等）
+select public.t_assert((select count(*) from public.import_backup(public.export_backup())) >= 0, '復元（同じデータ）');
+select public.t_assert((select count(*) from public.expenses where company_id = :'company_a') = 3, '復元後も経費は 3 件');
+select public.t_assert((select subtotal = 240250 and total = 264275 from public.invoices where company_id = :'company_a' and month = '2026-12-01'), '復元後も請求書の合計は同じ');
+select public.t_assert((select count(*) from public.invoice_items it join public.invoices i on i.id = it.invoice_id where i.company_id = :'company_a') = 2, '復元後も明細は 2 行');
+
+-- driver ロールは経費・請求書・取引先を読めない（社外秘）
+select public.test_login(:'owner_a');
+update public.profiles set role = 'driver', driver_id = (select id from public.drivers where company_id = :'company_a' and name = '相曽慧'), is_active = true where id = :'driver_a';
+select public.test_login(:'driver_a');
+select public.t_assert((select count(*) from public.expenses) = 0, 'driver は経費を読めない');
+select public.t_assert((select count(*) from public.invoices) = 0, 'driver は請求書を読めない');
+select public.t_assert((select count(*) from public.clients) = 0, 'driver は取引先を読めない');
+select public.t_assert((select count(*) from public.month_targets) = 0, 'driver は月次目標を読めない');
+select public.t_expect_error(format($$insert into public.expenses (company_id, month, category_id, label, amount) values ('%s', '2026-12-01', (select id from public.expense_categories limit 1), 'だめ', 1)$$, :'company_a'), null, 'driver は経費を追加できない');
+
+-- ドライバーポータルの当月速報（未締め月の暫定額）
+select public.test_login(:'owner_a');
+update public.profiles set role = 'driver', driver_id = (select id from public.drivers where company_id = :'company_a' and name = '相曽慧'), is_active = true where id = :'driver_a';
+select public.test_login(:'driver_a');
+select public.t_assert((public.driver_portal_current()->>'month') = '2026-12', '速報は最新の未締め月（2026-12）');
+select public.t_assert((public.driver_portal_current()->>'status') = 'open', '速報は集計中');
+select public.t_assert((public.driver_portal_current()->>'payout_incl')::numeric > 0, '速報に税込のお支払予定額が入る');
+select public.t_assert((public.driver_portal_current()->>'payout_date') = '2027-01-31', '速報の振込予定日は翌月末');
+select public.test_login(:'owner_a');
+update public.companies set driver_portal_show_open_month = false where id = :'company_a';
+select public.test_login(:'driver_a');
+select public.t_assert(public.driver_portal_current() is null, '会社設定で速報を止められる');
+select public.test_login(:'owner_a');
+update public.companies set driver_portal_show_open_month = true where id = :'company_a';
+
+select public.test_logout();
+reset role;
+\echo '== すべてのアサーションが通りました（18・19 節）'

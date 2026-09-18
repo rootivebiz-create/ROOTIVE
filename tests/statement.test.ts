@@ -19,6 +19,7 @@ const company: Company = {
   address: "埼玉県三郷市",
   tel: "048-000-0000",
   driver_portal_show_royalty: true,
+  driver_portal_show_open_month: true,
   yayoi_accounts: {},
   tax_rate: 0.1,
   tax_rounding: "floor",

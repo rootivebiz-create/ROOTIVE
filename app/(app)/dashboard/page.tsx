@@ -2,9 +2,10 @@ import { Suspense } from "react";
 import { Lock } from "lucide-react";
 import { requireStaff, canEdit } from "@/lib/auth/session";
 import { loadDashboardData } from "@/lib/db/queries-dashboard";
+import { loadExpenseSummary, loadMonthPl } from "@/lib/db/queries";
 import { isAiInsightsEnabled } from "@/lib/ai/config";
 import { normalizeFindings } from "@/lib/ai/findings";
-import { formatMonthJa, monthFromParam } from "@/lib/month";
+import { formatMonthJa, monthFromParam, monthToDate, prevMonth } from "@/lib/month";
 import { PageHeader } from "@/components/ui/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,6 +17,9 @@ import { ProfitTrendChart } from "@/components/dashboard/profit-trend-chart";
 import { DriverSummaryTable, type DriverSummaryRow } from "@/components/dashboard/driver-summary-table";
 import { DashboardWarnings } from "@/components/dashboard/warnings";
 import { AiInsightsCard } from "@/components/dashboard/ai-insights-card";
+import { TargetCard } from "@/components/dashboard/target-card";
+import { ExpenseCard } from "@/components/dashboard/expense-card";
+import { expenseBreakdown, needsExpenseWarning } from "@/components/dashboard/helpers";
 
 export const metadata = { title: "ダッシュボード" };
 /** AI 月次分析（Server Action）は応答に数十秒かかることがある */
@@ -25,8 +29,15 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const { supabase, profile, company } = await requireStaff();
   const sp = await searchParams;
   const month = monthFromParam(sp.m);
-  const data = await loadDashboardData(supabase, company.id, month);
+  const [data, pl, prevPlRes, expenseRows] = await Promise.all([
+    loadDashboardData(supabase, company.id, month),
+    loadMonthPl(supabase, company.id, month),
+    supabase.from("v_month_pl").select("*").eq("company_id", company.id).eq("month", monthToDate(prevMonth(month))).maybeSingle(),
+    loadExpenseSummary(supabase, company.id, month),
+  ]);
+  if (prevPlRes.error) throw prevPlRes.error;
   const aiEnabled = isAiInsightsEnabled();
+  const breakdown = expenseBreakdown(expenseRows);
 
   const driverRows: DriverSummaryRow[] = data.drivers.map((d) => {
     const bill = Number(d.bill ?? 0);
@@ -69,11 +80,28 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         }
       />
 
-      <KpiCards summary={data.summary} prev={data.prevSummary} />
+      <KpiCards summary={data.summary} prev={data.prevSummary} pl={pl} prevPl={prevPlRes.data ?? null} />
 
       <Suspense fallback={null}>
-        <DashboardWarnings warnings={data.warnings} />
+        <DashboardWarnings
+          warnings={data.warnings}
+          noExpenses={needsExpenseWarning({ isClosed: data.isClosed, entryCount: Number(data.summary.entry_count ?? 0), expenseCount: Number(pl.expense_count ?? 0) })}
+        />
       </Suspense>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <TargetCard
+          month={month}
+          monthLabel={formatMonthJa(month)}
+          billTarget={Number(pl.bill_target ?? 0)}
+          profitTarget={Number(pl.profit_target ?? 0)}
+          memo={pl.target_memo ?? ""}
+          bill={Number(pl.bill ?? 0)}
+          operatingProfit={Number(pl.operating_profit ?? 0)}
+          canEdit={canEdit(profile.role)}
+        />
+        <ExpenseCard breakdown={breakdown} fixed={Number(pl.expense_fixed ?? 0)} variable={Number(pl.expense_variable ?? 0)} />
+      </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>

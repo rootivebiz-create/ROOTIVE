@@ -6,6 +6,8 @@ export type Role = Enums<"user_role">;
 export type RoundingMode = Enums<"rounding_mode">;
 export type Unit = Enums<"item_unit">;
 export type MonthStatus = Enums<"month_status">;
+export type ExpenseKind = Enums<"expense_kind">;
+export type InvoiceStatus = Enums<"invoice_status">;
 
 export type Company = Tables<"companies">;
 export type Profile = Tables<"profiles">;
@@ -21,12 +23,25 @@ export type Adjustment = Tables<"adjustments">;
 export type MonthClosing = Tables<"month_closings">;
 export type AuditLog = Tables<"audit_logs">;
 export type AiInsight = Tables<"ai_insights">;
+export type Client = Tables<"clients">;
+export type ExpenseCategory = Tables<"expense_categories">;
+export type RecurringExpense = Tables<"recurring_expenses">;
+export type Expense = Tables<"expenses">;
+export type Invoice = Tables<"invoices">;
+export type InvoiceItem = Tables<"invoice_items">;
+export type MonthTarget = Tables<"month_targets">;
 
 export type WorkEntryCalc = Views<"v_work_entry_calc">;
 export type DriverMonthSummary = Views<"v_driver_month_summary">;
 export type MonthSummary = Views<"v_month_summary">;
 export type ProjectSummary = Views<"v_project_summary">;
 export type MonthListRow = Views<"v_month_list">;
+export type ExpenseListRow = Views<"v_expense_list">;
+export type ExpenseSummaryRow = Views<"v_expense_summary">;
+export type RecurringExpenseRow = Views<"v_recurring_expense_list">;
+export type MonthPl = Views<"v_month_pl">;
+export type ClientMonthSummary = Views<"v_client_month_summary">;
+export type InvoiceListRow = Views<"v_invoice_list">;
 
 /** 稼働行のスナップショットと現在のマスタの差分（RPC rate_diffs の 1 行） */
 export type RateDiff = Database["public"]["Functions"]["rate_diffs"]["Returns"][number];
@@ -36,6 +51,21 @@ export const ROLE_LABELS: Record<Role, string> = {
   admin: "管理者",
   viewer: "閲覧者",
   driver: "ドライバー",
+};
+
+/** 経費カテゴリの区分 */
+export const EXPENSE_KINDS: ExpenseKind[] = ["fixed", "variable"];
+export const EXPENSE_KIND_LABELS: Record<ExpenseKind, string> = {
+  fixed: "固定費",
+  variable: "変動費",
+};
+
+/** 請求書の状態 */
+export const INVOICE_STATUSES: InvoiceStatus[] = ["draft", "issued", "paid"];
+export const INVOICE_STATUS_LABELS: Record<InvoiceStatus, string> = {
+  draft: "下書き",
+  issued: "発行済み",
+  paid: "入金済み",
 };
 
 /** 案件 ＋ 内容（マスタ読み込み用） */

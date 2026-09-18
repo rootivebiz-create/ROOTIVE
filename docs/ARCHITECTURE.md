@@ -115,6 +115,13 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 | `month_closings` | pk(company_id,month), status(open/closed), closed_at/by, reopened_at/by, snapshot(jsonb), backup_path, note | 月締め |
 | `audit_logs` | actor_id, action, table_name, record_id, before, after, created_at | 監査。書き込みはトリガーのみ |
 | `ai_insights` | month, model, findings(jsonb), created_by | AI 月次分析の保存 |
+| `clients` | name(会社内 unique), honorific, address, tel, invoice_reg_no, payment_month_offset(0..3), payment_day(0=末日), memo, is_active, sort_order | 取引先（`0009`）。`projects.client_id` から参照 |
+| `expense_categories` | name(会社内 unique), kind(fixed/variable), memo, is_active, sort_order | 経費カテゴリ（`0009`）。会社作成時に既定 12 件を自動投入 |
+| `recurring_expenses` | category_id, label, amount, tax_mode, driver_id, project_id, vendor, start_month, end_month, is_active, sort_order | 毎月かかる経費のテンプレ（`0009`） |
+| `expenses` | month, category_id, label, amount(税抜・符号付き), tax_mode, incurred_on, driver_id, project_id, vendor, memo, recurring_id, created_by, updated_by | 経費（`0009`）。締め済み月は変更不可 |
+| `invoices` | client_id, month, invoice_no(会社内 unique), status(draft/issued/paid), issue_date, due_date, subtotal, tax_rate, tax_rounding, tax, total, paid_on, note, created_by, unique(company_id,client_id,month) | 請求書（`0009`）。合計はトリガーが再計算 |
+| `invoice_items` | invoice_id(cascade), project_id, project_item_id, name, unit, qty, unit_price, amount(自動計算), sort_order | 請求明細（`0009`） |
+| `month_targets` | pk(company_id,month), bill_target, profit_target, memo | 月次目標（`0009`） |
 
 ### ビュー（`0003_views.sql`、`security_invoker = true`：呼び出し元の RLS が適用）
 
@@ -125,10 +132,18 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 | `v_month_summary` | 会社 × 月（driver_count, entry_count, bill, pay, margin, royalty, mgmt_fee, adj_*, payout, profit, profit_rate, status, closed_at, backup_path） |
 | `v_project_summary` | 案件内容 × 月（entry_count, driver_count, qty_total, bill, pay, margin, royalty, entry_profit, profit_rate） |
 | `v_month_list` | データがある月の一覧（月セレクタ・月締め画面用） |
+| `v_expense_list` | 経費 ＋ カテゴリ名・区分・ドライバー名・案件名・is_closed（`0009`） |
+| `v_expense_summary` | 経費 × 月 × カテゴリ（件数・金額・課税分の金額）（`0009`） |
+| `v_recurring_expense_list` | 毎月かかる経費 ＋ カテゴリ名・ドライバー名・案件名（`0009`） |
+| `v_month_pl` | 会社 × 月の損益：`v_month_summary` ＋ 経費（固定／変動／合計）＋ `operating_profit = profit − expense_total` ＋ `operating_margin` ＋ 月次目標（`0009`） |
+| `v_client_month_summary` | 取引先 × 月の売上（取引先を設定した案件のみ）（`0009`） |
+| `v_invoice_list` | 請求書 ＋ 取引先名・明細数（`0009`） |
 
 消費税（`0008`）：`v_driver_month_summary` は `tax_mode`（driver_months に固定値があればそれ、無ければ drivers）、`tax_rate` / `tax_rounding`（同じく companies）、`tax_base = pay − royalty − mgmt_fee`、`tax = round_by_mode(tax_base × tax_rate, tax_rounding)`（exempt は 0）、`payout_incl = payout + tax` を返す。`v_month_summary` は `tax` と `payout_incl` の合計を持つ。調整（adj_pay）は税込の金額として消費税の対象外。
 
-### RPC（`0004_rpc.sql`、`0005_portal_seed.sql`、`0007_driver_rates.sql`）
+経費と営業利益（`0009`）：経費の金額はすべて税抜。`v_month_pl` は `profit`（会社利益）から `expense_total`（その月の経費合計）を引いた `operating_profit`（営業利益）を返す。ダッシュボードの KPI・年次レポート・AI 月次分析はこのビューを使う。
+
+### RPC（`0004_rpc.sql`、`0005_portal_seed.sql`、`0007_driver_rates.sql`、`0009_expenses_invoices.sql`）
 
 | 関数 | 権限 | 内容 |
 |---|---|---|
@@ -149,9 +164,16 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 | `apply_invitation(user_id, email)` | security definer | 招待を照合して profiles を作成／更新（auth トリガーと招待リンクログインの両方から使用） |
 | `driver_portal_months()` / `driver_portal_statement(month)` | driver | 本人の締め済み月一覧・明細（会社売上・利益は含めない。率の表示は会社設定に従う。税込支払額・消費税・支払日の個別設定・ロゴの有無を含む） |
 | `round_by_mode(value, mode)` | 全員 | SQL 側の端数処理（`lib/calc` の applyRounding と同じ規則） |
+| `month_day_date(month, offset, day)` | 全員 | 稼動月からの支払日・入金予定日（0 = 末日。月末を超える日は月末に丸める）（`0009`） |
+| `apply_recurring_expenses(month)` | admin+ | 毎月かかる経費をその月に計上し、作成件数を返す（未締め月のみ・二重計上しない）（`0009`） |
+| `build_invoice(client_id, month)` | admin+ | その月・その取引先の稼働から請求書と明細を作り直す（番号は `YYYYMM-NN`。発行済みは hint `INVOICE_ISSUED`）（`0009`） |
+| `set_invoice_status(invoice_id, status, paid_on)` | admin+ | 請求書の状態変更（paid 以外にすると入金日を消す）（`0009`） |
+| `recalc_invoice(invoice_id)` | admin+ | 請求書の小計・消費税・合計を計算し直す（通常はトリガーが自動で行う）（`0009`） |
+| `driver_portal_current()` | driver | 本人の最新の未締め月の暫定額（速報）。会社設定 `driver_portal_show_open_month` が off なら null（`0009`） |
+| `default_expense_categories(company_id)` | 内部 | 既定の経費カテゴリ 12 件を投入（会社作成トリガーから使用）（`0009`） |
 | `current_company_id()` / `current_app_role()` / `current_driver_id()` / `is_owner()` / `is_admin()` / `is_staff()` / `is_driver_user()` / `is_month_closed()` | ヘルパー | security definer で profiles を参照（is_active 必須） |
 
-### トリガー（`0001` / `0002`）
+### トリガー（`0001` / `0002` / `0009`）
 
 | トリガー | 対象 | 内容 |
 |---|---|---|
@@ -159,11 +181,14 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 | `t01_fill_company_id` | 子テーブル | 親から company_id を補完し、不一致なら拒否 |
 | `t02_check_driver_company` | profiles / invitations | driver_id が同じ会社か |
 | `t03_set_entry_actor` | work_entries | created_by / updated_by = auth.uid() |
-| `t05_guard_month_closed` | work_entries / driver_months / adjustments | 対象月が closed なら INSERT/UPDATE/DELETE を拒否（hint `MONTH_CLOSED`。`app.bypass_closing` で復元時のみ回避） |
+| `t05_guard_month_closed` | work_entries / driver_months / adjustments / expenses | 対象月が closed なら INSERT/UPDATE/DELETE を拒否（hint `MONTH_CLOSED`。`app.bypass_closing` で復元時のみ回避） |
 | `t10_protect_profile` | profiles | role / company_id / is_active / driver_id / email は owner のみ。自分自身のロール変更・無効化は不可 |
 | `t10_protect_month_closings` | month_closings | closed → open と削除は owner のみ |
 | `t20_ensure_driver_month` | work_entries | driver_months が無ければ作成（mgmt_fee = drivers.mgmt_fee）し、有効な固定控除を adjustments に複写 |
-| `t90_audit` | 主要 12 テーブル | INSERT/UPDATE/DELETE を audit_logs に記録（差分の無い UPDATE は除外。invitations.token と month_closings.snapshot は除外） |
+| `t04_sync_project_client` | projects / clients | `client_id` から `client_name` を同期。`client_name` だけ入力された場合は取引先を自動作成。取引先の改名も案件に反映（`0009`） |
+| `t06_invoice_item_amount` / `t07_recalc_invoice` | invoice_items / invoices | 明細の金額 = 数量 × 単価、請求書の小計・消費税・合計を自動再計算（`0009`） |
+| `t20_company_seed_defaults` | companies | 会社を作ったときに既定の経費カテゴリを投入（`0009`） |
+| `t90_audit` | 主要 19 テーブル | INSERT/UPDATE/DELETE を audit_logs に記録（差分の無い UPDATE は除外。invitations.token と month_closings.snapshot は除外） |
 | `on_auth_user_created` | auth.users | 招待を照合して profiles を作成。招待が無ければ例外（hint `INVITATION_REQUIRED`）で登録自体を拒否 |
 
 ---
@@ -278,9 +303,13 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 | 会社のロゴ・認印 | `app/api/company-asset/[kind]` + `lib/company-assets.ts` + `lib/actions/company-assets.ts` | Storage 非公開バケット `company-assets/<company_id>/<kind>-<timestamp>.<ext>`。書き込みはサービスロール（owner の Server Action、PNG/JPEG 2MB まで、先頭バイトで判定）、読み出しはログイン中の自社ユーザー。印刷用ページ・ポータルは `<img src="/api/company-asset/logo">` |
 | 印刷用ページ | `/payouts/[driverId]/print` | ブラウザ印刷 |
 | LINE 用テキスト | `lib/statement/statementToText()` | 会社利益を含まない |
-| バックアップ JSON | `app/api/export/backup.json` → `export_backup()` | §8.4 の形式 |
+| 経費 CSV | `app/api/export/expenses.csv` + `lib/exports/expenses-csv.ts` | その月（または全月）の経費明細（カテゴリ・区分・金額・課税区分・発生日・ドライバー・案件・支払先） |
+| 請求書 PDF | `app/api/export/invoice.pdf` + `lib/pdf/invoice.tsx` + `lib/invoice/index.ts` | A4 縦、Noto Sans JP。取引先名＋敬称、請求書番号、ご請求金額（税込）、明細、小計・消費税・合計、自社情報＋ロゴ・認印 |
+| 請求書一覧 CSV | `app/api/export/invoices.csv` + `lib/exports/invoices-csv.ts` | 請求書番号・取引先・状態・発行日・入金予定日・小計・消費税・合計・入金日 |
+| 年次レポート CSV | `app/api/export/report.csv` + `lib/exports/report-csv.ts` | 月次推移（売上・会社利益・経費・営業利益・営業利益率・消費税・税込支払額・状態）＋合計行 |
+| バックアップ JSON | `app/api/export/backup.json` → `export_backup()` | §8.4 の形式（version 2 で経費・取引先・請求書・月次目標を含む。ロゴ・認印の画像は含まない） |
 
-明細のデータ組み立ては `lib/statement/index.ts` に集約し、画面・PDF・CSV・テキスト・ドライバーポータルで共用しています。
+明細のデータ組み立ては `lib/statement/index.ts` に集約し、画面・PDF・CSV・テキスト・ドライバーポータルで共用しています。請求書は `lib/invoice/index.ts` に同じ形で集約しています。
 
 ---
 
@@ -328,7 +357,8 @@ supabase-js の使い方は、E2E 用の互換サーバーが対応する範囲�
 | Google Drive 自動保存 | 月締め時のバックアップ JSON / PDF を Drive API でアップロード（サービスアカウントまたは OAuth）。`set_month_backup_path` に Drive の URL も記録 |
 | 複数会社 UI | profiles を（user, company）の多対多にし、会社切替をヘッダーへ。RLS ヘルパーは「現在選択中の会社」を JWT クレームか Cookie から解決 |
 | 通知・リマインド | Vercel Cron で「未締め月」「数量 0 の行」をメール／LINE で通知 |
-| 請求書（インボイス） | 明細 PDF の逆方向（ドライバー → 会社の請求書）を同じ `lib/statement` から生成 |
+| ドライバー → 会社の請求書 | インボイス制度で必要になった場合、支払明細の逆方向（ドライバーが会社へ出す請求書）を `lib/invoice` から生成 |
+| 弥生仕訳に経費を含める | `expense_categories` に勘定科目を持たせ、経費を仕訳（借方＝科目／貸方＝未払金）として出力 |
 
 ---
 

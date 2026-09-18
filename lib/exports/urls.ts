@@ -16,6 +16,16 @@ export const exportUrls = {
   yayoiCsv: (month: string) => `/api/export/yayoi.csv?m=${encodeURIComponent(month)}`,
   /** 単価表 CSV（稼働中のドライバー × 案件内容の実効単価と出所） */
   ratesCsv: () => "/api/export/rates.csv",
+  /** 経費 CSV（その月の経費明細） */
+  expensesCsv: (month: string) => `/api/export/expenses.csv?m=${encodeURIComponent(month)}`,
+  /** 請求書 PDF（A4 縦） */
+  invoicePdf: (invoiceId: string) => `/api/export/invoice.pdf?id=${encodeURIComponent(invoiceId)}`,
+  /** 請求書の印刷用ページ */
+  invoicePrint: (invoiceId: string) => `/invoices/${encodeURIComponent(invoiceId)}/print`,
+  /** 請求書一覧 CSV。month は "YYYY-MM" または "all" */
+  invoicesCsv: (month: string) => `/api/export/invoices.csv?m=${encodeURIComponent(month)}`,
+  /** 年次レポート CSV（月次推移）。year は西暦 4 桁 */
+  reportCsv: (year: number) => `/api/export/report.csv?y=${encodeURIComponent(String(year))}`,
   /** バックアップ JSON（全テーブル） */
   backupJson: () => `/api/export/backup.json`,
   /** 締め時バックアップのダウンロード（Storage の署名付き URL へリダイレクト） */

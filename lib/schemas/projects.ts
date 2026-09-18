@@ -10,7 +10,8 @@ export interface ProjectFormInput {
   /** null = 新規 */
   id: string | null;
   name: string;
-  client_name: string;
+  /** 取引先（clients.id）。"" / null = 未設定。projects.client_name は DB トリガーが同期する */
+  client_id: string | null;
   is_active: boolean;
   memo: string;
   /** 内容の行。id が null なら新規。送られてこなかった既存 id は削除 */
@@ -46,7 +47,7 @@ export const projectInputSchema = z
   .object({
     id: uuidSchema.nullable(),
     name: nameSchema,
-    client_name: z.string().trim().max(100, "100 文字以内で入力してください"),
+    client_id: z.preprocess((v) => (v === "" || v == null ? null : v), uuidSchema.nullable()),
     is_active: z.boolean(),
     memo: memoSchema,
     items: z.array(projectItemSchema).min(1, "内容を 1 件以上登録してください").max(100, "内容が多すぎます"),

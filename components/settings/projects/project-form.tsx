@@ -20,7 +20,7 @@ import { deleteProjectAction, saveProjectAction } from "@/lib/actions/projects";
 import { subMoney } from "@/lib/calc/money";
 import { parseNumberInput } from "@/lib/calc/parse";
 import { UNIT_LABELS, type Unit } from "@/lib/calc/types";
-import type { Project, ProjectItem } from "@/lib/db/types";
+import type { Client, Project, ProjectItem } from "@/lib/db/types";
 import { useMonth } from "@/lib/hooks/use-month";
 import { DEFAULT_ITEM_NAME, type ProjectFormInput } from "@/lib/schemas/projects";
 
@@ -32,11 +32,14 @@ export interface ProjectFormProps {
   items: ProjectItem[];
   /** 内容 id → 稼働行の件数（削除可否） */
   entryCounts: Record<string, number>;
+  /** 取引先の候補（有効な取引先 ＋ 現在設定中の取引先） */
+  clients: Client[];
 }
 
 interface FormState {
   name: string;
-  client_name: string;
+  /** clients.id。"" = 未設定 */
+  client_id: string;
   is_active: boolean;
   memo: string;
 }
@@ -80,7 +83,7 @@ function DiffPreview({ bill, pay }: { bill: string; pay: string }) {
   );
 }
 
-export function ProjectForm({ canEdit, project, items, entryCounts }: ProjectFormProps) {
+export function ProjectForm({ canEdit, project, items, entryCounts, clients }: ProjectFormProps) {
   const router = useRouter();
   const { href } = useMonth();
   const [pending, startTransition] = useTransition();
@@ -92,7 +95,7 @@ export function ProjectForm({ canEdit, project, items, entryCounts }: ProjectFor
 
   const [f, setF] = useState<FormState>(() => ({
     name: project?.name ?? "",
-    client_name: project?.client_name ?? "",
+    client_id: project?.client_id ?? "",
     is_active: project?.is_active ?? true,
     memo: project?.memo ?? "",
   }));
@@ -122,7 +125,7 @@ export function ProjectForm({ canEdit, project, items, entryCounts }: ProjectFor
     const input: ProjectFormInput = {
       id: project?.id ?? null,
       name: f.name,
-      client_name: f.client_name,
+      client_id: f.client_id === "" ? null : f.client_id,
       is_active: f.is_active,
       memo: f.memo,
       items: rows.map((r) => ({ id: r.id, name: r.name, unit: r.unit, bill_rate: r.bill_rate, pay_rate: r.pay_rate, is_active: r.is_active })),
@@ -178,9 +181,20 @@ export function ProjectForm({ canEdit, project, items, entryCounts }: ProjectFor
             <FieldError messages={errors.name} />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="project-client">荷主・元請</Label>
-            <Input id="project-client" value={f.client_name} onChange={(e) => set({ client_name: e.target.value })} disabled={disabled} maxLength={100} autoComplete="off" />
-            <FieldError messages={errors.client_name} />
+            <Label htmlFor="project-client">取引先</Label>
+            <Select id="project-client" value={f.client_id} onChange={(e) => set({ client_id: e.target.value })} disabled={disabled}>
+              <option value="">未設定</option>
+              {clients.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                  {c.is_active ? "" : "（停止中）"}
+                </option>
+              ))}
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              請求書は取引先ごとに作ります。候補にないときは「設定 → 取引先」で登録してください。
+            </p>
+            <FieldError messages={errors.client_id} />
           </div>
           <div className="flex items-center justify-between gap-3 rounded-md border p-3">
             <div>

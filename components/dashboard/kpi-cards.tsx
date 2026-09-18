@@ -2,7 +2,7 @@ import { Card } from "@/components/ui/card";
 import { Money, Pct } from "@/components/ui/money";
 import { yen } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { MonthSummary } from "@/lib/db/types";
+import type { MonthPl, MonthSummary } from "@/lib/db/types";
 
 type Kind = "money" | "rate";
 
@@ -38,15 +38,18 @@ export function kpiDelta(kind: Kind, value: number, prev: number | null): KpiDel
   return { amount, ratio, direction };
 }
 
-export function KpiCards({ summary, prev }: { summary: MonthSummary; prev: MonthSummary | null }) {
+/** 売上・会社利益・支払・利益率（v_month_summary）に、経費・営業利益（v_month_pl）を足した KPI */
+export function KpiCards({ summary, prev, pl, prevPl }: { summary: MonthSummary; prev: MonthSummary | null; pl: MonthPl; prevPl: MonthPl | null }) {
   const defs: KpiDef[] = [
     { key: "bill", label: "会社売上", kind: "money", value: Number(summary.bill ?? 0), prev: prev ? Number(prev.bill ?? 0) : null, upIsGood: true },
     { key: "profit", label: "会社利益", kind: "money", value: Number(summary.profit ?? 0), prev: prev ? Number(prev.profit ?? 0) : null, upIsGood: true },
     { key: "payout", label: "ドライバー支払合計", kind: "money", value: Number(summary.payout ?? 0), prev: prev ? Number(prev.payout ?? 0) : null, upIsGood: null },
     { key: "rate", label: "利益率", kind: "rate", value: Number(summary.profit_rate ?? 0), prev: prev ? Number(prev.profit_rate ?? 0) : null, upIsGood: true },
+    { key: "expense", label: "経費", kind: "money", value: Number(pl.expense_total ?? 0), prev: prevPl ? Number(prevPl.expense_total ?? 0) : null, upIsGood: false },
+    { key: "operating", label: "営業利益", kind: "money", value: Number(pl.operating_profit ?? 0), prev: prevPl ? Number(prevPl.operating_profit ?? 0) : null, upIsGood: true },
   ];
   return (
-    <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+    <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
       {defs.map((k) => {
         const delta = kpiDelta(k.kind, k.value, k.prev);
         const tone =

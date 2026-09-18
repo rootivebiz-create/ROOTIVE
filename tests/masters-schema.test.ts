@@ -116,7 +116,7 @@ describe("projectInputSchema", () => {
   const base: ProjectFormInput = {
     id: null,
     name: "和光ヤマト",
-    client_name: "ヤマト運輸",
+    client_id: null,
     is_active: true,
     memo: "",
     items: [

@@ -81,6 +81,41 @@ describe("試作アプリ JSON の移行（§8.5）", () => {
     expect(preview.months[1].bill).toBe(20000);
   });
 
+  it("バックアップ v2（経費・取引先・請求書・月次目標）を落とさずに引き継ぐ", () => {
+    const id = (n: number) => `00000000-0000-4000-8000-00000000000${n}`;
+    const backup = normalizeBackup({
+      app: "rootive-profit",
+      version: 2,
+      drivers: [],
+      work_entries: [],
+      clients: [{ id: id(1), company_id: COMPANY, name: "株式会社テスト", payment_month_offset: 1, payment_day: 0 }],
+      expense_categories: [{ id: id(2), company_id: COMPANY, name: "燃料費", kind: "variable" }],
+      recurring_expenses: [{ id: id(3), company_id: COMPANY, category_id: id(2), label: "リース", amount: 1000 }],
+      expenses: [{ id: id(4), company_id: COMPANY, month: "2026-12-01", category_id: id(2), label: "ガソリン", amount: 5000 }],
+      invoices: [{ id: id(5), company_id: COMPANY, client_id: id(1), month: "2026-12-01", invoice_no: "202612-01" }],
+      invoice_items: [{ id: id(6), company_id: COMPANY, invoice_id: id(5), name: "配送", qty: 1, unit_price: 100 }],
+      month_targets: [{ company_id: COMPANY, month: "2026-12-01", bill_target: 100, profit_target: 10 }],
+    });
+    expect(backup.version).toBe(2);
+    expect(backup.clients).toHaveLength(1);
+    expect(backup.expenses?.[0].label).toBe("ガソリン");
+    expect(backup.invoice_items).toHaveLength(1);
+    expect(backup.month_targets).toHaveLength(1);
+    const preview = previewBackup(backup, "backup");
+    expect(preview.counts.expenses).toBe(1);
+    expect(preview.counts.invoices).toBe(1);
+    expect(preview.counts.clients).toBe(1);
+    expect(preview.counts.month_targets).toBe(1);
+  });
+
+  it("古いバックアップ（v1）は 0009 のテーブルが空でも読める", () => {
+    const backup = normalizeBackup({ app: "rootive-profit", version: 1, drivers: [], work_entries: [] });
+    expect(backup.version).toBe(1);
+    expect(backup.clients).toEqual([]);
+    expect(backup.expenses).toEqual([]);
+    expect(previewBackup(backup, "backup").counts.expenses).toBe(0);
+  });
+
   it("不正な JSON は日本語エラー", () => {
     expect(() => buildPreview({ hello: 1 }, COMPANY)).toThrow(/形式を判定できません/);
     expect(() => convertPrototype({ data: { drivers: { a: { name: 1 } } } }, COMPANY)).not.toThrow(); // 名前は文字列化される

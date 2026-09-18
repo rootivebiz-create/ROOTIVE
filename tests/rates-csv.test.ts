@@ -25,7 +25,7 @@ function item(id: string, project_id: string, name: string, unit: "day" | "piece
 }
 
 function project(id: string, name: string, sort_order: number, items: ProjectItem[], is_active = true): ProjectWithItems {
-  return { id, company_id: COMPANY, name, client_name: "", is_active, memo: "", sort_order, created_at: "", updated_at: "", items };
+  return { id, company_id: COMPANY, name, client_name: "", client_id: null, is_active, memo: "", sort_order, created_at: "", updated_at: "", items };
 }
 
 function override(driver_id: string, project_item_id: string, rates: { bill_rate?: number | null; pay_rate?: number | null }): DriverPayOverride {
@@ -47,6 +47,7 @@ const masters: Masters = {
     address: "",
     tel: "",
     driver_portal_show_royalty: true,
+  driver_portal_show_open_month: true,
     yayoi_accounts: {},
     tax_rate: 0.1,
     tax_rounding: "floor",

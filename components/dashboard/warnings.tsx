@@ -21,10 +21,16 @@ function LinkRow({ href, children }: { href: string; children: React.ReactNode }
 }
 
 /** 警告（該当時のみ表示。各警告から該当画面へ遷移） §4.1・§12-1 */
-export function DashboardWarnings({ warnings }: { warnings: Warnings }) {
+export function DashboardWarnings({ warnings, noExpenses = false }: { warnings: Warnings; noExpenses?: boolean }) {
   const { lossEntries, mgmtFeeMismatches, idleDrivers, zeroQtyEntries, openPastMonths, rateDiffs } = warnings;
   const count =
-    (lossEntries.length ? 1 : 0) + (mgmtFeeMismatches.length ? 1 : 0) + (idleDrivers.length ? 1 : 0) + (zeroQtyEntries.length ? 1 : 0) + (openPastMonths.length ? 1 : 0) + (rateDiffs.length ? 1 : 0);
+    (lossEntries.length ? 1 : 0) +
+    (mgmtFeeMismatches.length ? 1 : 0) +
+    (idleDrivers.length ? 1 : 0) +
+    (zeroQtyEntries.length ? 1 : 0) +
+    (openPastMonths.length ? 1 : 0) +
+    (rateDiffs.length ? 1 : 0) +
+    (noExpenses ? 1 : 0);
   if (count === 0) return null;
 
   return (
@@ -94,6 +100,15 @@ export function DashboardWarnings({ warnings }: { warnings: Warnings }) {
               {rateDiffs.length > MAX_LIST && <LinkRow href="/entries">ほか {rateDiffs.length - MAX_LIST} 件を稼働入力で確認</LinkRow>}
             </div>
             <p className="mt-1 px-2 text-xs text-muted-foreground">稼働入力の「マスタの値に更新」でまとめて反映できます</p>
+          </section>
+        )}
+
+        {noExpenses && (
+          <section>
+            <p className="font-medium">この月の経費が 1 件も登録されていません</p>
+            <div className="mt-1">
+              <LinkRow href="/expenses">経費を登録すると営業利益（会社利益 − 経費）が計算されます</LinkRow>
+            </div>
           </section>
         )}
 

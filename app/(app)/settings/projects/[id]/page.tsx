@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { requireStaff, canEdit } from "@/lib/auth/session";
+import { loadClients } from "@/lib/db/queries";
 import { uuidSchema } from "@/lib/schemas/common";
 import { PageHeader } from "@/components/ui/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +25,10 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const project = projectRes.data;
   const items = itemsRes.data ?? [];
 
+  // 取引先の候補：有効な取引先 ＋ 現在設定中の取引先（停止中でも選択を保てるように）
+  const allClients = await loadClients(supabase, company.id);
+  const clients = allClients.filter((c) => c.is_active || c.id === project.client_id);
+
   // 内容ごとの稼働行件数（削除可否の判定に使う）
   const counts = await Promise.all(items.map((it) => supabase.from("work_entries").select("id", { count: "exact" }).eq("project_item_id", it.id).limit(1)));
   const entryCounts: Record<string, number> = {};
@@ -47,7 +52,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           </>
         }
       />
-      <ProjectForm canEdit={canEdit(profile.role)} project={project} items={items} entryCounts={entryCounts} />
+      <ProjectForm canEdit={canEdit(profile.role)} project={project} items={items} entryCounts={entryCounts} clients={clients} />
     </div>
   );
 }

@@ -109,6 +109,57 @@ export type Database = {
         }
         Relationships: []
       }
+      clients: {
+        Row: {
+          id: string
+          company_id: string
+          name: string
+          honorific: string
+          address: string
+          tel: string
+          invoice_reg_no: string
+          payment_month_offset: number
+          payment_day: number
+          memo: string
+          is_active: boolean
+          sort_order: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          name: string
+          honorific?: string
+          address?: string
+          tel?: string
+          invoice_reg_no?: string
+          payment_month_offset?: number
+          payment_day?: number
+          memo?: string
+          is_active?: boolean
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          name?: string
+          honorific?: string
+          address?: string
+          tel?: string
+          invoice_reg_no?: string
+          payment_month_offset?: number
+          payment_day?: number
+          memo?: string
+          is_active?: boolean
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       companies: {
         Row: {
           id: string
@@ -130,6 +181,7 @@ export type Database = {
           tax_rounding: Database["public"]["Enums"]["rounding_mode"]
           logo_path: string | null
           seal_path: string | null
+          driver_portal_show_open_month: boolean
         }
         Insert: {
           id?: string
@@ -151,6 +203,7 @@ export type Database = {
           tax_rounding?: Database["public"]["Enums"]["rounding_mode"]
           logo_path?: string | null
           seal_path?: string | null
+          driver_portal_show_open_month?: boolean
         }
         Update: {
           id?: string
@@ -172,6 +225,7 @@ export type Database = {
           tax_rounding?: Database["public"]["Enums"]["rounding_mode"]
           logo_path?: string | null
           seal_path?: string | null
+          driver_portal_show_open_month?: boolean
         }
         Relationships: []
       }
@@ -352,6 +406,102 @@ export type Database = {
         }
         Relationships: []
       }
+      expense_categories: {
+        Row: {
+          id: string
+          company_id: string
+          name: string
+          kind: Database["public"]["Enums"]["expense_kind"]
+          memo: string
+          is_active: boolean
+          sort_order: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          name: string
+          kind?: Database["public"]["Enums"]["expense_kind"]
+          memo?: string
+          is_active?: boolean
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          name?: string
+          kind?: Database["public"]["Enums"]["expense_kind"]
+          memo?: string
+          is_active?: boolean
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      expenses: {
+        Row: {
+          id: string
+          company_id: string
+          month: string
+          category_id: string
+          label: string
+          amount: number
+          tax_mode: Database["public"]["Enums"]["tax_mode"]
+          incurred_on: string | null
+          driver_id: string | null
+          project_id: string | null
+          vendor: string
+          memo: string
+          recurring_id: string | null
+          created_by: string | null
+          updated_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          month: string
+          category_id: string
+          label: string
+          amount: number
+          tax_mode?: Database["public"]["Enums"]["tax_mode"]
+          incurred_on?: string | null
+          driver_id?: string | null
+          project_id?: string | null
+          vendor?: string
+          memo?: string
+          recurring_id?: string | null
+          created_by?: string | null
+          updated_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          month?: string
+          category_id?: string
+          label?: string
+          amount?: number
+          tax_mode?: Database["public"]["Enums"]["tax_mode"]
+          incurred_on?: string | null
+          driver_id?: string | null
+          project_id?: string | null
+          vendor?: string
+          memo?: string
+          recurring_id?: string | null
+          created_by?: string | null
+          updated_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       invitations: {
         Row: {
           id: string
@@ -400,6 +550,117 @@ export type Database = {
         }
         Relationships: []
       }
+      invoice_items: {
+        Row: {
+          id: string
+          company_id: string
+          invoice_id: string
+          project_id: string | null
+          project_item_id: string | null
+          name: string
+          unit: Database["public"]["Enums"]["item_unit"] | null
+          qty: number
+          unit_price: number
+          amount: number
+          sort_order: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          invoice_id: string
+          project_id?: string | null
+          project_item_id?: string | null
+          name: string
+          unit?: Database["public"]["Enums"]["item_unit"] | null
+          qty?: number
+          unit_price?: number
+          amount?: number
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          invoice_id?: string
+          project_id?: string | null
+          project_item_id?: string | null
+          name?: string
+          unit?: Database["public"]["Enums"]["item_unit"] | null
+          qty?: number
+          unit_price?: number
+          amount?: number
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      invoices: {
+        Row: {
+          id: string
+          company_id: string
+          client_id: string
+          month: string
+          invoice_no: string
+          status: Database["public"]["Enums"]["invoice_status"]
+          issue_date: string
+          due_date: string | null
+          subtotal: number
+          tax_rate: number
+          tax_rounding: Database["public"]["Enums"]["rounding_mode"]
+          tax: number
+          total: number
+          paid_on: string | null
+          note: string
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          client_id: string
+          month: string
+          invoice_no: string
+          status?: Database["public"]["Enums"]["invoice_status"]
+          issue_date?: string
+          due_date?: string | null
+          subtotal?: number
+          tax_rate?: number
+          tax_rounding?: Database["public"]["Enums"]["rounding_mode"]
+          tax?: number
+          total?: number
+          paid_on?: string | null
+          note?: string
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          client_id?: string
+          month?: string
+          invoice_no?: string
+          status?: Database["public"]["Enums"]["invoice_status"]
+          issue_date?: string
+          due_date?: string | null
+          subtotal?: number
+          tax_rate?: number
+          tax_rounding?: Database["public"]["Enums"]["rounding_mode"]
+          tax?: number
+          total?: number
+          paid_on?: string | null
+          note?: string
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       month_closings: {
         Row: {
           company_id: string
@@ -440,6 +701,36 @@ export type Database = {
           snapshot?: Json | null
           backup_path?: string | null
           note?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      month_targets: {
+        Row: {
+          company_id: string
+          month: string
+          bill_target: number
+          profit_target: number
+          memo: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          month: string
+          bill_target?: number
+          profit_target?: number
+          memo?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          month?: string
+          bill_target?: number
+          profit_target?: number
+          memo?: string
           created_at?: string
           updated_at?: string
         }
@@ -534,6 +825,7 @@ export type Database = {
           sort_order: number
           created_at: string
           updated_at: string
+          client_id: string | null
         }
         Insert: {
           id?: string
@@ -545,6 +837,7 @@ export type Database = {
           sort_order?: number
           created_at?: string
           updated_at?: string
+          client_id?: string | null
         }
         Update: {
           id?: string
@@ -553,6 +846,61 @@ export type Database = {
           client_name?: string
           is_active?: boolean
           memo?: string
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+          client_id?: string | null
+        }
+        Relationships: []
+      }
+      recurring_expenses: {
+        Row: {
+          id: string
+          company_id: string
+          category_id: string
+          label: string
+          amount: number
+          tax_mode: Database["public"]["Enums"]["tax_mode"]
+          driver_id: string | null
+          project_id: string | null
+          vendor: string
+          start_month: string | null
+          end_month: string | null
+          is_active: boolean
+          sort_order: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          category_id: string
+          label: string
+          amount: number
+          tax_mode?: Database["public"]["Enums"]["tax_mode"]
+          driver_id?: string | null
+          project_id?: string | null
+          vendor?: string
+          start_month?: string | null
+          end_month?: string | null
+          is_active?: boolean
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          category_id?: string
+          label?: string
+          amount?: number
+          tax_mode?: Database["public"]["Enums"]["tax_mode"]
+          driver_id?: string | null
+          project_id?: string | null
+          vendor?: string
+          start_month?: string | null
+          end_month?: string | null
+          is_active?: boolean
           sort_order?: number
           created_at?: string
           updated_at?: string
@@ -615,6 +963,20 @@ export type Database = {
       }
     }
     Views: {
+      v_client_month_summary: {
+        Row: {
+          company_id: string | null
+          month: string | null
+          client_id: string | null
+          client_name: string | null
+          client_sort_order: number | null
+          project_count: number | null
+          entry_count: number | null
+          qty_total: number | null
+          bill: number | null
+        }
+        Relationships: []
+      }
       v_driver_month_summary: {
         Row: {
           company_id: string | null
@@ -649,6 +1011,71 @@ export type Database = {
         }
         Relationships: []
       }
+      v_expense_list: {
+        Row: {
+          id: string | null
+          company_id: string | null
+          month: string | null
+          category_id: string | null
+          category_name: string | null
+          kind: Database["public"]["Enums"]["expense_kind"] | null
+          category_sort_order: number | null
+          label: string | null
+          amount: number | null
+          tax_mode: Database["public"]["Enums"]["tax_mode"] | null
+          incurred_on: string | null
+          driver_id: string | null
+          driver_name: string | null
+          project_id: string | null
+          project_name: string | null
+          vendor: string | null
+          memo: string | null
+          recurring_id: string | null
+          created_at: string | null
+          updated_at: string | null
+          is_closed: boolean | null
+        }
+        Relationships: []
+      }
+      v_expense_summary: {
+        Row: {
+          company_id: string | null
+          month: string | null
+          category_id: string | null
+          category_name: string | null
+          kind: Database["public"]["Enums"]["expense_kind"] | null
+          category_sort_order: number | null
+          expense_count: number | null
+          amount: number | null
+          taxable_amount: number | null
+        }
+        Relationships: []
+      }
+      v_invoice_list: {
+        Row: {
+          id: string | null
+          company_id: string | null
+          client_id: string | null
+          client_name: string | null
+          client_sort_order: number | null
+          month: string | null
+          invoice_no: string | null
+          status: Database["public"]["Enums"]["invoice_status"] | null
+          issue_date: string | null
+          due_date: string | null
+          subtotal: number | null
+          tax_rate: number | null
+          tax_rounding: Database["public"]["Enums"]["rounding_mode"] | null
+          tax: number | null
+          total: number | null
+          paid_on: string | null
+          note: string | null
+          created_at: string | null
+          updated_at: string | null
+          item_count: number | null
+        }
+        Relationships: []
+      }
       v_month_list: {
         Row: {
           company_id: string | null
@@ -663,6 +1090,37 @@ export type Database = {
           closed_at: string | null
           backup_path: string | null
           closing_note: string | null
+        }
+        Relationships: []
+      }
+      v_month_pl: {
+        Row: {
+          company_id: string | null
+          month: string | null
+          driver_count: number | null
+          active_driver_count: number | null
+          entry_count: number | null
+          bill: number | null
+          pay: number | null
+          margin: number | null
+          royalty: number | null
+          mgmt_fee: number | null
+          adj_pay: number | null
+          adj_profit: number | null
+          payout: number | null
+          tax: number | null
+          payout_incl: number | null
+          profit: number | null
+          expense_total: number | null
+          expense_fixed: number | null
+          expense_variable: number | null
+          expense_count: number | null
+          operating_profit: number | null
+          operating_margin: number | null
+          bill_target: number | null
+          profit_target: number | null
+          target_memo: string | null
+          status: Database["public"]["Enums"]["month_status"] | null
         }
         Relationships: []
       }
@@ -718,6 +1176,30 @@ export type Database = {
         }
         Relationships: []
       }
+      v_recurring_expense_list: {
+        Row: {
+          id: string | null
+          company_id: string | null
+          category_id: string | null
+          category_name: string | null
+          kind: Database["public"]["Enums"]["expense_kind"] | null
+          label: string | null
+          amount: number | null
+          tax_mode: Database["public"]["Enums"]["tax_mode"] | null
+          driver_id: string | null
+          driver_name: string | null
+          project_id: string | null
+          project_name: string | null
+          vendor: string | null
+          start_month: string | null
+          end_month: string | null
+          is_active: boolean | null
+          sort_order: number | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Relationships: []
+      }
       v_work_entry_calc: {
         Row: {
           id: string | null
@@ -770,6 +1252,19 @@ export type Database = {
         }
         Returns: number
       }
+      apply_recurring_expenses: {
+        Args: {
+          p_month: string
+        }
+        Returns: number
+      }
+      build_invoice: {
+        Args: {
+          p_client_id: string
+          p_month: string
+        }
+        Returns: string
+      }
       bulk_set_entries: {
         Args: {
           p_month: string
@@ -811,6 +1306,16 @@ export type Database = {
       current_driver_id: {
         Args: Record<PropertyKey, never>
         Returns: string
+      }
+      default_expense_categories: {
+        Args: {
+          p_company_id: string
+        }
+        Returns: number
+      }
+      driver_portal_current: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
       }
       driver_portal_months: {
         Args: Record<PropertyKey, never>
@@ -897,6 +1402,14 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: boolean
       }
+      month_day_date: {
+        Args: {
+          p_month: string
+          p_offset: number
+          p_day: number
+        }
+        Returns: string
+      }
       month_snapshot: {
         Args: {
           p_month: string
@@ -926,6 +1439,12 @@ export type Database = {
           master_rounding_mode: Database["public"]["Enums"]["rounding_mode"]
         }[]
       }
+      recalc_invoice: {
+        Args: {
+          p_invoice_id: string
+        }
+        Returns: undefined
+      }
       reopen_month: {
         Args: {
           p_month: string
@@ -950,6 +1469,14 @@ export type Database = {
           p_with_entries?: boolean
         }
         Returns: Json
+      }
+      set_invoice_status: {
+        Args: {
+          p_invoice_id: string
+          p_status: Database["public"]["Enums"]["invoice_status"]
+          p_paid_on?: string
+        }
+        Returns: undefined
       }
       set_month_backup_path: {
         Args: {
@@ -992,6 +1519,8 @@ export type Database = {
       }
     }
     Enums: {
+      expense_kind: "fixed" | "variable"
+      invoice_status: "draft" | "issued" | "paid"
       item_unit: "day" | "piece"
       month_status: "open" | "closed"
       rounding_mode: "none" | "floor" | "round" | "ceil"

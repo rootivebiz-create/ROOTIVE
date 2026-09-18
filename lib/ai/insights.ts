@@ -1,7 +1,7 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import type { ServerSupabase } from "@/lib/supabase/server";
-import type { DriverMonthSummary, MonthSummary, ProjectSummary } from "@/lib/db/types";
+import type { DriverMonthSummary, ExpenseSummaryRow, MonthPl, ProjectSummary } from "@/lib/db/types";
 import { formatMonthJa, monthToDate, prevMonth } from "@/lib/month";
 import { ActionError } from "@/lib/actions/result";
 import { resolveAnthropicModel } from "./config";
@@ -28,6 +28,23 @@ export interface InsightCompanySummary {
   payout: number;
   profit: number;
   profit_rate: number;
+  /** 経費（税抜）と営業利益（会社利益 − 経費） */
+  expense_total: number;
+  expense_fixed: number;
+  expense_variable: number;
+  operating_profit: number;
+  operating_margin: number;
+  /** 月次目標（0 = 未設定） */
+  bill_target: number;
+  profit_target: number;
+}
+
+/** 経費のカテゴリ別内訳 */
+export interface InsightExpenseRow {
+  category: string;
+  kind: "fixed" | "variable";
+  count: number;
+  amount: number;
 }
 
 export interface InsightDriverRow {
@@ -72,9 +89,10 @@ export interface InsightSource {
   previous_month: InsightCompanySummary | null;
   drivers: InsightDriverRow[];
   projects: InsightProjectRow[];
+  expenses: InsightExpenseRow[];
 }
 
-function toCompany(row: MonthSummary, month: string): InsightCompanySummary {
+function toCompany(row: MonthPl, month: string): InsightCompanySummary {
   return {
     month,
     status: row.status === "closed" ? "closed" : "open",
@@ -90,7 +108,23 @@ function toCompany(row: MonthSummary, month: string): InsightCompanySummary {
     adj_profit: n(row.adj_profit),
     payout: n(row.payout),
     profit: n(row.profit),
-    profit_rate: Number(row.profit_rate ?? 0),
+    profit_rate: Number(row.bill) !== 0 ? Math.round((Number(row.profit ?? 0) / Number(row.bill)) * 10_000) / 10_000 : 0,
+    expense_total: n(row.expense_total),
+    expense_fixed: n(row.expense_fixed),
+    expense_variable: n(row.expense_variable),
+    operating_profit: n(row.operating_profit),
+    operating_margin: Number(row.operating_margin ?? 0),
+    bill_target: n(row.bill_target),
+    profit_target: n(row.profit_target),
+  };
+}
+
+function toExpense(row: ExpenseSummaryRow): InsightExpenseRow {
+  return {
+    category: row.category_name ?? "",
+    kind: row.kind === "fixed" ? "fixed" : "variable",
+    count: Number(row.expense_count ?? 0),
+    amount: n(row.amount),
   };
 }
 
@@ -138,18 +172,20 @@ function toProject(row: ProjectSummary): InsightProjectRow {
 export async function loadInsightSource(supabase: ServerSupabase, companyId: string, month: string): Promise<InsightSource> {
   const monthDate = monthToDate(month);
   const prev = prevMonth(month);
-  const [companyRes, prevRes, driversRes, projectsRes] = await Promise.all([
-    supabase.from("v_month_summary").select("*").eq("company_id", companyId).eq("month", monthDate).maybeSingle(),
-    supabase.from("v_month_summary").select("*").eq("company_id", companyId).eq("month", monthToDate(prev)).maybeSingle(),
+  const [companyRes, prevRes, driversRes, projectsRes, expensesRes] = await Promise.all([
+    supabase.from("v_month_pl").select("*").eq("company_id", companyId).eq("month", monthDate).maybeSingle(),
+    supabase.from("v_month_pl").select("*").eq("company_id", companyId).eq("month", monthToDate(prev)).maybeSingle(),
     supabase.from("v_driver_month_summary").select("*").eq("company_id", companyId).eq("month", monthDate).order("driver_sort_order").order("driver_name"),
     supabase.from("v_project_summary").select("*").eq("company_id", companyId).eq("month", monthDate).order("project_name").order("item_name"),
+    supabase.from("v_expense_summary").select("*").eq("company_id", companyId).eq("month", monthDate).order("category_sort_order"),
   ]);
   if (companyRes.error) throw companyRes.error;
   if (prevRes.error) throw prevRes.error;
   if (driversRes.error) throw driversRes.error;
   if (projectsRes.error) throw projectsRes.error;
+  if (expensesRes.error) throw expensesRes.error;
 
-  const empty: MonthSummary = {
+  const empty: MonthPl = {
     company_id: companyId,
     month: monthDate,
     driver_count: 0,
@@ -164,15 +200,18 @@ export async function loadInsightSource(supabase: ServerSupabase, companyId: str
     adj_profit: 0,
     payout: 0,
     profit: 0,
-    profit_rate: 0,
     status: "open",
-    closed_at: null,
-    closed_by: null,
-    reopened_at: null,
-    backup_path: null,
-    closing_note: null,
     tax: 0,
     payout_incl: 0,
+    expense_total: 0,
+    expense_fixed: 0,
+    expense_variable: 0,
+    expense_count: 0,
+    operating_profit: 0,
+    operating_margin: 0,
+    bill_target: 0,
+    profit_target: 0,
+    target_memo: "",
   };
 
   return {
@@ -182,6 +221,7 @@ export async function loadInsightSource(supabase: ServerSupabase, companyId: str
     previous_month: prevRes.data ? toCompany(prevRes.data, prev) : null,
     drivers: (driversRes.data ?? []).map(toDriver),
     projects: (projectsRes.data ?? []).map(toProject),
+    expenses: (expensesRes.data ?? []).map(toExpense),
   };
 }
 
@@ -196,6 +236,9 @@ export const INSIGHT_SYSTEM_PROMPT = [
   "- payout＝ドライバーへの支払額、profit / driver_profit＝会社利益（margin＋royalty＋mgmt_fee＋adj_profit）、profit_rate＝利益率（会社利益÷会社売上）",
   "- 支払単価 0・ロイヤリティ 0%・管理費 0 のドライバーはオーナー本人など正常なケースがあるため、それだけでは異常扱いしないでください。",
   "- mgmt_fee_setting が driver_default_mgmt_fee と異なる場合は入力ミスの可能性として指摘してください。",
+  "- expense_total＝その月の経費（税抜。fixed＝固定費、variable＝変動費）、operating_profit＝営業利益（profit−expense_total）、operating_margin＝営業利益率",
+  "- bill_target / profit_target＝その月の目標（0 は未設定なので触れないでください）。目標がある場合は達成率にも触れてください。",
+  "- expenses はカテゴリ別の経費の内訳です。経費が 0 件の月は「未入力の可能性」として軽く触れる程度にしてください。",
   "",
   "出力形式：",
   `- 所見は最大 ${MAX_FINDINGS} 項目。重要な順に並べる。`,

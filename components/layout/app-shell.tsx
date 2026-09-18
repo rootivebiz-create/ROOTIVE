@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { BottomTabs, SideNav, type NavVariant } from "./nav";
+import { CommandPalette, type CommandItem } from "./command-palette";
 import { MonthSelector, type MonthOption } from "./month-selector";
 import { UserMenu } from "./user-menu";
 import type { Role } from "@/lib/db/types";
@@ -13,6 +14,7 @@ export function AppShell({
   months,
   navVariant,
   subNav,
+  commandItems,
   showMonthSelector = true,
   homeHref = "/dashboard",
   children,
@@ -25,6 +27,8 @@ export function AppShell({
   /** ナビの種別（Server Component からアイコン関数を渡せないため文字列で指定） */
   navVariant?: NavVariant;
   subNav?: { parent: string; items: { href: string; label: string }[] };
+  /** コマンドパレット（⌘K）の候補。省略すると検索ボタンを出さない */
+  commandItems?: CommandItem[];
   showMonthSelector?: boolean;
   homeHref?: string;
   children: React.ReactNode;
@@ -32,7 +36,7 @@ export function AppShell({
   return (
     <div className="flex min-h-dvh flex-col">
       <header className="sticky top-0 z-40 border-b bg-card/95 backdrop-blur no-print">
-        <div className="flex h-14 items-center justify-between gap-2 px-3 md:px-4">
+        <div className="flex h-14 items-center justify-between gap-1 px-3 md:gap-2 md:px-4">
           <Link href={homeHref} className="flex items-center gap-2 font-bold">
             <span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-sm text-primary-foreground">R</span>
             <span className="hidden truncate sm:inline">{companyName}</span>
@@ -42,7 +46,14 @@ export function AppShell({
               <MonthSelector months={months} />
             </Suspense>
           )}
-          <UserMenu displayName={displayName} email={email} role={role} />
+          <div className="flex items-center gap-1">
+            {commandItems && commandItems.length > 0 && (
+              <Suspense fallback={<div className="h-9 w-9" />}>
+                <CommandPalette items={commandItems} />
+              </Suspense>
+            )}
+            <UserMenu displayName={displayName} email={email} role={role} />
+          </div>
         </div>
       </header>
       <div className="flex flex-1">
@@ -54,7 +65,7 @@ export function AppShell({
         </main>
       </div>
       <Suspense fallback={null}>
-        <BottomTabs variant={navVariant} />
+        <BottomTabs variant={navVariant} sub={subNav} />
       </Suspense>
     </div>
   );
