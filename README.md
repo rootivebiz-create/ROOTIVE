@@ -32,6 +32,7 @@
 | 読者 | ドキュメント | 内容 |
 |---|---|---|
 | オーナー | [docs/QUICKSTART.md](docs/QUICKSTART.md) | 自動公開。方法 A：GitHub Actions（推奨・実績あり）／方法 B：`scripts/setup-supabase.sh` → `scripts/deploy-vercel.sh`。失敗時の対応表 |
+| オーナー | [docs/AI_SETUP.md](docs/AI_SETUP.md) | AI 機能の準備。Anthropic の API キーの取り方・GitHub Secrets への登録・料金の目安・トラブル対応 |
 | オーナー | [docs/SETUP.md](docs/SETUP.md) | 本番公開の手順（ブラウザ操作のみ）。Supabase → Vercel → ログイン → 動作確認チェックリスト → SMTP → トラブル対応 |
 | オーナー・事務担当 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | 毎月の運用（複製 → 入力 → 管理費・調整 → 月締め → 明細送付 → 弥生 CSV → バックアップ）、マスタ変更、ユーザー追加、復元、移行、トラブル対応、オーナー確認事項 |
 | 開発者 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 全体構成、計算式、データモデル、権限とセキュリティ、認証フロー、出力、移行、テスト、既知の制限、環境変数、公開の仕組み |
@@ -74,11 +75,17 @@ app/
   (app)/dashboard                       ダッシュボード（KPI・内訳・推移・警告・AI 分析）
   (app)/entries, entries/bulk           稼働入力・一括入力
   (app)/payouts, payouts/[driverId]/statement   支払明細・個人明細
-  (app)/projects                        案件別集計
-  (app)/settings/{drivers,projects,rates,months,company,users,data,audit,account}   設定（rates ＝ ドライバー別単価）
+  (app)/projects                        案件別集計          (app)/cashflow  資金繰り    (app)/drivers-pl  ドライバー別の採算
+  (app)/expenses, invoices, reports      経費・請求書・年次レポート
+  (app)/bank                            銀行 CSV の取り込みと入金消込
+  (app)/alerts                          気になること（異常の検知）
+  (app)/ai, ai/[id]                     AI 経営分析・AI 相談・文章の下書き
+  (app)/chat, chat/[channelId]          社内チャット（閲覧者を含むスタッフ全員）
+  (app)/settings/{drivers,projects,rates,clients,expenses,months,integrations,company,users,data,audit,account}   設定
   driver/*                              ドライバーポータル（本人の締め済み明細。未締め月は「集計中」）
   api/export/*                          CSV・弥生 CSV・PDF・単価表 CSV・全員分 PDF（ZIP）・バックアップ JSON
   api/cron/keepalive                    Supabase 一時停止防止（Vercel Cron、vercel.json。CRON_SECRET 必須）
+  api/line/webhook                      LINE 公式アカウントの Webhook（署名検証つき）
 components/   UI 部品（ui/）、レイアウト（layout/）、画面ごとの部品
 lib/
   calc/       計算ロジック（純関数。DB ビューと同じ結果）
@@ -86,9 +93,11 @@ lib/
   auth/       セッション・ロール確認    db/        supabase-js 型・共通クエリ
   supabase/   server / admin / middleware クライアント
   statement/  明細データ組み立て        pdf/       PDF 明細      yayoi/   弥生仕訳
-  exports/    CSV                       migrate/   試作 JSON 変換  ai/      AI 月次分析
+  exports/    CSV                       migrate/   試作 JSON 変換
+  ai/         AI（分析・相談・文章）     alerts/    異常の検知      chat/    社内チャット
+  bank/       銀行 CSV の解析            integrations/  LINE・Google ドライブ（サーバー専用）
 supabase/
-  migrations/ 0001 スキーマ … 0007 ドライバー別単価  setup_all.sql   全結合（SQL Editor に 1 回貼るだけ）
+  migrations/ 0001 スキーマ … 0011 AI・チャット・異常検知・外部連携  setup_all.sql   全結合（SQL Editor に 1 回貼るだけ）
   seed/bootstrap_owner.sql  会社とオーナー招待         email-templates/  日本語メールテンプレート
 scripts/      setup-supabase.sh / deploy-vercel.sh / build-setup-sql.mjs / gen-db-types.mjs / migrate-prototype.ts
 .github/workflows/  deploy.yml（本番公開：Supabase + Vercel）、ci.yml
@@ -105,7 +114,7 @@ vercel.json   東京リージョン（hnd1）・PDF 生成の maxDuration・定�
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | anon（publishable）キー |
 | `SUPABASE_SERVICE_ROLE_KEY` | service_role（secret）キー。サーバー専用。招待・招待リンクログイン・バックアップ保存・ユーザー管理にのみ使用 |
 | `NEXT_PUBLIC_APP_URL` | 本番 URL（招待リンク・メールのリンク生成に使用）。本番は `https://rootive-profit.vercel.app` |
-| `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` | 任意。AI 月次分析を有効にする場合のみ（ドライバー名を含む月次集計を Anthropic API に送る） |
+| `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` | 任意。AI（経営分析・相談・文章の下書き）を有効にする場合のみ。渡すのは集計した数字とドライバー名・案件名だけ。取り方は [docs/AI_SETUP.md](docs/AI_SETUP.md) |
 | `CRON_SECRET` | **必須（本番）**。Vercel Cron（`/api/cron/keepalive`、Supabase 一時停止防止）の認証。未設定だと 503 で無効。32 文字以上のランダム文字列（deploy スクリプト／GitHub Actions が自動生成） |
 
 ## ライセンス・取り扱い
