@@ -13,7 +13,7 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
 ## ディレクトリ
 - `lib/calc/` 純関数の計算ロジック（正）。DB ビュー `v_*` と同じ結果を返すこと
 - `lib/ai/` AI（`config.ts` 有効判定・`context.ts` データパック・`analysis.ts` 月次分析・`chat.ts` 相談・`draft.ts` 文章・`findings.ts` 応答の正規化）
-- `lib/alerts/` `lib/chat/` `lib/bank/` `lib/integrations/` 各機能の純関数とサーバー専用の連携処理
+- `lib/alerts/` `lib/chat/` `lib/bank/` `lib/integrations/` `lib/daily/` `lib/fleet/` `lib/intake/` `lib/hr/` 各機能の純関数とサーバー専用の処理
 - `lib/db/database.types.ts` supabase-js 用の型（自動生成）、`lib/db/types.ts` 型エイリアス、`lib/db/queries.ts` 共通クエリ
 - `lib/auth/session.ts` セッション・ロール確認（`requireStaff` / `requirePageRole` / `requireAdminAction` など）
 - `lib/actions/*.ts` Server Actions（`"use server"`）、`lib/actions/result.ts` 共通の `ActionResult` / `runAction` / エラー変換
@@ -21,7 +21,7 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
 - `lib/month.ts` 稼動月ユーティリティ、`lib/format.ts` 表示書式（円・%・数量）
 - `components/ui/*` UI 部品（shadcn/ui 相当）、`components/layout/*` シェル・ナビ・月セレクタ
 - `app/(app)/*` スタッフ画面（ホーム・稼働・支払・請求・経費・資金繰り・案件・レポート・ドライバー別の採算・設定）、`app/driver/*` ドライバーポータル、`app/(auth)/*` ログイン・招待、`app/api/export/*` 出力
-- `supabase/migrations/*.sql` スキーマ（0001 テーブル、0002 認証・RLS、0003 ビュー、0004 RPC、0005 ポータル・初期データ、0006 Storage・権限、0007 ドライバー別単価（bill_rate 上書き・rate_diffs・apply_master_rates）、0008 消費税・ロゴと認印・ドライバーごとの支払日、0009 経費と営業利益・取引先と請求書・月次目標、0010 資金繰り・案件別採算、0011 AI チャット・社内チャット・異常検知・外部連携）
+- `supabase/migrations/*.sql` スキーマ（0001 テーブル、0002 認証・RLS、0003 ビュー、0004 RPC、0005 ポータル・初期データ、0006 Storage・権限、0007 ドライバー別単価（bill_rate 上書き・rate_diffs・apply_master_rates）、0008 消費税・ロゴと認印・ドライバーごとの支払日、0009 経費と営業利益・取引先と請求書・月次目標、0010 資金繰り・案件別採算、0011 AI チャット・社内チャット・異常検知・外部連携、0012 運行管理と法令対応（点呼・業務記録・日別の稼働・車両・書類）、0013 取り込みと採用・契約）
 - `tests/` Vitest（`*.test.ts`）、`tests/sql/`（psql）、`tests/e2e/`（Playwright ＋ `supabase-lite` テストサーバー）
 
 ## 必ず守る規約
@@ -57,7 +57,11 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
 - **異常の検知（0011）**：RPC `detect_anomalies(month)` が 11 種類の異常を `alerts` に記録する（`fingerprint` で二重に作らない。直った異常は自動で `resolved`）。状態変更は `set_alert_status`。検知のルールを足すときは DB 側に足す（画面側で判定を書かない）
 - **外部連携（0011）**：`integrations`（設定）と `integration_secrets`（トークン等。**RLS ポリシー無し＝サービスロール専用**。`lib/integrations/secrets.ts` 経由でのみ触る）、`integration_logs`（実行記録）。LINE は `drivers.line_user_id` / `profiles.line_user_id` と 8 桁の `line_link_codes`（Webhook が `line_consume_code` で結びつける）
 - **銀行 CSV（0011）**：`lib/bank/csv.ts` が文字コードと列を自動判定して `bank_transactions` に入れる（`fingerprint` で二重取り込みを防ぐ。入金 ＋／出金 −）。消込は RPC `bank_auto_match` / `bank_match_invoice` / `bank_set_status`（請求書の状態も合わせて変わる）
-- ロール：owner（すべて）／admin（登録・編集・月締め・出力）／viewer（閲覧・CSV・チャット・AI 相談）／driver（自分の締め済み月の明細のみ）
+- **運行管理と法令対応（0012）**：2025 年 4 月施行の貨物軽自動車運送事業の安全対策に対応する。`daily_reports`（業務前点呼・業務後点呼・業務記録。1 日 1 件・1 年保存）、`work_day_entries`（日別の稼働。**status='approved' の合計がトリガーで月次の `work_entries.qty` になる**。日別由来の行は `work_entries.qty_source='daily'` で、画面から数量を直接変えない）、`vehicles` / `documents`（免許証・車検・自賠責・任意保険・健康診断の期限）、`safety_managers` / `driver_instructions` / `incidents`。締め済み月は日報も日別の稼働も DB トリガーが拒否する
+- 日別 → 月次の反映は `sync_work_entry_from_days`（トリガー）と RPC `apply_day_entries(month)` だけで行う。提出は `submit_day_entries`、承認・差戻しは `approve_day_entries`
+- **取り込みと採用・契約（0013）**：`import_profiles`（元請の実績ファイルの列と名前の対応を覚える）／`import_runs`、`expenses.receipt_path` と `expenses.ocr`（レシート画像と AI の読み取り結果。画像は Storage の `receipts` バケット）、`applicants` / `applicant_events`（段階が変わると履歴をトリガーが残す）、`contracts`（`period_status` が `renewal` / `expired` のものをアラートに出す）
+- 異常の検知は 16 ルール（0011 の 11 ＋ 0012 の 5：書類の期限切れ・期限間近・点呼の未実施・安全管理者の未選任・承認待ちの稼働報告）。**再発したアラートは「未対応」に戻る。「対象外」にしたものは戻らない**
+- ロール：owner（すべて）／admin（登録・編集・月締め・出力）／viewer（閲覧・CSV・チャット・AI 相談）／driver（自分の締め済み月の明細、今日の報告（点呼・稼働）、自分の書類・車両・契約）
 
 ## supabase-js の使い方の制約（E2E 用の互換テストサーバーが対応する範囲に限定する）
 - `from(table|view).select("col, col2" | "*")` — **埋め込みリソース（`drivers(name)` など）は使わない**。名称が必要なら `v_*` ビューを使う
