@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { AlertTriangle, Download, Landmark, Plus, RefreshCw } from "lucide-react";
+import { AlertTriangle, Download, FileSpreadsheet, Landmark, Plus, RefreshCw } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
@@ -116,6 +116,9 @@ export function CashflowView({ range, today, events, opening, snapshots, editabl
             )}
             <a href={exportUrls.cashflowCsv(range.from, range.to)} download className={buttonVariants({ variant: "outline" })}>
               <Download /> CSV
+            </a>
+            <a href={exportUrls.cashflowXlsx(range.from, range.to)} download className={buttonVariants({ variant: "outline" })}>
+              <FileSpreadsheet /> Excel
             </a>
           </>
         }

@@ -1,4 +1,4 @@
-import { Download } from "lucide-react";
+import { Download, FileSpreadsheet } from "lucide-react";
 import { requireStaff, canEdit } from "@/lib/auth/session";
 import { isMonthClosed, loadMasters, loadRateDiffs } from "@/lib/db/queries";
 import { exportUrls } from "@/lib/exports/urls";
@@ -33,9 +33,14 @@ export default async function RatesSettingsPage({ searchParams }: { searchParams
         title="ドライバー別単価"
         description="ドライバー × 案件内容ごとに受注単価・支払単価を設定します。空欄は案件内容の標準単価を使います。"
         actions={
-          <a href={exportUrls.ratesCsv()} download className={buttonVariants({ variant: "outline", size: "sm" })}>
-            <Download /> 単価表 CSV
-          </a>
+          <>
+            <a href={exportUrls.ratesCsv()} download className={buttonVariants({ variant: "outline", size: "sm" })}>
+              <Download /> 単価表 CSV
+            </a>
+            <a href={exportUrls.ratesXlsx()} download className={buttonVariants({ variant: "outline", size: "sm" })}>
+              <FileSpreadsheet /> 単価表 Excel
+            </a>
+          </>
         }
       />
       <RatesEditor

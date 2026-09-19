@@ -1,4 +1,4 @@
-import { Download, Receipt } from "lucide-react";
+import { Download, FileSpreadsheet, Receipt } from "lucide-react";
 import { requireStaff } from "@/lib/auth/session";
 import { monthFromParam, monthToDate, formatMonthJa } from "@/lib/month";
 import { loadProjectPl, loadProjectPlRange } from "@/lib/db/queries";
@@ -105,6 +105,10 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
             <a href={exportUrls.projectsCsv("all")} download className={csvLink}>
               <Download className="h-4 w-4" />
               CSV（全期間）
+            </a>
+            <a href={exportUrls.projectsXlsx(month)} download className={csvLink}>
+              <FileSpreadsheet className="h-4 w-4" />
+              Excel（当月）
             </a>
           </>
         }

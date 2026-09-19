@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { CalendarSync, Download, Lock, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { CalendarSync, Download, FileSpreadsheet, Lock, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -126,6 +126,9 @@ export function ExpensesView({ month, rows, categories, editable, closed, choice
             )}
             <a href={exportUrls.expensesCsv(month)} download className={buttonVariants({ variant: "outline" })}>
               <Download /> CSV
+            </a>
+            <a href={exportUrls.expensesXlsx(month)} download className={buttonVariants({ variant: "outline" })}>
+              <FileSpreadsheet /> Excel
             </a>
           </>
         }

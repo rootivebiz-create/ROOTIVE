@@ -1,4 +1,4 @@
-import { Download } from "lucide-react";
+import { Download, FileSpreadsheet } from "lucide-react";
 import { requireStaff, canEdit } from "@/lib/auth/session";
 import { loadClients } from "@/lib/db/queries";
 import { formatMonthJa, monthFromParam, monthToDate } from "@/lib/month";
@@ -88,10 +88,16 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
         title="請求書"
         description={`${formatMonthJa(month)} の取引先ごとの売上と請求書`}
         actions={
-          <a href={exportUrls.invoicesCsv(month)} download className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
-            <Download className="h-4 w-4" />
-            CSV
-          </a>
+          <>
+            <a href={exportUrls.invoicesCsv(month)} download className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+              <Download className="h-4 w-4" />
+              CSV
+            </a>
+            <a href={exportUrls.invoicesXlsx(month)} download className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+              <FileSpreadsheet className="h-4 w-4" />
+              Excel
+            </a>
+          </>
         }
       />
 

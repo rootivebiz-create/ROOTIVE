@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Download } from "lucide-react";
+import { Download, FileSpreadsheet } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
@@ -94,6 +94,10 @@ export function DriversPlView({ month, rows, entries, trendSummaries, trendMonth
             <a href={exportUrls.driversPlCsv(month, includeInactive)} download className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
               <Download className="h-4 w-4" />
               CSV
+            </a>
+            <a href={exportUrls.driversPlXlsx(month, includeInactive)} download className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+              <FileSpreadsheet className="h-4 w-4" />
+              Excel
             </a>
           </div>
         </CardHeader>
