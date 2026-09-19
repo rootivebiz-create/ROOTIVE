@@ -97,3 +97,13 @@ export function documentToCsvRow(d: DocumentCsvSource): CsvValue[] {
 export function documentsCsv(rows: DocumentCsvSource[]): string {
   return toCsv([[...DOCUMENTS_CSV_HEADERS], ...rows.map(documentToCsvRow)]);
 }
+
+/** 車両の行配列（先頭が見出し行。Excel 出力と共用） */
+export function vehiclesCsvRows(rows: VehicleCsvSource[]): CsvValue[][] {
+  return [[...VEHICLES_CSV_HEADERS], ...rows.map(vehicleToCsvRow)];
+}
+
+/** 書類と期限の行配列（先頭が見出し行。Excel 出力と共用） */
+export function documentsCsvRows(rows: DocumentCsvSource[]): CsvValue[][] {
+  return [[...DOCUMENTS_CSV_HEADERS], ...rows.map(documentToCsvRow)];
+}

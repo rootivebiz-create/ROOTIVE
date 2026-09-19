@@ -52,3 +52,8 @@ export function projectToCsvRow(r: ProjectPlRow): CsvValue[] {
 export function toProjectsCsv(rows: ProjectPlRow[]): string {
   return toCsv([[...PROJECTS_CSV_HEADERS], ...rows.map(projectToCsvRow)]);
 }
+
+/** 案件別採算の行配列（先頭が見出し行。Excel 出力と共用） */
+export function projectsCsvRows(rows: ProjectPlRow[]): CsvValue[][] {
+  return [[...PROJECTS_CSV_HEADERS], ...rows.map(projectToCsvRow)];
+}

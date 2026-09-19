@@ -48,3 +48,8 @@ export const BANK_CSV_STATUS_LABELS: Record<string, string> = {
 export function bankCsvFilename(status: string): string {
   return `銀行明細_${BANK_CSV_STATUS_LABELS[status] ?? "すべて"}.csv`;
 }
+
+/** 銀行明細の行配列（先頭が見出し行。Excel 出力と共用） */
+export function bankCsvRows(rows: BankCsvSource[]): CsvValue[][] {
+  return [[...BANK_CSV_HEADERS], ...rows.map(bankCsvRow)];
+}

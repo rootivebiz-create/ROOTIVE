@@ -21,3 +21,8 @@ export function toCashflowCsv(rows: CashflowCsvRow[]): string {
 export function cashflowCsvFilename(from: string, to: string): string {
   return `資金繰り_${from}_${to}.csv`;
 }
+
+/** 資金繰りの行配列（先頭が見出し行。Excel 出力と共用） */
+export function cashflowCsvRows(rows: CashflowCsvRow[]): CsvValue[][] {
+  return [[...CASHFLOW_CSV_HEADERS], ...rows.map(cashflowToCsvRow)];
+}

@@ -154,3 +154,13 @@ export function hrCsvUrl(kind: string): string {
 export function hrCsvFilename(kind: string): string {
   return kind === "contract" ? "業務委託契約一覧.csv" : "応募者一覧.csv";
 }
+
+/** 応募者の行配列（先頭が見出し行。Excel 出力と共用） */
+export function applicantsCsvRows(rows: ApplicantCsvSource[]): CsvValue[][] {
+  return [[...APPLICANTS_CSV_HEADERS], ...rows.map(applicantToCsvRow)];
+}
+
+/** 業務委託契約の行配列（先頭が見出し行。Excel 出力と共用） */
+export function contractsCsvRows(rows: ContractCsvSource[]): CsvValue[][] {
+  return [[...CONTRACTS_CSV_HEADERS], ...rows.map(contractToCsvRow)];
+}

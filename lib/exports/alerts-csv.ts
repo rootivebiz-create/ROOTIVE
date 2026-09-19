@@ -46,3 +46,8 @@ export function alertsCsvUrl(month: string, status: string = "open"): string {
 export function alertsCsvFilename(monthLabel: string): string {
   return `気になること_${monthLabel}.csv`;
 }
+
+/** 気になることの行配列（先頭が見出し行。Excel 出力と共用） */
+export function alertsCsvRows(rows: AlertCsvSource[]): CsvValue[][] {
+  return [[...ALERTS_CSV_HEADERS], ...rows.map(alertToCsvRow)];
+}

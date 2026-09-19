@@ -190,3 +190,13 @@ export function dailyCsvUrl(month: string, kind: DailyCsvKind = "report"): strin
 export function dailyCsvFilename(monthLabel: string, kind: DailyCsvKind = "report"): string {
   return `${kind === "entry" ? "日別の稼働" : "点呼記録簿"}_${monthLabel}.csv`;
 }
+
+/** 点呼記録簿・業務記録の行配列（先頭が見出し行。Excel 出力と共用） */
+export function dailyReportsCsvRows(rows: DailyReportCsvSource[]): CsvValue[][] {
+  return [[...DAILY_REPORT_CSV_HEADERS], ...rows.map(dailyReportToCsvRow)];
+}
+
+/** 日別の稼働の行配列（先頭が見出し行。Excel 出力と共用） */
+export function dayEntriesCsvRows(rows: DayEntryCsvSource[]): CsvValue[][] {
+  return [[...DAY_ENTRY_CSV_HEADERS], ...rows.map(dayEntryToCsvRow)];
+}

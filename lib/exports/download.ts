@@ -75,3 +75,8 @@ export function timestampJST(now: Date = new Date()): string {
   const p = (n: number) => String(n).padStart(2, "0");
   return `${jst.getUTCFullYear()}${p(jst.getUTCMonth() + 1)}${p(jst.getUTCDate())}_${p(jst.getUTCHours())}${p(jst.getUTCMinutes())}`;
 }
+
+/** Excel（.xlsx）のダウンロード応答 */
+export function xlsxResponse(filename: string, body: Uint8Array): Response {
+  return binaryResponse(filename, body, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+}

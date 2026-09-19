@@ -36,3 +36,8 @@ export function invoiceToCsvRow(r: InvoiceCsvSource): CsvValue[] {
 export function invoicesToCsv(rows: InvoiceCsvSource[]): string {
   return toCsv([[...INVOICES_CSV_HEADERS], ...rows.map(invoiceToCsvRow)]);
 }
+
+/** 請求書一覧の行配列（先頭が見出し行。Excel 出力と共用） */
+export function invoicesCsvRows(rows: InvoiceCsvSource[]): CsvValue[][] {
+  return [[...INVOICES_CSV_HEADERS], ...rows.map(invoiceToCsvRow)];
+}

@@ -128,3 +128,17 @@ export function payoutsToCsv(rows: PayoutCsvSource[]): string {
 export function monthFileLabel(month: string): string {
   return month === "all" ? "全期間" : month;
 }
+
+// ---------------------------------------------------------------------------
+// 行配列（Excel 出力と共用。CSV 文字列と同じ内容・同じ並び）
+// ---------------------------------------------------------------------------
+
+/** 稼働明細の行配列（先頭が見出し行） */
+export function entriesCsvRows(rows: EntryCsvSource[]): CsvValue[][] {
+  return [[...ENTRIES_CSV_HEADERS], ...rows.map(entryToCsvRow)];
+}
+
+/** 支払一覧の行配列（先頭が見出し行） */
+export function payoutsCsvRows(rows: PayoutCsvSource[]): CsvValue[][] {
+  return [[...PAYOUTS_CSV_HEADERS], ...rows.map(payoutToCsvRow)];
+}

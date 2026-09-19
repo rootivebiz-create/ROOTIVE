@@ -36,3 +36,8 @@ export function expenseToCsvRow(e: ExpenseCsvSource): CsvValue[] {
 export function toExpensesCsv(rows: ExpenseCsvSource[]): string {
   return toCsv([[...EXPENSES_CSV_HEADERS], ...rows.map(expenseToCsvRow)]);
 }
+
+/** 経費の行配列（先頭が見出し行。Excel 出力と共用） */
+export function expensesCsvRows(rows: ExpenseCsvSource[]): CsvValue[][] {
+  return [[...EXPENSES_CSV_HEADERS], ...rows.map(expenseToCsvRow)];
+}
