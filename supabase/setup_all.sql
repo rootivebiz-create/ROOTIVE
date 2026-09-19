@@ -5765,6 +5765,15 @@ begin
     raise exception '案件内容と数量の数が合いません' using errcode = 'P0001';
   end if;
 
+  -- ドライバー本人は、承認済みの分は直せない（分かりやすい日本語で止める）
+  if own is not null and exists (
+    select 1 from public.work_day_entries
+     where company_id = cid and work_date = p_work_date and driver_id = did
+       and project_item_id = any(p_item_ids) and status = 'approved'
+  ) then
+    raise exception '承認済みの報告は変更できません。担当者に連絡してください。' using errcode = 'P0001', hint = 'ALREADY_APPROVED';
+  end if;
+
   for i in 1 .. coalesce(array_length(p_item_ids, 1), 0) loop
     if coalesce(p_qtys[i], 0) <= 0 then
       delete from public.work_day_entries

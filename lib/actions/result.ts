@@ -23,6 +23,9 @@ const HINT_MESSAGES: Record<string, string> = {
   NAME_CONFLICT: "同じ名前のマスタが別の ID で登録されています。",
   NAME_MISMATCH: "会社名が一致しません。",
   NOT_EMPTY: "既にデータがあるため初期データは投入できません。",
+  ALREADY_APPROVED: "承認済みの報告は変更できません。担当者に連絡してください。",
+  EMPTY_BODY: "メッセージを入力してください。",
+  NOT_FOUND: "対象が見つかりません。",
 };
 
 function isPostgrestError(e: unknown): e is PostgrestError {
