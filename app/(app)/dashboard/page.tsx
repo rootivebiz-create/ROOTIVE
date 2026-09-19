@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { Lock } from "lucide-react";
 import { requireStaff, canEdit } from "@/lib/auth/session";
 import { loadDashboardData } from "@/lib/db/queries-dashboard";
-import { loadExpenseSummary, loadMonthPl } from "@/lib/db/queries";
+import { loadAlerts, loadAlertSummary, loadExpenseSummary, loadMonthPl } from "@/lib/db/queries";
 import { isAiInsightsEnabled } from "@/lib/ai/config";
 import { normalizeFindings } from "@/lib/ai/findings";
 import { formatMonthJa, monthFromParam, monthToDate, prevMonth } from "@/lib/month";
@@ -21,6 +21,7 @@ import { TargetCard } from "@/components/dashboard/target-card";
 import { ForecastCard } from "@/components/dashboard/forecast-card";
 import { ExpenseCard } from "@/components/dashboard/expense-card";
 import { expenseBreakdown, needsExpenseWarning } from "@/components/dashboard/helpers";
+import { AlertCard } from "@/components/alerts/alert-card";
 
 export const metadata = { title: "ダッシュボード" };
 /** AI 月次分析（Server Action）は応答に数十秒かかることがある */
@@ -30,11 +31,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const { supabase, profile, company } = await requireStaff();
   const sp = await searchParams;
   const month = monthFromParam(sp.m);
-  const [data, pl, prevPlRes, expenseRows] = await Promise.all([
+  const [data, pl, prevPlRes, expenseRows, openAlerts, alertSummary] = await Promise.all([
     loadDashboardData(supabase, company.id, month),
     loadMonthPl(supabase, company.id, month),
     supabase.from("v_month_pl").select("*").eq("company_id", company.id).eq("month", monthToDate(prevMonth(month))).maybeSingle(),
     loadExpenseSummary(supabase, company.id, month),
+    loadAlerts(supabase, company.id, { status: "open", month, limit: 3 }),
+    loadAlertSummary(supabase, company.id, month),
   ]);
   if (prevPlRes.error) throw prevPlRes.error;
   const aiEnabled = isAiInsightsEnabled();
@@ -91,6 +94,15 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       </Suspense>
 
       <ForecastCard month={month} monthLabel={formatMonthJa(month)} pl={pl} isClosed={data.isClosed} />
+
+      <AlertCard
+        alerts={openAlerts}
+        counts={{
+          high: Number(alertSummary?.high_count ?? 0),
+          medium: Number(alertSummary?.medium_count ?? 0),
+          low: Number(alertSummary?.low_count ?? 0),
+        }}
+      />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <TargetCard
