@@ -42,7 +42,7 @@ test.describe("経費", () => {
 
   test("経費を追加すると一覧・カテゴリ別の小計・合計に反映される", async ({ page }, testInfo) => {
     await loginViaMagicLink(page, E2E.users.owner.email, `/expenses?m=${MONTH}`);
-    await expect(page.getByRole("heading", { name: "経費" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "経費", exact: true })).toBeVisible();
     await expect(page.getByText("まだ経費がありません")).toBeVisible();
 
     // 変動費（燃料費 50,000）
@@ -129,7 +129,7 @@ test.describe("経費", () => {
     await setMonthClosed(MONTH, false);
 
     await loginViaMagicLink(page, E2E.users.viewer.email, `/expenses?m=${MONTH}`);
-    await expect(page.getByRole("heading", { name: "経費" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "経費", exact: true })).toBeVisible();
     await expect(listRow(page, "ガソリン代").first()).toBeVisible();
     await expect(page.getByRole("button", { name: "経費を追加" })).toHaveCount(0);
   });
