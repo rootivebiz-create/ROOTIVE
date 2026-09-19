@@ -680,16 +680,16 @@ select public.test_login(:'owner_a');
 select public.t_assert((select count(*) = 2 from public.chat_channels where company_id = :'company_a'), '会社を作ると既定のルームが 2 つできる');
 select public.t_assert((select is_default from public.chat_channels where company_id = :'company_a' and name = '全体'), '「全体」が既定のルーム');
 
-select public.t_assert(public.chat_post((select id from public.chat_channels where company_id = :'company_a' and name = '全体'), '今月もよろしくお願いします', '[]'::jsonb) is not null, 'オーナーが発言できる');
+select public.t_assert(public.chat_post((select id from public.chat_channels where company_id = :'company_a' and name = '全体'), '今月もよろしくお願いします', '{}'::uuid[]) is not null, 'オーナーが発言できる');
 select public.t_assert((select m.author_name = coalesce(nullif(p.display_name, ''), p.email) and m.author_role = 'owner'
                           from public.chat_messages m join public.profiles p on p.id = m.author_id
                          where m.company_id = :'company_a'), '発言者の名前とロールが写る');
-select public.t_expect_error(format($$select public.chat_post((select id from public.chat_channels where company_id = '%s' and name = '全体'), '   ', '[]'::jsonb)$$, :'company_a'), 'EMPTY_BODY', '空の発言はできない');
+select public.t_expect_error(format($$select public.chat_post((select id from public.chat_channels where company_id = '%s' and name = '全体'), '   ', '{}'::uuid[])$$, :'company_a'), 'EMPTY_BODY', '空の発言はできない');
 
 -- 閲覧者も発言できる（メンション付き）
 select public.test_login(:'viewer_a');
 select public.t_assert((select unread_count = 1 from public.v_chat_channel_list where name = '全体'), '閲覧者から見て未読 1 件');
-select public.t_assert(public.chat_post((select id from public.chat_channels where company_id = :'company_a' and name = '全体'), '@owner 確認しました', jsonb_build_array(:'owner_a')) is not null, '閲覧者も発言できる');
+select public.t_assert(public.chat_post((select id from public.chat_channels where company_id = :'company_a' and name = '全体'), '@owner 確認しました', array[:'owner_a']::uuid[]) is not null, '閲覧者も発言できる');
 select public.t_assert((select unread_count = 0 from public.v_chat_channel_list where name = '全体'), '発言すると自分の未読は 0 になる');
 select public.t_assert((select message_count = 2 from public.v_chat_channel_list where name = '全体'), 'ルームの発言数は 2');
 select public.t_assert((select count(*) = 1 from public.v_chat_message_list where is_mine), '自分の発言が 1 件');

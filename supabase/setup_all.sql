@@ -4574,8 +4574,9 @@ begin
   return n;
 end $$;
 
--- 発言する（閲覧者も発言できる）。宛先は profiles.id の配列
-create or replace function public.chat_post(p_channel_id uuid, p_body text, p_mentions jsonb default '[]'::jsonb)
+-- 発言する（閲覧者も発言できる）。宛先は profiles.id の配列（supabase-js からは string[] で渡す）
+drop function if exists public.chat_post(uuid, text, jsonb);
+create or replace function public.chat_post(p_channel_id uuid, p_body text, p_mentions uuid[] default '{}'::uuid[])
 returns uuid language plpgsql security invoker set search_path = public as $$
 declare
   cid uuid := public.current_company_id();
@@ -4593,7 +4594,7 @@ begin
   end if;
 
   insert into public.chat_messages (company_id, channel_id, author_id, body, mentions)
-  values (cid, p_channel_id, auth.uid(), body, coalesce(p_mentions, '[]'::jsonb))
+  values (cid, p_channel_id, auth.uid(), body, to_jsonb(coalesce(p_mentions, '{}'::uuid[])))
   returning id into mid;
 
   insert into public.chat_reads (company_id, channel_id, profile_id, last_read_at)

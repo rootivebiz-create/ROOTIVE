@@ -1979,7 +1979,7 @@ export type Database = {
         Args: {
           p_channel_id: string
           p_body: string
-          p_mentions?: Json
+          p_mentions?: string[]
         }
         Returns: string
       }
