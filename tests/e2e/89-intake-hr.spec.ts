@@ -45,23 +45,23 @@ test.describe("元請の実績ファイルの取り込み", () => {
   test("CSV を読み込むとプレビューが出て、取り込むと日別の稼働に入る", async ({ page }, testInfo) => {
     const { companyId } = requireState();
     await loginViaMagicLink(page, E2E.users.owner.email, `/intake?m=${MONTH}`);
-    await expect(page.getByRole("heading", { name: /取り込み/ })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "実績ファイルの取り込み" })).toBeVisible();
 
     const csv = ["配送日,ドライバー名,コース,個数", "2026/09/05,相曽慧,三郷Amazon,12", "2026/09/06,相曽慧,三郷Amazon,9", ""].join("\r\n");
     await page.locator('input[type="file"]').first().setInputFiles({ name: "jisseki.csv", mimeType: "text/csv", buffer: Buffer.from(csv, "utf8") });
-    await page.getByRole("button", { name: /読み込む|プレビュー/ }).first().click();
-    await expect(page.getByText("相曽慧").first()).toBeVisible();
+    await page.getByRole("button", { name: "読み込む" }).click();
+    await expect(page.getByText("相曽慧").filter({ visible: true }).first()).toBeVisible();
     if (testInfo.project.name === "mobile") await saveScreenshot(page, "intake-mobile.png");
 
-    await page.getByRole("button", { name: /取り込む$|取り込む（/ }).first().click();
+    await page.getByRole("button", { name: /行を取り込む$/ }).click();
     await expect(toast(page, /取り込み|件/)).toBeVisible();
     expect(adminSql(`select count(*) from public.work_day_entries where company_id = '${companyId}';`)).toMatch(/\b2\b/);
   });
 
   test("閲覧者は取り込めない", async ({ page }) => {
     await loginViaMagicLink(page, E2E.users.viewer.email, `/intake?m=${MONTH}`);
-    await expect(page.getByRole("heading", { name: /取り込み/ })).toBeVisible();
-    await expect(page.getByRole("button", { name: /読み込む|プレビュー/ })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "実績ファイルの取り込み" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "読み込む" })).toBeDisabled();
   });
 });
 

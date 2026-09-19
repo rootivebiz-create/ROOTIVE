@@ -8,7 +8,7 @@
 import { decodeBankCsv, parseCsv, type BankCsvEncoding } from "@/lib/bank/csv";
 import { SHEET_EXTENSIONS, SHEET_SUPPORT_TEXT } from "@/lib/schemas/intake";
 import { normalizeName } from "./helpers";
-import { HEADER_PATTERNS, MAPPING_FIELDS, headerScore } from "./mapping";
+import { MAPPING_FIELDS, headerScore } from "./mapping";
 
 export { SHEET_EXTENSIONS, SHEET_SUPPORT_TEXT };
 
@@ -152,11 +152,3 @@ export function detectHeader(rows: string[][], limit = HEADER_SEARCH_LIMIT): Det
   }
   return { headerRow: bestRow, headers: (rows[bestRow] ?? []).map((c) => normalizeName(c)) };
 }
-
-/** ヘッダーらしい語を 1 つも含まないか（画面の案内に使う） */
-export function looksHeaderless(headers: string[]): boolean {
-  return !headers.some((h) => MAPPING_FIELDS.some((f) => headerScore(h, f) > 0));
-}
-
-/** 画面のヒントに出す「見出しの例」 */
-export const HEADER_HINTS = HEADER_PATTERNS;

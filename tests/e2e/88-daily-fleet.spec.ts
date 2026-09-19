@@ -102,12 +102,12 @@ test.describe("日報・点呼と日別の稼働", () => {
     await expect(page.getByRole("heading", { name: /今日の報告/ })).toBeVisible();
     if (testInfo.project.name === "mobile") await saveScreenshot(page, "driver-today-mobile.png");
 
-    // 稼働の数量を入れて送信する（画面の最初の数量欄に入れる）
-    const qty = page.getByRole("spinbutton").first();
+    // 稼働の数量を入れて送信する（案件内容ごとの数量欄）
+    const qty = page.getByLabel(/の数量$/).first();
     await expect(qty).toBeVisible();
     await qty.fill("3");
-    await page.getByRole("button", { name: /送信|報告する/ }).first().click();
-    await expect(toast(page, /送信|報告|保存/)).toBeVisible();
+    await page.getByRole("button", { name: "送信", exact: true }).click();
+    await expect(toast(page, /送信|報告|保存|件/)).toBeVisible();
 
     // DB に承認待ちで入る
     expect(adminSql(`select count(*) from public.work_day_entries where company_id = '${companyId}' and status = 'submitted';`)).toMatch(/\b1\b/);
@@ -115,8 +115,9 @@ test.describe("日報・点呼と日別の稼働", () => {
     // 管理者が承認すると月次に反映される
     await loginViaMagicLink(page, E2E.users.owner.email, `/daily?m=${MONTH}&tab=entries`);
     await expect(page.getByRole("heading", { name: "日報・点呼" })).toBeVisible();
-    await expect(page.getByText("相曽慧").first()).toBeVisible();
-    await page.getByRole("button", { name: /^承認/ }).first().click();
+    // PC は表、スマホはカードなので、見えているものだけを対象にする
+    await expect(page.getByText("相曽慧").filter({ visible: true }).first()).toBeVisible();
+    await page.getByRole("button", { name: /^承認/ }).filter({ visible: true }).first().click();
     await expect(toast(page, /承認/)).toBeVisible();
     expect(adminSql(`select qty_source from public.work_entries where company_id = '${companyId}' and qty_source = 'daily' limit 1;`)).toContain("daily");
   });

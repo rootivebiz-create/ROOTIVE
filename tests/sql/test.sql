@@ -962,6 +962,8 @@ select public.t_assert(public.submit_day_entries('2026-12-10',
   array[(select pi.id from public.project_items pi join public.projects p on p.id = pi.project_id where p.company_id = :'company_a' and p.name = '三郷Amazon')]::uuid[],
   array[4]::numeric[]) = 1, 'ドライバー本人が自分の稼働を提出できる');
 select public.t_assert((select source = 'driver' and status = 'submitted' from public.work_day_entries where work_date = '2026-12-10'), '本人の提出は source=driver・承認待ち');
+select public.t_assert((select count(*) > 0 from public.driver_day_items()), 'ドライバーは「今日の報告」で選べる案件内容を取得できる');
+select public.t_assert((select count(*) from public.driver_day_items()) > (select count(*) from public.project_items), '案件マスタを直接読める範囲より多くの候補を返す（RPC は security definer）');
 select public.t_expect_error($$select public.approve_day_entries(array(select id from public.work_day_entries), true)$$, 'FORBIDDEN', 'ドライバーは自分で承認できない');
 select public.t_expect_error($$update public.work_day_entries set status = 'approved' where work_date = '2026-12-10'$$, null, 'ドライバーは status を承認済みに変えられない');
 select public.t_assert((select count(*) = 0 from public.safety_managers), 'ドライバーは安全管理者の一覧を読めない');

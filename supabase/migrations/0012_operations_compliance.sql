@@ -247,8 +247,9 @@ begin
 end $$;
 
 -- 子テーブルの company_id を親（ドライバー）から補完し、一致を確認する
+-- ドライバーは案件マスタ・車両を直接読めない（RLS）ため、確認だけできるよう security definer にする
 create or replace function public.fill_company_id_0012()
-returns trigger language plpgsql as $$
+returns trigger language plpgsql security definer set search_path = public as $$
 declare parent_company uuid; other_company uuid;
 begin
   select company_id into parent_company from public.drivers where id = new.driver_id;
@@ -713,10 +714,12 @@ begin
   return n;
 end $$;
 
--- ドライバーが今日の報告を出すための案件内容の候補（自分に単価がある内容 ＋ 直近に使った内容）
+-- ドライバーが今日の報告を出すための案件内容の候補
+-- ドライバーは案件マスタを直接読めない（締め済み月の自分の稼働に紐づくものだけ）ため
+-- security definer にして、会社とドライバー本人であることを関数の中で確認する
 create or replace function public.driver_day_items()
 returns table (project_item_id uuid, project_name text, item_name text, unit public.item_unit, recent boolean)
-language sql stable security invoker set search_path = public as $$
+language sql stable security definer set search_path = public as $$
   select pi.id, p.name, pi.name, pi.unit,
          exists (
            select 1 from public.work_day_entries e
@@ -726,6 +729,7 @@ language sql stable security invoker set search_path = public as $$
     from public.project_items pi
     join public.projects p on p.id = pi.project_id
    where pi.company_id = public.current_company_id() and pi.is_active and p.is_active
+     and (public.is_staff() or public.is_driver_user())
    order by 5 desc, p.sort_order, pi.sort_order, p.name, pi.name;
 $$;
 
