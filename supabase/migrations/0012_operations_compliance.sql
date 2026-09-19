@@ -899,7 +899,7 @@ begin
     fp := public.record_alert(cid, p_month, 'document_expired', 'high',
       coalesce(nullif(r.driver_name, ''), nullif(r.vehicle_plate, ''), '') || ' の' || coalesce(nullif(r.label, ''), r.kind::text) || 'が期限切れです',
       '有効期限 ' || to_char(r.expires_on, 'YYYY/MM/DD') || ' を過ぎています。更新して登録し直してください。',
-      null, 'documents', r.id::text, '/documents', 'document_expired:' || r.id);
+      null, 'documents', r.id::text, '/fleet?tab=documents', 'document_expired:' || r.id);
     fps := fps || fp;
   end loop;
 
@@ -912,7 +912,7 @@ begin
     fp := public.record_alert(cid, p_month, 'document_expiring', 'medium',
       coalesce(nullif(r.driver_name, ''), nullif(r.vehicle_plate, ''), '') || ' の' || coalesce(nullif(r.label, ''), r.kind::text) || 'があと ' || r.days_left || ' 日で期限です',
       '有効期限 ' || to_char(r.expires_on, 'YYYY/MM/DD') || '。早めに更新してください。',
-      null, 'documents', r.id::text, '/documents', 'document_expiring:' || r.id);
+      null, 'documents', r.id::text, '/fleet?tab=documents', 'document_expiring:' || r.id);
     fps := fps || fp;
   end loop;
 

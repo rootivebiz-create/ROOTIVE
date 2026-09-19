@@ -347,3 +347,17 @@ export function formatDateTime(iso: string | null | undefined): string {
   if (!local) return "—";
   return `${local.slice(0, 10).replace(/-/g, "/")} ${local.slice(11)}`;
 }
+
+// ---------------------------------------------------------------------------
+// 画面から使う URL
+// ---------------------------------------------------------------------------
+
+/** 車両と書類の画面（?tab= を引き継ぐ。稼動月には依存しない） */
+export function fleetTabHref(tab: "vehicles" | "documents"): string {
+  return `/fleet?tab=${tab}`;
+}
+
+/** 車両 / 書類 CSV のダウンロード URL（app/api/export/fleet.csv） */
+export function fleetCsvUrl(kind: "vehicle" | "document"): string {
+  return `/api/export/fleet.csv?kind=${kind}`;
+}
