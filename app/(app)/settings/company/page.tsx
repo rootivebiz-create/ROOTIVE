@@ -32,12 +32,21 @@ export default async function CompanySettingsPage({ searchParams }: { searchPara
     driver_portal_show_open_month: Boolean(company.driver_portal_show_open_month),
     tax_rate: pctText(company.tax_rate),
     tax_rounding: company.tax_rounding,
+    fiscal_month: String(Number(company.fiscal_month ?? 3)),
+    fb_consignor_code: company.fb_consignor_code ?? "",
+    fb_consignor_kana: company.fb_consignor_kana ?? "",
+    fb_bank_code: company.fb_bank_code ?? "",
+    fb_bank_name: company.fb_bank_name ?? "",
+    fb_branch_code: company.fb_branch_code ?? "",
+    fb_branch_name: company.fb_branch_name ?? "",
+    fb_account_type: company.fb_account_type ?? "",
+    fb_account_number: company.fb_account_number ?? "",
     yayoi_accounts: yayoiAccountsToForm(resolveYayoiAccounts(company.yayoi_accounts)),
   };
 
   return (
     <div>
-      <PageHeader title="会社設定" description="会社名・計算の既定値・振込予定日・消費税・明細の定型文・ロゴと認印・弥生会計の勘定科目（オーナーのみ）" />
+      <PageHeader title="会社設定" description="会社名・計算の既定値・振込予定日・消費税・決算月・振込元の口座・明細の定型文・ロゴと認印・弥生会計の勘定科目（オーナーのみ）" />
       {/* フォームの初期値が変わったとき（保存後）だけ作り直す。ロゴ・認印のアップロードでは入力中の値を保つ */}
       <CompanyForm key={JSON.stringify(initial)} initial={initial} currentMonth={month} />
       <div className="mt-4">
