@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronRight, Users, Briefcase, BadgeJapaneseYen, Store, Tags, Lock, Plug, Building2, UserCog, Database, ScrollText, UserCircle } from "lucide-react";
+import { ChevronRight, Users, Briefcase, BadgeJapaneseYen, Store, Tags, Lock, ShieldCheck, Plug, Building2, UserCog, Database, ScrollText, UserCircle } from "lucide-react";
 import { requireStaff } from "@/lib/auth/session";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card } from "@/components/ui/card";
@@ -14,6 +14,7 @@ export default async function SettingsIndexPage() {
     { href: "/settings/clients", label: "取引先", desc: "請求書の宛先・支払サイト", icon: Store },
     { href: "/settings/expenses", label: "経費カテゴリ", desc: "経費の分類（固定費・変動費）と毎月かかる経費", icon: Tags },
     { href: "/settings/months", label: "月締め", desc: "月の確定・ロック・締め時バックアップ", icon: Lock },
+    ...(role !== "viewer" ? [{ href: "/settings/safety", label: "安全管理", desc: "貨物軽自動車安全管理者・指導監督の記録・事故の記録", icon: ShieldCheck }] : []),
     ...(role !== "viewer" ? [{ href: "/settings/integrations", label: "外部連携", desc: "LINE 公式アカウント・Google ドライブへの自動保存", icon: Plug }] : []),
     ...(role === "owner" ? [{ href: "/settings/company", label: "会社設定", desc: "端数処理・標準値・振込日・弥生の勘定科目", icon: Building2 }] : []),
     ...(role === "owner" ? [{ href: "/settings/users", label: "ユーザー管理", desc: "招待・権限・無効化", icon: UserCog }] : []),

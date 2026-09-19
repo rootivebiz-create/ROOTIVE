@@ -81,23 +81,23 @@ describe("コマンドパレットの検索（filterCommands）", () => {
 });
 
 describe("ナビの定義", () => {
-  it("PC のサイドナビは 13 項目（入力・経営・相談のまとまり ＋ ホームと設定）", () => {
-    expect(MAIN_NAV).toHaveLength(13);
+  it("PC のサイドナビは 17 項目（入力・経営・管理・相談のまとまり ＋ ホームと設定）", () => {
+    expect(MAIN_NAV).toHaveLength(17);
     expect(MAIN_NAV.map((i) => i.href)).toEqual([
-      "/dashboard", "/entries", "/payouts", "/invoices", "/expenses", "/bank",
-      "/cashflow", "/projects", "/reports", "/alerts", "/ai", "/chat", "/settings",
+      "/dashboard", "/entries", "/daily", "/intake", "/payouts", "/invoices", "/expenses", "/bank",
+      "/cashflow", "/projects", "/reports", "/alerts", "/fleet", "/hr", "/ai", "/chat", "/settings",
     ]);
     expect(MAIN_NAV.map((i) => i.label)).toEqual([
-      "ホーム", "稼働", "支払", "請求", "経費", "入金",
-      "資金繰り", "案件", "レポート", "気になること", "AI 相談", "チャット", "設定",
+      "ホーム", "稼働", "日報・点呼", "取り込み", "支払", "請求", "経費", "入金",
+      "資金繰り", "案件", "レポート", "気になること", "車両と書類", "採用と契約", "AI 相談", "チャット", "設定",
     ]);
   });
 
-  it("見出し（group）は 入力・経営・相談 の 3 つで、ホームと設定には付かない", () => {
+  it("見出し（group）は 入力・経営・管理・相談 の 4 つで、ホームと設定には付かない", () => {
     const groups = MAIN_NAV.map((i) => i.group);
     expect(groups[0]).toBeUndefined();
     expect(groups[groups.length - 1]).toBeUndefined();
-    expect([...new Set(groups.filter(Boolean))]).toEqual(["入力", "経営", "相談"]);
+    expect([...new Set(groups.filter(Boolean))]).toEqual(["入力", "経営", "管理", "相談"]);
     // 同じ見出しは連続していること（サイドナビが見出しを 1 回だけ出すため）
     const seen: string[] = [];
     for (const g of groups) {
@@ -120,9 +120,10 @@ describe("ナビの定義", () => {
     expect(BOTTOM_NAV.map((i) => i.label)).toEqual(["ホーム", "稼働", "支払", "請求"]);
   });
 
-  it("メニューシートには下タブに入らない 9 項目が入り、合計はサイドナビと一致する", () => {
+  it("メニューシートには下タブに入らない 13 項目が入り、合計はサイドナビと一致する", () => {
     expect(MORE_NAV.map((i) => i.href)).toEqual([
-      "/expenses", "/bank", "/cashflow", "/projects", "/reports", "/alerts", "/ai", "/chat", "/settings",
+      "/daily", "/intake", "/expenses", "/bank", "/cashflow", "/projects", "/reports", "/alerts",
+      "/fleet", "/hr", "/ai", "/chat", "/settings",
     ]);
     expect(BOTTOM_NAV.length + MORE_NAV.length).toBe(MAIN_NAV.length);
     expect(MORE_NAV.some((m) => BOTTOM_NAV.some((b) => b.href === m.href))).toBe(false);
@@ -137,8 +138,8 @@ describe("ナビの定義", () => {
     expect(badgeText(100)).toBe("99+");
   });
 
-  it("ドライバーポータルは 2 項目のままで、下タブにもメニューを出さない", () => {
-    expect(DRIVER_NAV.map((i) => i.href)).toEqual(["/driver", "/driver/account"]);
+  it("ドライバーポータルは 3 項目で、下タブにもメニューを出さない", () => {
+    expect(DRIVER_NAV.map((i) => i.href)).toEqual(["/driver/today", "/driver", "/driver/account"]);
     expect(navItemsFor("driver")).toEqual(DRIVER_NAV);
     expect(bottomItemsFor("driver")).toEqual(DRIVER_NAV);
     expect(navItemsFor("staff")).toEqual(MAIN_NAV);

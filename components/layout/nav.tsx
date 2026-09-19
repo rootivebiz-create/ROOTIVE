@@ -12,6 +12,10 @@ import {
   Landmark,
   Briefcase,
   BarChart3,
+  ClipboardCheck,
+  Truck,
+  UserPlus,
+  FileUp,
   TriangleAlert,
   Sparkles,
   MessagesSquare,
@@ -36,10 +40,12 @@ export interface NavItem {
 /** 未読・未対応の件数（href をキーにした数。0 は出さない） */
 export type NavBadges = Record<string, number>;
 
-/** PC のサイドナビ（13 項目。group ごとに見出しを付けて表示する） */
+/** PC のサイドナビ（17 項目。group ごとに見出しを付けて表示する） */
 export const MAIN_NAV: NavItem[] = [
   { href: "/dashboard", label: "ホーム", icon: Home },
   { href: "/entries", label: "稼働", icon: ClipboardList, group: "入力" },
+  { href: "/daily", label: "日報・点呼", icon: ClipboardCheck, group: "入力" },
+  { href: "/intake", label: "取り込み", icon: FileUp, group: "入力" },
   { href: "/payouts", label: "支払", icon: Wallet, group: "入力" },
   { href: "/invoices", label: "請求", icon: Receipt, group: "入力" },
   { href: "/expenses", label: "経費", icon: Coins, group: "入力" },
@@ -48,6 +54,8 @@ export const MAIN_NAV: NavItem[] = [
   { href: "/projects", label: "案件", icon: Briefcase, group: "経営" },
   { href: "/reports", label: "レポート", icon: BarChart3, group: "経営" },
   { href: "/alerts", label: "気になること", icon: TriangleAlert, group: "経営" },
+  { href: "/fleet", label: "車両と書類", icon: Truck, group: "管理" },
+  { href: "/hr", label: "採用と契約", icon: UserPlus, group: "管理" },
   { href: "/ai", label: "AI 相談", icon: Sparkles, group: "相談" },
   { href: "/chat", label: "チャット", icon: MessagesSquare, group: "相談" },
   { href: "/settings", label: "設定", icon: Settings },
@@ -68,8 +76,9 @@ export const MENU_TAB = { label: "メニュー", icon: Menu } as const;
 /** スマホの下タブの上限（ホーム・稼働・支払・請求・メニュー） */
 export const BOTTOM_TABS_MAX = 5;
 
-/** ドライバーポータル用 */
+/** ドライバーポータル用（毎日の入口である「今日の報告」を先頭に置く） */
 export const DRIVER_NAV: NavItem[] = [
+  { href: "/driver/today", label: "今日の報告", icon: ClipboardCheck },
   { href: "/driver", label: "支払明細", icon: FileText },
   { href: "/driver/account", label: "アカウント", icon: UserCircle },
 ];

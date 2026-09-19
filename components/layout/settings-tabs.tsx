@@ -13,6 +13,7 @@ const ITEMS: { href: string; label: string; roles?: Role[] }[] = [
   { href: "/settings/clients", label: "取引先" },
   { href: "/settings/expenses", label: "経費カテゴリ" },
   { href: "/settings/months", label: "月締め" },
+  { href: "/settings/safety", label: "安全管理", roles: ["owner", "admin"] },
   { href: "/settings/integrations", label: "外部連携", roles: ["owner", "admin"] },
   { href: "/settings/company", label: "会社設定", roles: ["owner"] },
   { href: "/settings/users", label: "ユーザー管理", roles: ["owner"] },
