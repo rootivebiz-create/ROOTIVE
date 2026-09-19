@@ -1,4 +1,4 @@
-import { Download, Lock } from "lucide-react";
+import { Banknote, Download, FileSpreadsheet, Lock } from "lucide-react";
 import { requireStaff } from "@/lib/auth/session";
 import { isMonthClosed } from "@/lib/db/queries";
 import { monthFromParam, monthToDate, formatMonthJa } from "@/lib/month";
@@ -13,7 +13,8 @@ import { MonthLink } from "@/components/layout/month-link";
 export const metadata = { title: "支払明細" };
 
 export default async function PayoutsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const { supabase, company } = await requireStaff();
+  const { supabase, company, profile } = await requireStaff();
+  const canTransfer = profile.role === "owner" || profile.role === "admin";
   const sp = await searchParams;
   const month = monthFromParam(sp.m);
 
@@ -64,9 +65,19 @@ export default async function PayoutsPage({ searchParams }: { searchParams: Prom
                 締め済み
               </Badge>
             )}
+            {canTransfer && rows.length > 0 && (
+              <MonthLink href="/payouts/transfer" className={cn(buttonVariants({ variant: "default", size: "sm" }))}>
+                <Banknote className="h-4 w-4" />
+                振込データ
+              </MonthLink>
+            )}
             <a href={exportUrls.payoutsCsv(month)} download className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
               <Download className="h-4 w-4" />
               支払一覧 CSV
+            </a>
+            <a href={exportUrls.payoutsXlsx(month)} download className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+              <FileSpreadsheet className="h-4 w-4" />
+              支払一覧 Excel
             </a>
             <a href={exportUrls.yayoiCsv(month)} download className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
               <Download className="h-4 w-4" />
