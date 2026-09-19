@@ -4,7 +4,7 @@ import type { ServerSupabase } from "@/lib/supabase/server";
 import type { DriverMonthSummary, ExpenseSummaryRow, MonthPl, ProjectSummary } from "@/lib/db/types";
 import { formatMonthJa, monthToDate, prevMonth } from "@/lib/month";
 import { ActionError } from "@/lib/actions/result";
-import { resolveAnthropicModel } from "./config";
+import { AI_DISABLED_MESSAGE, AI_MAX_TOKENS, AI_TIMEOUT_MS, resolveAnthropicModel } from "./config";
 import { extractFindings, MAX_FINDINGS, type InsightFinding } from "./findings";
 
 /** 小数 2 桁に丸めた数値（JSON を小さくするため） */
@@ -263,38 +263,74 @@ export interface InsightResult {
   raw: string;
 }
 
-/** Claude に月次分析を依頼し、所見の配列を返す（API キーは呼び出し元で確認済みであること） */
-export async function requestInsights(source: InsightSource): Promise<InsightResult> {
+/** Claude への 1 回のやり取り（AI 機能で共通に使う） */
+export interface ClaudeCallParams {
+  /** システムプロンプト（日本語） */
+  system: string;
+  /** 会話（先頭は user、role は交互）。最後は必ず user の発言にする */
+  messages: { role: "user" | "assistant"; content: string }[];
+  /** 応答の上限トークン */
+  maxTokens?: number;
+  /** 応答が空だったときのエラーメッセージ */
+  emptyMessage?: string;
+}
+
+export interface ClaudeCallResult {
+  model: string;
+  text: string;
+}
+
+/** Anthropic のエラー種別を日本語の ActionError へ変換する（変換できないものはそのまま返す） */
+export function translateAnthropicError(e: unknown, model: string): unknown {
+  if (e instanceof Anthropic.AuthenticationError) return new ActionError("ANTHROPIC_API_KEY が無効です。設定を確認してください。");
+  if (e instanceof Anthropic.PermissionDeniedError) return new ActionError("この API キーではモデルを利用できません。");
+  if (e instanceof Anthropic.NotFoundError) return new ActionError(`モデル「${model}」が見つかりません。ANTHROPIC_MODEL を確認してください。`);
+  if (e instanceof Anthropic.RateLimitError) return new ActionError("AI の利用制限に達しました。しばらく待ってから再度お試しください。");
+  if (e instanceof Anthropic.APIConnectionTimeoutError) return new ActionError("AI の応答がタイムアウトしました。もう一度お試しください。");
+  if (e instanceof Anthropic.APIConnectionError) return new ActionError("AI サービスに接続できませんでした。");
+  if (e instanceof Anthropic.APIError) return new ActionError(`AI の呼び出しに失敗しました（${e.status ?? "?"}）: ${e.message}`);
+  return e;
+}
+
+/**
+ * Claude を 1 回呼んでテキストを返す（API キーの有無は呼び出し元で確認済みであること）。
+ * 月次分析・AI チャット・文章の作成で共通に使う。
+ */
+export async function callClaude(params: ClaudeCallParams): Promise<ClaudeCallResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
-  if (!apiKey) throw new ActionError("ANTHROPIC_API_KEY が設定されていません");
+  if (!apiKey) throw new ActionError(AI_DISABLED_MESSAGE);
   const model = resolveAnthropicModel();
-  const client = new Anthropic({ apiKey, timeout: 50_000, maxRetries: 0 });
+  const client = new Anthropic({ apiKey, timeout: AI_TIMEOUT_MS, maxRetries: 0 });
 
   let response: Anthropic.Message;
   try {
     response = await client.messages.create({
       model,
-      max_tokens: 4096,
-      system: INSIGHT_SYSTEM_PROMPT,
-      messages: [{ role: "user", content: buildInsightUserMessage(source) }],
+      max_tokens: params.maxTokens ?? AI_MAX_TOKENS.analysis,
+      system: params.system,
+      messages: params.messages.map((m) => ({ role: m.role, content: m.content })),
     });
   } catch (e) {
-    if (e instanceof Anthropic.AuthenticationError) throw new ActionError("ANTHROPIC_API_KEY が無効です。設定を確認してください。");
-    if (e instanceof Anthropic.PermissionDeniedError) throw new ActionError("この API キーではモデルを利用できません。");
-    if (e instanceof Anthropic.NotFoundError) throw new ActionError(`モデル「${model}」が見つかりません。ANTHROPIC_MODEL を確認してください。`);
-    if (e instanceof Anthropic.RateLimitError) throw new ActionError("AI の利用制限に達しました。しばらく待ってから再度お試しください。");
-    if (e instanceof Anthropic.APIConnectionTimeoutError) throw new ActionError("AI の応答がタイムアウトしました。もう一度お試しください。");
-    if (e instanceof Anthropic.APIConnectionError) throw new ActionError("AI サービスに接続できませんでした。");
-    if (e instanceof Anthropic.APIError) throw new ActionError(`AI 分析に失敗しました（${e.status ?? "?"}）: ${e.message}`);
-    throw e;
+    throw translateAnthropicError(e, model);
   }
 
-  if (response.stop_reason === "refusal") throw new ActionError("AI が分析を実行できませんでした。時間をおいて再度お試しください。");
-  const raw = response.content
+  if (response.stop_reason === "refusal") throw new ActionError("AI が応答できませんでした。時間をおいて再度お試しください。");
+  const text = response.content
     .filter((b): b is Anthropic.TextBlock => b.type === "text")
     .map((b) => b.text)
     .join("\n")
     .trim();
-  if (!raw) throw new ActionError("AI から所見が返りませんでした。");
-  return { model: response.model || model, findings: extractFindings(raw), raw };
+  if (!text) throw new ActionError(params.emptyMessage ?? "AI から回答が返りませんでした。");
+  return { model: response.model || model, text };
+}
+
+/** Claude に月次分析を依頼し、所見の配列を返す（API キーは呼び出し元で確認済みであること） */
+export async function requestInsights(source: InsightSource): Promise<InsightResult> {
+  const { model, text } = await callClaude({
+    system: INSIGHT_SYSTEM_PROMPT,
+    messages: [{ role: "user", content: buildInsightUserMessage(source) }],
+    maxTokens: AI_MAX_TOKENS.analysis,
+    emptyMessage: "AI から所見が返りませんでした。",
+  });
+  return { model, findings: extractFindings(text), raw: text };
 }

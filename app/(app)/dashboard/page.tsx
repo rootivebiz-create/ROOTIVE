@@ -4,7 +4,7 @@ import { requireStaff, canEdit } from "@/lib/auth/session";
 import { loadDashboardData } from "@/lib/db/queries-dashboard";
 import { loadAlerts, loadAlertSummary, loadExpenseSummary, loadMonthPl } from "@/lib/db/queries";
 import { isAiInsightsEnabled } from "@/lib/ai/config";
-import { normalizeFindings } from "@/lib/ai/findings";
+import { normalizeActions, normalizeInsightFindings } from "@/lib/ai/findings";
 import { formatMonthJa, monthFromParam, monthToDate, prevMonth } from "@/lib/month";
 import { PageHeader } from "@/components/ui/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -16,7 +16,7 @@ import { RevenueBreakdown } from "@/components/dashboard/revenue-breakdown";
 import { ProfitTrendChart } from "@/components/dashboard/profit-trend-chart";
 import { DriverSummaryTable, type DriverSummaryRow } from "@/components/dashboard/driver-summary-table";
 import { DashboardWarnings } from "@/components/dashboard/warnings";
-import { AiInsightsCard } from "@/components/dashboard/ai-insights-card";
+import { AiSummaryCard } from "@/components/ai/ai-summary-card";
 import { TargetCard } from "@/components/dashboard/target-card";
 import { ForecastCard } from "@/components/dashboard/forecast-card";
 import { ExpenseCard } from "@/components/dashboard/expense-card";
@@ -65,7 +65,15 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     profitRate: Number(data.summary.profit_rate ?? 0),
   };
 
-  const insight = data.insight ? { model: data.insight.model, createdAt: data.insight.created_at, findings: normalizeFindings(data.insight.findings) } : null;
+  const analysis = data.insight
+    ? {
+        model: data.insight.model,
+        createdAt: data.insight.created_at,
+        summary: data.insight.summary ?? "",
+        findings: normalizeInsightFindings(data.insight.findings),
+        actions: normalizeActions(data.insight.actions),
+      }
+    : null;
 
   return (
     <div className="space-y-4">
@@ -185,7 +193,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </CardContent>
       </Card>
 
-      {aiEnabled && <AiInsightsCard month={month} insight={insight} canRun={canEdit(profile.role)} />}
+      <AiSummaryCard month={month} analysis={analysis} aiEnabled={aiEnabled} />
     </div>
   );
 }

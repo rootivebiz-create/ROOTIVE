@@ -1,46 +1,30 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
-import { requireAdminAction } from "@/lib/auth/session";
-import { ActionError, runAction, type ActionResult } from "@/lib/actions/result";
-import { monthSchema } from "@/lib/schemas/common";
-import { monthToDate } from "@/lib/month";
-import { isAiInsightsEnabled } from "@/lib/ai/config";
-import { loadInsightSource, requestInsights } from "@/lib/ai/insights";
-import type { InsightFinding } from "@/lib/ai/findings";
+import type { ActionResult } from "@/lib/actions/result";
+import { generateAnalysisAction } from "@/lib/actions/ai";
+import type { InsightAction, InsightFindingDetail } from "@/lib/ai/findings";
 
+/**
+ * AI 月次分析の結果。
+ * 旧ダッシュボードカードが使っていた { model, findings } の形は維持したまま、
+ * 総括（summary）と改善策（actions）を足している。
+ */
 export interface GenerateInsightsResult {
   model: string;
-  findings: InsightFinding[];
+  /** 所見（重さ付き。InsightFinding と互換） */
+  findings: InsightFindingDetail[];
+  summary: string;
+  actions: InsightAction[];
 }
 
 /**
- * AI 月次分析（§4.1）：当月の集計 JSON を Claude に渡し、所見を ai_insights に保存する。
- * admin 以上。ANTHROPIC_API_KEY が無い場合はエラー。
+ * AI 月次分析（§4.1 → AI の経営分析）：当月のデータパックを Claude に渡し、
+ * 総括・所見・改善策を ai_insights（kind='monthly'）に保存する。
+ * 実体は lib/actions/ai.ts の generateAnalysisAction（admin 以上・ANTHROPIC_API_KEY 必須）。
  */
 export async function generateInsightsAction(month: string): Promise<ActionResult<GenerateInsightsResult>> {
-  return runAction(async () => {
-    const { supabase, user, company } = await requireAdminAction();
-    const m = monthSchema.parse(month);
-    if (!isAiInsightsEnabled()) throw new ActionError("ANTHROPIC_API_KEY が設定されていません");
-
-    const source = await loadInsightSource(supabase, company.id, m);
-    if (source.company.entry_count === 0 && source.drivers.length === 0) {
-      throw new ActionError("この月には稼働データがないため分析できません。");
-    }
-
-    const { model, findings } = await requestInsights(source);
-
-    const { error } = await supabase.from("ai_insights").insert({
-      company_id: company.id,
-      month: monthToDate(m),
-      model,
-      findings,
-      created_by: user.id,
-    });
-    if (error) throw error;
-
-    revalidatePath("/dashboard");
-    return { model, findings };
-  }, "AI 月次分析を保存しました。");
+  const res = await generateAnalysisAction(month);
+  if (!res.ok) return res;
+  const { model, summary, findings, actions } = res.data;
+  return { ok: true, data: { model, findings, summary, actions }, message: res.message };
 }
