@@ -8,8 +8,8 @@
  * - 機密（メールアドレス・API キー・住所など）は入れない。
  */
 import type { ServerSupabase } from "@/lib/supabase/server";
-import type { Alert, DriverMonthSummary, ExpenseSummaryRow, InvoiceListRow, MonthPl, ProjectPl } from "@/lib/db/types";
-import { emptyMonthPl, loadAlerts, loadCashForecast, loadCashSnapshots } from "@/lib/db/queries";
+import type { Alert, DriverMonthSummary, ExpenseSummaryRow, InvoiceListRow, LoanRow, MonthKpi, MonthPl, ProjectPl, TaxTaskRow } from "@/lib/db/types";
+import { emptyMonthPl, loadAlerts, loadCashForecast, loadCashSnapshots, loadLoans, loadMonthKpi, loadTaxTasks } from "@/lib/db/queries";
 import { forecastMonth, type ForecastResult } from "@/lib/calc/forecast";
 import { sumMoney } from "@/lib/calc/money";
 import { addMonths, dateToMonth, formatMonthJa, monthToDate } from "@/lib/month";
@@ -23,6 +23,8 @@ export const AI_CONTEXT_LIMITS = {
   expenses: 30,
   invoices: 30,
   alerts: 20,
+  loans: 10,
+  taxTasks: 10,
   /** 資金繰りを何日先まで集計するか */
   cashDays: 60,
 } as const;
@@ -165,6 +167,44 @@ export interface AiCashSummary {
   event_count: number;
 }
 
+/** 会社 × 月の経営指標（v_month_kpi）。限界利益と損益分岐点 */
+export interface AiKpiRow {
+  contribution: number;
+  contribution_rate: number;
+  net_fixed_cost: number;
+  break_even_bill: number;
+  payout_rate: number;
+  bill_per_driver: number;
+  profit_per_driver: number;
+  bill_per_work_day: number;
+  work_day_count: number;
+  bill_target: number;
+  profit_target: number;
+  expense_target: number;
+  bill_achievement: number | null;
+  profit_achievement: number | null;
+  expense_achievement: number | null;
+}
+
+/** 借入と返済（v_loan_list）。金融機関名までで、口座などは渡さない */
+export interface AiLoanRow {
+  name: string;
+  lender: string;
+  annual_rate: number;
+  remaining_principal: number;
+  next_due_on: string | null;
+  next_total: number;
+  status: string;
+}
+
+/** 近づいている決算・税務の期限（v_tax_task_list） */
+export interface AiTaxRow {
+  title: string;
+  due_on: string;
+  days_left: number;
+  urgency: string;
+}
+
 export interface AiAlertRow {
   title: string;
   detail: string;
@@ -187,6 +227,9 @@ export interface AiContext {
   invoices: AiInvoiceRow[];
   cash: AiCashSummary | null;
   alerts: AiAlertRow[];
+  kpi: AiKpiRow | null;
+  loans: AiLoanRow[];
+  tax_tasks: AiTaxRow[];
 }
 
 export interface LoadAiContextOptions {
@@ -347,6 +390,47 @@ export function summarizeCash(
  * 会社の実データから AI に渡すデータパックを作る。
  * 失敗しても会話・分析を止めないよう、資金繰り・アラートなど付随する情報は取れなければ省略する。
  */
+function toKpiRow(r: MonthKpi): AiKpiRow {
+  return {
+    contribution: round2(r.contribution),
+    contribution_rate: round4(r.contribution_rate),
+    net_fixed_cost: round2(r.net_fixed_cost),
+    break_even_bill: round2(r.break_even_bill),
+    payout_rate: round4(r.payout_rate),
+    bill_per_driver: round2(r.bill_per_driver),
+    profit_per_driver: round2(r.profit_per_driver),
+    bill_per_work_day: round2(r.bill_per_work_day),
+    work_day_count: Number(r.work_day_count ?? 0),
+    bill_target: round2(r.bill_target),
+    profit_target: round2(r.profit_target),
+    expense_target: round2(r.expense_target),
+    bill_achievement: r.bill_achievement == null ? null : round4(r.bill_achievement),
+    profit_achievement: r.profit_achievement == null ? null : round4(r.profit_achievement),
+    expense_achievement: r.expense_achievement == null ? null : round4(r.expense_achievement),
+  };
+}
+
+function toLoanRow(r: LoanRow): AiLoanRow {
+  return {
+    name: r.name ?? "",
+    lender: r.lender ?? "",
+    annual_rate: round4(r.annual_rate),
+    remaining_principal: round2(r.remaining_principal),
+    next_due_on: r.next_due_on ?? null,
+    next_total: round2(r.next_total),
+    status: r.status ?? "",
+  };
+}
+
+function toTaxRow(r: TaxTaskRow): AiTaxRow {
+  return {
+    title: r.title ?? "",
+    due_on: r.due_on ?? "",
+    days_left: Number(r.days_left ?? 0),
+    urgency: r.urgency ?? "",
+  };
+}
+
 export async function loadAiContext(
   supabase: ServerSupabase,
   companyId: string,
@@ -377,10 +461,13 @@ export async function loadAiContext(
   if (invoicesRes.error) throw invoicesRes.error;
 
   // 資金繰りとアラートは補助情報なので、取得に失敗しても分析は続ける
-  const [cashEvents, snapshots, alerts] = await Promise.all([
+  const [cashEvents, snapshots, alerts, kpi, loans, taxTasks] = await Promise.all([
     loadCashForecast(supabase, cashFrom, cashTo).catch(() => null),
     loadCashSnapshots(supabase, companyId, 1).catch(() => []),
     loadAlerts(supabase, companyId, { status: "open", limit: AI_CONTEXT_LIMITS.alerts }).catch(() => []),
+    loadMonthKpi(supabase, companyId, monthDate).catch(() => null),
+    loadLoans(supabase, companyId).catch(() => []),
+    loadTaxTasks(supabase, companyId, { from: cashFrom, to: addDays(cashFrom, 90), status: "todo" }).catch(() => []),
   ]);
 
   const monthRows = monthsRes.data ?? [];
@@ -408,6 +495,9 @@ export async function loadAiContext(
     invoices: limitRows(invoicesRes.data, AI_CONTEXT_LIMITS.invoices).map(toInvoiceRow),
     cash: cashEvents ? summarizeCash(cashEvents, snapshot, cashFrom, cashTo) : null,
     alerts: limitRows(alerts, AI_CONTEXT_LIMITS.alerts).map(toAlertRow),
+    kpi: kpi ? toKpiRow(kpi) : null,
+    loans: limitRows(loans.filter((l) => l.status !== "paid"), AI_CONTEXT_LIMITS.loans).map(toLoanRow),
+    tax_tasks: limitRows(taxTasks, AI_CONTEXT_LIMITS.taxTasks).map(toTaxRow),
   };
 }
 
@@ -421,6 +511,9 @@ export function describeAiContext(ctx: AiContext): string {
     `未入金の請求書 ${ctx.invoices.length} 件`,
   ];
   if (ctx.cash) parts.push(`資金繰り ${ctx.cash.event_count} 件`);
+  if (ctx.kpi) parts.push("経営指標（限界利益・損益分岐点）");
+  if ((ctx.loans?.length ?? 0) > 0) parts.push(`借入 ${ctx.loans.length} 件`);
+  if ((ctx.tax_tasks?.length ?? 0) > 0) parts.push(`近い税務の期限 ${ctx.tax_tasks.length} 件`);
   if (ctx.alerts.length > 0) parts.push(`未対応のアラート ${ctx.alerts.length} 件`);
   return `${ctx.month_label}（${ctx.is_closed ? "締め済み" : "未締め"}）のデータを渡しました：${parts.join("・")}。`;
 }

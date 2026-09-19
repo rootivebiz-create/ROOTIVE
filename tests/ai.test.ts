@@ -131,6 +131,9 @@ describe("データパックのヘルパー（context.ts）", () => {
       invoices: [{}],
       cash: { event_count: 7 },
       alerts: [{}, {}],
+      kpi: { break_even_bill: 1000000 },
+      loans: [{}],
+      tax_tasks: [{}, {}, {}],
     } as unknown as AiContext;
     const text = describeAiContext(ctx);
     assert.match(text, /2026年9月/);
@@ -139,7 +142,29 @@ describe("データパックのヘルパー（context.ts）", () => {
     assert.match(text, /ドライバー 1 名/);
     assert.match(text, /案件 3 件/);
     assert.match(text, /資金繰り 7 件/);
+    assert.match(text, /経営指標/);
+    assert.match(text, /借入 1 件/);
+    assert.match(text, /近い税務の期限 3 件/);
     assert.match(text, /未対応のアラート 2 件/);
+  });
+
+  it("describeAiContext：0014 の項目が無い古いデータでも落ちない", () => {
+    const ctx = {
+      month: "2026-09",
+      month_label: "2026年9月",
+      is_closed: true,
+      months: [{}],
+      drivers: [],
+      projects: [],
+      expenses: [],
+      invoices: [],
+      cash: null,
+      alerts: [],
+    } as unknown as AiContext;
+    const text = describeAiContext(ctx);
+    assert.match(text, /締め済み/);
+    assert.doesNotMatch(text, /借入/);
+    assert.doesNotMatch(text, /経営指標/);
   });
 });
 
