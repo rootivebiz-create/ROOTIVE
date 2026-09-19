@@ -60,6 +60,19 @@ export const exportUrls = {
   dailyXlsx: (month: string, kind: "report" | "entry") =>
     `/api/export/daily.xlsx?m=${encodeURIComponent(month)}&kind=${encodeURIComponent(kind)}`,
 
+  /** 気になること CSV（その月。status で絞り込み）*/
+  alertsCsv: (month: string, status = "open") =>
+    `/api/export/alerts.csv?m=${encodeURIComponent(month)}&status=${encodeURIComponent(status)}`,
+  /** 銀行明細 CSV（消込の状態で絞り込み）*/
+  bankCsv: (status = "all") => `/api/export/bank.csv?status=${encodeURIComponent(status)}`,
+  /** 車両 / 書類と期限の CSV */
+  fleetCsv: (kind: "vehicle" | "document") => `/api/export/fleet.csv?kind=${encodeURIComponent(kind)}`,
+  /** 応募者 / 業務委託契約の CSV */
+  hrCsv: (kind: "applicant" | "contract") => `/api/export/hr.csv?kind=${encodeURIComponent(kind)}`,
+  /** 点呼記録簿・業務記録 / 日別の稼働の CSV */
+  dailyCsv: (month: string, kind: "report" | "entry") =>
+    `/api/export/daily.csv?m=${encodeURIComponent(month)}&kind=${encodeURIComponent(kind)}`,
+
   // ---------------------------------------------------------------------------
   // 振込・月次パック・経営レポート（0014）
   // ---------------------------------------------------------------------------
@@ -67,8 +80,9 @@ export const exportUrls = {
   transferTxt: (month: string) => `/api/export/transfer.txt?m=${encodeURIComponent(month)}`,
   /** 振込一覧 CSV（銀行・支店・口座・金額。目視確認用） */
   transferCsv: (month: string) => `/api/export/transfer.csv?m=${encodeURIComponent(month)}`,
-  /** 月次パック ZIP（明細 PDF・請求書 PDF・CSV・振込データを 1 つに） */
-  monthPackZip: (month: string) => `/api/export/month-pack.zip?m=${encodeURIComponent(month)}`,
+  /** 月次パック ZIP（明細 PDF・請求書 PDF・CSV・振込データを 1 つに）。parts で入れるものを選ぶ */
+  monthPackZip: (month: string, parts?: string[]) =>
+    `/api/export/month-pack.zip?m=${encodeURIComponent(month)}${parts && parts.length > 0 ? `&parts=${encodeURIComponent(parts.join(","))}` : ""}`,
   /** 月次の経営レポート PDF（P/L・経営指標・推移） */
   monthReportPdf: (month: string) => `/api/export/month-report.pdf?m=${encodeURIComponent(month)}`,
   /** 契約書ファイル（Storage の contracts バケット。署名付き URL へリダイレクト） */
