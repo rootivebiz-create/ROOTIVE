@@ -24,6 +24,7 @@ export function normalizeDigits(raw: string): string {
   return raw
     .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
     .replace(/[：]/g, ":")
+    .replace(/[．]/g, ".")
     .replace(/[－ー−‐]/g, "-")
     .replace(/[／]/g, "/")
     .replace(/\s+/g, "")
