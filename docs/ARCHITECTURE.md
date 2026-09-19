@@ -373,6 +373,9 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 | 案件別採算 CSV | `app/api/export/projects.csv` + `lib/exports/projects-csv.ts` | 案件ごとの売上・直課経費・案件利益・利益率・目標判定（当月／全期間） |
 | ドライバー別採算 CSV | `app/api/export/drivers-pl.csv` + `lib/exports/drivers-pl-csv.ts` | ドライバーごとの売上・支払・会社利益・利益率・税込支払額（合計行つき） |
 | 年次レポート CSV | `app/api/export/report.csv` + `lib/exports/report-csv.ts` | 月次推移（売上・会社利益・経費・営業利益・営業利益率・消費税・税込支払額・状態）＋合計行 |
+| Excel（.xlsx）| `app/api/export/*.xlsx` + `lib/exports/xlsx.ts` | 依存なしの自前 xlsx ライター（`zip.ts` で OOXML を包む）。金額・率・数量・日付の書式、見出しの太字と固定行、オートフィルタ、列幅の自動調整。CSV と同じ 15 種類（稼働・支払・経費・請求書・案件・ドライバー別採算・資金繰り・年次レポート・単価表・個人明細・気になること・銀行明細・車両と書類・採用と契約・日報）|
+| 全銀 総合振込データ | `app/api/export/transfer.txt` + `lib/exports/zengin.ts` | Shift_JIS・固定長 120 バイト・CRLF。ヘッダ／データ／トレーラ／エンドの 4 レコード。半角カナ変換（濁点の分解・法人格の略号）。口座情報を含むため owner/admin のみ。画面は `/payouts/transfer` |
+| 振込一覧 CSV | `app/api/export/transfer.csv` | 全銀データの目視確認用（銀行・支店・預金種目・口座番号・カナ名義・税込支払額・振込予定日）|
 | バックアップ JSON | `app/api/export/backup.json` → `export_backup()` | **version 4**（0015）。マスタ・稼働・支払・経費・請求書に加えて、車両・書類・日報・日別の稼働・安全管理者・指導・事故・取り込み定義・応募者・契約・税務の期限・借入と返済予定まで含む。外部連携のトークン・社内チャット・AI の履歴・監査ログ・アラート、Storage の画像は含まない |
 
 明細のデータ組み立ては `lib/statement/index.ts` に集約し、画面・PDF・CSV・テキスト・ドライバーポータルで共用しています。請求書は `lib/invoice/index.ts` に同じ形で集約しています。
