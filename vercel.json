@@ -8,12 +8,25 @@
     },
     "app/api/export/statements.zip/route.ts": {
       "maxDuration": 60
+    },
+    "app/api/export/month-pack.zip/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/export/month-report.pdf/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/cron/daily/route.ts": {
+      "maxDuration": 60
     }
   },
   "crons": [
     {
       "path": "/api/cron/keepalive",
       "schedule": "0 21 * * *"
+    },
+    {
+      "path": "/api/cron/daily",
+      "schedule": "0 22 * * *"
     }
   ]
 }

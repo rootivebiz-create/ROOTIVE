@@ -1166,4 +1166,21 @@ select public.t_assert((select count(*) from public.vehicles where company_id = 
 
 select public.test_logout();
 reset role;
-\echo '== すべてのアサーションが通りました（18〜24 節）'
+
+\echo '== 25. 異常の検知を cron から回す（detect_anomalies_core）'
+set role authenticated;
+select public.test_login(:'owner_a');
+select public.t_expect_error($$select public.detect_anomalies_core('00000000-0000-0000-0000-00000000000a', '2026-12-01')$$, '', 'ログイン中のユーザーは detect_anomalies_core を直接呼べない');
+select public.t_assert((public.detect_anomalies('2026-12-01')->>'detected')::integer >= 0, '入口の detect_anomalies は admin 以上なら呼べる');
+select public.test_login(:'viewer_a');
+select public.t_expect_error($$select public.detect_anomalies('2026-12-01')$$, 'FORBIDDEN', '閲覧者は検知を実行できない');
+select public.test_logout();
+reset role;
+
+-- サービスロール（cron）は会社を指定して検知できる
+set role service_role;
+select public.t_assert((public.detect_anomalies_core('00000000-0000-0000-0000-00000000000a', '2026-12-01')->>'detected')::integer > 0, 'サービスロールは会社を指定して検知できる');
+select public.t_assert((public.detect_anomalies_core('00000000-0000-0000-0000-00000000000b', '2026-12-01')->>'detected')::integer >= 0, '別の会社も指定して検知できる');
+select public.t_expect_error($$select public.detect_anomalies_core(null, '2026-12-01')$$, '', '会社の指定が無ければエラー');
+reset role;
+\echo '== すべてのアサーションが通りました（18〜25 節）'

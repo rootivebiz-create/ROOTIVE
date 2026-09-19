@@ -3256,6 +3256,13 @@ export type Database = {
         }
         Returns: Json
       }
+      detect_anomalies_core: {
+        Args: {
+          p_company_id: string
+          p_month: string
+        }
+        Returns: Json
+      }
       driver_day_items: {
         Args: Record<PropertyKey, never>
         Returns: {
