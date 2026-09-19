@@ -194,7 +194,7 @@ Supabase 標準のメールは英語で、しかも「送信した端末でし�
    | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 手順 6 の anon キー |
    | `SUPABASE_SERVICE_ROLE_KEY` | 手順 6 の service_role キー |
    | `NEXT_PUBLIC_APP_URL` | 本番 URL（例 `https://rootive-profit.vercel.app`。まだ不明ならこの予定値。手順 9 で直します） |
-   | `ANTHROPIC_API_KEY` | （任意）AI 月次分析を使う場合のみ。Anthropic Console で発行した `sk-ant-…` |
+   | `ANTHROPIC_API_KEY` | （任意）AI（経営分析・相談・文章の下書き）を使う場合のみ。Anthropic Console で発行した `sk-ant-…`。取り方と料金の目安は [AI_SETUP.md](AI_SETUP.md) |
    | `ANTHROPIC_MODEL` | （任意）AI のモデル名を指定したい場合のみ。未設定なら既定のモデル |
    | `CRON_SECRET` | **必須**。定期アクセス（下の補足）を第三者が呼べないようにする合言葉。**32 文字以上のランダムな英数字**（パスワード生成ツールで作る）。未設定だと `/api/cron/keepalive` が 503 を返して定期アクセスが無効になり、Supabase の一時停止を防げません。自動公開（QUICKSTART）では自動生成されます |
 

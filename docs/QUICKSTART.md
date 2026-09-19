@@ -70,7 +70,7 @@ GitHub のリポジトリ画面から「ボタンを押すだけ」で、Supabas
 | `SUPABASE_ACCESS_TOKEN` | 1-1 の `sbp_…` | 必須 |
 | `VERCEL_TOKEN` | 1-3 の Vercel トークン | 必須 |
 | `SUPABASE_ORG_ID` | 1-2 の組織 slug | 組織が複数あるときだけ |
-| `ANTHROPIC_API_KEY` | Anthropic Console で発行した `sk-ant-…` | AI 月次分析を使うときだけ |
+| `ANTHROPIC_API_KEY` | Anthropic Console で発行した `sk-ant-…` | AI（経営分析・相談・文章の下書き）を使うときだけ。取り方と料金の目安は [AI_SETUP.md](AI_SETUP.md) |
 
 Secrets は登録後に値を見ることができません（上書きは可能）。値の末尾に改行が入らないように注意してください。
 
