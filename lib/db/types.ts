@@ -20,6 +20,9 @@ export type VehicleOwnership = Enums<"vehicle_ownership">;
 export type IncidentKind = Enums<"incident_kind">;
 export type ApplicantStage = Enums<"applicant_stage">;
 export type ContractStatus = Enums<"contract_status">;
+export type BankAccountType = Enums<"bank_account_type">;
+export type TaxTaskStatus = Enums<"tax_task_status">;
+export type LoanStatus = Enums<"loan_status">;
 
 export type Company = Tables<"companies">;
 export type Profile = Tables<"profiles">;
@@ -64,6 +67,9 @@ export type ImportRun = Tables<"import_runs">;
 export type Applicant = Tables<"applicants">;
 export type ApplicantEvent = Tables<"applicant_events">;
 export type Contract = Tables<"contracts">;
+export type TaxTask = Tables<"tax_tasks">;
+export type Loan = Tables<"loans">;
+export type LoanPayment = Tables<"loan_payments">;
 
 export type WorkEntryCalc = Views<"v_work_entry_calc">;
 export type DriverMonthSummary = Views<"v_driver_month_summary">;
@@ -91,6 +97,10 @@ export type DayStatusRow = Views<"v_day_status">;
 export type ApplicantRow = Views<"v_applicant_list">;
 export type ContractRow = Views<"v_contract_list">;
 export type ImportProfileRow = Views<"v_import_profile_list">;
+export type MonthKpi = Views<"v_month_kpi">;
+export type LoanRow = Views<"v_loan_list">;
+export type LoanPaymentRow = Views<"v_loan_payment_list">;
+export type TaxTaskRow = Views<"v_tax_task_list">;
 
 /** ドライバーの「今日の報告」で選べる案件内容（RPC driver_day_items の 1 行） */
 export type DriverDayItem = Database["public"]["Functions"]["driver_day_items"]["Returns"][number];
@@ -103,6 +113,7 @@ export const CASH_KIND_LABELS: Record<string, string> = {
   invoice: "入金",
   payout: "ドライバー支払",
   expense: "経費",
+  loan: "借入の返済",
 };
 
 /** 資金繰りの状態 */
@@ -282,3 +293,39 @@ export interface Masters {
   projects: ProjectWithItems[];
   overrides: DriverPayOverride[];
 }
+
+/** 口座の種別（全銀の区分：普通 1・当座 2・貯蓄 4） */
+export const BANK_ACCOUNT_TYPES: BankAccountType[] = ["ordinary", "checking", "savings"];
+export const BANK_ACCOUNT_TYPE_LABELS: Record<BankAccountType, string> = {
+  ordinary: "普通",
+  checking: "当座",
+  savings: "貯蓄",
+};
+/** 全銀フォーマットの預金種目コード */
+export const BANK_ACCOUNT_TYPE_CODES: Record<BankAccountType, string> = {
+  ordinary: "1",
+  checking: "2",
+  savings: "4",
+};
+
+/** 税務・決算の期限の状態 */
+export const TAX_TASK_STATUS_LABELS: Record<TaxTaskStatus, string> = {
+  todo: "未対応",
+  done: "対応済み",
+  skipped: "対象外",
+};
+
+/** 期限の緊急度（v_tax_task_list.urgency） */
+export const TAX_URGENCY_LABELS: Record<string, string> = {
+  overdue: "期限切れ",
+  soon: "まもなく",
+  future: "先の予定",
+  done: "済",
+};
+
+/** 借入の状態 */
+export const LOAN_STATUS_LABELS: Record<LoanStatus, string> = {
+  active: "返済中",
+  paid: "完済",
+  planned: "予定",
+};

@@ -41,6 +41,11 @@ import type {
   ApplicantEvent,
   ContractRow,
   ImportProfileRow,
+  MonthKpi,
+  LoanRow,
+  LoanPaymentRow,
+  TaxTaskRow,
+  TaxTaskStatus,
   ImportRun,
 } from "@/lib/db/types";
 import { monthToDate } from "@/lib/month";
@@ -510,6 +515,55 @@ export async function loadImportProfiles(supabase: ServerSupabase, companyId: st
 /** 元請ファイルの取り込み履歴（新しい順） */
 export async function loadImportRuns(supabase: ServerSupabase, companyId: string, limit = 10): Promise<ImportRun[]> {
   const { data, error } = await supabase.from("import_runs").select("*").eq("company_id", companyId).order("created_at", { ascending: false }).limit(limit);
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** 会社 × 月の経営指標（限界利益・損益分岐点・1 人当たり・予算達成率） */
+export async function loadMonthKpi(supabase: ServerSupabase, companyId: string, month: string): Promise<MonthKpi | null> {
+  const { data, error } = await supabase.from("v_month_kpi").select("*").eq("company_id", companyId).eq("month", month).maybeSingle();
+  if (error) throw error;
+  return data ?? null;
+}
+
+/** 経営指標の推移（新しい月が先） */
+export async function loadMonthKpiRange(supabase: ServerSupabase, companyId: string, from: string, to: string): Promise<MonthKpi[]> {
+  const { data, error } = await supabase
+    .from("v_month_kpi")
+    .select("*")
+    .eq("company_id", companyId)
+    .gte("month", from)
+    .lte("month", to)
+    .order("month", { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** 借入金（返済中が先） */
+export async function loadLoans(supabase: ServerSupabase, companyId: string): Promise<LoanRow[]> {
+  const { data, error } = await supabase.from("v_loan_list").select("*").eq("company_id", companyId).order("status").order("start_on", { ascending: false });
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** 返済予定（期日順） */
+export async function loadLoanPayments(supabase: ServerSupabase, companyId: string, opts: { loanId?: string; from?: string; to?: string; limit?: number } = {}): Promise<LoanPaymentRow[]> {
+  let q = supabase.from("v_loan_payment_list").select("*").eq("company_id", companyId);
+  if (opts.loanId) q = q.eq("loan_id", opts.loanId);
+  if (opts.from) q = q.gte("due_on", opts.from);
+  if (opts.to) q = q.lte("due_on", opts.to);
+  const { data, error } = await q.order("due_on").limit(opts.limit ?? 600);
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** 決算・税務の期限（期日順） */
+export async function loadTaxTasks(supabase: ServerSupabase, companyId: string, opts: { from?: string; to?: string; status?: TaxTaskStatus } = {}): Promise<TaxTaskRow[]> {
+  let q = supabase.from("v_tax_task_list").select("*").eq("company_id", companyId);
+  if (opts.from) q = q.gte("due_on", opts.from);
+  if (opts.to) q = q.lte("due_on", opts.to);
+  if (opts.status) q = q.eq("status", opts.status);
+  const { data, error } = await q.order("due_on");
   if (error) throw error;
   return data ?? [];
 }

@@ -12,6 +12,8 @@ import {
   Landmark,
   Briefcase,
   BarChart3,
+  PiggyBank,
+  Download,
   ClipboardCheck,
   Truck,
   UserPlus,
@@ -40,7 +42,7 @@ export interface NavItem {
 /** 未読・未対応の件数（href をキーにした数。0 は出さない） */
 export type NavBadges = Record<string, number>;
 
-/** PC のサイドナビ（17 項目。group ごとに見出しを付けて表示する） */
+/** PC のサイドナビ（19 項目。group ごとに見出しを付けて表示する） */
 export const MAIN_NAV: NavItem[] = [
   { href: "/dashboard", label: "ホーム", icon: Home },
   { href: "/entries", label: "稼働", icon: ClipboardList, group: "入力" },
@@ -52,10 +54,12 @@ export const MAIN_NAV: NavItem[] = [
   { href: "/bank", label: "入金", icon: Banknote, group: "入力" },
   { href: "/cashflow", label: "資金繰り", icon: Landmark, group: "経営" },
   { href: "/projects", label: "案件", icon: Briefcase, group: "経営" },
+  { href: "/finance", label: "財務", icon: PiggyBank, group: "経営" },
   { href: "/reports", label: "レポート", icon: BarChart3, group: "経営" },
   { href: "/alerts", label: "気になること", icon: TriangleAlert, group: "経営" },
   { href: "/fleet", label: "車両と書類", icon: Truck, group: "管理" },
   { href: "/hr", label: "採用と契約", icon: UserPlus, group: "管理" },
+  { href: "/exports", label: "出力", icon: Download, group: "管理" },
   { href: "/ai", label: "AI 相談", icon: Sparkles, group: "相談" },
   { href: "/chat", label: "チャット", icon: MessagesSquare, group: "相談" },
   { href: "/settings", label: "設定", icon: Settings },

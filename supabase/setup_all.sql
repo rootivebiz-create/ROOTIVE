@@ -7332,7 +7332,7 @@ begin
     fp := public.record_alert(cid, p_month, 'tax_due', 'medium',
       r.title || ' があと ' || r.days_left || ' 日です',
       '期限 ' || to_char(r.due_on, 'YYYY/MM/DD') || '。済んだら「対応済み」にしてください。',
-      null, 'tax_tasks', r.id::text, '/tax', 'tax_due:' || r.id);
+      null, 'tax_tasks', r.id::text, '/finance?tab=tax', 'tax_due:' || r.id);
     fps := fps || fp;
   end loop;
 
@@ -7346,7 +7346,7 @@ begin
     fp := public.record_alert(cid, p_month, 'tax_overdue', 'high',
       r.title || ' の期限を過ぎています',
       '期限 ' || to_char(r.due_on, 'YYYY/MM/DD') || ' を過ぎています。対応が済んでいれば「対応済み」にしてください。',
-      null, 'tax_tasks', r.id::text, '/tax', 'tax_overdue:' || r.id);
+      null, 'tax_tasks', r.id::text, '/finance?tab=tax', 'tax_overdue:' || r.id);
     fps := fps || fp;
   end loop;
 
