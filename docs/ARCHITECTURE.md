@@ -18,7 +18,7 @@ ROOTIVE 利益管理システムの仕組みを、開発者・引き継ぎ担当
 │  app/auth/{confirm,callback,signout}  メールリンク検証（token_hash）・PKCE・ログアウト │
 │  app/(app)/*                          スタッフ画面（owner / admin / viewer）        │
 │  app/driver/*                         ドライバーポータル（driver）               │
-│  app/api/export/*                     CSV / 弥生 CSV / PDF / バックアップ JSON      │
+│  app/api/export/*                     CSV / Excel / PDF / 全銀振込 / 月次パック ZIP    │
 │  app/api/cron/keepalive               Vercel Cron（毎日）→ Supabase 一時停止の防止     │
 │  app/api/cron/daily                   Vercel Cron（毎朝 7 時）→ 異常の検知と LINE 通知   │
 │  middleware.ts                        セッション Cookie 更新・未ログインを /login へ   │
@@ -27,6 +27,8 @@ ROOTIVE 利益管理システムの仕組みを、開発者・引き継ぎ担当
 │  lib/auth        セッション・ロール確認          lib/schemas  zod スキーマ           │
 │  lib/statement   明細データ組み立て            lib/pdf      @react-pdf/renderer     │
 │  lib/yayoi       弥生仕訳 CSV                 lib/migrate  試作 JSON 変換（uuid v5） │
+│  lib/exports     CSV / xlsx / 全銀 / ZIP        lib/finance  予実・返済・期限（純関数）  │
+│  lib/kpi         経営指標の判定と助言           lib/alerts   異常の表示                 │
 │  lib/supabase    server（RLS 適用）/ admin（service_role、サーバー専用）             │
 └───────────────┬──────────────────────────────────────────────────────┘
                 │ supabase-js（anon キー + ユーザー JWT → RLS 適用）
@@ -35,7 +37,7 @@ ROOTIVE 利益管理システムの仕組みを、開発者・引き継ぎ担当
 │ Supabase（東京 ap-northeast-1）                                            │
 │  PostgreSQL  テーブル / 集計ビュー v_* / RPC / トリガー（締めガード・監査・招待制）     │
 │  Auth        メール + マジックリンク / パスワード、招待制（auth.users INSERT トリガー）│
-│  Storage     backups バケット（非公開）：締め時バックアップ JSON                     │
+│  Storage     backups / company-assets / receipts / contracts（すべて非公開）           │
 └──────────────────────────────────────────────────────────────────────┘
         任意：Anthropic API（ANTHROPIC_API_KEY 設定時のみ AI 月次分析）
 ```
