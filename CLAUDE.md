@@ -21,7 +21,7 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
 - `lib/month.ts` 稼動月ユーティリティ、`lib/format.ts` 表示書式（円・%・数量）
 - `components/ui/*` UI 部品（shadcn/ui 相当）、`components/layout/*` シェル・ナビ・月セレクタ
 - `app/(app)/*` スタッフ画面（ホーム・稼働・支払・請求・経費・資金繰り・案件・レポート・ドライバー別の採算・設定）、`app/driver/*` ドライバーポータル、`app/(auth)/*` ログイン・招待、`app/api/export/*` 出力
-- `supabase/migrations/*.sql` スキーマ（0001 テーブル、0002 認証・RLS、0003 ビュー、0004 RPC、0005 ポータル・初期データ、0006 Storage・権限、0007 ドライバー別単価（bill_rate 上書き・rate_diffs・apply_master_rates）、0008 消費税・ロゴと認印・ドライバーごとの支払日、0009 経費と営業利益・取引先と請求書・月次目標、0010 資金繰り・案件別採算、0011 AI チャット・社内チャット・異常検知・外部連携、0012 運行管理と法令対応（点呼・業務記録・日別の稼働・車両・書類）、0013 取り込みと採用・契約）
+- `supabase/migrations/*.sql` スキーマ（0001 テーブル、0002 認証・RLS、0003 ビュー、0004 RPC、0005 ポータル・初期データ、0006 Storage・権限、0007 ドライバー別単価（bill_rate 上書き・rate_diffs・apply_master_rates）、0008 消費税・ロゴと認印・ドライバーごとの支払日、0009 経費と営業利益・取引先と請求書・月次目標、0010 資金繰り・案件別採算、0011 AI チャット・社内チャット・異常検知・外部連携、0012 運行管理と法令対応（点呼・業務記録・日別の稼働・車両・書類）、0013 取り込みと採用・契約、0014 法人の経営管理（振込先口座・決算と税務カレンダー・借入金・経営指標・契約書の保管）、0015 バックアップと復元を全テーブルへ拡張）
 - `tests/` Vitest（`*.test.ts`）、`tests/sql/`（psql）、`tests/e2e/`（Playwright ＋ `supabase-lite` テストサーバー）
 
 ## 必ず守る規約
@@ -60,7 +60,11 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
 - **運行管理と法令対応（0012）**：2025 年 4 月施行の貨物軽自動車運送事業の安全対策に対応する。`daily_reports`（業務前点呼・業務後点呼・業務記録。1 日 1 件・1 年保存）、`work_day_entries`（日別の稼働。**status='approved' の合計がトリガーで月次の `work_entries.qty` になる**。日別由来の行は `work_entries.qty_source='daily'` で、画面から数量を直接変えない）、`vehicles` / `documents`（免許証・車検・自賠責・任意保険・健康診断の期限）、`safety_managers` / `driver_instructions` / `incidents`。締め済み月は日報も日別の稼働も DB トリガーが拒否する
 - 日別 → 月次の反映は `sync_work_entry_from_days`（トリガー）と RPC `apply_day_entries(month)` だけで行う。提出は `submit_day_entries`、承認・差戻しは `approve_day_entries`
 - **取り込みと採用・契約（0013）**：`import_profiles`（元請の実績ファイルの列と名前の対応を覚える）／`import_runs`、`expenses.receipt_path` と `expenses.ocr`（レシート画像と AI の読み取り結果。画像は Storage の `receipts` バケット）、`applicants` / `applicant_events`（段階が変わると履歴をトリガーが残す）、`contracts`（`period_status` が `renewal` / `expired` のものをアラートに出す）
-- 異常の検知は 16 ルール（0011 の 11 ＋ 0012 の 5：書類の期限切れ・期限間近・点呼の未実施・安全管理者の未選任・承認待ちの稼働報告）。**再発したアラートは「未対応」に戻る。「対象外」にしたものは戻らない**
+- **法人の経営管理（0014）**：`drivers` の振込先口座（`bank_code` 4 桁・`branch_code` 3 桁・`account_type`・`account_number` 7 桁まで・`account_holder_kana` 半角カナ）と `companies` の `fiscal_month`（決算月）・`fb_*`（全銀の依頼人情報）。`tax_tasks`（決算・税務の期限。RPC `ensure_tax_tasks(年)` が `companies.fiscal_month` から 10 件を作る。`(company_id, kind, due_on)` が一意なので二重に作らない）。`loans` / `loan_payments`（RPC `generate_loan_schedule(loan_id)` が元利均等で作り直す。端数は最終回でまとめ、`paid_on` が入った回は残す）。`cash_forecast` は `status <> 'planned'` の借入の返済を `kind='loan'` として支払（マイナス）で返す
+- **経営指標（0014）**：ビュー `v_month_kpi`。限界利益 ＝ 粗利 ＋ ロイヤリティ − 変動費、正味の固定費 ＝ 固定費 − 管理費 − 利益計上の調整、損益分岐点売上高 ＝ 正味の固定費 ÷ 限界利益率。ほかに支払比率・1 人当たり売上／利益・稼働 1 日当たり売上・予算達成率。`month_targets` に `expense_target` と `driver_target` を追加
+- **バックアップと復元（0015）**：`export_backup`（version 4）は 0012〜0014 のテーブル（車両・書類・日報・日別の稼働・安全管理者・指導・事故・取り込み定義・応募者・契約・税務の期限・借入と返済予定）も書き出す。**外部連携のトークン・社内チャット・AI の履歴・監査ログ・アラートは含めない**。`import_backup` は同じ順序で復元し、二度実行しても増えない。Storage のファイル（ロゴ・認印・レシート・契約書）は JSON に入らないためパスだけ戻る
+- **契約書の保管（0014）**：Storage `contracts/<company_id>/…`（非公開）。締結済みの業務委託契約書を登録して保管する（新規作成はしない）。書き込みはサービスロール、表示は `/api/contract-file?id=<contract_id>`
+- 異常の検知は 20 ルール（0011 の 11 ＋ 0012 の 5 ＋ 0014 の 4：税務の期限が近い・過ぎた、契約の更新時期・期限切れ、振込先口座の未登録）。**再発したアラートは「未対応」に戻る。「対象外」にしたものは戻らない**
 - ロール：owner（すべて）／admin（登録・編集・月締め・出力）／viewer（閲覧・CSV・チャット・AI 相談）／driver（自分の締め済み月の明細、今日の報告（点呼・稼働）、自分の書類・車両・契約）
 
 ## supabase-js の使い方の制約（E2E 用の互換テストサーバーが対応する範囲に限定する）

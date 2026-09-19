@@ -641,8 +641,8 @@ select public.t_assert((select count(*) = 0 from public.cash_snapshots), '他社
 select public.t_assert((select count(*) = 0 from public.v_project_pl), '他社の案件損益は見えない');
 select public.test_login(:'owner_a');
 
--- バックアップ（version 3）に含まれる
-select public.t_assert((public.export_backup()->>'version') = '3', 'バックアップは version 3');
+-- バックアップ（0015 で version 4 に上がった）に含まれる
+select public.t_assert((public.export_backup()->>'version') = '4', 'バックアップは version 4');
 select public.t_assert(jsonb_array_length(public.export_backup()->'cash_snapshots') = 1, 'バックアップに現金残高が入る');
 select public.t_assert((select count(*) from public.import_backup(public.export_backup())) >= 0, '復元（同じデータ）');
 select public.t_assert((select count(*) = 1 and max(balance) = 1500000 from public.cash_snapshots where company_id = :'company_a'), '復元後も現金残高は同じ');
@@ -1103,4 +1103,67 @@ select public.t_assert((select count(*) = 0 from public.v_month_kpi where compan
 
 select public.test_logout();
 reset role;
-\echo '== すべてのアサーションが通りました（18〜23 節）'
+
+\echo '== 24. バックアップと復元（0012〜0014 のテーブルを含む）'
+set role authenticated;
+select public.test_login(:'owner_a');
+
+-- 書き出しに新しいテーブルが入る
+select public.t_assert((public.export_backup()->>'version') = '4', 'バックアップは version 4');
+select public.t_assert(jsonb_array_length(public.export_backup()->'vehicles') > 0, 'バックアップに車両が入る');
+select public.t_assert(jsonb_array_length(public.export_backup()->'documents') > 0, 'バックアップに書類が入る');
+select public.t_assert(jsonb_array_length(public.export_backup()->'daily_reports') > 0, 'バックアップに日報が入る');
+select public.t_assert(jsonb_array_length(public.export_backup()->'work_day_entries') > 0, 'バックアップに日別の稼働が入る');
+select public.t_assert(jsonb_array_length(public.export_backup()->'safety_managers') > 0, 'バックアップに安全管理者が入る');
+select public.t_assert(jsonb_array_length(public.export_backup()->'driver_instructions') > 0, 'バックアップに指導の記録が入る');
+select public.t_assert(jsonb_array_length(public.export_backup()->'incidents') > 0, 'バックアップに事故の記録が入る');
+select public.t_assert(jsonb_array_length(public.export_backup()->'contracts') > 0, 'バックアップに契約が入る');
+select public.t_assert(jsonb_array_length(public.export_backup()->'tax_tasks') > 0, 'バックアップに税務の期限が入る');
+select public.t_assert(jsonb_array_length(public.export_backup()->'loans') > 0, 'バックアップに借入が入る');
+select public.t_assert(jsonb_array_length(public.export_backup()->'loan_payments') > 0, 'バックアップに返済予定が入る');
+select public.t_assert((public.export_backup()->'company'->>'fiscal_month') is not null, 'バックアップに決算月が入る');
+select public.t_assert((select (x->>'account_number') = '1234567' from jsonb_array_elements(public.export_backup()->'drivers') x where x->>'name' = '相曽慧'), 'バックアップにドライバーの口座情報が入る');
+-- トークンや秘密は含めない
+select public.t_assert((public.export_backup() ? 'integration_secrets') = false, 'バックアップに外部連携のトークンは含めない');
+
+-- 件数を控える
+drop table if exists t_before24;
+create temporary table t_before24 as
+select
+  (select count(*) from public.vehicles where company_id = '00000000-0000-0000-0000-00000000000a') as vehicles,
+  (select count(*) from public.documents where company_id = '00000000-0000-0000-0000-00000000000a') as documents,
+  (select count(*) from public.daily_reports where company_id = '00000000-0000-0000-0000-00000000000a') as daily_reports,
+  (select count(*) from public.work_day_entries where company_id = '00000000-0000-0000-0000-00000000000a') as work_day_entries,
+  (select count(*) from public.contracts where company_id = '00000000-0000-0000-0000-00000000000a') as contracts,
+  (select count(*) from public.tax_tasks where company_id = '00000000-0000-0000-0000-00000000000a') as tax_tasks,
+  (select count(*) from public.loan_payments where company_id = '00000000-0000-0000-0000-00000000000a') as loan_payments,
+  (select count(*) from public.work_entries where company_id = '00000000-0000-0000-0000-00000000000a') as work_entries;
+
+-- 全削除 → 復元
+create temporary table t_backup24 as select public.export_backup() as data;
+select public.reset_company_data('株式会社ROOTIVE');
+select public.t_assert((select count(*) = 0 from public.vehicles where company_id = '00000000-0000-0000-0000-00000000000a'), '全削除で車両が消える');
+select public.t_assert((select count(*) = 0 from public.loan_payments where company_id = '00000000-0000-0000-0000-00000000000a'), '全削除で返済予定が消える');
+select public.import_backup((select data from t_backup24));
+
+select public.t_assert((select count(*) from public.vehicles where company_id = '00000000-0000-0000-0000-00000000000a') = (select vehicles from t_before24), '復元後も車両の件数が同じ');
+select public.t_assert((select count(*) from public.documents where company_id = '00000000-0000-0000-0000-00000000000a') = (select documents from t_before24), '復元後も書類の件数が同じ');
+select public.t_assert((select count(*) from public.daily_reports where company_id = '00000000-0000-0000-0000-00000000000a') = (select daily_reports from t_before24), '復元後も日報の件数が同じ');
+select public.t_assert((select count(*) from public.work_day_entries where company_id = '00000000-0000-0000-0000-00000000000a') = (select work_day_entries from t_before24), '復元後も日別の稼働の件数が同じ');
+select public.t_assert((select count(*) from public.contracts where company_id = '00000000-0000-0000-0000-00000000000a') = (select contracts from t_before24), '復元後も契約の件数が同じ');
+select public.t_assert((select count(*) from public.tax_tasks where company_id = '00000000-0000-0000-0000-00000000000a') = (select tax_tasks from t_before24), '復元後も税務の期限の件数が同じ');
+select public.t_assert((select count(*) from public.loan_payments where company_id = '00000000-0000-0000-0000-00000000000a') = (select loan_payments from t_before24), '復元後も返済予定の件数が同じ');
+select public.t_assert((select count(*) from public.work_entries where company_id = '00000000-0000-0000-0000-00000000000a') = (select work_entries from t_before24), '復元後も稼働行の件数が同じ');
+select public.t_assert((select account_number = '1234567' and account_holder_kana = 'ｱｲｿ ｻﾄｼ' from public.drivers where company_id = '00000000-0000-0000-0000-00000000000a' and name = '相曽慧'), '復元後もドライバーの口座情報が同じ');
+select public.t_assert((select fiscal_month = 3 and fb_consignor_code = '1234567890' from public.companies where id = '00000000-0000-0000-0000-00000000000a'), '復元後も決算月と振込元が同じ');
+select public.t_assert((select expense_target = 300000 and driver_target = 3 from public.month_targets where company_id = '00000000-0000-0000-0000-00000000000a' and month = '2026-12-01'), '復元後も経費とドライバー数の予算が同じ');
+select public.t_assert((select abs(sum(principal) - 3000000) < 100 from public.loan_payments where company_id = '00000000-0000-0000-0000-00000000000a'), '復元後も返済予定の元金合計が同じ');
+
+-- もう一度復元しても壊れない（冪等）
+select public.import_backup((select data from t_backup24));
+select public.t_assert((select count(*) from public.tax_tasks where company_id = '00000000-0000-0000-0000-00000000000a') = (select tax_tasks from t_before24), '二度復元しても税務の期限が増えない');
+select public.t_assert((select count(*) from public.vehicles where company_id = '00000000-0000-0000-0000-00000000000a') = (select vehicles from t_before24), '二度復元しても車両が増えない');
+
+select public.test_logout();
+reset role;
+\echo '== すべてのアサーションが通りました（18〜24 節）'
