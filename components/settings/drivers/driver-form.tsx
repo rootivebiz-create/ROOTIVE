@@ -25,7 +25,8 @@ import { pct, yen, yenPlain } from "@/lib/format";
 import { useMonth } from "@/lib/hooks/use-month";
 import { formatDateJa, formatMonthJa, payoutDate } from "@/lib/month";
 import { PAYOUT_MONTH_OFFSETS, PAYOUT_MONTH_OFFSET_LABELS } from "@/lib/schemas/company";
-import type { DriverFormInput } from "@/lib/schemas/drivers";
+import { toHalfWidthKana, type DriverFormInput } from "@/lib/schemas/drivers";
+import { BANK_ACCOUNT_TYPES, BANK_ACCOUNT_TYPE_LABELS, type BankAccountType } from "@/lib/db/types";
 import { payoutRuleLabel, type CompanyDefaults } from "./drivers-table";
 
 export interface DriverFormProjectItem {
@@ -80,6 +81,14 @@ interface FormState {
   followPayout: boolean;
   payout_month_offset: string;
   payout_day: string;
+  /** 振込先口座（総合振込データに使う） */
+  bank_code: string;
+  bank_name: string;
+  branch_code: string;
+  branch_name: string;
+  account_type: BankAccountType | "";
+  account_number: string;
+  account_holder_kana: string;
 }
 
 /** 振込予定日の「日」の選択肢（0 = 末日） */
@@ -138,6 +147,13 @@ export function DriverForm({ canEdit, defaults, driver, overrides, recurring, pr
     followPayout: driver ? driver.payout_month_offset == null || driver.payout_day == null : true,
     payout_month_offset: String(driver?.payout_month_offset ?? defaults.payout_month_offset),
     payout_day: String(driver?.payout_day ?? defaults.payout_day),
+    bank_code: driver?.bank_code ?? "",
+    bank_name: driver?.bank_name ?? "",
+    branch_code: driver?.branch_code ?? "",
+    branch_name: driver?.branch_name ?? "",
+    account_type: driver?.account_type ?? "",
+    account_number: driver?.account_number ?? "",
+    account_holder_kana: driver?.account_holder_kana ?? "",
   }));
   const set = (patch: Partial<FormState>) => setF((prev) => ({ ...prev, ...patch }));
 
@@ -198,6 +214,13 @@ export function DriverForm({ canEdit, defaults, driver, overrides, recurring, pr
       invoice_reg_no: f.invoice_reg_no,
       payout_month_offset: f.followPayout ? null : f.payout_month_offset,
       payout_day: f.followPayout ? null : f.payout_day,
+      bank_code: f.bank_code,
+      bank_name: f.bank_name,
+      branch_code: f.branch_code,
+      branch_name: f.branch_name,
+      account_type: f.account_type,
+      account_number: f.account_number,
+      account_holder_kana: f.account_holder_kana,
       overrides: overrideInputs,
       recurring: recurringRows.map((r) => ({ id: r.id, label: r.label, amount: r.amount, count_as_profit: r.count_as_profit, is_active: r.is_active })),
     };
@@ -422,6 +445,105 @@ export function DriverForm({ canEdit, defaults, driver, overrides, recurring, pr
               例: {formatMonthJa(month)}分 → <span className="num font-medium text-foreground">{payoutPreview ? formatDateJa(payoutPreview) : "—"}</span>
               （その月に無い日付は末日になります）
             </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 振込先口座 */}
+      <Card>
+        <CardHeader>
+          <CardTitle>振込先口座</CardTitle>
+          <CardDescription>
+            銀行の総合振込データ（全銀フォーマット）に使います。通帳やキャッシュカードのとおりに入力してください。未入力のままでも保存できます。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="driver-bank-code">銀行コード（4 桁）</Label>
+              <Input
+                id="driver-bank-code"
+                value={f.bank_code}
+                onChange={(e) => set({ bank_code: e.target.value })}
+                disabled={disabled}
+                inputMode="numeric"
+                maxLength={8}
+                placeholder="例: 0001"
+                autoComplete="off"
+                className="max-w-[10rem]"
+              />
+              <FieldError messages={errors.bank_code} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="driver-bank-name">銀行名</Label>
+              <Input id="driver-bank-name" value={f.bank_name} onChange={(e) => set({ bank_name: e.target.value })} disabled={disabled} maxLength={100} placeholder="例: みずほ銀行" autoComplete="off" />
+              <FieldError messages={errors.bank_name} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="driver-branch-code">支店コード（3 桁）</Label>
+              <Input
+                id="driver-branch-code"
+                value={f.branch_code}
+                onChange={(e) => set({ branch_code: e.target.value })}
+                disabled={disabled}
+                inputMode="numeric"
+                maxLength={6}
+                placeholder="例: 001"
+                autoComplete="off"
+                className="max-w-[10rem]"
+              />
+              <FieldError messages={errors.branch_code} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="driver-branch-name">支店名</Label>
+              <Input id="driver-branch-name" value={f.branch_name} onChange={(e) => set({ branch_name: e.target.value })} disabled={disabled} maxLength={100} placeholder="例: 東京営業部" autoComplete="off" />
+              <FieldError messages={errors.branch_name} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="driver-account-type">預金種目</Label>
+              <Select id="driver-account-type" value={f.account_type} onChange={(e) => set({ account_type: e.target.value as BankAccountType | "" })} disabled={disabled}>
+                <option value="">未選択</option>
+                {BANK_ACCOUNT_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {BANK_ACCOUNT_TYPE_LABELS[t]}
+                  </option>
+                ))}
+              </Select>
+              <FieldError messages={errors.account_type} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="driver-account-number">口座番号（7 桁まで）</Label>
+              <Input
+                id="driver-account-number"
+                value={f.account_number}
+                onChange={(e) => set({ account_number: e.target.value })}
+                disabled={disabled}
+                inputMode="numeric"
+                maxLength={12}
+                placeholder="例: 1234567"
+                autoComplete="off"
+                className="max-w-[12rem]"
+              />
+              <FieldError messages={errors.account_number} />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="driver-account-holder">口座名義（半角カナ）</Label>
+            <Input
+              id="driver-account-holder"
+              value={f.account_holder_kana}
+              onChange={(e) => set({ account_holder_kana: e.target.value })}
+              onBlur={() => set({ account_holder_kana: toHalfWidthKana(f.account_holder_kana) })}
+              disabled={disabled}
+              maxLength={48}
+              placeholder="例: ﾔﾏﾀﾞ ﾀﾛｳ"
+              autoComplete="off"
+              aria-describedby="driver-account-holder-help"
+            />
+            <p id="driver-account-holder-help" className="text-xs text-muted-foreground">
+              全角のカナで入力しても、保存時に半角カナへ変換します（例：ヤマダ タロウ → ﾔﾏﾀﾞ ﾀﾛｳ）。姓と名の間は半角スペースを空けてください。
+            </p>
+            <FieldError messages={errors.account_holder_kana} />
           </div>
         </CardContent>
       </Card>

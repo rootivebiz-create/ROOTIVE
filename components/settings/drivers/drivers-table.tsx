@@ -33,6 +33,8 @@ export interface DriverListRow {
   payout_day: number | null;
   overrideCount: number;
   recurringCount: number;
+  /** 振込先口座（銀行・支店・口座番号・名義）がそろっているか */
+  hasBankAccount: boolean;
 }
 
 /** 会社の既定値（null のときに併記する） */
@@ -117,6 +119,13 @@ export function DriversTable({ rows, defaults, canEdit }: { rows: DriverListRow[
 
   const statusBadge = (r: DriverListRow) => (r.is_active ? <Badge variant="success">稼働中</Badge> : <Badge variant="secondary">停止中</Badge>);
   const exemptBadge = (r: DriverListRow) => (r.tax_mode === "exempt" ? <Badge variant="secondary">非課税</Badge> : null);
+  /** 稼働中なのに振込先口座が未入力（総合振込データに出せない） */
+  const bankBadge = (r: DriverListRow) =>
+    r.is_active && !r.hasBankAccount ? (
+      <Badge variant="warning" title="銀行コード・支店コード・口座番号・口座名義のいずれかが未入力です">
+        口座未登録
+      </Badge>
+    ) : null;
 
   return (
     <>
@@ -133,6 +142,7 @@ export function DriversTable({ rows, defaults, canEdit }: { rows: DriverListRow[
                   {r.kana && <span className="text-xs text-muted-foreground">{r.kana}</span>}
                   {statusBadge(r)}
                   {exemptBadge(r)}
+                  {bankBadge(r)}
                 </div>
                 <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-sm">
                   <dt className="text-muted-foreground">ロイヤリティ率</dt>
@@ -189,6 +199,7 @@ export function DriversTable({ rows, defaults, canEdit }: { rows: DriverListRow[
                   </Link>
                   {r.kana && <span className="ml-2 text-xs text-muted-foreground">{r.kana}</span>}
                   {r.tax_mode === "exempt" && <span className="ml-2 align-middle">{exemptBadge(r)}</span>}
+                  {r.is_active && !r.hasBankAccount && <span className="ml-2 align-middle">{bankBadge(r)}</span>}
                   {driverPayoutRuleLabel(r) && <p className="mt-0.5 text-xs text-muted-foreground">支払日 {driverPayoutRuleLabel(r)}</p>}
                 </TableCell>
                 <TableCell className="num">{royaltyLabel(r.royalty_rate, defaults)}</TableCell>

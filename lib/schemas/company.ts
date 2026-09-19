@@ -1,5 +1,8 @@
 import { z } from "zod";
 import { moneySchema, nameSchema, percentToRateSchema, roundingModeSchema } from "./common";
+// 振込先口座の検証はドライバーと共通（lib/schemas/drivers.ts に置いている）
+import { accountNumberSchema, accountTypeSchema, bankCodeSchema, bankNameSchema, branchCodeSchema, branchNameSchema, toHalfWidthDigits, toHalfWidthKana } from "./drivers";
+import type { BankAccountType } from "@/lib/db/types";
 import { parseNumberInput } from "@/lib/calc/parse";
 import type { RoundingMode } from "@/lib/calc/types";
 import { DEFAULT_YAYOI_ACCOUNTS, type YayoiAccounts } from "@/lib/yayoi/accounts";
@@ -48,6 +51,19 @@ export interface CompanyFormInput {
   tax_rate: string;
   /** 消費税額の端数処理 */
   tax_rounding: RoundingMode;
+  /** 決算月（"1"〜"12"） */
+  fiscal_month: string;
+  /** 全銀の委託者コード（銀行から指定される番号。空欄可） */
+  fb_consignor_code: string;
+  /** 委託者名（半角カナ） */
+  fb_consignor_kana: string;
+  /** 振込元の口座（総合振込データの引き落とし口座） */
+  fb_bank_code: string;
+  fb_bank_name: string;
+  fb_branch_code: string;
+  fb_branch_name: string;
+  fb_account_type: BankAccountType | "";
+  fb_account_number: string;
   yayoi_accounts: YayoiAccountsFormInput;
 }
 
@@ -87,6 +103,22 @@ export const yayoiAccountsSchema = z.object({
   date_basis: z.enum(YAYOI_DATE_BASIS, { error: "伝票日付の基準を選択してください" }),
 });
 
+
+/** 決算月の選択肢（1〜12 月） */
+export const FISCAL_MONTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const;
+
+/** 委託者コード（銀行から指定される番号。空欄は未入力） */
+export const consignorCodeSchema = z.preprocess(
+  (v) => (typeof v === "string" ? toHalfWidthDigits(v) : ""),
+  z.string().refine((s) => s === "" || /^[0-9]{1,10}$/.test(s), "委託者コードは 10 桁までの数字で入力してください"),
+);
+
+/** 委託者名（半角カナ。全銀の 40 桁に合わせる） */
+export const consignorKanaSchema = z.preprocess(
+  (v) => (typeof v === "string" ? toHalfWidthKana(v.trim()) : ""),
+  z.string().max(40, "委託者名は 40 文字以内で入力してください").refine((s) => /^[0-9A-Z\uFF61-\uFF9F ().\-/,]*$/.test(s), "委託者名は半角カナ・英数字で入力してください"),
+);
+
 export const companyInputSchema = z.object({
   name: nameSchema,
   rounding_mode: roundingModeSchema,
@@ -106,6 +138,15 @@ export const companyInputSchema = z.object({
   driver_portal_show_open_month: z.boolean(),
   tax_rate: percentToRateSchema,
   tax_rounding: roundingModeSchema,
+  fiscal_month: intFromInput(1, 12, "決算月"),
+  fb_consignor_code: consignorCodeSchema,
+  fb_consignor_kana: consignorKanaSchema,
+  fb_bank_code: bankCodeSchema,
+  fb_bank_name: bankNameSchema,
+  fb_branch_code: branchCodeSchema,
+  fb_branch_name: branchNameSchema,
+  fb_account_type: accountTypeSchema,
+  fb_account_number: accountNumberSchema,
   yayoi_accounts: yayoiAccountsSchema,
 });
 

@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { buttonVariants } from "@/components/ui/button";
 import { MonthLink } from "@/components/layout/month-link";
 import { DriversTable, type DriverListRow } from "@/components/settings/drivers/drivers-table";
+import { isBankAccountFilled } from "@/lib/schemas/drivers";
 
 export const metadata = { title: "ドライバー" };
 
@@ -39,15 +40,17 @@ export default async function DriversSettingsPage() {
     payout_day: d.payout_day,
     overrideCount: overrideCounts.get(d.id) ?? 0,
     recurringCount: recurringCounts.get(d.id) ?? 0,
+    hasBankAccount: isBankAccountFilled(d),
   }));
   const editable = canEdit(profile.role);
   const activeCount = rows.filter((r) => r.is_active).length;
+  const noBankCount = rows.filter((r) => r.is_active && !r.hasBankAccount).length;
 
   return (
     <div>
       <PageHeader
         title="ドライバー"
-        description={`稼働中 ${activeCount} 名／全 ${rows.length} 名。ロイヤリティ率・管理費・端数処理の「会社設定」は会社設定画面の既定値を使います。`}
+        description={`稼働中 ${activeCount} 名／全 ${rows.length} 名${noBankCount > 0 ? `／振込先口座が未登録 ${noBankCount} 名` : ""}。ロイヤリティ率・管理費・端数処理の「会社設定」は会社設定画面の既定値を使います。`}
         actions={
           editable ? (
             <MonthLink href="/settings/drivers/new" className={buttonVariants()}>

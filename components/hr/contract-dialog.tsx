@@ -14,6 +14,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { deleteContractAction, endContractAction, saveContractAction } from "@/lib/actions/hr";
 import { contractInputSchema, CONTRACT_STATUS_VALUES, type ContractFormInput } from "@/lib/schemas/hr";
 import type { ContractView, DriverLike } from "@/lib/hr/helpers";
+import { ContractFileField } from "./contract-file-field";
+import { isStoredContractFile } from "./contract-file-badge";
 import { CONTRACT_STATUS_LABELS, type ContractStatus } from "@/lib/db/types";
 
 const DEFAULT_TITLE = "業務委託契約書";
@@ -229,20 +231,30 @@ function ContractForm({ onOpenChange, contract, drivers, today, defaultDriverId 
         <Switch id="contract-auto" checked={form.autoRenew} onCheckedChange={(v) => setForm((f) => ({ ...f, autoRenew: v === true }))} disabled={pending} />
       </div>
 
-      <div className="space-y-1.5">
-        <Label htmlFor="contract-file">契約書の場所（任意）</Label>
-        <Input
-          id="contract-file"
-          value={form.filePath}
-          onChange={(e) => setForm((f) => ({ ...f, filePath: e.target.value }))}
-          placeholder="例: 共有フォルダ/契約書/2026/山田太郎.pdf"
-          maxLength={500}
-          disabled={pending}
-          aria-invalid={!!errors.file_path}
-        />
-        <p className="text-xs text-muted-foreground">ファイルのアップロードは未対応です。保管場所を書き留めておけます。</p>
-        <FieldError errors={errors} name="file_path" />
-      </div>
+      <ContractFileField
+        contractId={contract?.id ?? null}
+        filePath={form.filePath}
+        onChange={(filePath) => setForm((f) => ({ ...f, filePath }))}
+        canEdit
+        disabled={pending}
+      />
+
+      {!isStoredContractFile(form.filePath) && (
+        <div className="space-y-1.5">
+          <Label htmlFor="contract-file">契約書の保管場所メモ（任意）</Label>
+          <Input
+            id="contract-file"
+            value={form.filePath}
+            onChange={(e) => setForm((f) => ({ ...f, filePath: e.target.value }))}
+            placeholder="例: 共有フォルダ/契約書/2026/山田太郎.pdf"
+            maxLength={500}
+            disabled={pending}
+            aria-invalid={!!errors.file_path}
+          />
+          <p className="text-xs text-muted-foreground">紙の原本を別の場所で保管しているときに、置き場所を書き留めておけます。</p>
+          <FieldError errors={errors} name="file_path" />
+        </div>
+      )}
 
       <div className="space-y-1.5">
         <Label htmlFor="contract-memo">備考（任意）</Label>

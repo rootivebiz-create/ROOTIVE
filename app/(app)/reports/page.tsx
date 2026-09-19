@@ -1,6 +1,6 @@
 import { Download } from "lucide-react";
 import { requireStaff } from "@/lib/auth/session";
-import { loadMonthPlRange } from "@/lib/db/queries";
+import { loadMonthKpiRange, loadMonthPlRange } from "@/lib/db/queries";
 import { exportUrls } from "@/lib/exports/urls";
 import { currentMonthJST, monthFromParam, monthToDate } from "@/lib/month";
 import { buttonVariants } from "@/components/ui/button";
@@ -24,10 +24,12 @@ import {
   yearRange,
 } from "@/components/reports/helpers";
 import { ReportChart } from "@/components/reports/report-chart";
+import { KpiSection } from "@/components/reports/kpi-section";
 import { ReportMonthlyTable } from "@/components/reports/monthly-table";
 import { DriverRankingTable, ExpenseRankingTable, ProjectRankingTable } from "@/components/reports/rankings";
 import { ReportSummaryCards, YearComparisonCard } from "@/components/reports/summary-cards";
 import { YearSelector } from "@/components/reports/year-selector";
+import { toKpiTrendRows } from "@/lib/kpi/trend";
 
 export const metadata = { title: "年次レポート" };
 
@@ -40,9 +42,10 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const { from, to } = yearRange(year);
   const prevRange = yearRange(year - 1);
 
-  const [pl, prevPl, driversRes, projectsRes, expensesRes, monthsRes] = await Promise.all([
+  const [pl, prevPl, kpiRows, driversRes, projectsRes, expensesRes, monthsRes] = await Promise.all([
     loadMonthPlRange(supabase, company.id, from, to),
     loadMonthPlRange(supabase, company.id, prevRange.from, prevRange.to),
+    loadMonthKpiRange(supabase, company.id, monthToDate(from), monthToDate(to)),
     supabase
       .from("v_driver_month_summary")
       .select("*")
@@ -80,6 +83,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const expenses = expenseRanking(expensesRes.data ?? []);
   const expenseTotals = expenseKindTotals(expenses);
   const years = availableYears((monthsRes.data ?? []).map((r) => r.month), [thisYear, year]);
+  const kpiRowsByMonth = toKpiTrendRows(kpiRows, year);
   const hasData = hasReportData(rows);
 
   return (
@@ -106,6 +110,8 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
       ) : (
         <>
           <ReportSummaryCards year={year} totals={totals} />
+
+          <KpiSection year={year} rows={kpiRowsByMonth} />
 
           <Card>
             <CardHeader>

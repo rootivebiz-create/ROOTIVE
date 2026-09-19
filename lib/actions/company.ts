@@ -30,6 +30,16 @@ export async function updateCompanyAction(input: CompanyFormInput): Promise<Acti
         driver_portal_show_open_month: parsed.driver_portal_show_open_month,
         tax_rate: parsed.tax_rate,
         tax_rounding: parsed.tax_rounding,
+        fiscal_month: parsed.fiscal_month,
+        // 振込元（総合振込データの依頼人情報）。空欄は "" のまま保存する
+        fb_consignor_code: parsed.fb_consignor_code,
+        fb_consignor_kana: parsed.fb_consignor_kana,
+        fb_bank_code: parsed.fb_bank_code,
+        fb_bank_name: parsed.fb_bank_name,
+        fb_branch_code: parsed.fb_branch_code,
+        fb_branch_name: parsed.fb_branch_name,
+        fb_account_type: parsed.fb_account_type,
+        fb_account_number: parsed.fb_account_number,
         yayoi_accounts: yayoi,
       })
       .eq("id", company.id)

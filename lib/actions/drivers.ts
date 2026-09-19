@@ -58,6 +58,14 @@ export async function saveDriverAction(input: DriverFormInput): Promise<ActionRe
       // 支払日は両方揃って個別、片方でも空なら会社設定に従う
       payout_month_offset: parsed.payout_month_offset != null && parsed.payout_day != null ? parsed.payout_month_offset : null,
       payout_day: parsed.payout_month_offset != null && parsed.payout_day != null ? parsed.payout_day : null,
+      // 振込先口座（空欄は "" のまま保存。預金種目だけ未選択は null）
+      bank_code: parsed.bank_code,
+      bank_name: parsed.bank_name,
+      branch_code: parsed.branch_code,
+      branch_name: parsed.branch_name,
+      account_type: parsed.account_type,
+      account_number: parsed.account_number,
+      account_holder_kana: parsed.account_holder_kana,
     };
 
     let driverId: string;

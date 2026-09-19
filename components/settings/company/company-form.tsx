@@ -18,6 +18,7 @@ import { calcTax } from "@/lib/calc/tax";
 import { yen } from "@/lib/format";
 import { formatDateJa, formatMonthJa, payoutDate } from "@/lib/month";
 import {
+  FISCAL_MONTHS,
   PAYOUT_MONTH_OFFSETS,
   PAYOUT_MONTH_OFFSET_LABELS,
   YAYOI_DATE_BASIS,
@@ -27,6 +28,8 @@ import {
   type YayoiTextKey,
 } from "@/lib/schemas/company";
 import { YAYOI_ACCOUNT_LABELS } from "@/lib/yayoi/accounts";
+import { toHalfWidthKana } from "@/lib/schemas/drivers";
+import { BANK_ACCOUNT_TYPES, BANK_ACCOUNT_TYPE_LABELS, type BankAccountType } from "@/lib/db/types";
 
 function FieldError({ messages }: { messages?: string[] }) {
   if (!messages || messages.length === 0) return null;
@@ -214,6 +217,113 @@ export function CompanyForm({ initial, currentMonth }: { initial: CompanyFormInp
             例: 税抜小計 {yen(TAX_EXAMPLE_BASE)} → 消費税 <span className="num font-medium text-foreground">{taxExample != null ? yen(taxExample) : "—"}</span> → 税込{" "}
             <span className="num font-medium text-foreground">{taxExample != null ? yen(TAX_EXAMPLE_BASE + taxExample) : "—"}</span>
           </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>決算月</CardTitle>
+          <CardDescription>決算・税務の期限（法人税の申告、消費税の申告など）の目安を組み立てるのに使います。分からなければ顧問税理士に確認してください。</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="space-y-1.5 md:max-w-[16rem]">
+            <Label htmlFor="company-fiscal-month">決算月</Label>
+            <Select id="company-fiscal-month" value={f.fiscal_month} onChange={(e) => set({ fiscal_month: e.target.value })} disabled={pending}>
+              {FISCAL_MONTHS.map((m) => (
+                <option key={m} value={String(m)}>
+                  {m} 月
+                </option>
+              ))}
+            </Select>
+            <p className="text-xs text-muted-foreground">例：3 月決算なら「3 月」。多くの会社は 3 月・9 月・12 月です。</p>
+            <FieldError messages={errors.fiscal_month} />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>振込元（総合振込のデータに使う）</CardTitle>
+          <CardDescription>
+            ドライバーへの振込データ（全銀フォーマット）の依頼人情報です。委託者コードと委託者名は<strong>銀行から指定される番号・名前</strong>です。分からなければ空のままで構いません（あとから入力できます）。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="company-fb-consignor-code">委託者コード（10 桁）</Label>
+              <Input
+                id="company-fb-consignor-code"
+                value={f.fb_consignor_code}
+                onChange={(e) => set({ fb_consignor_code: e.target.value })}
+                inputMode="numeric"
+                maxLength={14}
+                placeholder="例: 0123456789"
+                disabled={pending}
+              />
+              <p className="text-xs text-muted-foreground">銀行から指定される番号です。分からなければ空のままで構いません。</p>
+              <FieldError messages={errors.fb_consignor_code} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="company-fb-consignor-kana">委託者名（半角カナ）</Label>
+              <Input
+                id="company-fb-consignor-kana"
+                value={f.fb_consignor_kana}
+                onChange={(e) => set({ fb_consignor_kana: e.target.value })}
+                onBlur={() => set({ fb_consignor_kana: toHalfWidthKana(f.fb_consignor_kana) })}
+                maxLength={40}
+                placeholder="例: ｶ)ﾙｰﾃｨﾌﾞ"
+                disabled={pending}
+              />
+              <p className="text-xs text-muted-foreground">全角のカナで入力しても、保存時に半角カナへ変換します。銀行の登録名と同じにしてください。</p>
+              <FieldError messages={errors.fb_consignor_kana} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="company-fb-bank-code">銀行コード（4 桁）</Label>
+              <Input id="company-fb-bank-code" value={f.fb_bank_code} onChange={(e) => set({ fb_bank_code: e.target.value })} inputMode="numeric" maxLength={8} placeholder="例: 0001" disabled={pending} />
+              <FieldError messages={errors.fb_bank_code} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="company-fb-bank-name">銀行名</Label>
+              <Input id="company-fb-bank-name" value={f.fb_bank_name} onChange={(e) => set({ fb_bank_name: e.target.value })} maxLength={100} placeholder="例: みずほ銀行" disabled={pending} />
+              <FieldError messages={errors.fb_bank_name} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="company-fb-branch-code">支店コード（3 桁）</Label>
+              <Input id="company-fb-branch-code" value={f.fb_branch_code} onChange={(e) => set({ fb_branch_code: e.target.value })} inputMode="numeric" maxLength={6} placeholder="例: 001" disabled={pending} />
+              <FieldError messages={errors.fb_branch_code} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="company-fb-branch-name">支店名</Label>
+              <Input id="company-fb-branch-name" value={f.fb_branch_name} onChange={(e) => set({ fb_branch_name: e.target.value })} maxLength={100} placeholder="例: 東京営業部" disabled={pending} />
+              <FieldError messages={errors.fb_branch_name} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="company-fb-account-type">預金種目</Label>
+              <Select id="company-fb-account-type" value={f.fb_account_type} onChange={(e) => set({ fb_account_type: e.target.value as BankAccountType | "" })} disabled={pending}>
+                <option value="">未選択</option>
+                {BANK_ACCOUNT_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {BANK_ACCOUNT_TYPE_LABELS[t]}
+                  </option>
+                ))}
+              </Select>
+              <FieldError messages={errors.fb_account_type} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="company-fb-account-number">口座番号（7 桁まで）</Label>
+              <Input
+                id="company-fb-account-number"
+                value={f.fb_account_number}
+                onChange={(e) => set({ fb_account_number: e.target.value })}
+                inputMode="numeric"
+                maxLength={12}
+                placeholder="例: 1234567"
+                disabled={pending}
+              />
+              <FieldError messages={errors.fb_account_number} />
+            </div>
+          </div>
         </CardContent>
       </Card>
 

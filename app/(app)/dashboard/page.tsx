@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { Lock } from "lucide-react";
 import { requireStaff, canEdit } from "@/lib/auth/session";
 import { loadDashboardData } from "@/lib/db/queries-dashboard";
-import { loadAlerts, loadAlertSummary, loadDayStatus, loadDocuments, loadExpenseSummary, loadMonthPl } from "@/lib/db/queries";
+import { loadAlerts, loadAlertSummary, loadDayStatus, loadDocuments, loadExpenseSummary, loadMonthKpi, loadMonthPl } from "@/lib/db/queries";
 import { isAiInsightsEnabled } from "@/lib/ai/config";
 import { normalizeActions, normalizeInsightFindings } from "@/lib/ai/findings";
 import { formatMonthJa, monthFromParam, monthToDate, prevMonth } from "@/lib/month";
@@ -20,7 +20,9 @@ import { AiSummaryCard } from "@/components/ai/ai-summary-card";
 import { TargetCard } from "@/components/dashboard/target-card";
 import { ForecastCard } from "@/components/dashboard/forecast-card";
 import { ExpenseCard } from "@/components/dashboard/expense-card";
+import { KpiHealthCard } from "@/components/dashboard/kpi-health";
 import { expenseBreakdown, needsExpenseWarning } from "@/components/dashboard/helpers";
+import { toKpiValues } from "@/lib/kpi/metrics";
 import { AlertCard } from "@/components/alerts/alert-card";
 import { DayStatusCard } from "@/components/daily/day-status-card";
 import { ExpiryCard } from "@/components/fleet/expiry-card";
@@ -37,10 +39,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const { supabase, profile, company } = await requireStaff();
   const sp = await searchParams;
   const month = monthFromParam(sp.m);
-  const [data, pl, prevPlRes, expenseRows, openAlerts, alertSummary, dayStatus, documentRows, applicants, contracts] = await Promise.all([
+  const prev = prevMonth(month);
+  const [data, pl, prevPlRes, expenseRows, openAlerts, alertSummary, dayStatus, documentRows, applicants, contracts, kpiRow, prevKpiRow] = await Promise.all([
     loadDashboardData(supabase, company.id, month),
     loadMonthPl(supabase, company.id, month),
-    supabase.from("v_month_pl").select("*").eq("company_id", company.id).eq("month", monthToDate(prevMonth(month))).maybeSingle(),
+    supabase.from("v_month_pl").select("*").eq("company_id", company.id).eq("month", monthToDate(prev)).maybeSingle(),
     loadExpenseSummary(supabase, company.id, month),
     loadAlerts(supabase, company.id, { status: "open", month, limit: 3 }),
     loadAlertSummary(supabase, company.id, month),
@@ -48,6 +51,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     loadDocuments(supabase, company.id),
     loadApplicants(supabase, company.id, { stage: "all" }),
     loadContracts(supabase, company.id),
+    loadMonthKpi(supabase, company.id, monthToDate(month)),
+    loadMonthKpi(supabase, company.id, monthToDate(prev)),
   ]);
   if (prevPlRes.error) throw prevPlRes.error;
   const aiEnabled = isAiInsightsEnabled();
@@ -55,6 +60,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const today = todayJST();
   const documents = documentRows.map((r) => toFleetDocument(r, today));
   const hr = hrCounts(applicants.map(toApplicantView), contracts.map(toContractView), today);
+  const kpi = toKpiValues(kpiRow);
+  const prevKpi = prevKpiRow ? toKpiValues(prevKpiRow) : null;
 
   const driverRows: DriverSummaryRow[] = data.drivers.map((d) => {
     const bill = Number(d.bill ?? 0);
@@ -115,6 +122,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       </Suspense>
 
       <ForecastCard month={month} monthLabel={formatMonthJa(month)} pl={pl} isClosed={data.isClosed} />
+
+      <KpiHealthCard kpi={kpi} prev={prevKpi} monthLabel={formatMonthJa(month)} />
 
       <AlertCard
         alerts={openAlerts}

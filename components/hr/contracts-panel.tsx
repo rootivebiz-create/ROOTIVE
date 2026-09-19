@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { FileSignature, Paperclip, Plus, TriangleAlert } from "lucide-react";
+import { ExternalLink, FileSignature, Plus, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert } from "@/components/ui/alert";
@@ -13,6 +13,7 @@ import { CONTRACT_STATUS_LABELS } from "@/lib/db/types";
 import { formatDateJa } from "@/lib/month";
 import { cn } from "@/lib/utils";
 import { ContractDialog, EndContractDialog } from "./contract-dialog";
+import { ContractFileBadge, contractFileDisplayName, contractFileUrl, isStoredContractFile } from "./contract-file-badge";
 
 export interface ContractsPanelProps {
   contracts: ContractView[];
@@ -27,6 +28,29 @@ export interface ContractsPanelProps {
 function PeriodBadge({ contract }: { contract: ContractView }) {
   const variant = contract.periodStatus === "expired" ? "destructive" : contract.periodStatus === "renewal" ? "warning" : contract.periodStatus === "ended" ? "secondary" : "outline";
   return <Badge variant={variant}>{periodLabel(contract.periodStatus)}</Badge>;
+}
+
+/** 契約書ファイルの欄（あれば「開く」リンク） */
+function ContractFileCell({ contract }: { contract: ContractView }) {
+  return (
+    <span className="inline-flex flex-wrap items-center justify-end gap-1">
+      <ContractFileBadge filePath={contract.filePath} />
+      {isStoredContractFile(contract.filePath) ? (
+        <a
+          href={contractFileUrl(contract.id)}
+          target="_blank"
+          rel="noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="inline-flex items-center gap-1 text-xs underline underline-offset-2"
+          title={contractFileDisplayName(contract.filePath)}
+        >
+          <ExternalLink className="h-3 w-3" aria-hidden /> 開く
+        </a>
+      ) : contract.filePath ? (
+        <span className="max-w-[10rem] truncate text-xs text-muted-foreground">{contract.filePath}</span>
+      ) : null}
+    </span>
+  );
 }
 
 /** 残り日数の表示 */
@@ -52,6 +76,8 @@ export function ContractsPanel({ contracts, drivers, today, canEdit }: Contracts
     () => driversWithoutContract(drivers, contracts.map((c) => ({ driverId: c.driverId, status: c.status }))),
     [drivers, contracts],
   );
+  // 法令上、締結済みの契約書は保管が必要（終了した契約は除いて促す）
+  const noFile = useMemo(() => contracts.filter((c) => c.status !== "ended" && !isStoredContractFile(c.filePath)), [contracts]);
 
   const openCreate = (driverId?: string) => {
     setCreateDriverId(driverId);
@@ -73,6 +99,27 @@ export function ContractsPanel({ contracts, drivers, today, canEdit }: Contracts
                 <button type="button" onClick={() => setEditing(c)} className="text-left underline-offset-2 hover:underline">
                   {c.driverName}：{c.title} — {contractAlertText(c)}
                   {c.autoRenew ? "（自動更新）" : ""}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </Alert>
+      )}
+
+      {noFile.length > 0 && (
+        <Alert variant="warning">
+          <p className="flex items-center gap-2 font-semibold">
+            <TriangleAlert className="h-4 w-4" />
+            契約書ファイルが未登録の契約 {noFile.length} 件
+          </p>
+          <p className="mt-1 text-sm">
+            締結済みの業務委託契約書は書面（写し）の保管が必要です。契約を開いて、スキャンや写真をアップロードしてください。
+          </p>
+          <ul className="mt-1.5 space-y-1">
+            {noFile.map((c) => (
+              <li key={c.id} className="text-sm">
+                <button type="button" onClick={() => setEditing(c)} className="text-left underline-offset-2 hover:underline">
+                  {c.driverName}：{c.title}
                 </button>
               </li>
             ))}
@@ -118,7 +165,9 @@ export function ContractsPanel({ contracts, drivers, today, canEdit }: Contracts
                   <dt className="text-muted-foreground">自動更新</dt>
                   <dd className="text-right">{c.autoRenew ? "あり" : "なし"}</dd>
                   <dt className="text-muted-foreground">契約書</dt>
-                  <dd className="break-words text-right">{c.filePath || "—"}</dd>
+                  <dd className="text-right">
+                    <ContractFileCell contract={c} />
+                  </dd>
                 </dl>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <Button size="sm" variant="outline" onClick={() => setEditing(c)}>
@@ -167,15 +216,8 @@ export function ContractsPanel({ contracts, drivers, today, canEdit }: Contracts
                       {daysLeftText(c)}
                     </TableCell>
                     <TableCell className="whitespace-nowrap">{c.autoRenew ? "あり" : "なし"}</TableCell>
-                    <TableCell className="max-w-[14rem] break-words text-muted-foreground">
-                      {c.filePath ? (
-                        <span className="inline-flex items-center gap-1">
-                          <Paperclip className="h-3 w-3 shrink-0" />
-                          {c.filePath}
-                        </span>
-                      ) : (
-                        "—"
-                      )}
+                    <TableCell className="max-w-[14rem] whitespace-nowrap">
+                      <ContractFileCell contract={c} />
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-right">
                       <span className="inline-flex gap-1">
@@ -257,7 +299,9 @@ function ContractReadOnlyDialog({ contract, onClose }: { contract: ContractView 
             <dt className="text-muted-foreground">通知日数</dt>
             <dd className="num text-right">{contract.noticeDays} 日</dd>
             <dt className="text-muted-foreground">契約書</dt>
-            <dd className="break-words text-right">{contract.filePath || "—"}</dd>
+            <dd className="text-right">
+              <ContractFileCell contract={contract} />
+            </dd>
             <dt className="text-muted-foreground">備考</dt>
             <dd className="break-words text-right">{contract.memo || "—"}</dd>
           </dl>
