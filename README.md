@@ -36,7 +36,7 @@
 | オーナー | [docs/SETUP.md](docs/SETUP.md) | 本番公開の手順（ブラウザ操作のみ）。Supabase → Vercel → ログイン → 動作確認チェックリスト → SMTP → トラブル対応 |
 | オーナー・事務担当 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | 毎月の運用（複製 → 入力 → 管理費・調整 → 月締め → 明細送付 → 弥生 CSV → バックアップ）、マスタ変更、ユーザー追加、復元、移行、トラブル対応、オーナー確認事項 |
 | 開発者 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 全体構成、計算式、データモデル、権限とセキュリティ、認証フロー、出力、移行、テスト、既知の制限、環境変数、公開の仕組み |
-| 開発者 | [docs/E2E.md](docs/E2E.md) | ブラウザ E2E テスト（Playwright、13 spec・61 シナリオ × スマホ/PC = 122 件）の実行方法・各 spec の内容・スクリーンショット |
+| 開発者 | [docs/E2E.md](docs/E2E.md) | ブラウザ E2E テスト（Playwright、15 spec・72 シナリオ × スマホ/PC = 144 件）の実行方法・各 spec の内容・スクリーンショット |
 | 開発者 | [docs/SPEC.md](docs/SPEC.md) | 要件定義（オーナー指示書・原文） |
 | 全員 | [docs/CHANGELOG.md](docs/CHANGELOG.md) | 変更履歴（ドライバー別単価・単価の反映・全員分 PDF ZIP など） |
 | 開発者（AI 含む） | [CLAUDE.md](CLAUDE.md) | 実装規約・ディレクトリ・コマンド |

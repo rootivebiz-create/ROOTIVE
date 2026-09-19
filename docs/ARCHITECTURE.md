@@ -132,7 +132,7 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 | `integrations` | pk(company_id, kind: line/google_drive/bank), is_enabled, config(jsonb), status, last_ok_at, last_error | 外部連携の設定（`0011`。機密は含まない） |
 | `integration_secrets` | pk(company_id, kind), secrets(jsonb) | **RLS ポリシー無し＝サービスロール専用**（`0011`）。アクセストークン等 |
 | `integration_logs` | kind, action, status(ok/error), message, detail(jsonb) | 外部連携の実行記録（`0011`） |
-| `line_link_codes` | code(pk, 6 桁), driver_id / profile_id, expires_at(30 分), used_at | LINE 連携の合言葉（`0011`） |
+| `line_link_codes` | code(pk, 8 桁), driver_id / profile_id, expires_at(30 分), used_at | LINE 連携の合言葉（`0011`） |
 | `bank_imports` | file_name, format, row_count, inserted_count, skipped_count, matched_count, period_from/to, created_by | 銀行 CSV の取り込み 1 回分（`0011`） |
 | `bank_transactions` | import_id, txn_date, description, amount(入金 ＋／出金 −), balance, status(unmatched/matched/ignored), invoice_id, expense_id, auto_matched, fingerprint(会社内 unique) | 銀行明細（`0011`） |
 | `drivers` / `profiles` の追加列 | line_user_id, line_linked_at | LINE 連携（`0011`） |
@@ -195,7 +195,7 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 | `set_alert_status(alert_id, status, note)` | admin+ | アラートを対応済み／対象外／未対応に変える |
 | `bank_auto_match(import_id?)` | admin+ | 未消込の入金と、金額が一致する未入金の請求書を突き合わせる（候補が 1 件のときだけ消し込み、請求書を入金済みに） |
 | `bank_match_invoice(txn_id, invoice_id)` / `bank_set_status(txn_id, status)` | admin+ | 手動の消込／消込を外す・対象外にする（外すと請求書は発行済みに戻る） |
-| `line_issue_code()` | ログイン中の本人 | LINE 連携の 6 桁の合言葉を発行（30 分有効。ドライバーは自分の分） |
+| `line_issue_code()` | ログイン中の本人 | LINE 連携の 8 桁の合言葉を発行（30 分有効。ドライバーは自分の分） |
 | `line_consume_code(code, line_user_id)` | service_role | Webhook から呼び、合言葉を本人に結びつける |
 | `line_unlink(driver_id?)` | 本人 / admin+ | LINE 連携を外す |
 | `default_chat_channels(company_id)` | 内部 | 会社作成時に「全体」「経営」を作る |

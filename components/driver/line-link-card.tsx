@@ -64,7 +64,7 @@ export function LineLinkCard({ linked, linkedAt }: { linked: boolean; linkedAt: 
                   <p className="num text-3xl font-bold tracking-[0.3em]">{code}</p>
                 </div>
                 <Alert>
-                  LINE で会社の公式アカウントを友だち追加して、この 6 桁をそのまま送ってください（30 分間有効）。
+                  LINE で会社の公式アカウントを友だち追加して、この 8 桁をそのまま送ってください（30 分間有効）。
                 </Alert>
                 <Button variant="outline" onClick={issue} disabled={pending}>
                   {pending ? "発行中…" : "合言葉を出し直す"}
@@ -72,7 +72,7 @@ export function LineLinkCard({ linked, linkedAt }: { linked: boolean; linkedAt: 
               </div>
             ) : (
               <>
-                <p className="text-sm text-muted-foreground">「合言葉を出す」を押すと 6 桁の数字が出ます。LINE の公式アカウントにその数字を送ると連携できます。</p>
+                <p className="text-sm text-muted-foreground">「合言葉を出す」を押すと 8 桁の数字が出ます。LINE の公式アカウントにその数字を送ると連携できます。</p>
                 <Button onClick={issue} disabled={pending}>
                   {pending ? "発行中…" : "合言葉を出す"}
                 </Button>

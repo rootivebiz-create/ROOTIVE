@@ -55,7 +55,7 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
 - **AI（0011）**：`ANTHROPIC_API_KEY` があるときだけ有効（`isAiInsightsEnabled()`）。渡すのは `lib/ai/context.ts` が作る集計 JSON だけ（個人情報は入れない）。月次分析は `ai_insights`（`kind='monthly'`・`summary`・`findings`・`actions`）に保存、相談は `ai_conversations` / `ai_messages`。応答の取り出しは `lib/ai/findings.ts` の `extractInsight` / `normalizeInsight` を使う（独自パースを書かない）
 - **社内チャット（0011）**：`chat_channels` / `chat_messages` / `chat_reads`。**閲覧者を含むスタッフ全員**が読み書きできる（ドライバーは不可）。発言は RPC `chat_post(p_channel_id, p_body, p_mentions uuid[])`、既読は `chat_mark_read`。発言者名は `chat_messages.author_name` にトリガーが写す（閲覧者は他人の `profiles` を読めないため）
 - **異常の検知（0011）**：RPC `detect_anomalies(month)` が 11 種類の異常を `alerts` に記録する（`fingerprint` で二重に作らない。直った異常は自動で `resolved`）。状態変更は `set_alert_status`。検知のルールを足すときは DB 側に足す（画面側で判定を書かない）
-- **外部連携（0011）**：`integrations`（設定）と `integration_secrets`（トークン等。**RLS ポリシー無し＝サービスロール専用**。`lib/integrations/secrets.ts` 経由でのみ触る）、`integration_logs`（実行記録）。LINE は `drivers.line_user_id` / `profiles.line_user_id` と 6 桁の `line_link_codes`（Webhook が `line_consume_code` で結びつける）
+- **外部連携（0011）**：`integrations`（設定）と `integration_secrets`（トークン等。**RLS ポリシー無し＝サービスロール専用**。`lib/integrations/secrets.ts` 経由でのみ触る）、`integration_logs`（実行記録）。LINE は `drivers.line_user_id` / `profiles.line_user_id` と 8 桁の `line_link_codes`（Webhook が `line_consume_code` で結びつける）
 - **銀行 CSV（0011）**：`lib/bank/csv.ts` が文字コードと列を自動判定して `bank_transactions` に入れる（`fingerprint` で二重取り込みを防ぐ。入金 ＋／出金 −）。消込は RPC `bank_auto_match` / `bank_match_invoice` / `bank_set_status`（請求書の状態も合わせて変わる）
 - ロール：owner（すべて）／admin（登録・編集・月締め・出力）／viewer（閲覧・CSV・チャット・AI 相談）／driver（自分の締め済み月の明細のみ）
 

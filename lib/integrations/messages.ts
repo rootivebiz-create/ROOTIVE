@@ -95,7 +95,7 @@ export function welcomeMessage(companyName: string): string {
     header(companyName, "友だち追加ありがとうございます"),
     "",
     "このアカウントからは支払明細やお知らせをお送りします。",
-    "アプリで出した 6 桁の合言葉をこのトークに送ると、連携が完了します。",
+    "アプリで出した 8 桁の合言葉をこのトークに送ると、連携が完了します。",
   );
 }
 
@@ -103,7 +103,7 @@ export function welcomeMessage(companyName: string): string {
 export function guideMessage(): string {
   return lines(
     "このアカウントからは支払明細やお知らせをお送りします。",
-    "連携するときは、アプリで出した 6 桁の合言葉を送ってください。",
+    "連携するときは、アプリで出した 8 桁の合言葉を送ってください。",
   );
 }
 

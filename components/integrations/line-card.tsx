@@ -119,7 +119,7 @@ export function LineCard({ canEdit, status, config, mask, webhookUrl, people, se
           {config.botName && <span className="text-xs text-muted-foreground">{config.botName}</span>}
         </div>
         <CardDescription>
-          支払明細ができたことや重要なお知らせを LINE で送ります。ドライバーは合言葉（6 桁）を公式アカウントに送るだけで連携できます。
+          支払明細ができたことや重要なお知らせを LINE で送ります。ドライバーは合言葉（8 桁）を公式アカウントに送るだけで連携できます。
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

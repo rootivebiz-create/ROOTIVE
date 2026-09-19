@@ -199,7 +199,7 @@ create table if not exists public.line_link_codes (
   check (driver_id is not null or profile_id is not null)
 );
 create index if not exists line_link_codes_company_idx on public.line_link_codes (company_id, expires_at desc);
-comment on table public.line_link_codes is 'LINE 連携用の合言葉（6 桁）。LINE で送ってもらうと本人と結びつく';
+comment on table public.line_link_codes is 'LINE 連携用の合言葉（8 桁）。LINE で送ってもらうと本人と結びつく';
 
 -- 銀行 CSV の取り込み
 create table if not exists public.bank_imports (
@@ -968,7 +968,7 @@ end $$;
 -- =============================================================================
 -- RPC：LINE 連携の合言葉
 -- =============================================================================
--- 合言葉（6 桁）を発行する。ドライバーは自分の分、スタッフは自分の分
+-- 合言葉（8 桁）を発行する。ドライバーは自分の分、スタッフは自分の分
 create or replace function public.line_issue_code()
 returns text language plpgsql security invoker set search_path = public as $$
 declare
@@ -979,7 +979,7 @@ begin
   if cid is null then
     raise exception 'ログインが必要です' using errcode = 'P0001';
   end if;
-  code := lpad((floor(random() * 1000000))::integer::text, 6, '0');
+  code := lpad((floor(random() * 100000000))::bigint::text, 8, '0');
   if did is not null then
     delete from public.line_link_codes where company_id = cid and driver_id = did and used_at is null;
     insert into public.line_link_codes (code, company_id, driver_id, expires_at)
@@ -996,12 +996,15 @@ begin
 end $$;
 
 -- 合言葉を使って LINE のユーザー ID を結びつける（Webhook から。サービスロール専用）
-create or replace function public.line_consume_code(p_code text, p_line_user_id text)
+-- p_company_id を渡すと、その会社が出した合言葉だけを受け付ける（他社の合言葉を消費しない）
+drop function if exists public.line_consume_code(text, text);
+create or replace function public.line_consume_code(p_code text, p_line_user_id text, p_company_id uuid default null)
 returns jsonb language plpgsql security definer set search_path = public as $$
 declare r record;
 begin
   select * into r from public.line_link_codes
    where code = btrim(p_code) and used_at is null and expires_at > now()
+     and (p_company_id is null or company_id = p_company_id)
    limit 1;
   if r is null then
     return jsonb_build_object('ok', false, 'reason', 'not_found');
@@ -1154,4 +1157,4 @@ revoke execute on function public.handle_new_auth_user() from authenticated, ano
 revoke execute on function public.default_expense_categories(uuid) from authenticated, anon, public;
 revoke execute on function public.default_chat_channels(uuid) from authenticated, anon, public;
 revoke execute on function public.recalc_invoice(uuid) from anon, public;
-revoke execute on function public.line_consume_code(text, text) from authenticated, anon, public;
+revoke execute on function public.line_consume_code(text, text, uuid) from authenticated, anon, public;

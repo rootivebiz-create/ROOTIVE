@@ -8,8 +8,8 @@ import type { Integration, IntegrationKind } from "@/lib/db/types";
 /** LINE の Webhook を受け取るパス（設定画面に表示する URL の末尾） */
 export const LINE_WEBHOOK_PATH = "/api/line/webhook";
 
-/** 連携の合言葉（6 桁の数字） */
-export const LINE_LINK_CODE_RE = /^\d{6}$/;
+/** 連携の合言葉（8 桁の数字） */
+export const LINE_LINK_CODE_RE = /^\d{8}$/;
 
 /** LINE のテキストメッセージの上限（5000 文字。余裕をみて切り詰める） */
 export const LINE_MAX_TEXT = 4900;

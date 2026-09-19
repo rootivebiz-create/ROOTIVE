@@ -2132,6 +2132,7 @@ export type Database = {
         Args: {
           p_code: string
           p_line_user_id: string
+          p_company_id?: string
         }
         Returns: Json
       }

@@ -145,11 +145,11 @@ describe("LINE の文面", () => {
     expect(text.endsWith("…")).toBe(true);
   });
 
-  it("合言葉は 6 桁の数字だけを受け付ける", () => {
-    expect(LINE_LINK_CODE_RE.test("012345")).toBe(true);
-    expect(LINE_LINK_CODE_RE.test("12345")).toBe(false);
+  it("合言葉は 8 桁の数字だけを受け付ける", () => {
+    expect(LINE_LINK_CODE_RE.test("01234567")).toBe(true);
     expect(LINE_LINK_CODE_RE.test("1234567")).toBe(false);
-    expect(LINE_LINK_CODE_RE.test("12345a")).toBe(false);
+    expect(LINE_LINK_CODE_RE.test("123456789")).toBe(false);
+    expect(LINE_LINK_CODE_RE.test("1234567a")).toBe(false);
   });
 });
 

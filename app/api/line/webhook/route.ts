@@ -2,7 +2,7 @@
  * POST /api/line/webhook — LINE 公式アカウントからの Webhook
  * - 生のボディ文字列で x-line-signature を検証する（会社ごとにチャネルシークレットが違うため、
  *   保存済みの機密を順に試して一致したものを採用する。会社数は少ない前提）
- * - 6 桁の合言葉を受け取ったら RPC line_consume_code（サービスロール専用）で連携する
+ * - 8 桁の合言葉を受け取ったら RPC line_consume_code（サービスロール専用）で連携する
  * - 署名が合わなければ 401。それ以外は LINE の仕様に合わせて必ず早く 200 を返す
  */
 import { NextResponse, type NextRequest } from "next/server";
@@ -62,9 +62,13 @@ async function reply(replyToken: string | undefined, text: string, token: string
   }
 }
 
-/** 合言葉で連携する */
-async function consumeCode(code: string, lineUserId: string): Promise<ConsumeResult> {
-  const { data, error } = await createAdminClient().rpc("line_consume_code", { p_code: code, p_line_user_id: lineUserId });
+/** 合言葉で連携する（署名が一致した会社が出した合言葉だけを受け付ける） */
+async function consumeCode(code: string, lineUserId: string, companyId: string): Promise<ConsumeResult> {
+  const { data, error } = await createAdminClient().rpc("line_consume_code", {
+    p_code: code,
+    p_line_user_id: lineUserId,
+    p_company_id: companyId,
+  });
   if (error) throw error;
   return (data ?? {}) as ConsumeResult;
 }
@@ -91,18 +95,14 @@ async function handleEvent(event: LineEvent, ctx: { companyId: string; token: st
     return;
   }
 
-  const result = await consumeCode(text, lineUserId);
+  const result = await consumeCode(text, lineUserId, companyId);
   if (!result.ok) {
     await reply(event.replyToken, linkFailedMessage(), token, companyId);
-    await logIntegration(companyId, "line", "link", "error", "合言葉が見つかりませんでした（期限切れか使用済み）");
+    await logIntegration(companyId, "line", "link", "error", "合言葉が見つかりませんでした（期限切れ・使用済み・別の会社の合言葉）");
     return;
   }
   const linkedName = result.name ?? "";
   await reply(event.replyToken, linkedMessage({ companyName: name, name: linkedName }), token, companyId);
-  if (result.company_id && result.company_id !== companyId) {
-    await logIntegration(companyId, "line", "link", "error", `他の会社の合言葉で連携されました（${linkedName}）`, { kind: result.kind ?? "" });
-    return;
-  }
   await logIntegration(companyId, "line", "link", "ok", `${linkedName} さんと連携しました`, { kind: result.kind ?? "" });
 }
 

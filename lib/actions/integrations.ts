@@ -160,7 +160,7 @@ export async function sendLineTestAction(): Promise<ActionResult<null>> {
   }, "テスト送信しました。LINE を確認してください。");
 }
 
-/** 連携用の合言葉（6 桁）を発行する（ログイン中の本人。ドライバーも可） */
+/** 連携用の合言葉（8 桁）を発行する（ログイン中の本人。ドライバーも可） */
 export async function issueLineCodeAction(): Promise<ActionResult<{ code: string; expiresInMinutes: number }>> {
   return runAction(async () => {
     const { supabase } = await requireActionRole(ANY_ROLES);

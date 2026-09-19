@@ -791,7 +791,7 @@ select public.t_expect_error($$select count(*) from public.integration_secrets$$
 
 -- LINE の合言葉：ドライバー本人が出して、Webhook（サービスロール）が使う
 select public.test_login(:'driver_a');
-select public.t_assert(length(public.line_issue_code()) = 6, 'ドライバーが 6 桁の合言葉を出せる');
+select public.t_assert(length(public.line_issue_code()) = 8, 'ドライバーが 8 桁の合言葉を出せる');
 reset role;
 select public.t_assert((public.line_consume_code((select code from public.line_link_codes where company_id = :'company_a' and used_at is null limit 1), 'U1234567890')->>'ok')::boolean, '合言葉で連携できる');
 select public.t_assert((select line_user_id = 'U1234567890' and line_linked_at is not null from public.drivers where company_id = :'company_a' and name = '相曽慧'), 'ドライバーに LINE の ID が入る');

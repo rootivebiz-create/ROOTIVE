@@ -48,11 +48,11 @@ export const driveSettingsSchema = z.object({
   autoBackup: z.boolean(),
 });
 
-/** 連携の合言葉（6 桁の数字） */
+/** 連携の合言葉（8 桁の数字） */
 export const lineLinkCodeSchema = z
   .string()
   .trim()
-  .regex(LINE_LINK_CODE_RE, "合言葉は 6 桁の数字です");
+  .regex(LINE_LINK_CODE_RE, "合言葉は 8 桁の数字です");
 
 /** LINE の連携解除（driverId を省略すると自分自身） */
 export const unlinkLineSchema = z.object({
