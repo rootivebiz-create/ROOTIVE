@@ -1001,4 +1001,106 @@ select public.t_assert((select count(*) = 0 from public.documents), '他社の�
 
 select public.test_logout();
 reset role;
-\echo '== すべてのアサーションが通りました（18〜22 節）'
+
+\echo '== 23. 法人の経営管理（銀行口座・税務カレンダー・借入・経営指標）'
+set role authenticated;
+select public.test_login(:'owner_a');
+
+-- ---------- 決算月と税務カレンダー ----------
+update public.companies set fiscal_month = 3 where id = :'company_a';
+select public.t_assert(public.ensure_tax_tasks(2027) >= 10, '税務・決算の期限をまとめて作れる');
+select public.t_assert((select count(*) = 0 from public.tax_tasks where company_id = :'company_a' and title = '') , '期限には必ず名前がつく');
+select public.t_assert((select due_on = '2027-05-31' from public.tax_tasks where company_id = :'company_a' and kind = 'corporate_tax_final' and due_on >= '2027-01-01'), '3 月決算なら法人税の申告期限は 5 月末');
+select public.t_assert(public.ensure_tax_tasks(2027) = 0, '同じ年を作り直しても二重にならない');
+select public.t_assert((select urgency = 'future' or urgency in ('soon','overdue','done') from public.v_tax_task_list where company_id = :'company_a' and kind = 'corporate_tax_final' limit 1), '期限の緊急度が出る');
+update public.tax_tasks set status = 'done', done_on = current_date where company_id = :'company_a' and kind = 'depreciable_assets';
+select public.t_assert((select urgency = 'done' from public.v_tax_task_list where company_id = :'company_a' and kind = 'depreciable_assets' limit 1), '済にすると done になる');
+
+-- 決算月を変えると期限も変わる
+update public.companies set fiscal_month = 12 where id = :'company_a';
+select public.ensure_tax_tasks(2028);
+select public.t_assert((select count(*) = 1 from public.tax_tasks where company_id = :'company_a' and kind = 'corporate_tax_final' and due_on = '2029-02-28'), '12 月決算なら法人税の申告期限は翌年 2 月末');
+update public.companies set fiscal_month = 3 where id = :'company_a';
+
+-- ---------- 借入と返済予定 ----------
+insert into public.loans (id, company_id, name, lender, principal, annual_rate, start_on, months, payment_day, status)
+values ('00000000-0000-0000-0000-0000000000f1', :'company_a', '運転資金', '日本政策金融公庫', 3000000, 0.0180, '2026-12-01', 60, 27, 'active');
+select public.t_assert(public.generate_loan_schedule('00000000-0000-0000-0000-0000000000f1') = 60, '返済予定を 60 回分作れる');
+select public.t_assert((select count(*) = 0 from public.loan_payments where loan_id = '00000000-0000-0000-0000-0000000000f1' and company_id <> :'company_a'), '返済予定の会社はトリガーが補完する');
+select public.t_assert((select abs(sum(principal) - 3000000) < 100 from public.loan_payments where loan_id = '00000000-0000-0000-0000-0000000000f1'), '元金の合計が借入額と一致する');
+select public.t_assert((select sum(interest) > 0 from public.loan_payments where loan_id = '00000000-0000-0000-0000-0000000000f1'), '利息がつく');
+select public.t_assert((select balance = 0 from public.loan_payments where loan_id = '00000000-0000-0000-0000-0000000000f1' order by seq desc limit 1), '最後の返済で残高が 0 になる');
+select public.t_assert((select due_on = '2027-01-27' from public.loan_payments where loan_id = '00000000-0000-0000-0000-0000000000f1' and seq = 1), '初回の返済日は返済日の指定どおり');
+select public.t_assert((select remaining_principal > 0 and payment_count = 60 from public.v_loan_list where id = '00000000-0000-0000-0000-0000000000f1'), '借入の一覧に残高と回数が出る');
+select public.t_assert((select loan_name = '運転資金' from public.v_loan_payment_list where loan_id = '00000000-0000-0000-0000-0000000000f1' and seq = 1), '返済予定に借入名が出る');
+
+-- 返済済みの回は作り直しても消えない
+update public.loan_payments set paid_on = due_on where loan_id = '00000000-0000-0000-0000-0000000000f1' and seq = 1;
+select public.generate_loan_schedule('00000000-0000-0000-0000-0000000000f1');
+select public.t_assert((select paid_on is not null from public.loan_payments where loan_id = '00000000-0000-0000-0000-0000000000f1' and seq = 1), '返済済みの回は作り直しても残る');
+select public.t_assert((select paid_count = 1 from public.v_loan_list where id = '00000000-0000-0000-0000-0000000000f1'), '返済済みの回数が出る');
+
+-- 資金繰りに返済が載る
+select public.t_assert((select count(*) > 0 from public.cash_forecast('2027-01-01', '2027-03-31') where kind = 'loan'), '資金繰りに借入の返済が載る');
+select public.t_assert((select bool_and(amount < 0) from public.cash_forecast('2027-01-01', '2027-03-31') where kind = 'loan'), '返済は支払（マイナス）として載る');
+update public.loans set status = 'planned' where id = '00000000-0000-0000-0000-0000000000f1';
+select public.t_assert((select count(*) = 0 from public.cash_forecast('2027-01-01', '2027-03-31') where kind = 'loan'), '予定（planned）の借入は資金繰りに載せない');
+update public.loans set status = 'active' where id = '00000000-0000-0000-0000-0000000000f1';
+
+-- ---------- 経営指標 ----------
+update public.month_targets set expense_target = 300000, driver_target = 3 where company_id = :'company_a' and month = '2026-12-01';
+insert into public.month_targets (company_id, month, bill_target, profit_target, expense_target, driver_target)
+select :'company_a', '2026-12-01', 1000000, 300000, 300000, 3
+where not exists (select 1 from public.month_targets where company_id = :'company_a' and month = '2026-12-01');
+select public.t_assert((select count(*) = 1 from public.v_month_kpi where company_id = :'company_a' and month = '2026-12-01'), '経営指標のビューが 1 行返る');
+select public.t_assert((select contribution = margin + royalty - expense_variable from public.v_month_kpi where company_id = :'company_a' and month = '2026-12-01'), '限界利益 ＝ 粗利 ＋ ロイヤリティ − 変動費');
+select public.t_assert((select net_fixed_cost = expense_fixed - mgmt_fee - adj_profit from public.v_month_kpi where company_id = :'company_a' and month = '2026-12-01'), '正味の固定費 ＝ 固定費 − 管理費 − 利益計上の調整');
+select public.t_assert((select bill_achievement is not null from public.v_month_kpi where company_id = :'company_a' and month = '2026-12-01'), '売上の達成率が出る');
+select public.t_assert((select expense_target = 300000 and driver_target = 3 from public.v_month_kpi where company_id = :'company_a' and month = '2026-12-01'), '経費とドライバー数の予算が出る');
+select public.t_assert((select break_even_bill >= 0 from public.v_month_kpi where company_id = :'company_a' and month = '2026-12-01'), '損益分岐点売上高が出る');
+
+-- ---------- 口座情報 ----------
+update public.drivers set bank_code = '0005', bank_name = '三菱ＵＦＪ銀行', branch_code = '001', branch_name = '本店',
+       account_type = 'ordinary', account_number = '1234567', account_holder_kana = 'ｱｲｿ ｻﾄｼ'
+ where company_id = :'company_a' and name = '相曽慧';
+select public.t_assert((select account_number = '1234567' from public.drivers where company_id = :'company_a' and name = '相曽慧'), '口座情報を保存できる');
+select public.t_expect_error($$update public.drivers set bank_code = '12' where name = '相曽慧'$$, '', '銀行コードは 4 桁でないと保存できない');
+select public.t_expect_error($$update public.drivers set account_number = '12345678' where name = '相曽慧'$$, '', '口座番号は 7 桁までしか保存できない');
+update public.companies set fb_consignor_code = '1234567890', fb_consignor_kana = 'ｶ)ﾙｰﾃｨﾌﾞ', fb_bank_code = '0005',
+       fb_bank_name = '三菱ＵＦＪ銀行', fb_branch_code = '001', fb_branch_name = '本店',
+       fb_account_type = 'ordinary', fb_account_number = '7654321' where id = :'company_a';
+select public.t_assert((select fb_consignor_code = '1234567890' from public.companies where id = :'company_a'), '会社の振込元情報を保存できる');
+
+-- ---------- 異常検知（税務・契約・口座） ----------
+insert into public.tax_tasks (company_id, kind, title, due_on)
+values (:'company_a', 'spot_check', 'テスト用の期限', current_date + 10);
+insert into public.tax_tasks (company_id, kind, title, due_on)
+values (:'company_a', 'spot_overdue', '過ぎたテスト用の期限', current_date - 5);
+insert into public.contracts (company_id, driver_id, title, start_on, end_on, notice_days, auto_renew)
+values (:'company_a', (select id from public.drivers where company_id = :'company_a' and name = '相曽慧'), '業務委託契約書', '2025-04-01', current_date + 10, 30, true);
+select public.detect_anomalies('2026-12-01');
+select public.t_assert((select count(*) = 1 from public.alerts where company_id = :'company_a' and code = 'tax_due' and status = 'open'), '近づいた税務の期限を検知');
+select public.t_assert((select count(*) = 1 from public.alerts where company_id = :'company_a' and code = 'tax_overdue' and status = 'open'), '過ぎた税務の期限を検知');
+select public.t_assert((select count(*) = 1 from public.alerts where company_id = :'company_a' and code = 'contract_renewal' and status = 'open'), '更新時期の契約を検知');
+update public.tax_tasks set status = 'done', done_on = current_date where company_id = :'company_a' and kind = 'spot_check';
+select public.detect_anomalies('2026-12-01');
+select public.t_assert((select count(*) = 0 from public.alerts where company_id = :'company_a' and code = 'tax_due' and status = 'open'), '済にすると税務のアラートは解決済みになる');
+
+-- ---------- 権限 ----------
+select public.test_login(:'viewer_a');
+select public.t_assert((select count(*) > 0 from public.tax_tasks where company_id = :'company_a'), '閲覧者は税務の期限を読める');
+select public.t_assert((select count(*) > 0 from public.v_loan_list where company_id = :'company_a'), '閲覧者は借入を読める');
+select public.t_expect_error($$insert into public.loans (company_id, name, principal, start_on) values ('00000000-0000-0000-0000-00000000000a', 'だめ', 1, '2026-12-01')$$, '', '閲覧者は借入を追加できない');
+select public.t_expect_error($$select public.generate_loan_schedule('00000000-0000-0000-0000-0000000000f1')$$, 'FORBIDDEN', '閲覧者は返済予定を作れない');
+select public.t_expect_error($$select public.ensure_tax_tasks(2029)$$, 'FORBIDDEN', '閲覧者は税務の期限を作れない');
+
+-- ---------- 会社分離 ----------
+select public.test_login(:'owner_b');
+select public.t_assert((select count(*) = 0 from public.tax_tasks), '他社の税務の期限は見えない');
+select public.t_assert((select count(*) = 0 from public.loans), '他社の借入は見えない');
+select public.t_assert((select count(*) = 0 from public.loan_payments), '他社の返済予定は見えない');
+select public.t_assert((select count(*) = 0 from public.v_month_kpi where company_id = '00000000-0000-0000-0000-00000000000a'), '他社の経営指標は見えない');
+
+select public.test_logout();
+reset role;
+\echo '== すべてのアサーションが通りました（18〜23 節）'

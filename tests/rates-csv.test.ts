@@ -17,7 +17,7 @@ const I_KASHIWA_STD = "30000000-0000-4000-8000-000000000004";
 const I_STOPPED = "30000000-0000-4000-8000-000000000005";
 
 function driver(id: string, name: string, sort_order: number, is_active = true): Driver {
-  return { id, company_id: COMPANY, name, kana: "", is_active, royalty_rate: null, mgmt_fee: 15000, rounding_mode: null, phone: "", email: "", bank_info: "", memo: "", sort_order, tax_mode: "taxable", invoice_reg_no: "", payout_month_offset: null, payout_day: null, line_user_id: "", line_linked_at: null, created_at: "", updated_at: "" };
+  return { id, company_id: COMPANY, name, kana: "", is_active, royalty_rate: null, mgmt_fee: 15000, rounding_mode: null, phone: "", email: "", bank_info: "", memo: "", sort_order, tax_mode: "taxable", invoice_reg_no: "", payout_month_offset: null, payout_day: null, bank_code: "", bank_name: "", branch_code: "", branch_name: "", account_type: null, account_number: "", account_holder_kana: "", line_user_id: "", line_linked_at: null, created_at: "", updated_at: "" };
 }
 
 function item(id: string, project_id: string, name: string, unit: "day" | "piece", bill_rate: number, pay_rate: number, sort_order: number, is_active = true): ProjectItem {
@@ -51,6 +51,15 @@ const masters: Masters = {
     yayoi_accounts: {},
     tax_rate: 0.1,
     tax_rounding: "floor",
+    fiscal_month: 3,
+    fb_consignor_code: "",
+    fb_consignor_kana: "",
+    fb_bank_code: "",
+    fb_bank_name: "",
+    fb_branch_code: "",
+    fb_branch_name: "",
+    fb_account_type: null,
+    fb_account_number: "",
     logo_path: null,
     seal_path: null,
     created_at: "",

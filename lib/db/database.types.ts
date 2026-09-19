@@ -671,6 +671,15 @@ export type Database = {
           logo_path: string | null
           seal_path: string | null
           driver_portal_show_open_month: boolean
+          fiscal_month: number
+          fb_consignor_code: string
+          fb_consignor_kana: string
+          fb_bank_code: string
+          fb_bank_name: string
+          fb_branch_code: string
+          fb_branch_name: string
+          fb_account_type: Database["public"]["Enums"]["bank_account_type"] | null
+          fb_account_number: string
         }
         Insert: {
           id?: string
@@ -693,6 +702,15 @@ export type Database = {
           logo_path?: string | null
           seal_path?: string | null
           driver_portal_show_open_month?: boolean
+          fiscal_month?: number
+          fb_consignor_code?: string
+          fb_consignor_kana?: string
+          fb_bank_code?: string
+          fb_bank_name?: string
+          fb_branch_code?: string
+          fb_branch_name?: string
+          fb_account_type?: Database["public"]["Enums"]["bank_account_type"] | null
+          fb_account_number?: string
         }
         Update: {
           id?: string
@@ -715,6 +733,15 @@ export type Database = {
           logo_path?: string | null
           seal_path?: string | null
           driver_portal_show_open_month?: boolean
+          fiscal_month?: number
+          fb_consignor_code?: string
+          fb_consignor_kana?: string
+          fb_bank_code?: string
+          fb_bank_name?: string
+          fb_branch_code?: string
+          fb_branch_name?: string
+          fb_account_type?: Database["public"]["Enums"]["bank_account_type"] | null
+          fb_account_number?: string
         }
         Relationships: []
       }
@@ -1113,6 +1140,13 @@ export type Database = {
           payout_day: number | null
           line_user_id: string
           line_linked_at: string | null
+          bank_code: string
+          bank_name: string
+          branch_code: string
+          branch_name: string
+          account_type: Database["public"]["Enums"]["bank_account_type"] | null
+          account_number: string
+          account_holder_kana: string
         }
         Insert: {
           id?: string
@@ -1136,6 +1170,13 @@ export type Database = {
           payout_day?: number | null
           line_user_id?: string
           line_linked_at?: string | null
+          bank_code?: string
+          bank_name?: string
+          branch_code?: string
+          branch_name?: string
+          account_type?: Database["public"]["Enums"]["bank_account_type"] | null
+          account_number?: string
+          account_holder_kana?: string
         }
         Update: {
           id?: string
@@ -1159,6 +1200,13 @@ export type Database = {
           payout_day?: number | null
           line_user_id?: string
           line_linked_at?: string | null
+          bank_code?: string
+          bank_name?: string
+          branch_code?: string
+          branch_name?: string
+          account_type?: Database["public"]["Enums"]["bank_account_type"] | null
+          account_number?: string
+          account_holder_kana?: string
         }
         Relationships: []
       }
@@ -1702,6 +1750,108 @@ export type Database = {
         }
         Relationships: []
       }
+      loan_payments: {
+        Row: {
+          id: string
+          company_id: string
+          loan_id: string
+          seq: number
+          due_on: string
+          principal: number
+          interest: number
+          total: number
+          balance: number
+          paid_on: string | null
+          memo: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          loan_id: string
+          seq: number
+          due_on: string
+          principal?: number
+          interest?: number
+          total?: number
+          balance?: number
+          paid_on?: string | null
+          memo?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          loan_id?: string
+          seq?: number
+          due_on?: string
+          principal?: number
+          interest?: number
+          total?: number
+          balance?: number
+          paid_on?: string | null
+          memo?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      loans: {
+        Row: {
+          id: string
+          company_id: string
+          name: string
+          lender: string
+          principal: number
+          annual_rate: number
+          start_on: string
+          months: number
+          payment_day: number
+          monthly_payment: number
+          status: Database["public"]["Enums"]["loan_status"]
+          memo: string
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          name: string
+          lender?: string
+          principal?: number
+          annual_rate?: number
+          start_on: string
+          months?: number
+          payment_day?: number
+          monthly_payment?: number
+          status?: Database["public"]["Enums"]["loan_status"]
+          memo?: string
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          name?: string
+          lender?: string
+          principal?: number
+          annual_rate?: number
+          start_on?: string
+          months?: number
+          payment_day?: number
+          monthly_payment?: number
+          status?: Database["public"]["Enums"]["loan_status"]
+          memo?: string
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       month_closings: {
         Row: {
           company_id: string
@@ -1756,6 +1906,8 @@ export type Database = {
           memo: string
           created_at: string
           updated_at: string
+          expense_target: number
+          driver_target: number
         }
         Insert: {
           company_id: string
@@ -1765,6 +1917,8 @@ export type Database = {
           memo?: string
           created_at?: string
           updated_at?: string
+          expense_target?: number
+          driver_target?: number
         }
         Update: {
           company_id?: string
@@ -1774,6 +1928,8 @@ export type Database = {
           memo?: string
           created_at?: string
           updated_at?: string
+          expense_target?: number
+          driver_target?: number
         }
         Relationships: []
       }
@@ -2006,6 +2162,57 @@ export type Database = {
           notified_on?: string | null
           memo?: string
           is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      tax_tasks: {
+        Row: {
+          id: string
+          company_id: string
+          kind: string
+          title: string
+          detail: string
+          due_on: string
+          status: Database["public"]["Enums"]["tax_task_status"]
+          done_on: string | null
+          amount: number | null
+          memo: string
+          is_generated: boolean
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          kind: string
+          title: string
+          detail?: string
+          due_on: string
+          status?: Database["public"]["Enums"]["tax_task_status"]
+          done_on?: string | null
+          amount?: number | null
+          memo?: string
+          is_generated?: boolean
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          kind?: string
+          title?: string
+          detail?: string
+          due_on?: string
+          status?: Database["public"]["Enums"]["tax_task_status"]
+          done_on?: string | null
+          amount?: number | null
+          memo?: string
+          is_generated?: boolean
+          created_by?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -2529,6 +2736,98 @@ export type Database = {
         }
         Relationships: []
       }
+      v_loan_list: {
+        Row: {
+          id: string | null
+          company_id: string | null
+          name: string | null
+          lender: string | null
+          principal: number | null
+          annual_rate: number | null
+          start_on: string | null
+          months: number | null
+          payment_day: number | null
+          monthly_payment: number | null
+          status: Database["public"]["Enums"]["loan_status"] | null
+          memo: string | null
+          created_by: string | null
+          created_at: string | null
+          updated_at: string | null
+          payment_count: number | null
+          paid_count: number | null
+          remaining_principal: number | null
+          paid_principal: number | null
+          total_interest: number | null
+          next_due_on: string | null
+          next_total: number | null
+          final_due_on: string | null
+        }
+        Relationships: []
+      }
+      v_loan_payment_list: {
+        Row: {
+          id: string | null
+          company_id: string | null
+          loan_id: string | null
+          seq: number | null
+          due_on: string | null
+          principal: number | null
+          interest: number | null
+          total: number | null
+          balance: number | null
+          paid_on: string | null
+          memo: string | null
+          created_at: string | null
+          updated_at: string | null
+          loan_name: string | null
+          lender: string | null
+          is_paid: boolean | null
+          is_overdue: boolean | null
+        }
+        Relationships: []
+      }
+      v_month_kpi: {
+        Row: {
+          company_id: string | null
+          month: string | null
+          status: Database["public"]["Enums"]["month_status"] | null
+          bill: number | null
+          pay: number | null
+          royalty: number | null
+          margin: number | null
+          mgmt_fee: number | null
+          adj_profit: number | null
+          payout: number | null
+          payout_incl: number | null
+          profit: number | null
+          expense_total: number | null
+          expense_fixed: number | null
+          expense_variable: number | null
+          operating_profit: number | null
+          operating_margin: number | null
+          bill_target: number | null
+          profit_target: number | null
+          entry_count: number | null
+          active_driver_count: number | null
+          driver_count: number | null
+          expense_target: number | null
+          driver_target: number | null
+          work_day_count: number | null
+          contribution: number | null
+          net_fixed_cost: number | null
+          contribution_rate: number | null
+          payout_rate: number | null
+          break_even_bill: number | null
+          break_even_ratio: number | null
+          bill_per_driver: number | null
+          profit_per_driver: number | null
+          bill_per_work_day: number | null
+          expense_achievement: number | null
+          bill_achievement: number | null
+          profit_achievement: number | null
+        }
+        Relationships: []
+      }
       v_month_list: {
         Row: {
           company_id: string | null
@@ -2691,6 +2990,27 @@ export type Database = {
           is_active: boolean | null
           line_linked: boolean | null
           created_at: string | null
+        }
+        Relationships: []
+      }
+      v_tax_task_list: {
+        Row: {
+          id: string | null
+          company_id: string | null
+          kind: string | null
+          title: string | null
+          detail: string | null
+          due_on: string | null
+          status: Database["public"]["Enums"]["tax_task_status"] | null
+          done_on: string | null
+          amount: number | null
+          memo: string | null
+          is_generated: boolean | null
+          created_by: string | null
+          created_at: string | null
+          updated_at: string | null
+          days_left: number | null
+          urgency: string | null
         }
         Relationships: []
       }
@@ -2979,6 +3299,12 @@ export type Database = {
         }
         Returns: string
       }
+      ensure_tax_tasks: {
+        Args: {
+          p_year: number
+        }
+        Returns: number
+      }
       entry_defaults: {
         Args: {
           p_driver_id: string
@@ -2994,6 +3320,12 @@ export type Database = {
       export_backup: {
         Args: Record<PropertyKey, never>
         Returns: Json
+      }
+      generate_loan_schedule: {
+        Args: {
+          p_loan_id: string
+        }
+        Returns: number
       }
       import_backup: {
         Args: {
@@ -3216,6 +3548,7 @@ export type Database = {
       alert_severity: "high" | "medium" | "low"
       alert_status: "open" | "resolved" | "ignored"
       applicant_stage: "applied" | "contacted" | "interview" | "docs" | "contract" | "started" | "declined" | "rejected"
+      bank_account_type: "ordinary" | "checking" | "savings"
       bank_txn_status: "unmatched" | "matched" | "ignored"
       contract_status: "draft" | "active" | "ended"
       day_entry_status: "submitted" | "approved" | "rejected"
@@ -3226,10 +3559,12 @@ export type Database = {
       integration_kind: "line" | "google_drive" | "bank"
       invoice_status: "draft" | "issued" | "paid"
       item_unit: "day" | "piece"
+      loan_status: "active" | "paid" | "planned"
       month_status: "open" | "closed"
       roll_call_method: "face" | "phone" | "video" | "app"
       rounding_mode: "none" | "floor" | "round" | "ceil"
       tax_mode: "taxable" | "exempt"
+      tax_task_status: "todo" | "done" | "skipped"
       user_role: "owner" | "admin" | "viewer" | "driver"
       vehicle_ownership: "owned" | "lease" | "driver"
     }
