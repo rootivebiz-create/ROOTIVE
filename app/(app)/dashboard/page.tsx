@@ -25,6 +25,9 @@ import { AlertCard } from "@/components/alerts/alert-card";
 import { DayStatusCard } from "@/components/daily/day-status-card";
 import { ExpiryCard } from "@/components/fleet/expiry-card";
 import { todayJST, toFleetDocument } from "@/lib/fleet/helpers";
+import { HrCard } from "@/components/hr/hr-card";
+import { hrCounts, toApplicantView, toContractView } from "@/lib/hr/helpers";
+import { loadApplicants, loadContracts } from "@/lib/db/queries";
 
 export const metadata = { title: "ダッシュボード" };
 /** AI 月次分析（Server Action）は応答に数十秒かかることがある */
@@ -34,7 +37,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const { supabase, profile, company } = await requireStaff();
   const sp = await searchParams;
   const month = monthFromParam(sp.m);
-  const [data, pl, prevPlRes, expenseRows, openAlerts, alertSummary, dayStatus, documentRows] = await Promise.all([
+  const [data, pl, prevPlRes, expenseRows, openAlerts, alertSummary, dayStatus, documentRows, applicants, contracts] = await Promise.all([
     loadDashboardData(supabase, company.id, month),
     loadMonthPl(supabase, company.id, month),
     supabase.from("v_month_pl").select("*").eq("company_id", company.id).eq("month", monthToDate(prevMonth(month))).maybeSingle(),
@@ -43,12 +46,15 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     loadAlertSummary(supabase, company.id, month),
     loadDayStatus(supabase, company.id, month),
     loadDocuments(supabase, company.id),
+    loadApplicants(supabase, company.id, { stage: "all" }),
+    loadContracts(supabase, company.id),
   ]);
   if (prevPlRes.error) throw prevPlRes.error;
   const aiEnabled = isAiInsightsEnabled();
   const breakdown = expenseBreakdown(expenseRows);
   const today = todayJST();
   const documents = documentRows.map((r) => toFleetDocument(r, today));
+  const hr = hrCounts(applicants.map(toApplicantView), contracts.map(toContractView), today);
 
   const driverRows: DriverSummaryRow[] = data.drivers.map((d) => {
     const bill = Number(d.bill ?? 0);
@@ -121,6 +127,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
       <div className="grid gap-4 lg:grid-cols-2">
         <ExpiryCard documents={documents} />
+        <HrCard counts={hr} />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
         <DayStatusCard
           workDayCount={Number(dayStatus?.work_day_count ?? 0)}
           pendingCount={Number(dayStatus?.pending_count ?? 0)}

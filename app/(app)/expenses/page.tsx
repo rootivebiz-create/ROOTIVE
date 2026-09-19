@@ -4,6 +4,8 @@ import { monthFromParam } from "@/lib/month";
 import { ExpensesView } from "@/components/expenses/expenses-view";
 import type { ExpenseChoices } from "@/components/expenses/expense-dialog";
 import { toCategoryTotal, toExpenseRow } from "@/components/expenses/helpers";
+import { ReceiptUpload } from "@/components/intake/receipt-upload";
+import { isAiInsightsEnabled } from "@/lib/ai/config";
 
 export const metadata = { title: "経費" };
 
@@ -34,13 +36,17 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
       : null;
 
   return (
-    <ExpensesView
-      month={month}
-      rows={expenses.map(toExpenseRow)}
-      categories={summary.map(toCategoryTotal)}
-      editable={editable}
-      closed={closed}
-      choices={choices}
-    />
+    <div className="space-y-4">
+      <ExpensesView
+        month={month}
+        rows={expenses.map(toExpenseRow)}
+        categories={summary.map(toCategoryTotal)}
+        editable={editable}
+        closed={closed}
+        choices={choices}
+      />
+      {/* レシートを撮って経費にする（AI が金額・日付・支払先・カテゴリを読み取る） */}
+      <ReceiptUpload categories={categories ?? []} month={month} canEdit={editable} aiEnabled={isAiInsightsEnabled()} />
+    </div>
   );
 }
