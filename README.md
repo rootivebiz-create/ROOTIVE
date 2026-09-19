@@ -78,11 +78,15 @@ app/
   (app)/projects                        案件別集計          (app)/cashflow  資金繰り    (app)/drivers-pl  ドライバー別の採算
   (app)/expenses, invoices, reports      経費・請求書・年次レポート
   (app)/bank                            銀行 CSV の取り込みと入金消込
+  (app)/daily                           日報・点呼と日別の稼働（承認すると月次へ自動集計）
+  (app)/intake                          元請の実績ファイルの取り込み
+  (app)/fleet                           車両と書類の期限
+  (app)/hr                              採用のパイプラインと業務委託契約
   (app)/alerts                          気になること（異常の検知）
   (app)/ai, ai/[id]                     AI 経営分析・AI 相談・文章の下書き
   (app)/chat, chat/[channelId]          社内チャット（閲覧者を含むスタッフ全員）
   (app)/settings/{drivers,projects,rates,clients,expenses,months,integrations,company,users,data,audit,account}   設定
-  driver/*                              ドライバーポータル（本人の締め済み明細。未締め月は「集計中」）
+  driver/*                              ドライバーポータル（今日の報告＝点呼＋稼働、本人の締め済み明細）
   api/export/*                          CSV・弥生 CSV・PDF・単価表 CSV・全員分 PDF（ZIP）・バックアップ JSON
   api/cron/keepalive                    Supabase 一時停止防止（Vercel Cron、vercel.json。CRON_SECRET 必須）
   api/line/webhook                      LINE 公式アカウントの Webhook（署名検証つき）
@@ -96,8 +100,10 @@ lib/
   exports/    CSV                       migrate/   試作 JSON 変換
   ai/         AI（分析・相談・文章）     alerts/    異常の検知      chat/    社内チャット
   bank/       銀行 CSV の解析            integrations/  LINE・Google ドライブ（サーバー専用）
+  daily/      日報・点呼・日別の稼働      fleet/     車両と書類の期限
+  intake/     レシート OCR・実績ファイル  hr/        採用と契約
 supabase/
-  migrations/ 0001 スキーマ … 0011 AI・チャット・異常検知・外部連携  setup_all.sql   全結合（SQL Editor に 1 回貼るだけ）
+  migrations/ 0001 スキーマ … 0013 運行管理・法令対応・取り込み・採用  setup_all.sql   全結合（SQL Editor に 1 回貼るだけ）
   seed/bootstrap_owner.sql  会社とオーナー招待         email-templates/  日本語メールテンプレート
 scripts/      setup-supabase.sh / deploy-vercel.sh / build-setup-sql.mjs / gen-db-types.mjs / migrate-prototype.ts
 .github/workflows/  deploy.yml（本番公開：Supabase + Vercel）、ci.yml
