@@ -20,6 +20,7 @@ ROOTIVE 利益管理システムの仕組みを、開発者・引き継ぎ担当
 │  app/driver/*                         ドライバーポータル（driver）               │
 │  app/api/export/*                     CSV / 弥生 CSV / PDF / バックアップ JSON      │
 │  app/api/cron/keepalive               Vercel Cron（毎日）→ Supabase 一時停止の防止     │
+│  app/api/cron/daily                   Vercel Cron（毎朝 7 時）→ 異常の検知と LINE 通知   │
 │  middleware.ts                        セッション Cookie 更新・未ログインを /login へ   │
 │                                                                      │
 │  lib/calc        計算（純関数・BigInt で誤差なし）  lib/actions  Server Actions        │
@@ -372,7 +373,7 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 | 案件別採算 CSV | `app/api/export/projects.csv` + `lib/exports/projects-csv.ts` | 案件ごとの売上・直課経費・案件利益・利益率・目標判定（当月／全期間） |
 | ドライバー別採算 CSV | `app/api/export/drivers-pl.csv` + `lib/exports/drivers-pl-csv.ts` | ドライバーごとの売上・支払・会社利益・利益率・税込支払額（合計行つき） |
 | 年次レポート CSV | `app/api/export/report.csv` + `lib/exports/report-csv.ts` | 月次推移（売上・会社利益・経費・営業利益・営業利益率・消費税・税込支払額・状態）＋合計行 |
-| バックアップ JSON | `app/api/export/backup.json` → `export_backup()` | §8.4 の形式（version 2 で経費・取引先・請求書・月次目標を含む。ロゴ・認印の画像は含まない） |
+| バックアップ JSON | `app/api/export/backup.json` → `export_backup()` | **version 4**（0015）。マスタ・稼働・支払・経費・請求書に加えて、車両・書類・日報・日別の稼働・安全管理者・指導・事故・取り込み定義・応募者・契約・税務の期限・借入と返済予定まで含む。外部連携のトークン・社内チャット・AI の履歴・監査ログ・アラート、Storage の画像は含まない |
 
 明細のデータ組み立ては `lib/statement/index.ts` に集約し、画面・PDF・CSV・テキスト・ドライバーポータルで共用しています。請求書は `lib/invoice/index.ts` に同じ形で集約しています。
 
@@ -436,7 +437,7 @@ supabase-js の使い方は、E2E 用の互換サーバーが対応する範囲�
 | `SUPABASE_SERVICE_ROLE_KEY` | service_role（secret）キー | **サーバー専用** |
 | `NEXT_PUBLIC_APP_URL` | 本番 URL（招待リンク・メールのリダイレクト先）。未設定時は `VERCEL_PROJECT_PRODUCTION_URL` → `VERCEL_URL` → localhost | ブラウザにも渡る |
 | `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` | 任意。AI 月次分析 | サーバー専用 |
-| `CRON_SECRET` | **必須**（本番）。Vercel Cron → `/api/cron/keepalive` の Bearer 検証。未設定だと 503 を返し定期アクセスは無効。32 文字以上のランダム文字列（deploy スクリプト／GitHub Actions が自動生成） | サーバー専用 |
+| `CRON_SECRET` | **必須**（本番）。Vercel Cron → `/api/cron/keepalive` と `/api/cron/daily`（毎朝の異常検知と LINE 通知）の Bearer 検証。未設定だと 503 を返し定期アクセスは無効。32 文字以上のランダム文字列（deploy スクリプト／GitHub Actions が自動生成） | サーバー専用 |
 
 ---
 
