@@ -32,6 +32,7 @@ const MAIN_PAGES: { href: string; label: string; keywords: string[] }[] = [
   { href: "/cashflow", label: "資金繰り", keywords: ["cashflow", "しきんぐり", "入金", "残高", "資金"] },
   { href: "/projects", label: "案件", keywords: ["project", "あんけん", "案件別"] },
   { href: "/drivers-pl", label: "ドライバー別の採算", keywords: ["driver", "どらいばー", "採算", "利益", "シミュレーション", "単価"] },
+  { href: "/ai?tab=draft", label: "AI で文章を作る", keywords: ["draft", "ぶんしょう", "案内", "督促", "お知らせ", "作文"] },
   { href: "/reports", label: "レポート", keywords: ["report", "れぽーと", "年次", "分析"] },
   { href: "/alerts", label: "気になること", keywords: ["alert", "あらーと", "異常", "警告", "けんさ", "注意"] },
   { href: "/ai", label: "AI 相談", keywords: ["ai", "えーあい", "そうだん", "分析", "改善", "claude", "ちゃっと"] },

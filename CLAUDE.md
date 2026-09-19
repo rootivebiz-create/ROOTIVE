@@ -12,6 +12,8 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
 
 ## ディレクトリ
 - `lib/calc/` 純関数の計算ロジック（正）。DB ビュー `v_*` と同じ結果を返すこと
+- `lib/ai/` AI（`config.ts` 有効判定・`context.ts` データパック・`analysis.ts` 月次分析・`chat.ts` 相談・`draft.ts` 文章・`findings.ts` 応答の正規化）
+- `lib/alerts/` `lib/chat/` `lib/bank/` `lib/integrations/` 各機能の純関数とサーバー専用の連携処理
 - `lib/db/database.types.ts` supabase-js 用の型（自動生成）、`lib/db/types.ts` 型エイリアス、`lib/db/queries.ts` 共通クエリ
 - `lib/auth/session.ts` セッション・ロール確認（`requireStaff` / `requirePageRole` / `requireAdminAction` など）
 - `lib/actions/*.ts` Server Actions（`"use server"`）、`lib/actions/result.ts` 共通の `ActionResult` / `runAction` / エラー変換
@@ -19,7 +21,7 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
 - `lib/month.ts` 稼動月ユーティリティ、`lib/format.ts` 表示書式（円・%・数量）
 - `components/ui/*` UI 部品（shadcn/ui 相当）、`components/layout/*` シェル・ナビ・月セレクタ
 - `app/(app)/*` スタッフ画面（ホーム・稼働・支払・請求・経費・資金繰り・案件・レポート・ドライバー別の採算・設定）、`app/driver/*` ドライバーポータル、`app/(auth)/*` ログイン・招待、`app/api/export/*` 出力
-- `supabase/migrations/*.sql` スキーマ（0001 テーブル、0002 認証・RLS、0003 ビュー、0004 RPC、0005 ポータル・初期データ、0006 Storage・権限、0007 ドライバー別単価（bill_rate 上書き・rate_diffs・apply_master_rates）、0008 消費税・ロゴと認印・ドライバーごとの支払日、0009 経費と営業利益・取引先と請求書・月次目標、0010 資金繰り・案件別採算）
+- `supabase/migrations/*.sql` スキーマ（0001 テーブル、0002 認証・RLS、0003 ビュー、0004 RPC、0005 ポータル・初期データ、0006 Storage・権限、0007 ドライバー別単価（bill_rate 上書き・rate_diffs・apply_master_rates）、0008 消費税・ロゴと認印・ドライバーごとの支払日、0009 経費と営業利益・取引先と請求書・月次目標、0010 資金繰り・案件別採算、0011 AI チャット・社内チャット・異常検知・外部連携）
 - `tests/` Vitest（`*.test.ts`）、`tests/sql/`（psql）、`tests/e2e/`（Playwright ＋ `supabase-lite` テストサーバー）
 
 ## 必ず守る規約
@@ -50,12 +52,18 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
 - **案件別採算（0010）**：ビュー `v_project_pl`。案件利益 = 稼働の利益 − その案件に紐づけた経費（`expenses.project_id`）。管理費・調整はドライバー単位なので案件に配賦しない。`projects.target_margin` を下回ると `below_target`
 - **着地見込み・単価シミュレーション（0010）**：`lib/calc/forecast.ts` と `lib/calc/simulate.ts`（ともに純関数）。シミュレーションは既存の `calcEntry` / `calcDriverMonth` / `calcCompanyMonth` を呼ぶだけで、独自の計算を書かない。着地見込みは管理費と固定費を按分しない
 - 川島幹太はオーナー本人：支払単価 0・率 0%・管理費 0 が正常（警告を出さない）
-- ロール：owner（すべて）／admin（登録・編集・月締め・出力）／viewer（閲覧・CSV のみ）／driver（自分の締め済み月の明細のみ）
+- **AI（0011）**：`ANTHROPIC_API_KEY` があるときだけ有効（`isAiInsightsEnabled()`）。渡すのは `lib/ai/context.ts` が作る集計 JSON だけ（個人情報は入れない）。月次分析は `ai_insights`（`kind='monthly'`・`summary`・`findings`・`actions`）に保存、相談は `ai_conversations` / `ai_messages`。応答の取り出しは `lib/ai/findings.ts` の `extractInsight` / `normalizeInsight` を使う（独自パースを書かない）
+- **社内チャット（0011）**：`chat_channels` / `chat_messages` / `chat_reads`。**閲覧者を含むスタッフ全員**が読み書きできる（ドライバーは不可）。発言は RPC `chat_post(p_channel_id, p_body, p_mentions uuid[])`、既読は `chat_mark_read`。発言者名は `chat_messages.author_name` にトリガーが写す（閲覧者は他人の `profiles` を読めないため）
+- **異常の検知（0011）**：RPC `detect_anomalies(month)` が 11 種類の異常を `alerts` に記録する（`fingerprint` で二重に作らない。直った異常は自動で `resolved`）。状態変更は `set_alert_status`。検知のルールを足すときは DB 側に足す（画面側で判定を書かない）
+- **外部連携（0011）**：`integrations`（設定）と `integration_secrets`（トークン等。**RLS ポリシー無し＝サービスロール専用**。`lib/integrations/secrets.ts` 経由でのみ触る）、`integration_logs`（実行記録）。LINE は `drivers.line_user_id` / `profiles.line_user_id` と 6 桁の `line_link_codes`（Webhook が `line_consume_code` で結びつける）
+- **銀行 CSV（0011）**：`lib/bank/csv.ts` が文字コードと列を自動判定して `bank_transactions` に入れる（`fingerprint` で二重取り込みを防ぐ。入金 ＋／出金 −）。消込は RPC `bank_auto_match` / `bank_match_invoice` / `bank_set_status`（請求書の状態も合わせて変わる）
+- ロール：owner（すべて）／admin（登録・編集・月締め・出力）／viewer（閲覧・CSV・チャット・AI 相談）／driver（自分の締め済み月の明細のみ）
 
 ## supabase-js の使い方の制約（E2E 用の互換テストサーバーが対応する範囲に限定する）
 - `from(table|view).select("col, col2" | "*")` — **埋め込みリソース（`drivers(name)` など）は使わない**。名称が必要なら `v_*` ビューを使う
+- ビューは原則 `security_invoker = true`。例外は `v_staff` だけで、閲覧者が他人の `profiles` を読めないため invoker にせず、ビューの中で会社とロールを必ず絞り込んでいる
 - フィルタ：`eq / neq / gt / gte / lt / lte / in / is / like / ilike / or（単純な eq の組み合わせのみ）`、`order / limit / range`、`single / maybeSingle`、`{ count: "exact" }`
 - 書き込み：`insert / upsert({ onConflict }) / update().eq() / delete().eq()` と `.select()` で戻り値取得
-- RPC：`rpc("name", { p_xxx })`。引数はスカラー・JSON（jsonb）・スカラーの配列（`uuid[]` など。`p_entry_ids: string[]`）まで
+- RPC：`rpc("name", { p_xxx })`。引数はスカラー・JSON（jsonb）・スカラーの配列（`uuid[]` など。`p_entry_ids: string[]`）まで。**JS の配列は Postgres の配列として渡るので、配列を受ける引数は `uuid[]` / `text[]` にする（jsonb にしない）**
 - Auth：`getUser / signInWithOtp / signInWithPassword / verifyOtp / exchangeCodeForSession / signOut / updateUser / resetPasswordForEmail`、admin：`createUser / listUsers / generateLink / getUserById / updateUserById`
 - Storage：`from("backups").upload / createSignedUrl / list / download`

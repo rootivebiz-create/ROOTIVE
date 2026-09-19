@@ -114,7 +114,7 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 | `adjustments` | driver_month_id(cascade), label, amount(符号付き), count_as_profit, recurring_id, sort_order | 調整 |
 | `month_closings` | pk(company_id,month), status(open/closed), closed_at/by, reopened_at/by, snapshot(jsonb), backup_path, note | 月締め |
 | `audit_logs` | actor_id, action, table_name, record_id, before, after, created_at | 監査。書き込みはトリガーのみ |
-| `ai_insights` | month, model, findings(jsonb), created_by | AI 月次分析の保存 |
+| `ai_insights` | month, model, kind, summary, findings(jsonb), actions(jsonb), created_by | AI 月次分析の保存（`0011` で総括と改善策を追加） |
 | `clients` | name(会社内 unique), honorific, address, tel, invoice_reg_no, payment_month_offset(0..3), payment_day(0=末日), memo, is_active, sort_order | 取引先（`0009`）。`projects.client_id` から参照 |
 | `expense_categories` | name(会社内 unique), kind(fixed/variable), memo, is_active, sort_order | 経費カテゴリ（`0009`）。会社作成時に既定 12 件を自動投入 |
 | `recurring_expenses` | category_id, label, amount, tax_mode, driver_id, project_id, vendor, start_month, end_month, is_active, sort_order | 毎月かかる経費のテンプレ（`0009`） |
@@ -123,8 +123,23 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 | `invoice_items` | invoice_id(cascade), project_id, project_item_id, name, unit, qty, unit_price, amount(自動計算), sort_order | 請求明細（`0009`） |
 | `month_targets` | pk(company_id,month), bill_target, profit_target, memo | 月次目標（`0009`） |
 | `cash_snapshots` | as_of(会社内 unique), balance, memo, created_by | 資金繰りの起点になる現金残高（`0010`） |
+| `ai_conversations` | title, month, message_count, last_message_at, created_by | AI 相談の会話（`0011`）。スタッフ全員が閲覧できる |
+| `ai_messages` | conversation_id(cascade), role(user/assistant), content, model, created_by | AI 相談の発言（`0011`）。件数と最終時刻はトリガーが更新 |
+| `chat_channels` | name(会社内 unique), description, is_default, is_active, sort_order | 社内チャットのルーム（`0011`）。会社作成時に「全体」「経営」を自動投入 |
+| `chat_messages` | channel_id(cascade), author_id, body(1..4000), mentions(jsonb), author_name/author_role(トリガーが写す), edited_at | 社内チャットの発言（`0011`） |
+| `chat_reads` | pk(channel_id, profile_id), last_read_at | どこまで読んだか（`0011`）。未読件数の計算に使う |
+| `alerts` | month, code, severity(high/medium/low), title, detail, amount, ref_table/ref_id/href, status(open/resolved/ignored), fingerprint(会社内 unique), detected_at, resolved_at/by, note | 異常の検知（`0011`） |
+| `integrations` | pk(company_id, kind: line/google_drive/bank), is_enabled, config(jsonb), status, last_ok_at, last_error | 外部連携の設定（`0011`。機密は含まない） |
+| `integration_secrets` | pk(company_id, kind), secrets(jsonb) | **RLS ポリシー無し＝サービスロール専用**（`0011`）。アクセストークン等 |
+| `integration_logs` | kind, action, status(ok/error), message, detail(jsonb) | 外部連携の実行記録（`0011`） |
+| `line_link_codes` | code(pk, 6 桁), driver_id / profile_id, expires_at(30 分), used_at | LINE 連携の合言葉（`0011`） |
+| `bank_imports` | file_name, format, row_count, inserted_count, skipped_count, matched_count, period_from/to, created_by | 銀行 CSV の取り込み 1 回分（`0011`） |
+| `bank_transactions` | import_id, txn_date, description, amount(入金 ＋／出金 −), balance, status(unmatched/matched/ignored), invoice_id, expense_id, auto_matched, fingerprint(会社内 unique) | 銀行明細（`0011`） |
+| `drivers` / `profiles` の追加列 | line_user_id, line_linked_at | LINE 連携（`0011`） |
 
-### ビュー（`0003_views.sql`、`security_invoker = true`：呼び出し元の RLS が適用）
+### ビュー（`0003_views.sql` ほか、`security_invoker = true`：呼び出し元の RLS が適用）
+
+> 例外は `v_staff`（`0011`）だけです。閲覧者は他人の `profiles` を読めない（`profiles_select` は admin 以上）ため security_invoker にせず、ビューの中で `company_id = current_company_id()` と `is_staff()` を必ず絞り込んでいます。チャットの宛先候補を閲覧者にも出すためです。
 
 `0003_views.sql` は先頭で全ビューを `drop view ... cascade` してから作り直します。公開スクリプトは毎回すべてのマイグレーションを順番に再適用するため、あとのマイグレーション（`0008` / `0009`）で列が増えたビューに `create or replace view` を実行すると「cannot drop columns from view」で失敗するためです。`npm run test:sql` はマイグレーションを 2 回適用して、この再適用の安全性を確認します。
 
@@ -142,12 +157,18 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 | `v_client_month_summary` | 取引先 × 月の売上（取引先を設定した案件のみ）（`0009`） |
 | `v_invoice_list` | 請求書 ＋ 取引先名・明細数（`0009`） |
 | `v_project_pl` | 案件 × 月の損益：稼働の利益 − 案件に直課した経費 ＝ 案件利益、利益率、目標利益率との判定（`0010`） |
+| `v_staff` | スタッフ一覧（id, display_name, email, role, is_active, line_linked）。**security_invoker ではなくビュー内で会社とロールを絞り込む**（`0011`） |
+| `v_chat_channel_list` | ルーム ＋ 発言数・最終発言・自分の未読件数・自分宛のメンション件数（`0011`） |
+| `v_chat_message_list` | 発言 ＋ 発言者名・ロール・is_mine・is_mentioned（`0011`） |
+| `v_ai_conversation_list` | AI 相談の会話 ＋ 最後の発言（`0011`） |
+| `v_alert_summary` | 会社 × 月の未対応件数（重さ別）と最終検査時刻（`0011`） |
+| `v_bank_transaction_list` | 銀行明細 ＋ 消込先の請求書番号・取引先名・取り込み元ファイル名（`0011`） |
 
 消費税（`0008`）：`v_driver_month_summary` は `tax_mode`（driver_months に固定値があればそれ、無ければ drivers）、`tax_rate` / `tax_rounding`（同じく companies）、`tax_base = pay − royalty − mgmt_fee`、`tax = round_by_mode(tax_base × tax_rate, tax_rounding)`（exempt は 0）、`payout_incl = payout + tax` を返す。`v_month_summary` は `tax` と `payout_incl` の合計を持つ。調整（adj_pay）は税込の金額として消費税の対象外。
 
 経費と営業利益（`0009`）：経費の金額はすべて税抜。`v_month_pl` は `profit`（会社利益）から `expense_total`（その月の経費合計）を引いた `operating_profit`（営業利益）を返す。ダッシュボードの KPI・年次レポート・AI 月次分析はこのビューを使う。
 
-### RPC（`0004_rpc.sql`、`0005_portal_seed.sql`、`0007_driver_rates.sql`、`0009_expenses_invoices.sql`）
+### RPC（`0004_rpc.sql`、`0005_portal_seed.sql`、`0007_driver_rates.sql`、`0009_expenses_invoices.sql`、`0010`、`0011`）
 
 | 関数 | 権限 | 内容 |
 |---|---|---|
@@ -168,6 +189,16 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 | `apply_invitation(user_id, email)` | security definer | 招待を照合して profiles を作成／更新（auth トリガーと招待リンクログインの両方から使用） |
 | `driver_portal_months()` / `driver_portal_statement(month)` | driver | 本人の締め済み月一覧・明細（会社売上・利益は含めない。率の表示は会社設定に従う。税込支払額・消費税・支払日の個別設定・ロゴの有無を含む） |
 | `round_by_mode(value, mode)` | 全員 | SQL 側の端数処理（`lib/calc` の applyRounding と同じ規則） |
+| `chat_post(channel_id, body, mentions uuid[])` | staff | 社内チャットに発言し、自分の既読も進める（閲覧者も可。空文字は EMPTY_BODY） |
+| `chat_mark_read(channel_id)` / `chat_unread_total()` | staff | 既読の更新／未読の合計（ナビのバッジ） |
+| `detect_anomalies(month)` | admin+ | 11 種類の異常を検知して `alerts` に記録。`fingerprint` で二重に作らず、検知しなくなったものは `resolved` に。`{detected, open, auto_resolved}` を返す |
+| `set_alert_status(alert_id, status, note)` | admin+ | アラートを対応済み／対象外／未対応に変える |
+| `bank_auto_match(import_id?)` | admin+ | 未消込の入金と、金額が一致する未入金の請求書を突き合わせる（候補が 1 件のときだけ消し込み、請求書を入金済みに） |
+| `bank_match_invoice(txn_id, invoice_id)` / `bank_set_status(txn_id, status)` | admin+ | 手動の消込／消込を外す・対象外にする（外すと請求書は発行済みに戻る） |
+| `line_issue_code()` | ログイン中の本人 | LINE 連携の 6 桁の合言葉を発行（30 分有効。ドライバーは自分の分） |
+| `line_consume_code(code, line_user_id)` | service_role | Webhook から呼び、合言葉を本人に結びつける |
+| `line_unlink(driver_id?)` | 本人 / admin+ | LINE 連携を外す |
+| `default_chat_channels(company_id)` | 内部 | 会社作成時に「全体」「経営」を作る |
 | `month_day_date(month, offset, day)` | 全員 | 稼動月からの支払日・入金予定日（0 = 末日。月末を超える日は月末に丸める）（`0009`） |
 | `apply_recurring_expenses(month)` | admin+ | 毎月かかる経費をその月に計上し、作成件数を返す（未締め月のみ・二重計上しない）（`0009`） |
 | `build_invoice(client_id, month)` | admin+ | その月・その取引先の稼働から請求書と明細を作り直す（番号は `YYYYMM-NN`。発行済みは hint `INVOICE_ISSUED`）（`0009`） |
