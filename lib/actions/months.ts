@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireAdminAction, requireOwnerAction } from "@/lib/auth/session";
-import { ensureNoError, runAction, translateError, type ActionResult } from "@/lib/actions/result";
+import { ActionError, ensureNoError, runAction, translateError, type ActionResult } from "@/lib/actions/result";
 import { monthSchema } from "@/lib/schemas/common";
 import { formatMonthJa, monthToDate } from "@/lib/month";
 import { hasServiceRoleKey } from "@/lib/supabase/admin";
@@ -44,6 +44,19 @@ export async function closeMonthAction(month: string, note = ""): Promise<Action
     const { supabase, company } = await requireAdminAction();
     const parsed = closeMonthInputSchema.parse({ month, note });
     const monthDate = monthToDate(parsed.month);
+
+    // 承認待ちの稼働報告が残っていると、締めたあとに月次へ入れられなくなるので先に止める
+    const pending = await supabase
+      .from("work_day_entries")
+      .select("id", { count: "exact", head: true })
+      .eq("company_id", company.id)
+      .eq("month", monthDate)
+      .eq("status", "submitted");
+    if (!pending.error && (pending.count ?? 0) > 0) {
+      throw new ActionError(
+        `承認待ちの稼働報告が ${pending.count} 件あります。日報・点呼の画面で承認するか差し戻してから締めてください。`,
+      );
+    }
 
     ensureNoError(await supabase.rpc("close_month", { p_month: monthDate, p_note: parsed.note }));
 
