@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { useMonth } from "@/lib/hooks/use-month";
 import { cn } from "@/lib/utils";
 import { openCommandPalette } from "./command-palette";
-import type { NavItem } from "./nav";
+import { badgeText, type NavBadges, type NavItem } from "./nav";
 
 /**
  * スマホの下タブの 5 つ目「メニュー」。
@@ -19,10 +19,15 @@ export function MoreMenu({
   items,
   sub,
   active,
+  badges,
+  count,
 }: {
   items: NavItem[];
   sub?: { parent: string; items: { href: string; label: string }[] };
   active?: boolean;
+  badges?: NavBadges;
+  /** メニュー全体の未読・未対応の合計（下タブのバッジ） */
+  count?: number;
 }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
@@ -36,9 +41,17 @@ export function MoreMenu({
         onClick={() => setOpen(true)}
         aria-haspopup="dialog"
         aria-expanded={open}
-        className={cn("flex w-full flex-col items-center gap-0.5 py-2 text-[11px]", active ? "text-primary" : "text-muted-foreground")}
+        className={cn("relative flex w-full flex-col items-center gap-0.5 py-2 text-[11px]", active ? "text-primary" : "text-muted-foreground")}
       >
         <Menu className="h-5 w-5" />
+        {badgeText(count) && (
+          <span
+            className="absolute right-[22%] top-1 inline-flex min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 py-0.5 text-[10px] font-bold leading-none text-destructive-foreground"
+            aria-label={`${badgeText(count)} 件`}
+          >
+            {badgeText(count)}
+          </span>
+        )}
         {"メニュー"}
       </button>
 
@@ -69,12 +82,17 @@ export function MoreMenu({
                     href={href(item.href)}
                     onClick={() => setOpen(false)}
                     className={cn(
-                      "flex h-20 flex-col items-center justify-center gap-1 rounded-lg border text-sm font-medium",
+                      "relative flex h-20 flex-col items-center justify-center gap-1 rounded-lg border text-center text-sm font-medium",
                       isCurrent ? "border-primary bg-accent text-accent-foreground" : "hover:bg-muted",
                     )}
                     aria-current={isCurrent ? "page" : undefined}
                   >
                     <item.icon className="h-6 w-6" />
+                    {badgeText(badges?.[item.href]) && (
+                      <span className="absolute right-2 top-2 inline-flex min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 py-0.5 text-[10px] font-bold leading-none text-destructive-foreground">
+                        {badgeText(badges?.[item.href])}
+                      </span>
+                    )}
                     {item.label}
                   </Link>
                 </li>

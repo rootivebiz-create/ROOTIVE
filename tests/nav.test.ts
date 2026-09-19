@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { filterCommands, normalizeText, COMMAND_GROUP_ORDER, type CommandItem } from "@/components/layout/command-palette";
-import { BOTTOM_NAV, BOTTOM_NAV_HREFS, BOTTOM_TABS_MAX, DRIVER_NAV, MAIN_NAV, MORE_NAV, bottomItemsFor, navItemsFor } from "@/components/layout/nav";
+import { BOTTOM_NAV, BOTTOM_NAV_HREFS, BOTTOM_TABS_MAX, DRIVER_NAV, MAIN_NAV, MORE_NAV, badgeText, bottomItemsFor, navItemsFor } from "@/components/layout/nav";
 
 const item = (id: string, label: string, extra: Partial<CommandItem> = {}): CommandItem => ({ id, group: "page", label, ...extra });
 
@@ -81,10 +81,35 @@ describe("コマンドパレットの検索（filterCommands）", () => {
 });
 
 describe("ナビの定義", () => {
-  it("PC のサイドナビは 9 項目（ホーム・稼働・支払・請求・経費・資金繰り・案件・レポート・設定）", () => {
-    expect(MAIN_NAV).toHaveLength(9);
-    expect(MAIN_NAV.map((i) => i.href)).toEqual(["/dashboard", "/entries", "/payouts", "/invoices", "/expenses", "/cashflow", "/projects", "/reports", "/settings"]);
-    expect(MAIN_NAV.map((i) => i.label)).toEqual(["ホーム", "稼働", "支払", "請求", "経費", "資金繰り", "案件", "レポート", "設定"]);
+  it("PC のサイドナビは 13 項目（入力・経営・相談のまとまり ＋ ホームと設定）", () => {
+    expect(MAIN_NAV).toHaveLength(13);
+    expect(MAIN_NAV.map((i) => i.href)).toEqual([
+      "/dashboard", "/entries", "/payouts", "/invoices", "/expenses", "/bank",
+      "/cashflow", "/projects", "/reports", "/alerts", "/ai", "/chat", "/settings",
+    ]);
+    expect(MAIN_NAV.map((i) => i.label)).toEqual([
+      "ホーム", "稼働", "支払", "請求", "経費", "入金",
+      "資金繰り", "案件", "レポート", "気になること", "AI 相談", "チャット", "設定",
+    ]);
+  });
+
+  it("見出し（group）は 入力・経営・相談 の 3 つで、ホームと設定には付かない", () => {
+    const groups = MAIN_NAV.map((i) => i.group);
+    expect(groups[0]).toBeUndefined();
+    expect(groups[groups.length - 1]).toBeUndefined();
+    expect([...new Set(groups.filter(Boolean))]).toEqual(["入力", "経営", "相談"]);
+    // 同じ見出しは連続していること（サイドナビが見出しを 1 回だけ出すため）
+    const seen: string[] = [];
+    for (const g of groups) {
+      if (!g) continue;
+      if (seen[seen.length - 1] !== g) seen.push(g);
+    }
+    expect(seen).toEqual([...new Set(groups.filter(Boolean))]);
+  });
+
+  it("重複したパス・ラベルが無い", () => {
+    expect(new Set(MAIN_NAV.map((i) => i.href)).size).toBe(MAIN_NAV.length);
+    expect(new Set(MAIN_NAV.map((i) => i.label)).size).toBe(MAIN_NAV.length);
   });
 
   it("スマホの下タブは 4 項目 ＋ メニューで 5 つ", () => {
@@ -95,10 +120,21 @@ describe("ナビの定義", () => {
     expect(BOTTOM_NAV.map((i) => i.label)).toEqual(["ホーム", "稼働", "支払", "請求"]);
   });
 
-  it("メニューシートには下タブに入らない 5 項目が入り、合計はサイドナビと一致する", () => {
-    expect(MORE_NAV.map((i) => i.href)).toEqual(["/expenses", "/cashflow", "/projects", "/reports", "/settings"]);
+  it("メニューシートには下タブに入らない 9 項目が入り、合計はサイドナビと一致する", () => {
+    expect(MORE_NAV.map((i) => i.href)).toEqual([
+      "/expenses", "/bank", "/cashflow", "/projects", "/reports", "/alerts", "/ai", "/chat", "/settings",
+    ]);
     expect(BOTTOM_NAV.length + MORE_NAV.length).toBe(MAIN_NAV.length);
     expect(MORE_NAV.some((m) => BOTTOM_NAV.some((b) => b.href === m.href))).toBe(false);
+  });
+
+  it("バッジの件数は 0 なら出さず、100 以上は 99+ にする", () => {
+    expect(badgeText(0)).toBeNull();
+    expect(badgeText(undefined)).toBeNull();
+    expect(badgeText(-1)).toBeNull();
+    expect(badgeText(1)).toBe("1");
+    expect(badgeText(99)).toBe("99");
+    expect(badgeText(100)).toBe("99+");
   });
 
   it("ドライバーポータルは 2 項目のままで、下タブにもメニューを出さない", () => {

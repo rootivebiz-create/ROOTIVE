@@ -23,7 +23,7 @@ test.describe("ナビとコマンドパレット", () => {
     await setMonthClosed(MONTH, false);
   });
 
-  test("PC は 8 項目のサイドナビ、スマホは 5 タブ（メニューに残りが入る）", async ({ page }, testInfo) => {
+  test("PC は 13 項目のサイドナビ、スマホは 5 タブ（メニューに残りが入る）", async ({ page }, testInfo) => {
     await loginViaMagicLink(page, E2E.users.owner.email, `/dashboard?m=${MONTH}`);
     const nav = page.getByRole("navigation", { name: "メインナビゲーション" });
 
@@ -38,8 +38,12 @@ test.describe("ナビとコマンドパレット", () => {
       await expect(page.getByRole("heading", { name: "経費", exact: true })).toBeVisible();
       await saveScreenshot(page, "menu-sheet-mobile.png", { fullPage: false });
     } else {
-      for (const label of ["ホーム", "稼働", "支払", "請求", "経費", "案件", "レポート", "設定"]) {
+      for (const label of ["ホーム", "稼働", "支払", "請求", "経費", "入金", "資金繰り", "案件", "レポート", "気になること", "AI 相談", "チャット", "設定"]) {
         await expect(nav.getByRole("link", { name: label, exact: true })).toBeVisible();
+      }
+      // 見出し（入力・経営・相談）でまとまっている
+      for (const group of ["入力", "経営", "相談"]) {
+        await expect(nav.getByText(group, { exact: true })).toBeVisible();
       }
       await nav.getByRole("link", { name: "レポート", exact: true }).click();
       await expect(page.getByRole("heading", { name: "年次レポート" })).toBeVisible();

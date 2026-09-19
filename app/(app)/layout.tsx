@@ -1,7 +1,7 @@
 import { AppShell } from "@/components/layout/app-shell";
 import type { CommandItem } from "@/components/layout/command-palette";
 import { requireStaff } from "@/lib/auth/session";
-import { loadMonthList } from "@/lib/db/queries";
+import { loadChatUnreadTotal, loadMonthList } from "@/lib/db/queries";
 import { dateToMonth, formatMonthJa } from "@/lib/month";
 import type { Role } from "@/lib/db/types";
 
@@ -13,6 +13,7 @@ const SETTINGS_SUBNAV: { href: string; label: string; keywords?: string[]; owner
   { href: "/settings/clients", label: "取引先", keywords: ["client", "とりひきさき", "顧客", "請求先"] },
   { href: "/settings/expenses", label: "経費カテゴリ", keywords: ["expense", "category", "けいひ", "かてごり", "毎月かかる経費"] },
   { href: "/settings/months", label: "月締め", keywords: ["close", "つきじめ", "締め"] },
+  { href: "/settings/integrations", label: "外部連携", keywords: ["line", "らいん", "google", "drive", "ばっくあっぷ", "ai", "連携"], adminOnly: true },
   { href: "/settings/company", label: "会社設定", keywords: ["company", "かいしゃ", "消費税", "振込"], ownerOnly: true },
   { href: "/settings/users", label: "ユーザー管理", keywords: ["user", "ゆーざー", "権限", "招待"], ownerOnly: true },
   { href: "/settings/data", label: "データ", keywords: ["data", "csv", "backup", "ばっくあっぷ", "取り込み"] },
@@ -20,17 +21,21 @@ const SETTINGS_SUBNAV: { href: string; label: string; keywords?: string[]; owner
   { href: "/settings/account", label: "アカウント", keywords: ["account", "あかうんと", "ぱすわーど"] },
 ];
 
-/** コマンドパレットの「画面」候補（サイドナビと同じ 8 項目） */
+/** コマンドパレットの「画面」候補（サイドナビと同じ項目 ＋ 一覧に出さない画面） */
 const MAIN_PAGES: { href: string; label: string; keywords: string[] }[] = [
   { href: "/dashboard", label: "ホーム", keywords: ["home", "dashboard", "ほーむ", "だっしゅぼーど", "売上", "利益"] },
   { href: "/entries", label: "稼働", keywords: ["entries", "work", "かどう", "稼働入力"] },
   { href: "/payouts", label: "支払", keywords: ["payout", "しはらい", "支払明細", "振込"] },
   { href: "/invoices", label: "請求", keywords: ["invoice", "せいきゅう", "請求書"] },
   { href: "/expenses", label: "経費", keywords: ["expense", "けいひ", "経費入力"] },
+  { href: "/bank", label: "入金の消込", keywords: ["bank", "ぎんこう", "csv", "にゅうきん", "消込", "口座"] },
   { href: "/cashflow", label: "資金繰り", keywords: ["cashflow", "しきんぐり", "入金", "残高", "資金"] },
   { href: "/projects", label: "案件", keywords: ["project", "あんけん", "案件別"] },
   { href: "/drivers-pl", label: "ドライバー別の採算", keywords: ["driver", "どらいばー", "採算", "利益", "シミュレーション", "単価"] },
   { href: "/reports", label: "レポート", keywords: ["report", "れぽーと", "年次", "分析"] },
+  { href: "/alerts", label: "気になること", keywords: ["alert", "あらーと", "異常", "警告", "けんさ", "注意"] },
+  { href: "/ai", label: "AI 相談", keywords: ["ai", "えーあい", "そうだん", "分析", "改善", "claude", "ちゃっと"] },
+  { href: "/chat", label: "チャット", keywords: ["chat", "ちゃっと", "社内", "連絡", "めっせーじ"] },
   { href: "/settings", label: "設定", keywords: ["settings", "せってい", "マスタ"] },
 ];
 
@@ -44,11 +49,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const role = profile.role;
 
   // コマンドパレットの候補（停止中も含める。0009 未適用の環境でもナビを壊さないようエラーは無視する）
-  const [months, driversRes, projectsRes, clientsRes] = await Promise.all([
+  const [months, driversRes, projectsRes, clientsRes, unread, alertsRes] = await Promise.all([
     loadMonthList(supabase, company.id),
     supabase.from("drivers").select("id, name, is_active").eq("company_id", company.id).order("sort_order").order("name"),
     supabase.from("projects").select("id, name, is_active").eq("company_id", company.id).order("sort_order").order("name"),
     supabase.from("clients").select("id, name, is_active").eq("company_id", company.id).order("sort_order").order("name"),
+    loadChatUnreadTotal(supabase),
+    supabase.from("alerts").select("id", { count: "exact", head: true }).eq("company_id", company.id).eq("status", "open"),
   ]);
 
   const settingsItems = SETTINGS_SUBNAV.filter((s) => visibleForRole(role, s));
@@ -124,6 +131,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       })),
   ];
 
+  // ナビのバッジ（0011 未適用の環境でも壊さないようエラーは 0 として扱う）
+  const badges: Record<string, number> = {
+    "/chat": unread,
+    "/alerts": alertsRes.error ? 0 : (alertsRes.count ?? 0),
+  };
+
   return (
     <AppShell
       companyName={company.name}
@@ -133,6 +146,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       months={monthOptions}
       subNav={{ parent: "/settings", items: subItems }}
       commandItems={commandItems}
+      badges={badges}
     >
       {children}
     </AppShell>
