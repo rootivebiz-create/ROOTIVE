@@ -619,6 +619,213 @@ export type Database = {
         }
         Relationships: []
       }
+      daily_reports: {
+        Row: {
+          id: string
+          company_id: string
+          work_date: string
+          month: string
+          driver_id: string
+          vehicle_id: string | null
+          pre_at: string | null
+          pre_method: Database["public"]["Enums"]["roll_call_method"] | null
+          pre_alcohol: number | null
+          pre_alcohol_ok: boolean | null
+          pre_health_ok: boolean | null
+          pre_inspection_ok: boolean | null
+          pre_instruction: string
+          pre_by: string | null
+          post_at: string | null
+          post_method: Database["public"]["Enums"]["roll_call_method"] | null
+          post_alcohol: number | null
+          post_alcohol_ok: boolean | null
+          post_condition_ok: boolean | null
+          post_incident: string
+          post_by: string | null
+          start_at: string | null
+          end_at: string | null
+          break_minutes: number
+          distance_km: number | null
+          odo_start: number | null
+          odo_end: number | null
+          memo: string
+          created_by: string | null
+          updated_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          work_date: string
+          month: string
+          driver_id: string
+          vehicle_id?: string | null
+          pre_at?: string | null
+          pre_method?: Database["public"]["Enums"]["roll_call_method"] | null
+          pre_alcohol?: number | null
+          pre_alcohol_ok?: boolean | null
+          pre_health_ok?: boolean | null
+          pre_inspection_ok?: boolean | null
+          pre_instruction?: string
+          pre_by?: string | null
+          post_at?: string | null
+          post_method?: Database["public"]["Enums"]["roll_call_method"] | null
+          post_alcohol?: number | null
+          post_alcohol_ok?: boolean | null
+          post_condition_ok?: boolean | null
+          post_incident?: string
+          post_by?: string | null
+          start_at?: string | null
+          end_at?: string | null
+          break_minutes?: number
+          distance_km?: number | null
+          odo_start?: number | null
+          odo_end?: number | null
+          memo?: string
+          created_by?: string | null
+          updated_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          work_date?: string
+          month?: string
+          driver_id?: string
+          vehicle_id?: string | null
+          pre_at?: string | null
+          pre_method?: Database["public"]["Enums"]["roll_call_method"] | null
+          pre_alcohol?: number | null
+          pre_alcohol_ok?: boolean | null
+          pre_health_ok?: boolean | null
+          pre_inspection_ok?: boolean | null
+          pre_instruction?: string
+          pre_by?: string | null
+          post_at?: string | null
+          post_method?: Database["public"]["Enums"]["roll_call_method"] | null
+          post_alcohol?: number | null
+          post_alcohol_ok?: boolean | null
+          post_condition_ok?: boolean | null
+          post_incident?: string
+          post_by?: string | null
+          start_at?: string | null
+          end_at?: string | null
+          break_minutes?: number
+          distance_km?: number | null
+          odo_start?: number | null
+          odo_end?: number | null
+          memo?: string
+          created_by?: string | null
+          updated_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      documents: {
+        Row: {
+          id: string
+          company_id: string
+          kind: Database["public"]["Enums"]["document_kind"]
+          driver_id: string | null
+          vehicle_id: string | null
+          label: string
+          number: string
+          issued_on: string | null
+          expires_on: string | null
+          reminder_days: number
+          file_path: string
+          memo: string
+          is_active: boolean
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          kind: Database["public"]["Enums"]["document_kind"]
+          driver_id?: string | null
+          vehicle_id?: string | null
+          label?: string
+          number?: string
+          issued_on?: string | null
+          expires_on?: string | null
+          reminder_days?: number
+          file_path?: string
+          memo?: string
+          is_active?: boolean
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          kind?: Database["public"]["Enums"]["document_kind"]
+          driver_id?: string | null
+          vehicle_id?: string | null
+          label?: string
+          number?: string
+          issued_on?: string | null
+          expires_on?: string | null
+          reminder_days?: number
+          file_path?: string
+          memo?: string
+          is_active?: boolean
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      driver_instructions: {
+        Row: {
+          id: string
+          company_id: string
+          driver_id: string
+          kind: string
+          instructed_on: string
+          hours: number
+          topics: string
+          instructor: string
+          memo: string
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          driver_id: string
+          kind?: string
+          instructed_on: string
+          hours?: number
+          topics?: string
+          instructor?: string
+          memo?: string
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          driver_id?: string
+          kind?: string
+          instructed_on?: string
+          hours?: number
+          topics?: string
+          instructor?: string
+          memo?: string
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       driver_months: {
         Row: {
           id: string
@@ -893,6 +1100,63 @@ export type Database = {
           recurring_id?: string | null
           created_by?: string | null
           updated_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      incidents: {
+        Row: {
+          id: string
+          company_id: string
+          driver_id: string | null
+          vehicle_id: string | null
+          occurred_at: string
+          kind: Database["public"]["Enums"]["incident_kind"]
+          place: string
+          description: string
+          cause: string
+          prevention: string
+          reported: boolean
+          cost: number
+          memo: string
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          driver_id?: string | null
+          vehicle_id?: string | null
+          occurred_at: string
+          kind?: Database["public"]["Enums"]["incident_kind"]
+          place?: string
+          description?: string
+          cause?: string
+          prevention?: string
+          reported?: boolean
+          cost?: number
+          memo?: string
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          driver_id?: string | null
+          vehicle_id?: string | null
+          occurred_at?: string
+          kind?: Database["public"]["Enums"]["incident_kind"]
+          place?: string
+          description?: string
+          cause?: string
+          prevention?: string
+          reported?: boolean
+          cost?: number
+          memo?: string
+          created_by?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -1438,6 +1702,165 @@ export type Database = {
         }
         Relationships: []
       }
+      safety_managers: {
+        Row: {
+          id: string
+          company_id: string
+          name: string
+          office: string
+          profile_id: string | null
+          driver_id: string | null
+          appointed_on: string | null
+          training_on: string | null
+          training_expires_on: string | null
+          notified_on: string | null
+          memo: string
+          is_active: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          name: string
+          office?: string
+          profile_id?: string | null
+          driver_id?: string | null
+          appointed_on?: string | null
+          training_on?: string | null
+          training_expires_on?: string | null
+          notified_on?: string | null
+          memo?: string
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          name?: string
+          office?: string
+          profile_id?: string | null
+          driver_id?: string | null
+          appointed_on?: string | null
+          training_on?: string | null
+          training_expires_on?: string | null
+          notified_on?: string | null
+          memo?: string
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      vehicles: {
+        Row: {
+          id: string
+          company_id: string
+          plate: string
+          maker: string
+          model: string
+          ownership: Database["public"]["Enums"]["vehicle_ownership"]
+          driver_id: string | null
+          lease_monthly: number
+          odometer: number | null
+          memo: string
+          is_active: boolean
+          sort_order: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          plate: string
+          maker?: string
+          model?: string
+          ownership?: Database["public"]["Enums"]["vehicle_ownership"]
+          driver_id?: string | null
+          lease_monthly?: number
+          odometer?: number | null
+          memo?: string
+          is_active?: boolean
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          plate?: string
+          maker?: string
+          model?: string
+          ownership?: Database["public"]["Enums"]["vehicle_ownership"]
+          driver_id?: string | null
+          lease_monthly?: number
+          odometer?: number | null
+          memo?: string
+          is_active?: boolean
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      work_day_entries: {
+        Row: {
+          id: string
+          company_id: string
+          work_date: string
+          month: string
+          driver_id: string
+          project_item_id: string
+          qty: number
+          memo: string
+          source: Database["public"]["Enums"]["entry_source"]
+          status: Database["public"]["Enums"]["day_entry_status"]
+          reject_reason: string
+          submitted_by: string | null
+          approved_by: string | null
+          approved_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          work_date: string
+          month: string
+          driver_id: string
+          project_item_id: string
+          qty?: number
+          memo?: string
+          source?: Database["public"]["Enums"]["entry_source"]
+          status?: Database["public"]["Enums"]["day_entry_status"]
+          reject_reason?: string
+          submitted_by?: string | null
+          approved_by?: string | null
+          approved_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          work_date?: string
+          month?: string
+          driver_id?: string
+          project_item_id?: string
+          qty?: number
+          memo?: string
+          source?: Database["public"]["Enums"]["entry_source"]
+          status?: Database["public"]["Enums"]["day_entry_status"]
+          reject_reason?: string
+          submitted_by?: string | null
+          approved_by?: string | null
+          approved_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       work_entries: {
         Row: {
           id: string
@@ -1455,6 +1878,7 @@ export type Database = {
           updated_by: string | null
           created_at: string
           updated_at: string
+          qty_source: string
         }
         Insert: {
           id?: string
@@ -1472,6 +1896,7 @@ export type Database = {
           updated_by?: string | null
           created_at?: string
           updated_at?: string
+          qty_source?: string
         }
         Update: {
           id?: string
@@ -1489,6 +1914,7 @@ export type Database = {
           updated_by?: string | null
           created_at?: string
           updated_at?: string
+          qty_source?: string
         }
         Relationships: []
       }
@@ -1593,6 +2019,80 @@ export type Database = {
           entry_count: number | null
           qty_total: number | null
           bill: number | null
+        }
+        Relationships: []
+      }
+      v_daily_report_list: {
+        Row: {
+          id: string | null
+          company_id: string | null
+          work_date: string | null
+          month: string | null
+          driver_id: string | null
+          driver_name: string | null
+          vehicle_id: string | null
+          vehicle_plate: string | null
+          pre_at: string | null
+          pre_method: Database["public"]["Enums"]["roll_call_method"] | null
+          pre_alcohol: number | null
+          pre_alcohol_ok: boolean | null
+          pre_health_ok: boolean | null
+          pre_inspection_ok: boolean | null
+          pre_instruction: string | null
+          post_at: string | null
+          post_method: Database["public"]["Enums"]["roll_call_method"] | null
+          post_alcohol: number | null
+          post_alcohol_ok: boolean | null
+          post_condition_ok: boolean | null
+          post_incident: string | null
+          start_at: string | null
+          end_at: string | null
+          break_minutes: number | null
+          distance_km: number | null
+          odo_start: number | null
+          odo_end: number | null
+          memo: string | null
+          pre_done: boolean | null
+          post_done: boolean | null
+          roll_call_done: boolean | null
+          qty_total: number | null
+          entry_count: number | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Relationships: []
+      }
+      v_day_status: {
+        Row: {
+          company_id: string | null
+          month: string | null
+          pending_count: number | null
+          approved_count: number | null
+          work_day_count: number | null
+          roll_call_missing_count: number | null
+        }
+        Relationships: []
+      }
+      v_document_list: {
+        Row: {
+          id: string | null
+          company_id: string | null
+          kind: Database["public"]["Enums"]["document_kind"] | null
+          driver_id: string | null
+          driver_name: string | null
+          vehicle_id: string | null
+          vehicle_plate: string | null
+          label: string | null
+          number: string | null
+          issued_on: string | null
+          expires_on: string | null
+          reminder_days: number | null
+          file_path: string | null
+          memo: string | null
+          is_active: boolean | null
+          created_at: string | null
+          days_left: number | null
+          expiry_status: string | null
         }
         Relationships: []
       }
@@ -1860,6 +2360,55 @@ export type Database = {
         }
         Relationships: []
       }
+      v_vehicle_list: {
+        Row: {
+          id: string | null
+          company_id: string | null
+          plate: string | null
+          maker: string | null
+          model: string | null
+          ownership: Database["public"]["Enums"]["vehicle_ownership"] | null
+          driver_id: string | null
+          driver_name: string | null
+          lease_monthly: number | null
+          odometer: number | null
+          memo: string | null
+          is_active: boolean | null
+          sort_order: number | null
+          created_at: string | null
+          next_expires_on: string | null
+          next_kind: Database["public"]["Enums"]["document_kind"] | null
+          expired_count: number | null
+        }
+        Relationships: []
+      }
+      v_work_day_entry_list: {
+        Row: {
+          id: string | null
+          company_id: string | null
+          work_date: string | null
+          month: string | null
+          driver_id: string | null
+          driver_name: string | null
+          driver_sort_order: number | null
+          project_item_id: string | null
+          project_id: string | null
+          project_name: string | null
+          item_name: string | null
+          unit: Database["public"]["Enums"]["item_unit"] | null
+          qty: number | null
+          memo: string | null
+          source: Database["public"]["Enums"]["entry_source"] | null
+          status: Database["public"]["Enums"]["day_entry_status"] | null
+          reject_reason: string | null
+          submitted_by: string | null
+          approved_by: string | null
+          approved_at: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Relationships: []
+      }
       v_work_entry_calc: {
         Row: {
           id: string | null
@@ -1895,6 +2444,12 @@ export type Database = {
       }
     }
     Functions: {
+      apply_day_entries: {
+        Args: {
+          p_month: string
+        }
+        Returns: number
+      }
       apply_invitation: {
         Args: {
           p_user_id: string
@@ -1915,6 +2470,14 @@ export type Database = {
       apply_recurring_expenses: {
         Args: {
           p_month: string
+        }
+        Returns: number
+      }
+      approve_day_entries: {
+        Args: {
+          p_ids: string[]
+          p_approve?: boolean
+          p_reason?: string
         }
         Returns: number
       }
@@ -2038,6 +2601,16 @@ export type Database = {
           p_month: string
         }
         Returns: Json
+      }
+      driver_day_items: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          project_item_id: string
+          project_name: string
+          item_name: string
+          unit: Database["public"]["Enums"]["item_unit"]
+          recent: boolean
+        }[]
       }
       driver_portal_current: {
         Args: Record<PropertyKey, never>
@@ -2253,6 +2826,25 @@ export type Database = {
         }
         Returns: undefined
       }
+      submit_day_entries: {
+        Args: {
+          p_work_date: string
+          p_item_ids: string[]
+          p_qtys: number[]
+          p_driver_id?: string
+          p_memo?: string
+        }
+        Returns: number
+      }
+      sync_work_entry_from_days: {
+        Args: {
+          p_company_id: string
+          p_month: string
+          p_driver_id: string
+          p_project_item_id: string
+        }
+        Returns: undefined
+      }
       t_assert: {
         Args: {
           cond: boolean
@@ -2290,14 +2882,20 @@ export type Database = {
       alert_severity: "high" | "medium" | "low"
       alert_status: "open" | "resolved" | "ignored"
       bank_txn_status: "unmatched" | "matched" | "ignored"
+      day_entry_status: "submitted" | "approved" | "rejected"
+      document_kind: "license" | "vehicle_inspection" | "compulsory_insurance" | "voluntary_insurance" | "health_check" | "safety_training" | "contract" | "other"
+      entry_source: "staff" | "driver" | "import" | "line"
       expense_kind: "fixed" | "variable"
+      incident_kind: "accident" | "violation" | "near_miss"
       integration_kind: "line" | "google_drive" | "bank"
       invoice_status: "draft" | "issued" | "paid"
       item_unit: "day" | "piece"
       month_status: "open" | "closed"
+      roll_call_method: "face" | "phone" | "video" | "app"
       rounding_mode: "none" | "floor" | "round" | "ceil"
       tax_mode: "taxable" | "exempt"
       user_role: "owner" | "admin" | "viewer" | "driver"
+      vehicle_ownership: "owned" | "lease" | "driver"
     }
     CompositeTypes: Record<string, never>
   }

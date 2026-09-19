@@ -843,6 +843,160 @@ select public.t_assert((select count(*) = 0 from public.bank_transactions), '他
 select public.t_assert((select count(*) = 0 from public.alerts), '他社のアラートは見えない');
 select public.t_assert((select count(*) = 0 from public.chat_messages), '他社のチャットは見えない');
 
+\echo '== 22. 運行管理と法令対応（車両・書類・点呼・日別の稼働）'
+set role authenticated;
+select public.test_login(:'owner_a');
+
+-- ---------- 車両と書類の期限 ----------
+insert into public.vehicles (id, company_id, plate, maker, model, ownership, driver_id)
+values ('00000000-0000-0000-0000-0000000000e1', :'company_a', '足立 480 あ 12-34', 'ダイハツ', 'ハイゼット', 'lease',
+        (select id from public.drivers where company_id = :'company_a' and name = '相曽慧'));
+select public.t_assert((select driver_name = '相曽慧' and ownership = 'lease' from public.v_vehicle_list where id = '00000000-0000-0000-0000-0000000000e1'), '車両に割当ドライバーが出る');
+
+insert into public.documents (company_id, kind, vehicle_id, label, expires_on, reminder_days)
+values (:'company_a', 'vehicle_inspection', '00000000-0000-0000-0000-0000000000e1', '車検', current_date - 1, 60);
+insert into public.documents (company_id, kind, vehicle_id, label, expires_on, reminder_days)
+values (:'company_a', 'voluntary_insurance', '00000000-0000-0000-0000-0000000000e1', '任意保険', current_date + 30, 60);
+insert into public.documents (company_id, kind, driver_id, label, expires_on, reminder_days)
+values (:'company_a', 'license', (select id from public.drivers where company_id = :'company_a' and name = '相曽慧'), '運転免許証', current_date + 300, 60);
+
+select public.t_assert((select expiry_status = 'expired' and days_left = -1 from public.v_document_list where label = '車検'), '期限切れの書類が分かる');
+select public.t_assert((select expiry_status = 'soon' and days_left = 30 from public.v_document_list where label = '任意保険'), '期限が近い書類が分かる');
+select public.t_assert((select expiry_status = 'valid' from public.v_document_list where label = '運転免許証'), '余裕がある書類は valid');
+select public.t_assert((select vehicle_plate = '足立 480 あ 12-34' from public.v_document_list where label = '車検'), '書類に車両番号が出る');
+select public.t_assert((select next_expires_on = current_date - 1 and expired_count = 1 from public.v_vehicle_list where id = '00000000-0000-0000-0000-0000000000e1'), '車両に次の期限と期限切れ件数が出る');
+
+-- ---------- 安全管理者 ----------
+insert into public.safety_managers (company_id, name, office, appointed_on, training_on)
+values (:'company_a', '川島幹太', '本店', '2026-04-01', '2026-03-10');
+select public.t_assert((select count(*) = 1 from public.safety_managers where company_id = :'company_a' and is_active), '安全管理者を選任できる');
+
+-- ---------- 指導・監督と事故 ----------
+insert into public.driver_instructions (company_id, driver_id, kind, instructed_on, hours, topics)
+values (:'company_a', (select id from public.drivers where company_id = :'company_a' and name = '相曽慧'), 'initial', '2026-12-02', 6, '安全運転の基本');
+insert into public.incidents (company_id, driver_id, occurred_at, kind, place, description, prevention)
+values (:'company_a', (select id from public.drivers where company_id = :'company_a' and name = '相曽慧'), '2026-12-03 09:00+09', 'near_miss', '三郷市', '交差点で急ブレーキ', '車間距離の指導');
+select public.t_assert((select count(*) = 1 from public.driver_instructions where company_id = :'company_a'), '指導の記録を残せる');
+select public.t_assert((select count(*) = 1 from public.incidents where company_id = :'company_a'), '事故・ヒヤリハットを残せる');
+
+-- ---------- 日報（点呼・業務記録） ----------
+insert into public.daily_reports (company_id, work_date, driver_id, vehicle_id, pre_at, pre_method, pre_alcohol, pre_alcohol_ok, pre_health_ok, pre_inspection_ok, start_at)
+values (:'company_a', '2026-12-05', (select id from public.drivers where company_id = :'company_a' and name = '相曽慧'),
+        '00000000-0000-0000-0000-0000000000e1', '2026-12-05 07:00+09', 'app', 0.000, true, true, true, '2026-12-05 07:10+09');
+select public.t_assert((select month = '2026-12-01' from public.daily_reports where work_date = '2026-12-05'), '稼動月が日付から入る');
+select public.t_assert((select pre_done and not post_done and not roll_call_done from public.v_daily_report_list where work_date = '2026-12-05'), '業務前だけ済んでいる状態が分かる');
+update public.daily_reports set post_at = '2026-12-05 19:00+09', post_method = 'app', post_alcohol = 0.000, post_alcohol_ok = true, post_condition_ok = true, distance_km = 128.5
+ where work_date = '2026-12-05';
+select public.t_assert((select roll_call_done and distance_km = 128.5 from public.v_daily_report_list where work_date = '2026-12-05'), '業務後点呼まで済むと完了');
+select public.t_expect_error(format($$insert into public.daily_reports (company_id, work_date, driver_id) values ('%s', '2026-12-05', (select id from public.drivers where company_id = '%s' and name = '相曽慧'))$$, :'company_a', :'company_a'), null, '同じ日・同じドライバーの日報は 1 件だけ');
+
+-- ---------- 日別の稼働 → 月次への自動集計 ----------
+-- 反映前の 2026-12 の三郷Amazon（相曽慧）の数量を確認
+select public.t_assert((select qty_source = 'manual' from public.work_entries we
+                          join public.drivers d on d.id = we.driver_id
+                          join public.project_items pi on pi.id = we.project_item_id
+                          join public.projects p on p.id = pi.project_id
+                         where we.month = '2026-12-01' and d.name = '相曽慧' and p.name = '三郷Amazon'), '最初の稼働行は手入力');
+
+select public.t_assert(public.submit_day_entries('2026-12-05',
+  array[(select pi.id from public.project_items pi join public.projects p on p.id = pi.project_id where p.company_id = :'company_a' and p.name = '三郷Amazon')]::uuid[],
+  array[1]::numeric[],
+  (select id from public.drivers where company_id = :'company_a' and name = '相曽慧')) = 1, 'スタッフが日別の稼働を提出できる');
+select public.t_assert((select status = 'submitted' and source = 'staff' from public.work_day_entries where work_date = '2026-12-05'), '提出直後は承認待ち');
+select public.t_assert((select qty_source = 'manual' from public.work_entries we
+                          join public.drivers d on d.id = we.driver_id
+                          join public.project_items pi on pi.id = we.project_item_id
+                          join public.projects p on p.id = pi.project_id
+                         where we.month = '2026-12-01' and d.name = '相曽慧' and p.name = '三郷Amazon'), '承認前は月次に反映しない');
+
+-- 2 日目を追加して承認する
+select public.t_assert(public.submit_day_entries('2026-12-08',
+  array[(select pi.id from public.project_items pi join public.projects p on p.id = pi.project_id where p.company_id = :'company_a' and p.name = '三郷Amazon')]::uuid[],
+  array[2]::numeric[],
+  (select id from public.drivers where company_id = :'company_a' and name = '相曽慧')) = 1, '別の日も提出できる');
+select public.t_assert(public.approve_day_entries(array(select id from public.work_day_entries where company_id = :'company_a'), true) = 2, '2 件をまとめて承認');
+select public.t_assert((select qty = 3 and qty_source = 'daily' from public.work_entries we
+                          join public.drivers d on d.id = we.driver_id
+                          join public.project_items pi on pi.id = we.project_item_id
+                          join public.projects p on p.id = pi.project_id
+                         where we.month = '2026-12-01' and d.name = '相曽慧' and p.name = '三郷Amazon'), '承認すると月次の数量が日別の合計（1 ＋ 2 ＝ 3）になる');
+
+-- 数量を直すと月次も追従する
+update public.work_day_entries set qty = 5 where work_date = '2026-12-08';
+select public.t_assert((select qty = 6 from public.work_entries we
+                          join public.drivers d on d.id = we.driver_id
+                          join public.project_items pi on pi.id = we.project_item_id
+                          join public.projects p on p.id = pi.project_id
+                         where we.month = '2026-12-01' and d.name = '相曽慧' and p.name = '三郷Amazon'), '日別を直すと月次も変わる（1 ＋ 5 ＝ 6）');
+
+-- 差戻すと月次から外れる
+select public.t_assert(public.approve_day_entries(array(select id from public.work_day_entries where work_date = '2026-12-08'), false, '数量が違います') = 1, '差戻しできる');
+select public.t_assert((select qty = 1 from public.work_entries we
+                          join public.drivers d on d.id = we.driver_id
+                          join public.project_items pi on pi.id = we.project_item_id
+                          join public.projects p on p.id = pi.project_id
+                         where we.month = '2026-12-01' and d.name = '相曽慧' and p.name = '三郷Amazon'), '差戻した分は月次から外れる（1 のみ）');
+select public.t_assert((select reject_reason = '数量が違います' from public.work_day_entries where work_date = '2026-12-08'), '差戻しの理由が残る');
+
+-- 全部消すと 0 になる（日別由来の行）
+delete from public.work_day_entries where company_id = :'company_a';
+select public.t_assert((select qty = 0 and qty_source = 'daily' from public.work_entries we
+                          join public.drivers d on d.id = we.driver_id
+                          join public.project_items pi on pi.id = we.project_item_id
+                          join public.projects p on p.id = pi.project_id
+                         where we.month = '2026-12-01' and d.name = '相曽慧' and p.name = '三郷Amazon'), '日別が無くなると数量 0');
+
+-- ---------- 締め済み月 ----------
+select public.t_expect_error(format($$insert into public.work_day_entries (company_id, work_date, driver_id, project_item_id, qty)
+  values ('%s', '2026-09-10', (select id from public.drivers where company_id = '%s' and name = '相曽慧'),
+          (select pi.id from public.project_items pi join public.projects p on p.id = pi.project_id where p.company_id = '%s' and p.name = '三郷Amazon'), 1)$$,
+  :'company_a', :'company_a', :'company_a'), 'MONTH_CLOSED', '締め済み月には日別の稼働を入れられない');
+select public.t_expect_error(format($$insert into public.daily_reports (company_id, work_date, driver_id) values ('%s', '2026-09-10', (select id from public.drivers where company_id = '%s' and name = '相曽慧'))$$, :'company_a', :'company_a'), 'MONTH_CLOSED', '締め済み月には日報を入れられない');
+
+-- ---------- ドライバー本人 ----------
+select public.test_login(:'driver_a');
+select public.t_assert((select count(*) = 1 from public.daily_reports), 'ドライバーは自分の日報を読める');
+select public.t_assert((select count(*) >= 1 from public.documents), 'ドライバーは自分の書類を読める');
+select public.t_assert((select count(*) = 1 from public.vehicles), 'ドライバーは自分に割り当てられた車両を読める');
+select public.t_assert(public.submit_day_entries('2026-12-10',
+  array[(select pi.id from public.project_items pi join public.projects p on p.id = pi.project_id where p.company_id = :'company_a' and p.name = '三郷Amazon')]::uuid[],
+  array[4]::numeric[]) = 1, 'ドライバー本人が自分の稼働を提出できる');
+select public.t_assert((select source = 'driver' and status = 'submitted' from public.work_day_entries where work_date = '2026-12-10'), '本人の提出は source=driver・承認待ち');
+select public.t_expect_error($$select public.approve_day_entries(array(select id from public.work_day_entries), true)$$, 'FORBIDDEN', 'ドライバーは自分で承認できない');
+select public.t_expect_error($$update public.work_day_entries set status = 'approved' where work_date = '2026-12-10'$$, null, 'ドライバーは status を承認済みに変えられない');
+select public.t_assert((select count(*) = 0 from public.safety_managers), 'ドライバーは安全管理者の一覧を読めない');
+
+-- ---------- 閲覧者 ----------
+select public.test_login(:'viewer_a');
+select public.t_assert((select count(*) >= 1 from public.v_daily_report_list), '閲覧者は日報を読める');
+select public.t_expect_error(format($$insert into public.vehicles (company_id, plate) values ('%s', 'テスト 1')$$, :'company_a'), null, '閲覧者は車両を追加できない');
+select public.t_expect_error($$select public.apply_day_entries('2026-12-01')$$, 'FORBIDDEN', '閲覧者は月次への反映ができない');
+
+-- ---------- 検知（運行管理のルール） ----------
+select public.test_login(:'owner_a');
+select public.t_assert((public.detect_anomalies('2026-12-01')->>'detected')::integer > 0, '運行管理を含めて検知する');
+select public.t_assert((select count(*) = 1 from public.alerts where company_id = :'company_a' and code = 'document_expired' and status = 'open'), '期限切れの書類を検知');
+select public.t_assert((select count(*) = 1 from public.alerts where company_id = :'company_a' and code = 'document_expiring' and status = 'open'), '期限が近い書類を検知');
+select public.t_assert((select count(*) = 1 from public.alerts where company_id = :'company_a' and code = 'day_entry_pending' and status = 'open'), '承認待ちの稼働報告を検知');
+select public.t_assert((select count(*) = 1 from public.alerts where company_id = :'company_a' and code = 'roll_call_missing' and status = 'open'), '点呼の無い稼働日を検知');
+select public.t_assert((select count(*) = 0 from public.alerts where company_id = :'company_a' and code = 'safety_manager_missing' and status = 'open'), '安全管理者が居れば警告しない');
+update public.safety_managers set is_active = false where company_id = :'company_a';
+select public.detect_anomalies('2026-12-01');
+select public.t_assert((select count(*) = 1 from public.alerts where company_id = :'company_a' and code = 'safety_manager_missing' and status = 'open'), '安全管理者が居ないと警告する（再発したら未対応に戻る）');
+-- 「対象外」にしたものは再検知しても戻らない
+select public.set_alert_status((select id from public.alerts where company_id = :'company_a' and code = 'safety_manager_missing'), 'ignored', '3 月までに選任予定');
+select public.detect_anomalies('2026-12-01');
+select public.t_assert((select status = 'ignored' from public.alerts where company_id = :'company_a' and code = 'safety_manager_missing'), '対象外にしたアラートは再検知でも戻らない');
+update public.safety_managers set is_active = true where company_id = :'company_a';
+
+-- ---------- 月次への一括反映と他社の分離 ----------
+select public.t_assert(public.apply_day_entries('2026-12-01') >= 0, '月次への一括反映が動く');
+select public.test_login(:'owner_b');
+select public.t_assert((select count(*) = 0 from public.vehicles), '他社の車両は見えない');
+select public.t_assert((select count(*) = 0 from public.daily_reports), '他社の日報は見えない');
+select public.t_assert((select count(*) = 0 from public.work_day_entries), '他社の日別の稼働は見えない');
+select public.t_assert((select count(*) = 0 from public.documents), '他社の書類は見えない');
+
 select public.test_logout();
 reset role;
-\echo '== すべてのアサーションが通りました（18〜21 節）'
+\echo '== すべてのアサーションが通りました（18〜22 節）'

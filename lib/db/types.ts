@@ -12,6 +12,12 @@ export type AlertStatus = Enums<"alert_status">;
 export type AlertSeverity = Enums<"alert_severity">;
 export type IntegrationKind = Enums<"integration_kind">;
 export type BankTxnStatus = Enums<"bank_txn_status">;
+export type DocumentKind = Enums<"document_kind">;
+export type RollCallMethod = Enums<"roll_call_method">;
+export type DayEntryStatus = Enums<"day_entry_status">;
+export type EntrySource = Enums<"entry_source">;
+export type VehicleOwnership = Enums<"vehicle_ownership">;
+export type IncidentKind = Enums<"incident_kind">;
 
 export type Company = Tables<"companies">;
 export type Profile = Tables<"profiles">;
@@ -44,6 +50,13 @@ export type Integration = Tables<"integrations">;
 export type IntegrationLog = Tables<"integration_logs">;
 export type BankImport = Tables<"bank_imports">;
 export type BankTransaction = Tables<"bank_transactions">;
+export type Vehicle = Tables<"vehicles">;
+export type DocumentRow = Tables<"documents">;
+export type DailyReport = Tables<"daily_reports">;
+export type WorkDayEntry = Tables<"work_day_entries">;
+export type SafetyManager = Tables<"safety_managers">;
+export type DriverInstruction = Tables<"driver_instructions">;
+export type Incident = Tables<"incidents">;
 
 export type WorkEntryCalc = Views<"v_work_entry_calc">;
 export type DriverMonthSummary = Views<"v_driver_month_summary">;
@@ -63,6 +76,14 @@ export type ChatMessageRow = Views<"v_chat_message_list">;
 export type AiConversationRow = Views<"v_ai_conversation_list">;
 export type AlertSummaryRow = Views<"v_alert_summary">;
 export type BankTransactionRow = Views<"v_bank_transaction_list">;
+export type VehicleRow = Views<"v_vehicle_list">;
+export type DocumentListRow = Views<"v_document_list">;
+export type DailyReportRow = Views<"v_daily_report_list">;
+export type WorkDayEntryRow = Views<"v_work_day_entry_list">;
+export type DayStatusRow = Views<"v_day_status">;
+
+/** ドライバーの「今日の報告」で選べる案件内容（RPC driver_day_items の 1 行） */
+export type DriverDayItem = Database["public"]["Functions"]["driver_day_items"]["Returns"][number];
 
 /** 資金繰りの 1 件（RPC cash_forecast の 1 行） */
 export type CashEvent = Database["public"]["Functions"]["cash_forecast"]["Returns"][number];
@@ -133,6 +154,83 @@ export const BANK_TXN_STATUS_LABELS: Record<BankTxnStatus, string> = {
   unmatched: "未消込",
   matched: "消込済み",
   ignored: "対象外",
+};
+
+/** 書類の種類 */
+export const DOCUMENT_KINDS: DocumentKind[] = [
+  "license",
+  "vehicle_inspection",
+  "compulsory_insurance",
+  "voluntary_insurance",
+  "health_check",
+  "safety_training",
+  "contract",
+  "other",
+];
+export const DOCUMENT_KIND_LABELS: Record<DocumentKind, string> = {
+  license: "運転免許証",
+  vehicle_inspection: "車検証",
+  compulsory_insurance: "自賠責保険",
+  voluntary_insurance: "任意保険",
+  health_check: "健康診断",
+  safety_training: "安全管理者講習",
+  contract: "契約書",
+  other: "その他",
+};
+
+/** 書類の期限の状態（v_document_list.expiry_status） */
+export const EXPIRY_STATUS_LABELS: Record<string, string> = {
+  expired: "期限切れ",
+  soon: "まもなく期限",
+  valid: "有効",
+  none: "期限なし",
+};
+
+/** 点呼の方法 */
+export const ROLL_CALL_METHOD_LABELS: Record<RollCallMethod, string> = {
+  face: "対面",
+  phone: "電話",
+  video: "ビデオ通話",
+  app: "アプリ",
+};
+
+/** 日別の稼働の状態 */
+export const DAY_ENTRY_STATUSES: DayEntryStatus[] = ["submitted", "approved", "rejected"];
+export const DAY_ENTRY_STATUS_LABELS: Record<DayEntryStatus, string> = {
+  submitted: "承認待ち",
+  approved: "承認済み",
+  rejected: "差戻し",
+};
+
+/** 稼働の入力元 */
+export const ENTRY_SOURCE_LABELS: Record<EntrySource, string> = {
+  staff: "スタッフ入力",
+  driver: "ドライバー報告",
+  import: "ファイル取り込み",
+  line: "LINE",
+};
+
+/** 車両の所有区分 */
+export const VEHICLE_OWNERSHIP_LABELS: Record<VehicleOwnership, string> = {
+  owned: "自社所有",
+  lease: "リース",
+  driver: "ドライバー持ち込み",
+};
+
+/** 事故の種類 */
+export const INCIDENT_KIND_LABELS: Record<IncidentKind, string> = {
+  accident: "事故",
+  violation: "違反",
+  near_miss: "ヒヤリハット",
+};
+
+/** 指導・監督の種類 */
+export const INSTRUCTION_KIND_LABELS: Record<string, string> = {
+  initial: "初任運転者",
+  regular: "定期",
+  accident: "事故後",
+  elderly: "高齢運転者",
+  special: "特別",
 };
 
 /** 案件 ＋ 内容（マスタ読み込み用） */

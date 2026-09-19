@@ -26,6 +26,16 @@ import type {
   BankTransactionRow,
   BankTxnStatus,
   BankImport,
+  VehicleRow,
+  DocumentListRow,
+  DailyReportRow,
+  WorkDayEntryRow,
+  DayEntryStatus,
+  DayStatusRow,
+  SafetyManager,
+  DriverInstruction,
+  Incident,
+  DriverDayItem,
 } from "@/lib/db/types";
 import { monthToDate } from "@/lib/month";
 
@@ -361,6 +371,98 @@ export async function loadBankTransactions(
 /** 銀行 CSV の取り込み履歴（新しい順） */
 export async function loadBankImports(supabase: ServerSupabase, companyId: string, limit = 10): Promise<BankImport[]> {
   const { data, error } = await supabase.from("bank_imports").select("*").eq("company_id", companyId).order("created_at", { ascending: false }).limit(limit);
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** 車両（割当ドライバー名・次の期限つき） */
+export async function loadVehicles(supabase: ServerSupabase, companyId: string, opts: { activeOnly?: boolean } = {}): Promise<VehicleRow[]> {
+  let q = supabase.from("v_vehicle_list").select("*").eq("company_id", companyId).order("sort_order").order("plate");
+  if (opts.activeOnly) q = q.eq("is_active", true);
+  const { data, error } = await q;
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** 書類と期限（期限が近い順。expires_on が無いものは最後） */
+export async function loadDocuments(
+  supabase: ServerSupabase,
+  companyId: string,
+  opts: { driverId?: string; vehicleId?: string; activeOnly?: boolean } = {},
+): Promise<DocumentListRow[]> {
+  let q = supabase.from("v_document_list").select("*").eq("company_id", companyId);
+  if (opts.driverId) q = q.eq("driver_id", opts.driverId);
+  if (opts.vehicleId) q = q.eq("vehicle_id", opts.vehicleId);
+  if (opts.activeOnly !== false) q = q.eq("is_active", true);
+  const { data, error } = await q.order("expires_on", { ascending: true, nullsFirst: false });
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** 日報（新しい順） */
+export async function loadDailyReports(
+  supabase: ServerSupabase,
+  companyId: string,
+  opts: { month?: string; driverId?: string; limit?: number } = {},
+): Promise<DailyReportRow[]> {
+  let q = supabase.from("v_daily_report_list").select("*").eq("company_id", companyId);
+  if (opts.month) q = q.eq("month", monthToDate(opts.month));
+  if (opts.driverId) q = q.eq("driver_id", opts.driverId);
+  const { data, error } = await q.order("work_date", { ascending: false }).order("driver_name").limit(opts.limit ?? 200);
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** 日別の稼働（新しい順） */
+export async function loadWorkDayEntries(
+  supabase: ServerSupabase,
+  companyId: string,
+  opts: { month?: string; driverId?: string; status?: DayEntryStatus | "all"; limit?: number } = {},
+): Promise<WorkDayEntryRow[]> {
+  let q = supabase.from("v_work_day_entry_list").select("*").eq("company_id", companyId);
+  if (opts.month) q = q.eq("month", monthToDate(opts.month));
+  if (opts.driverId) q = q.eq("driver_id", opts.driverId);
+  if (opts.status && opts.status !== "all") q = q.eq("status", opts.status);
+  const { data, error } = await q.order("work_date", { ascending: false }).order("driver_sort_order").limit(opts.limit ?? 500);
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** 会社 × 月の運行管理の状況（承認待ち・点呼の未実施・稼働日数） */
+export async function loadDayStatus(supabase: ServerSupabase, companyId: string, month: string): Promise<DayStatusRow | null> {
+  const { data, error } = await supabase.from("v_day_status").select("*").eq("company_id", companyId).eq("month", monthToDate(month)).maybeSingle();
+  if (error) return null;
+  return data;
+}
+
+/** 安全管理者 */
+export async function loadSafetyManagers(supabase: ServerSupabase, companyId: string): Promise<SafetyManager[]> {
+  const { data, error } = await supabase.from("safety_managers").select("*").eq("company_id", companyId).order("is_active", { ascending: false }).order("name");
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** 指導・監督の記録（新しい順） */
+export async function loadDriverInstructions(supabase: ServerSupabase, companyId: string, opts: { driverId?: string; limit?: number } = {}): Promise<DriverInstruction[]> {
+  let q = supabase.from("driver_instructions").select("*").eq("company_id", companyId);
+  if (opts.driverId) q = q.eq("driver_id", opts.driverId);
+  const { data, error } = await q.order("instructed_on", { ascending: false }).limit(opts.limit ?? 100);
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** 事故・違反・ヒヤリハット（新しい順） */
+export async function loadIncidents(supabase: ServerSupabase, companyId: string, opts: { driverId?: string; limit?: number } = {}): Promise<Incident[]> {
+  let q = supabase.from("incidents").select("*").eq("company_id", companyId);
+  if (opts.driverId) q = q.eq("driver_id", opts.driverId);
+  const { data, error } = await q.order("occurred_at", { ascending: false }).limit(opts.limit ?? 100);
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** ドライバーの「今日の報告」で選べる案件内容（直近に使ったものが先） */
+export async function loadDriverDayItems(supabase: ServerSupabase): Promise<DriverDayItem[]> {
+  const { data, error } = await supabase.rpc("driver_day_items");
   if (error) throw error;
   return data ?? [];
 }

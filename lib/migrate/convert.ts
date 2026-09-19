@@ -306,6 +306,7 @@ export function convertPrototype(json: unknown, companyId: string): { backup: Ba
       royalty_rate: Math.min(1, Math.max(0, rate)),
       rounding_mode: companyRounding,
       memo: e.memo ?? "",
+      qty_source: "manual",
     });
     driverMonthKeys.set(`${e.month}_${driverId}`, { month: e.month, driverId });
   }
