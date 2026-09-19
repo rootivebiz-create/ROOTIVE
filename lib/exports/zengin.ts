@@ -337,9 +337,11 @@ export function validateZengin(input: ZenginInput): string[] {
 
   const b = input.bank;
   if (!DIGITS_4.test((b?.bankCode ?? "").trim())) w.push("振込元の銀行コードは 4 桁の数字で登録してください。");
-  if (!toHalfWidthKana(b?.bankName ?? "").trim()) w.push("振込元の銀行名（カナ）が未設定です。");
+  if (!(b?.bankName ?? "").trim()) w.push("振込元の銀行名が未設定です。");
+  else if (!toHalfWidthKana(b.bankName).trim()) w.push("振込元の銀行名は半角カナに直せないため、振込データでは空欄になります（銀行は銀行コードで判定されます）。");
   if (!DIGITS_3.test((b?.branchCode ?? "").trim())) w.push("振込元の支店コードは 3 桁の数字で登録してください。");
-  if (!toHalfWidthKana(b?.branchName ?? "").trim()) w.push("振込元の支店名（カナ）が未設定です。");
+  if (!(b?.branchName ?? "").trim()) w.push("振込元の支店名が未設定です。");
+  else if (!toHalfWidthKana(b.branchName).trim()) w.push("振込元の支店名は半角カナに直せないため、振込データでは空欄になります（支店は支店コードで判定されます）。");
   if (!b?.accountType) w.push("振込元の預金種目が未設定です（普通として出力します）。");
   if (!ACCOUNT_NO.test((b?.accountNumber ?? "").trim())) w.push("振込元の口座番号は 7 桁以内の数字で登録してください。");
 
@@ -351,9 +353,9 @@ export function validateZengin(input: ZenginInput): string[] {
   for (const row of input.rows) {
     const name = rowLabel(row);
     if (!DIGITS_4.test((row.bankCode ?? "").trim())) w.push(`${name}：銀行コードは 4 桁の数字で登録してください。`);
-    if (!toHalfWidthKana(row.bankName ?? "").trim()) w.push(`${name}：銀行名（カナ）が未登録です。`);
+    if (!(row.bankName ?? "").trim()) w.push(`${name}：銀行名が未登録です。`);
     if (!DIGITS_3.test((row.branchCode ?? "").trim())) w.push(`${name}：支店コードは 3 桁の数字で登録してください。`);
-    if (!toHalfWidthKana(row.branchName ?? "").trim()) w.push(`${name}：支店名（カナ）が未登録です。`);
+    if (!(row.branchName ?? "").trim()) w.push(`${name}：支店名が未登録です。`);
     if (!row.accountType) w.push(`${name}：預金種目が未登録です（普通として出力します）。`);
     if (!ACCOUNT_NO.test((row.accountNumber ?? "").trim())) w.push(`${name}：口座番号は 7 桁以内の数字で登録してください。`);
     const holder = toHalfWidthKana(row.holderKana ?? "").trim();
@@ -417,9 +419,9 @@ export interface TransferTarget {
 export function missingBankFields(d: Pick<TransferDriverSource, "bankCode" | "bankName" | "branchCode" | "branchName" | "accountType" | "accountNumber" | "holderKana">): string[] {
   const missing: string[] = [];
   if (!DIGITS_4.test((d.bankCode ?? "").trim())) missing.push("銀行コード（4 桁）");
-  if (!toHalfWidthKana(d.bankName ?? "").trim()) missing.push("銀行名");
+  if (!(d.bankName ?? "").trim()) missing.push("銀行名");
   if (!DIGITS_3.test((d.branchCode ?? "").trim())) missing.push("支店コード（3 桁）");
-  if (!toHalfWidthKana(d.branchName ?? "").trim()) missing.push("支店名");
+  if (!(d.branchName ?? "").trim()) missing.push("支店名");
   if (!d.accountType) missing.push("預金種目");
   if (!ACCOUNT_NO.test((d.accountNumber ?? "").trim())) missing.push("口座番号（7 桁以内）");
   if (!toHalfWidthKana(d.holderKana ?? "").trim()) missing.push("口座名義（カナ）");

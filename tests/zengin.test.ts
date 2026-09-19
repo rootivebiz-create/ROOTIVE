@@ -504,3 +504,47 @@ describe("振込対象の組み立て（画面・CSV と共用）", () => {
     expect(transferFileName("2026-12", "csv")).toBe("振込一覧_2026-12.csv");
   });
 });
+
+describe("銀行名・支店名は漢字でも登録できる（照合は銀行コードと支店コード）", () => {
+  const kanjiRow = {
+    bankCode: "0005",
+    bankName: "三菱UFJ銀行",
+    branchCode: "001",
+    branchName: "本店",
+    accountType: "ordinary" as const,
+    accountNumber: "1234567",
+    holderKana: "ｱｲｿ ｻﾄｼ",
+  };
+
+  it("漢字の支店名でも「足りない項目」にはならない", () => {
+    expect(missingBankFields(kanjiRow)).toEqual([]);
+  });
+
+  it("空欄のときだけ足りない項目になる", () => {
+    expect(missingBankFields({ ...kanjiRow, branchName: "" })).toContain("支店名");
+    expect(missingBankFields({ ...kanjiRow, bankName: "   " })).toContain("銀行名");
+  });
+
+  it("漢字の振込元は警告で知らせる（空欄で出力される）", () => {
+    const warnings = validateZengin({
+      consignorCode: "1234567890",
+      consignorKana: "ｶ)ﾙｰﾃｨﾌﾞ",
+      bank: { bankCode: "0005", bankName: "三菱UFJ銀行", branchCode: "001", branchName: "本店", accountType: "ordinary", accountNumber: "7654321" },
+      transferDate: "2026-10-31",
+      rows: [{ ...kanjiRow, amount: 436307 }],
+    });
+    expect(warnings.some((w) => w.includes("支店名は半角カナに直せない"))).toBe(true);
+    expect(warnings.some((w) => w.includes("支店名が未登録"))).toBe(false);
+  });
+
+  it("漢字の支店名でもレコード長は 120 バイトのまま", () => {
+    const records = buildZenginRecords({
+      consignorCode: "1234567890",
+      consignorKana: "ｶ)ﾙｰﾃｨﾌﾞ",
+      bank: { bankCode: "0005", bankName: "三菱UFJ銀行", branchCode: "001", branchName: "本店", accountType: "ordinary", accountNumber: "7654321" },
+      transferDate: "2026-10-31",
+      rows: [{ ...kanjiRow, amount: 436307 }],
+    });
+    for (const r of records) expect(encodeShiftJis(r).length).toBe(120);
+  });
+});
