@@ -136,6 +136,19 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 | `bank_imports` | file_name, format, row_count, inserted_count, skipped_count, matched_count, period_from/to, created_by | 銀行 CSV の取り込み 1 回分（`0011`） |
 | `bank_transactions` | import_id, txn_date, description, amount(入金 ＋／出金 −), balance, status(unmatched/matched/ignored), invoice_id, expense_id, auto_matched, fingerprint(会社内 unique) | 銀行明細（`0011`） |
 | `drivers` / `profiles` の追加列 | line_user_id, line_linked_at | LINE 連携（`0011`） |
+| `vehicles` | plate(会社内 unique), maker, model, ownership(owned/lease/driver), driver_id, lease_monthly, odometer, is_active, sort_order | 車両（`0012`）。期限は documents で持つ |
+| `documents` | kind, driver_id / vehicle_id(どちらか必須), label, number, issued_on, expires_on, reminder_days(既定 60), file_path, is_active | 期限のある書類（`0012`）。免許証・車検・自賠責・任意保険・健康診断・安全管理者講習 |
+| `daily_reports` | work_date, month(トリガー), driver_id, vehicle_id, pre_*(業務前点呼), post_*(業務後点呼), start_at/end_at/break_minutes/distance_km/odo_*, unique(company_id,work_date,driver_id) | 日報＝点呼記録簿＋業務記録（`0012`）。1 年保存 |
+| `work_day_entries` | work_date, month(トリガー), driver_id, project_item_id, qty, source(staff/driver/import/line), status(submitted/approved/rejected), reject_reason, approved_by/at, unique(company_id,work_date,driver_id,project_item_id) | 日別の稼働（`0012`）。承認済みの合計が月次の qty になる |
+| `work_entries` の追加列 | qty_source(manual/daily) | 日別から自動集計した行かどうか（`0012`） |
+| `safety_managers` | name, office, appointed_on, training_on, training_expires_on, is_active | 貨物軽自動車安全管理者（`0012`。2025 年 4 月施行） |
+| `driver_instructions` | driver_id, kind(initial/regular/accident/elderly/special), instructed_on, hours, topics, instructor | 指導・監督の記録（`0012`）。3 年保存 |
+| `incidents` | driver_id, vehicle_id, occurred_at, kind(accident/violation/near_miss), place, description, cause, prevention, reported, cost | 事故・違反・ヒヤリハット（`0012`） |
+| `import_profiles` | name(会社内 unique), client_id, project_id, mapping, driver_match, item_match, header_row, encoding | 元請ファイルの取り込み定義（`0013`）。列と名前の対応を覚える |
+| `import_runs` | profile_id, file_name, month, row_count, applied_count, skipped_count, unmatched | 取り込み 1 回分の記録（`0013`） |
+| `expenses` の追加列 | receipt_path, ocr(jsonb) | レシート画像（Storage `receipts`）と AI の読み取り結果（`0013`） |
+| `applicants` / `applicant_events` | name, stage(applied…started/declined/rejected), applied_on, interview_on, started_on, driver_id, checklist(jsonb) | 採用のパイプライン（`0013`）。段階が変わると履歴をトリガーが残す |
+| `contracts` | driver_id, status(draft/active/ended), start_on, end_on, auto_renew, notice_days, file_path, agreed_at | 業務委託契約（`0013`） |
 
 ### ビュー（`0003_views.sql` ほか、`security_invoker = true`：呼び出し元の RLS が適用）
 
@@ -163,6 +176,14 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 | `v_ai_conversation_list` | AI 相談の会話 ＋ 最後の発言（`0011`） |
 | `v_alert_summary` | 会社 × 月の未対応件数（重さ別）と最終検査時刻（`0011`） |
 | `v_bank_transaction_list` | 銀行明細 ＋ 消込先の請求書番号・取引先名・取り込み元ファイル名（`0011`） |
+| `v_vehicle_list` | 車両 ＋ 割当ドライバー名・次に来る期限・期限切れ件数（`0012`） |
+| `v_document_list` | 書類 ＋ 対象名（ドライバー／車両）・残り日数・expiry_status（expired/soon/valid/none）（`0012`） |
+| `v_daily_report_list` | 日報 ＋ ドライバー名・車両番号・点呼の済み未済・その日の稼働合計（`0012`） |
+| `v_work_day_entry_list` | 日別の稼働 ＋ ドライバー名・案件名・内容名・単位（`0012`） |
+| `v_day_status` | 会社 × 月の承認待ち件数・承認済み件数・稼働日数・点呼が無い日数（`0012`） |
+| `v_applicant_list` | 応募者 ＋ ドライバー名・やりとり件数・最終のやりとり日・応募からの日数（`0013`） |
+| `v_contract_list` | 契約 ＋ ドライバー名・残り日数・period_status（active/renewal/expired/open/ended）（`0013`） |
+| `v_import_profile_list` | 取り込み定義 ＋ 取引先名・案件名・実行回数（`0013`） |
 
 消費税（`0008`）：`v_driver_month_summary` は `tax_mode`（driver_months に固定値があればそれ、無ければ drivers）、`tax_rate` / `tax_rounding`（同じく companies）、`tax_base = pay − royalty − mgmt_fee`、`tax = round_by_mode(tax_base × tax_rate, tax_rounding)`（exempt は 0）、`payout_incl = payout + tax` を返す。`v_month_summary` は `tax` と `payout_incl` の合計を持つ。調整（adj_pay）は税込の金額として消費税の対象外。
 
@@ -199,6 +220,11 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 | `line_consume_code(code, line_user_id)` | service_role | Webhook から呼び、合言葉を本人に結びつける |
 | `line_unlink(driver_id?)` | 本人 / admin+ | LINE 連携を外す |
 | `default_chat_channels(company_id)` | 内部 | 会社作成時に「全体」「経営」を作る |
+| `submit_day_entries(work_date, item_ids[], qtys[], driver_id?, memo?)` | ドライバー本人 / admin+ | 日別の稼働をまとめて提出（数量 0 は削除）。ドライバーは自分の分だけ |
+| `approve_day_entries(ids[], approve, reason?)` | admin+ | 承認・差戻し。承認するとトリガーが月次の稼働に反映する |
+| `apply_day_entries(month)` | admin+ | その月の承認済みを月次の稼働へ反映し直す |
+| `sync_work_entry_from_days(company_id, month, driver_id, project_item_id)` | 内部 | 日別 → 月次の集計本体（トリガーから呼ぶ） |
+| `driver_day_items()` | ドライバー本人 | 「今日の報告」で選べる案件内容（直近 60 日に使ったものが先） |
 | `month_day_date(month, offset, day)` | 全員 | 稼動月からの支払日・入金予定日（0 = 末日。月末を超える日は月末に丸める）（`0009`） |
 | `apply_recurring_expenses(month)` | admin+ | 毎月かかる経費をその月に計上し、作成件数を返す（未締め月のみ・二重計上しない）（`0009`） |
 | `build_invoice(client_id, month)` | admin+ | その月・その取引先の稼働から請求書と明細を作り直す（番号は `YYYYMM-NN`。発行済みは hint `INVOICE_ISSUED`）（`0009`） |
