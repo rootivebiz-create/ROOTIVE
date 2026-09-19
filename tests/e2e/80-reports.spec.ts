@@ -57,7 +57,8 @@ test.describe("年次レポートと月次目標", () => {
     await expect(page.getByText(yen(452490.3)).first()).toBeVisible();
 
     await expect(page.getByRole("heading", { name: "月次の内訳" })).toBeVisible();
-    await expect(listRow(page, "2026年9月").first()).toContainText(yen(2559573));
+    // 経営指標の推移にも「2026年9月」の行があるため、金額を含む行だけに絞る
+    await expect(listRow(page, "2026年9月").filter({ hasText: yen(2559573) }).first()).toBeVisible();
 
     // ドライバー別・案件別・経費のカテゴリ別
     await expect(listRow(page, "相曽慧").first()).toBeVisible();

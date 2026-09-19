@@ -195,8 +195,7 @@ test.describe("支払明細", () => {
     await expect(listRow(page, "和光ヤマト（ネコポス）").last()).toContainText(yen(37450));
     await expect(listRow(page, /合計/).last()).toContainText(yen(2559573));
 
-    await page.getByRole("tab", { name: "全期間" }).click();
-    await expect(page).toHaveURL(/scope=all/);
+    await Promise.all([page.waitForURL(/scope=all/), page.getByRole("tab", { name: "全期間" }).click()]);
     await expect(page.getByRole("tab", { name: "全期間" })).toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("heading", { name: "案件（内容）ごとの集計" })).toBeVisible();
     await expect(listRow(page, /合計/).last()).toContainText(yen(2559573));
