@@ -36,6 +36,12 @@ import type {
   DriverInstruction,
   Incident,
   DriverDayItem,
+  ApplicantRow,
+  ApplicantStage,
+  ApplicantEvent,
+  ContractRow,
+  ImportProfileRow,
+  ImportRun,
 } from "@/lib/db/types";
 import { monthToDate } from "@/lib/month";
 
@@ -463,6 +469,47 @@ export async function loadIncidents(supabase: ServerSupabase, companyId: string,
 /** ドライバーの「今日の報告」で選べる案件内容（直近に使ったものが先） */
 export async function loadDriverDayItems(supabase: ServerSupabase): Promise<DriverDayItem[]> {
   const { data, error } = await supabase.rpc("driver_day_items");
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** 応募者（新しい順） */
+export async function loadApplicants(supabase: ServerSupabase, companyId: string, opts: { stage?: ApplicantStage | "all"; limit?: number } = {}): Promise<ApplicantRow[]> {
+  let q = supabase.from("v_applicant_list").select("*").eq("company_id", companyId);
+  if (opts.stage && opts.stage !== "all") q = q.eq("stage", opts.stage);
+  const { data, error } = await q.order("applied_on", { ascending: false }).limit(opts.limit ?? 200);
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** 応募者のやりとり（新しい順） */
+export async function loadApplicantEvents(supabase: ServerSupabase, applicantId: string): Promise<ApplicantEvent[]> {
+  const { data, error } = await supabase.from("applicant_events").select("*").eq("applicant_id", applicantId).order("happened_on", { ascending: false });
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** 業務委託契約（期限が近い順） */
+export async function loadContracts(supabase: ServerSupabase, companyId: string, opts: { driverId?: string } = {}): Promise<ContractRow[]> {
+  let q = supabase.from("v_contract_list").select("*").eq("company_id", companyId);
+  if (opts.driverId) q = q.eq("driver_id", opts.driverId);
+  const { data, error } = await q.order("end_on", { ascending: true, nullsFirst: false }).order("driver_name");
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** 元請ファイルの取り込み定義 */
+export async function loadImportProfiles(supabase: ServerSupabase, companyId: string, opts: { activeOnly?: boolean } = {}): Promise<ImportProfileRow[]> {
+  let q = supabase.from("v_import_profile_list").select("*").eq("company_id", companyId);
+  if (opts.activeOnly) q = q.eq("is_active", true);
+  const { data, error } = await q.order("name");
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** 元請ファイルの取り込み履歴（新しい順） */
+export async function loadImportRuns(supabase: ServerSupabase, companyId: string, limit = 10): Promise<ImportRun[]> {
+  const { data, error } = await supabase.from("import_runs").select("*").eq("company_id", companyId).order("created_at", { ascending: false }).limit(limit);
   if (error) throw error;
   return data ?? [];
 }

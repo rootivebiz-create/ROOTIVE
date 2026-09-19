@@ -18,6 +18,8 @@ export type DayEntryStatus = Enums<"day_entry_status">;
 export type EntrySource = Enums<"entry_source">;
 export type VehicleOwnership = Enums<"vehicle_ownership">;
 export type IncidentKind = Enums<"incident_kind">;
+export type ApplicantStage = Enums<"applicant_stage">;
+export type ContractStatus = Enums<"contract_status">;
 
 export type Company = Tables<"companies">;
 export type Profile = Tables<"profiles">;
@@ -57,6 +59,11 @@ export type WorkDayEntry = Tables<"work_day_entries">;
 export type SafetyManager = Tables<"safety_managers">;
 export type DriverInstruction = Tables<"driver_instructions">;
 export type Incident = Tables<"incidents">;
+export type ImportProfile = Tables<"import_profiles">;
+export type ImportRun = Tables<"import_runs">;
+export type Applicant = Tables<"applicants">;
+export type ApplicantEvent = Tables<"applicant_events">;
+export type Contract = Tables<"contracts">;
 
 export type WorkEntryCalc = Views<"v_work_entry_calc">;
 export type DriverMonthSummary = Views<"v_driver_month_summary">;
@@ -81,6 +88,9 @@ export type DocumentListRow = Views<"v_document_list">;
 export type DailyReportRow = Views<"v_daily_report_list">;
 export type WorkDayEntryRow = Views<"v_work_day_entry_list">;
 export type DayStatusRow = Views<"v_day_status">;
+export type ApplicantRow = Views<"v_applicant_list">;
+export type ContractRow = Views<"v_contract_list">;
+export type ImportProfileRow = Views<"v_import_profile_list">;
 
 /** ドライバーの「今日の報告」で選べる案件内容（RPC driver_day_items の 1 行） */
 export type DriverDayItem = Database["public"]["Functions"]["driver_day_items"]["Returns"][number];
@@ -231,6 +241,35 @@ export const INSTRUCTION_KIND_LABELS: Record<string, string> = {
   accident: "事故後",
   elderly: "高齢運転者",
   special: "特別",
+};
+
+/** 採用の段階 */
+export const APPLICANT_STAGES: ApplicantStage[] = ["applied", "contacted", "interview", "docs", "contract", "started", "declined", "rejected"];
+export const APPLICANT_STAGE_LABELS: Record<ApplicantStage, string> = {
+  applied: "応募",
+  contacted: "連絡済み",
+  interview: "面談",
+  docs: "書類",
+  contract: "契約",
+  started: "稼働開始",
+  declined: "辞退",
+  rejected: "見送り",
+};
+
+/** 契約の状態 */
+export const CONTRACT_STATUS_LABELS: Record<ContractStatus, string> = {
+  draft: "下書き",
+  active: "有効",
+  ended: "終了",
+};
+
+/** 契約の期間の状態（v_contract_list.period_status） */
+export const CONTRACT_PERIOD_LABELS: Record<string, string> = {
+  active: "期間内",
+  renewal: "更新時期",
+  expired: "期間切れ",
+  open: "期限なし",
+  ended: "終了",
 };
 
 /** 案件 ＋ 内容（マスタ読み込み用） */

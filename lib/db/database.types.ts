@@ -220,6 +220,105 @@ export type Database = {
         }
         Relationships: []
       }
+      applicant_events: {
+        Row: {
+          id: string
+          company_id: string
+          applicant_id: string
+          happened_on: string
+          stage: Database["public"]["Enums"]["applicant_stage"] | null
+          note: string
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          applicant_id: string
+          happened_on?: string
+          stage?: Database["public"]["Enums"]["applicant_stage"] | null
+          note?: string
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          applicant_id?: string
+          happened_on?: string
+          stage?: Database["public"]["Enums"]["applicant_stage"] | null
+          note?: string
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      applicants: {
+        Row: {
+          id: string
+          company_id: string
+          name: string
+          kana: string
+          phone: string
+          email: string
+          source: string
+          stage: Database["public"]["Enums"]["applicant_stage"]
+          applied_on: string
+          interview_on: string | null
+          started_on: string | null
+          driver_id: string | null
+          has_license: boolean | null
+          has_vehicle: boolean | null
+          checklist: Json
+          memo: string
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          name: string
+          kana?: string
+          phone?: string
+          email?: string
+          source?: string
+          stage?: Database["public"]["Enums"]["applicant_stage"]
+          applied_on?: string
+          interview_on?: string | null
+          started_on?: string | null
+          driver_id?: string | null
+          has_license?: boolean | null
+          has_vehicle?: boolean | null
+          checklist?: Json
+          memo?: string
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          name?: string
+          kana?: string
+          phone?: string
+          email?: string
+          source?: string
+          stage?: Database["public"]["Enums"]["applicant_stage"]
+          applied_on?: string
+          interview_on?: string | null
+          started_on?: string | null
+          driver_id?: string | null
+          has_license?: boolean | null
+          has_vehicle?: boolean | null
+          checklist?: Json
+          memo?: string
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       audit_logs: {
         Row: {
           id: string
@@ -616,6 +715,60 @@ export type Database = {
           logo_path?: string | null
           seal_path?: string | null
           driver_portal_show_open_month?: boolean
+        }
+        Relationships: []
+      }
+      contracts: {
+        Row: {
+          id: string
+          company_id: string
+          driver_id: string
+          title: string
+          status: Database["public"]["Enums"]["contract_status"]
+          start_on: string
+          end_on: string | null
+          auto_renew: boolean
+          notice_days: number
+          file_path: string
+          agreed_at: string | null
+          memo: string
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          driver_id: string
+          title?: string
+          status?: Database["public"]["Enums"]["contract_status"]
+          start_on: string
+          end_on?: string | null
+          auto_renew?: boolean
+          notice_days?: number
+          file_path?: string
+          agreed_at?: string | null
+          memo?: string
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          driver_id?: string
+          title?: string
+          status?: Database["public"]["Enums"]["contract_status"]
+          start_on?: string
+          end_on?: string | null
+          auto_renew?: boolean
+          notice_days?: number
+          file_path?: string
+          agreed_at?: string | null
+          memo?: string
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
         }
         Relationships: []
       }
@@ -1064,6 +1217,8 @@ export type Database = {
           updated_by: string | null
           created_at: string
           updated_at: string
+          receipt_path: string
+          ocr: Json
         }
         Insert: {
           id?: string
@@ -1083,6 +1238,8 @@ export type Database = {
           updated_by?: string | null
           created_at?: string
           updated_at?: string
+          receipt_path?: string
+          ocr?: Json
         }
         Update: {
           id?: string
@@ -1102,6 +1259,107 @@ export type Database = {
           updated_by?: string | null
           created_at?: string
           updated_at?: string
+          receipt_path?: string
+          ocr?: Json
+        }
+        Relationships: []
+      }
+      import_profiles: {
+        Row: {
+          id: string
+          company_id: string
+          name: string
+          client_id: string | null
+          project_id: string | null
+          mapping: Json
+          driver_match: Json
+          item_match: Json
+          header_row: number
+          encoding: string
+          memo: string
+          is_active: boolean
+          last_used_at: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          name: string
+          client_id?: string | null
+          project_id?: string | null
+          mapping?: Json
+          driver_match?: Json
+          item_match?: Json
+          header_row?: number
+          encoding?: string
+          memo?: string
+          is_active?: boolean
+          last_used_at?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          name?: string
+          client_id?: string | null
+          project_id?: string | null
+          mapping?: Json
+          driver_match?: Json
+          item_match?: Json
+          header_row?: number
+          encoding?: string
+          memo?: string
+          is_active?: boolean
+          last_used_at?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      import_runs: {
+        Row: {
+          id: string
+          company_id: string
+          profile_id: string | null
+          file_name: string
+          month: string | null
+          row_count: number
+          applied_count: number
+          skipped_count: number
+          unmatched: Json
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          profile_id?: string | null
+          file_name?: string
+          month?: string | null
+          row_count?: number
+          applied_count?: number
+          skipped_count?: number
+          unmatched?: Json
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          profile_id?: string | null
+          file_name?: string
+          month?: string | null
+          row_count?: number
+          applied_count?: number
+          skipped_count?: number
+          unmatched?: Json
+          created_by?: string | null
+          created_at?: string
         }
         Relationships: []
       }
@@ -1948,6 +2206,34 @@ export type Database = {
         }
         Relationships: []
       }
+      v_applicant_list: {
+        Row: {
+          id: string | null
+          company_id: string | null
+          name: string | null
+          kana: string | null
+          phone: string | null
+          email: string | null
+          source: string | null
+          stage: Database["public"]["Enums"]["applicant_stage"] | null
+          applied_on: string | null
+          interview_on: string | null
+          started_on: string | null
+          driver_id: string | null
+          has_license: boolean | null
+          has_vehicle: boolean | null
+          checklist: Json | null
+          memo: string | null
+          created_by: string | null
+          created_at: string | null
+          updated_at: string | null
+          driver_name: string | null
+          event_count: number | null
+          last_event_on: string | null
+          days_since_applied: number | null
+        }
+        Relationships: []
+      }
       v_bank_transaction_list: {
         Row: {
           id: string | null
@@ -2019,6 +2305,30 @@ export type Database = {
           entry_count: number | null
           qty_total: number | null
           bill: number | null
+        }
+        Relationships: []
+      }
+      v_contract_list: {
+        Row: {
+          id: string | null
+          company_id: string | null
+          driver_id: string | null
+          title: string | null
+          status: Database["public"]["Enums"]["contract_status"] | null
+          start_on: string | null
+          end_on: string | null
+          auto_renew: boolean | null
+          notice_days: number | null
+          file_path: string | null
+          agreed_at: string | null
+          memo: string | null
+          created_by: string | null
+          created_at: string | null
+          updated_at: string | null
+          driver_name: string | null
+          driver_is_active: boolean | null
+          days_left: number | null
+          period_status: string | null
         }
         Relationships: []
       }
@@ -2167,6 +2477,30 @@ export type Database = {
           expense_count: number | null
           amount: number | null
           taxable_amount: number | null
+        }
+        Relationships: []
+      }
+      v_import_profile_list: {
+        Row: {
+          id: string | null
+          company_id: string | null
+          name: string | null
+          client_id: string | null
+          project_id: string | null
+          mapping: Json | null
+          driver_match: Json | null
+          item_match: Json | null
+          header_row: number | null
+          encoding: string | null
+          memo: string | null
+          is_active: boolean | null
+          last_used_at: string | null
+          created_by: string | null
+          created_at: string | null
+          updated_at: string | null
+          client_name: string | null
+          project_name: string | null
+          run_count: number | null
         }
         Relationships: []
       }
@@ -2881,7 +3215,9 @@ export type Database = {
     Enums: {
       alert_severity: "high" | "medium" | "low"
       alert_status: "open" | "resolved" | "ignored"
+      applicant_stage: "applied" | "contacted" | "interview" | "docs" | "contract" | "started" | "declined" | "rejected"
       bank_txn_status: "unmatched" | "matched" | "ignored"
+      contract_status: "draft" | "active" | "ended"
       day_entry_status: "submitted" | "approved" | "rejected"
       document_kind: "license" | "vehicle_inspection" | "compulsory_insurance" | "voluntary_insurance" | "health_check" | "safety_training" | "contract" | "other"
       entry_source: "staff" | "driver" | "import" | "line"
