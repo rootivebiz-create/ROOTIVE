@@ -3186,6 +3186,23 @@ export type Database = {
           month: string
         }[]
       }
+      cash_forecast_for: {
+        Args: {
+          p_company_id: string
+          p_from: string
+          p_to: string
+        }
+        Returns: {
+          event_date: string
+          kind: string
+          label: string
+          detail: string
+          amount: number
+          ref_id: string
+          status: string
+          month: string
+        }[]
+      }
       chat_mark_read: {
         Args: {
           p_channel_id: string
@@ -3408,6 +3425,30 @@ export type Database = {
       }
       rate_diffs: {
         Args: {
+          p_month: string
+        }
+        Returns: {
+          entry_id: string
+          driver_id: string
+          driver_name: string
+          project_id: string
+          project_item_id: string
+          project_name: string
+          item_name: string
+          qty: number
+          bill_rate: number
+          pay_rate: number
+          royalty_rate: number
+          rounding_mode: Database["public"]["Enums"]["rounding_mode"]
+          master_bill_rate: number
+          master_pay_rate: number
+          master_royalty_rate: number
+          master_rounding_mode: Database["public"]["Enums"]["rounding_mode"]
+        }[]
+      }
+      rate_diffs_for: {
+        Args: {
+          p_company_id: string
           p_month: string
         }
         Returns: {

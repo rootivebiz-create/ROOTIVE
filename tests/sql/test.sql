@@ -1182,5 +1182,17 @@ set role service_role;
 select public.t_assert((public.detect_anomalies_core('00000000-0000-0000-0000-00000000000a', '2026-12-01')->>'detected')::integer > 0, 'サービスロールは会社を指定して検知できる');
 select public.t_assert((public.detect_anomalies_core('00000000-0000-0000-0000-00000000000b', '2026-12-01')->>'detected')::integer >= 0, '別の会社も指定して検知できる');
 select public.t_expect_error($$select public.detect_anomalies_core(null, '2026-12-01')$$, '', '会社の指定が無ければエラー');
+-- 会社を指定した集計は、その会社のぶんだけを返す（cron から呼んでも他社が混ざらない）
+select public.t_assert((select count(*) = 0 from public.cash_forecast_for('00000000-0000-0000-0000-00000000000b', '2026-01-01', '2028-12-31') where kind = 'loan'), '別会社の資金繰りに A 社の借入は出ない');
+select public.t_assert((select count(*) > 0 from public.cash_forecast_for('00000000-0000-0000-0000-00000000000a', '2026-01-01', '2028-12-31') where kind = 'loan'), 'A 社の資金繰りには A 社の借入が出る');
+select public.t_assert((select count(*) = 0 from public.rate_diffs_for('00000000-0000-0000-0000-00000000000b', '2026-12-01')), '別会社の単価差分は 0 件');
+reset role;
+
+set role authenticated;
+select public.test_login(:'owner_a');
+select public.t_expect_error($$select count(*) from public.cash_forecast_for('00000000-0000-0000-0000-00000000000b', '2026-01-01', '2026-12-31')$$, '', 'ログイン中のユーザーは会社指定の資金繰りを呼べない');
+select public.t_expect_error($$select count(*) from public.rate_diffs_for('00000000-0000-0000-0000-00000000000b', '2026-12-01')$$, '', 'ログイン中のユーザーは会社指定の単価差分を呼べない');
+select public.t_assert((select count(*) >= 0 from public.cash_forecast('2026-01-01', '2026-12-31')), '入口の資金繰りは自社ぶんが見える');
+select public.test_logout();
 reset role;
 \echo '== すべてのアサーションが通りました（18〜25 節）'
