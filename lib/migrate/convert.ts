@@ -183,6 +183,8 @@ export function convertPrototype(json: unknown, companyId: string): { backup: Ba
       invoice_reg_no: "",
       payout_month_offset: null,
       payout_day: null,
+      line_user_id: "",
+      line_linked_at: null,
     });
   });
 
@@ -250,7 +252,7 @@ export function convertPrototype(json: unknown, companyId: string): { backup: Ba
     driverIdMap.set(protoId, id);
     driverProtoById.set(id, protoId);
     const nm = uniqueName(name?.trim() || `不明なドライバー ${protoId.slice(0, 6)}`, usedDriverNames, warnings, "ドライバー");
-    drivers.push({ id, company_id: companyId, name: nm, kana: "", is_active: false, royalty_rate: null, mgmt_fee: 0, rounding_mode: null, phone: "", email: "", bank_info: "", memo: "試作データの参照切れから自動作成", sort_order: 999, tax_mode: "taxable", invoice_reg_no: "", payout_month_offset: null, payout_day: null });
+    drivers.push({ id, company_id: companyId, name: nm, kana: "", is_active: false, royalty_rate: null, mgmt_fee: 0, rounding_mode: null, phone: "", email: "", bank_info: "", memo: "試作データの参照切れから自動作成", sort_order: 999, tax_mode: "taxable", invoice_reg_no: "", payout_month_offset: null, payout_day: null, line_user_id: "", line_linked_at: null });
     warnings.push(`稼働行が参照するドライバー（${protoId}）がマスタに無いため「${nm}」を停止中として作成しました`);
     return id;
   };

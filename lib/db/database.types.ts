@@ -43,6 +43,42 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_conversations: {
+        Row: {
+          id: string
+          company_id: string
+          title: string
+          month: string | null
+          message_count: number
+          last_message_at: string
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          title?: string
+          month?: string | null
+          message_count?: number
+          last_message_at?: string
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          title?: string
+          month?: string | null
+          message_count?: number
+          last_message_at?: string
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       ai_insights: {
         Row: {
           id: string
@@ -52,6 +88,9 @@ export type Database = {
           findings: Json
           created_by: string | null
           created_at: string
+          kind: string
+          summary: string
+          actions: Json
         }
         Insert: {
           id?: string
@@ -61,6 +100,9 @@ export type Database = {
           findings?: Json
           created_by?: string | null
           created_at?: string
+          kind?: string
+          summary?: string
+          actions?: Json
         }
         Update: {
           id?: string
@@ -70,6 +112,111 @@ export type Database = {
           findings?: Json
           created_by?: string | null
           created_at?: string
+          kind?: string
+          summary?: string
+          actions?: Json
+        }
+        Relationships: []
+      }
+      ai_messages: {
+        Row: {
+          id: string
+          company_id: string
+          conversation_id: string
+          role: string
+          content: string
+          model: string
+          data_months: number
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          conversation_id: string
+          role: string
+          content?: string
+          model?: string
+          data_months?: number
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          conversation_id?: string
+          role?: string
+          content?: string
+          model?: string
+          data_months?: number
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      alerts: {
+        Row: {
+          id: string
+          company_id: string
+          month: string | null
+          code: string
+          severity: Database["public"]["Enums"]["alert_severity"]
+          title: string
+          detail: string
+          amount: number | null
+          ref_table: string
+          ref_id: string
+          href: string
+          status: Database["public"]["Enums"]["alert_status"]
+          fingerprint: string
+          detected_at: string
+          resolved_at: string | null
+          resolved_by: string | null
+          note: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          month?: string | null
+          code: string
+          severity?: Database["public"]["Enums"]["alert_severity"]
+          title: string
+          detail?: string
+          amount?: number | null
+          ref_table?: string
+          ref_id?: string
+          href?: string
+          status?: Database["public"]["Enums"]["alert_status"]
+          fingerprint: string
+          detected_at?: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          note?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          month?: string | null
+          code?: string
+          severity?: Database["public"]["Enums"]["alert_severity"]
+          title?: string
+          detail?: string
+          amount?: number | null
+          ref_table?: string
+          ref_id?: string
+          href?: string
+          status?: Database["public"]["Enums"]["alert_status"]
+          fingerprint?: string
+          detected_at?: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          note?: string
+          created_at?: string
+          updated_at?: string
         }
         Relationships: []
       }
@@ -109,6 +256,111 @@ export type Database = {
         }
         Relationships: []
       }
+      bank_imports: {
+        Row: {
+          id: string
+          company_id: string
+          file_name: string
+          format: string
+          row_count: number
+          inserted_count: number
+          skipped_count: number
+          matched_count: number
+          period_from: string | null
+          period_to: string | null
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          file_name?: string
+          format?: string
+          row_count?: number
+          inserted_count?: number
+          skipped_count?: number
+          matched_count?: number
+          period_from?: string | null
+          period_to?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          file_name?: string
+          format?: string
+          row_count?: number
+          inserted_count?: number
+          skipped_count?: number
+          matched_count?: number
+          period_from?: string | null
+          period_to?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      bank_transactions: {
+        Row: {
+          id: string
+          company_id: string
+          import_id: string | null
+          txn_date: string
+          description: string
+          amount: number
+          balance: number | null
+          status: Database["public"]["Enums"]["bank_txn_status"]
+          invoice_id: string | null
+          expense_id: string | null
+          matched_at: string | null
+          matched_by: string | null
+          auto_matched: boolean
+          memo: string
+          fingerprint: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          import_id?: string | null
+          txn_date: string
+          description?: string
+          amount: number
+          balance?: number | null
+          status?: Database["public"]["Enums"]["bank_txn_status"]
+          invoice_id?: string | null
+          expense_id?: string | null
+          matched_at?: string | null
+          matched_by?: string | null
+          auto_matched?: boolean
+          memo?: string
+          fingerprint: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          import_id?: string | null
+          txn_date?: string
+          description?: string
+          amount?: number
+          balance?: number | null
+          status?: Database["public"]["Enums"]["bank_txn_status"]
+          invoice_id?: string | null
+          expense_id?: string | null
+          matched_at?: string | null
+          matched_by?: string | null
+          auto_matched?: boolean
+          memo?: string
+          fingerprint?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       cash_snapshots: {
         Row: {
           id: string
@@ -138,6 +390,111 @@ export type Database = {
           memo?: string
           created_by?: string | null
           created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      chat_channels: {
+        Row: {
+          id: string
+          company_id: string
+          name: string
+          description: string
+          is_default: boolean
+          is_active: boolean
+          sort_order: number
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          name: string
+          description?: string
+          is_default?: boolean
+          is_active?: boolean
+          sort_order?: number
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          name?: string
+          description?: string
+          is_default?: boolean
+          is_active?: boolean
+          sort_order?: number
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      chat_messages: {
+        Row: {
+          id: string
+          company_id: string
+          channel_id: string
+          author_id: string
+          body: string
+          mentions: Json
+          edited_at: string | null
+          created_at: string
+          updated_at: string
+          author_name: string
+          author_role: Database["public"]["Enums"]["user_role"] | null
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          channel_id: string
+          author_id: string
+          body: string
+          mentions?: Json
+          edited_at?: string | null
+          created_at?: string
+          updated_at?: string
+          author_name?: string
+          author_role?: Database["public"]["Enums"]["user_role"] | null
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          channel_id?: string
+          author_id?: string
+          body?: string
+          mentions?: Json
+          edited_at?: string | null
+          created_at?: string
+          updated_at?: string
+          author_name?: string
+          author_role?: Database["public"]["Enums"]["user_role"] | null
+        }
+        Relationships: []
+      }
+      chat_reads: {
+        Row: {
+          company_id: string
+          channel_id: string
+          profile_id: string
+          last_read_at: string
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          channel_id: string
+          profile_id: string
+          last_read_at?: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          channel_id?: string
+          profile_id?: string
+          last_read_at?: string
           updated_at?: string
         }
         Relationships: []
@@ -394,6 +751,8 @@ export type Database = {
           invoice_reg_no: string
           payout_month_offset: number | null
           payout_day: number | null
+          line_user_id: string
+          line_linked_at: string | null
         }
         Insert: {
           id?: string
@@ -415,6 +774,8 @@ export type Database = {
           invoice_reg_no?: string
           payout_month_offset?: number | null
           payout_day?: number | null
+          line_user_id?: string
+          line_linked_at?: string | null
         }
         Update: {
           id?: string
@@ -436,6 +797,8 @@ export type Database = {
           invoice_reg_no?: string
           payout_month_offset?: number | null
           payout_day?: number | null
+          line_user_id?: string
+          line_linked_at?: string | null
         }
         Relationships: []
       }
@@ -530,6 +893,99 @@ export type Database = {
           recurring_id?: string | null
           created_by?: string | null
           updated_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      integration_logs: {
+        Row: {
+          id: string
+          company_id: string
+          kind: Database["public"]["Enums"]["integration_kind"]
+          action: string
+          status: string
+          message: string
+          detail: Json
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          kind: Database["public"]["Enums"]["integration_kind"]
+          action?: string
+          status?: string
+          message?: string
+          detail?: Json
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          kind?: Database["public"]["Enums"]["integration_kind"]
+          action?: string
+          status?: string
+          message?: string
+          detail?: Json
+          created_at?: string
+        }
+        Relationships: []
+      }
+      integration_secrets: {
+        Row: {
+          company_id: string
+          kind: Database["public"]["Enums"]["integration_kind"]
+          secrets: Json
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          kind: Database["public"]["Enums"]["integration_kind"]
+          secrets?: Json
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          kind?: Database["public"]["Enums"]["integration_kind"]
+          secrets?: Json
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      integrations: {
+        Row: {
+          id: string
+          company_id: string
+          kind: Database["public"]["Enums"]["integration_kind"]
+          is_enabled: boolean
+          config: Json
+          status: string
+          last_ok_at: string | null
+          last_error: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          kind: Database["public"]["Enums"]["integration_kind"]
+          is_enabled?: boolean
+          config?: Json
+          status?: string
+          last_ok_at?: string | null
+          last_error?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          kind?: Database["public"]["Enums"]["integration_kind"]
+          is_enabled?: boolean
+          config?: Json
+          status?: string
+          last_ok_at?: string | null
+          last_error?: string
           created_at?: string
           updated_at?: string
         }
@@ -694,6 +1150,36 @@ export type Database = {
         }
         Relationships: []
       }
+      line_link_codes: {
+        Row: {
+          code: string
+          company_id: string
+          driver_id: string | null
+          profile_id: string | null
+          expires_at: string
+          used_at: string | null
+          created_at: string
+        }
+        Insert: {
+          code: string
+          company_id: string
+          driver_id?: string | null
+          profile_id?: string | null
+          expires_at: string
+          used_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          code?: string
+          company_id?: string
+          driver_id?: string | null
+          profile_id?: string | null
+          expires_at?: string
+          used_at?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
       month_closings: {
         Row: {
           company_id: string
@@ -780,6 +1266,8 @@ export type Database = {
           is_active: boolean
           created_at: string
           updated_at: string
+          line_user_id: string
+          line_linked_at: string | null
         }
         Insert: {
           id: string
@@ -791,6 +1279,8 @@ export type Database = {
           is_active?: boolean
           created_at?: string
           updated_at?: string
+          line_user_id?: string
+          line_linked_at?: string | null
         }
         Update: {
           id?: string
@@ -802,6 +1292,8 @@ export type Database = {
           is_active?: boolean
           created_at?: string
           updated_at?: string
+          line_user_id?: string
+          line_linked_at?: string | null
         }
         Relationships: []
       }
@@ -1002,6 +1494,94 @@ export type Database = {
       }
     }
     Views: {
+      v_ai_conversation_list: {
+        Row: {
+          id: string | null
+          company_id: string | null
+          title: string | null
+          month: string | null
+          message_count: number | null
+          last_message_at: string | null
+          created_by: string | null
+          created_at: string | null
+          last_role: string | null
+          last_content: string | null
+        }
+        Relationships: []
+      }
+      v_alert_summary: {
+        Row: {
+          company_id: string | null
+          month: string | null
+          open_count: number | null
+          high_count: number | null
+          medium_count: number | null
+          low_count: number | null
+          total_count: number | null
+          last_detected_at: string | null
+        }
+        Relationships: []
+      }
+      v_bank_transaction_list: {
+        Row: {
+          id: string | null
+          company_id: string | null
+          import_id: string | null
+          txn_date: string | null
+          description: string | null
+          amount: number | null
+          balance: number | null
+          status: Database["public"]["Enums"]["bank_txn_status"] | null
+          invoice_id: string | null
+          expense_id: string | null
+          auto_matched: boolean | null
+          memo: string | null
+          created_at: string | null
+          invoice_no: string | null
+          invoice_total: number | null
+          client_name: string | null
+          expense_label: string | null
+          import_file_name: string | null
+        }
+        Relationships: []
+      }
+      v_chat_channel_list: {
+        Row: {
+          id: string | null
+          company_id: string | null
+          name: string | null
+          description: string | null
+          is_default: boolean | null
+          is_active: boolean | null
+          sort_order: number | null
+          created_at: string | null
+          message_count: number | null
+          last_message_at: string | null
+          last_author_name: string | null
+          last_body: string | null
+          unread_count: number | null
+          mention_count: number | null
+          last_read_at: string | null
+        }
+        Relationships: []
+      }
+      v_chat_message_list: {
+        Row: {
+          id: string | null
+          company_id: string | null
+          channel_id: string | null
+          author_id: string | null
+          author_name: string | null
+          author_role: Database["public"]["Enums"]["user_role"] | null
+          body: string | null
+          mentions: Json | null
+          is_mine: boolean | null
+          is_mentioned: boolean | null
+          edited_at: string | null
+          created_at: string | null
+        }
+        Relationships: []
+      }
       v_client_month_summary: {
         Row: {
           company_id: string | null
@@ -1267,6 +1847,19 @@ export type Database = {
         }
         Relationships: []
       }
+      v_staff: {
+        Row: {
+          id: string | null
+          company_id: string | null
+          display_name: string | null
+          email: string | null
+          role: Database["public"]["Enums"]["user_role"] | null
+          is_active: boolean | null
+          line_linked: boolean | null
+          created_at: string | null
+        }
+        Relationships: []
+      }
       v_work_entry_calc: {
         Row: {
           id: string | null
@@ -1325,6 +1918,26 @@ export type Database = {
         }
         Returns: number
       }
+      bank_auto_match: {
+        Args: {
+          p_import_id?: string
+        }
+        Returns: number
+      }
+      bank_match_invoice: {
+        Args: {
+          p_txn_id: string
+          p_invoice_id: string
+        }
+        Returns: undefined
+      }
+      bank_set_status: {
+        Args: {
+          p_txn_id: string
+          p_status: Database["public"]["Enums"]["bank_txn_status"]
+        }
+        Returns: undefined
+      }
       build_invoice: {
         Args: {
           p_client_id: string
@@ -1355,6 +1968,24 @@ export type Database = {
           status: string
           month: string
         }[]
+      }
+      chat_mark_read: {
+        Args: {
+          p_channel_id: string
+        }
+        Returns: undefined
+      }
+      chat_post: {
+        Args: {
+          p_channel_id: string
+          p_body: string
+          p_mentions?: Json
+        }
+        Returns: string
+      }
+      chat_unread_total: {
+        Args: Record<PropertyKey, never>
+        Returns: number
       }
       close_month: {
         Args: {
@@ -1390,11 +2021,23 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: string
       }
+      default_chat_channels: {
+        Args: {
+          p_company_id: string
+        }
+        Returns: number
+      }
       default_expense_categories: {
         Args: {
           p_company_id: string
         }
         Returns: number
+      }
+      detect_anomalies: {
+        Args: {
+          p_month: string
+        }
+        Returns: Json
       }
       driver_portal_current: {
         Args: Record<PropertyKey, never>
@@ -1485,6 +2128,23 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: boolean
       }
+      line_consume_code: {
+        Args: {
+          p_code: string
+          p_line_user_id: string
+        }
+        Returns: Json
+      }
+      line_issue_code: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
+      line_unlink: {
+        Args: {
+          p_driver_id?: string
+        }
+        Returns: undefined
+      }
       month_day_date: {
         Args: {
           p_month: string
@@ -1528,6 +2188,22 @@ export type Database = {
         }
         Returns: undefined
       }
+      record_alert: {
+        Args: {
+          p_company_id: string
+          p_month: string
+          p_code: string
+          p_severity: Database["public"]["Enums"]["alert_severity"]
+          p_title: string
+          p_detail: string
+          p_amount: number
+          p_ref_table: string
+          p_ref_id: string
+          p_href: string
+          p_fingerprint: string
+        }
+        Returns: string
+      }
       reopen_month: {
         Args: {
           p_month: string
@@ -1552,6 +2228,14 @@ export type Database = {
           p_with_entries?: boolean
         }
         Returns: Json
+      }
+      set_alert_status: {
+        Args: {
+          p_alert_id: string
+          p_status: Database["public"]["Enums"]["alert_status"]
+          p_note?: string
+        }
+        Returns: undefined
       }
       set_invoice_status: {
         Args: {
@@ -1602,7 +2286,11 @@ export type Database = {
       }
     }
     Enums: {
+      alert_severity: "high" | "medium" | "low"
+      alert_status: "open" | "resolved" | "ignored"
+      bank_txn_status: "unmatched" | "matched" | "ignored"
       expense_kind: "fixed" | "variable"
+      integration_kind: "line" | "google_drive" | "bank"
       invoice_status: "draft" | "issued" | "paid"
       item_unit: "day" | "piece"
       month_status: "open" | "closed"

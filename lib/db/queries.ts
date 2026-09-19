@@ -13,6 +13,19 @@ import type {
   ProjectPl,
   CashEvent,
   CashSnapshot,
+  StaffRow,
+  ChatChannelRow,
+  ChatMessageRow,
+  AiConversationRow,
+  AiMessage,
+  Alert,
+  AlertStatus,
+  AlertSummaryRow,
+  Integration,
+  IntegrationLog,
+  BankTransactionRow,
+  BankTxnStatus,
+  BankImport,
 } from "@/lib/db/types";
 import { monthToDate } from "@/lib/month";
 
@@ -233,6 +246,121 @@ export async function loadCashForecast(supabase: ServerSupabase, from: string, t
 /** 現金残高のスナップショット（新しい順） */
 export async function loadCashSnapshots(supabase: ServerSupabase, companyId: string, limit = 12): Promise<CashSnapshot[]> {
   const { data, error } = await supabase.from("cash_snapshots").select("*").eq("company_id", companyId).order("as_of", { ascending: false }).limit(limit);
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** スタッフ一覧（チャットの宛先・メンション候補） */
+export async function loadStaff(supabase: ServerSupabase, opts: { activeOnly?: boolean } = {}): Promise<StaffRow[]> {
+  let q = supabase.from("v_staff").select("*").order("role").order("display_name");
+  if (opts.activeOnly) q = q.eq("is_active", true);
+  const { data, error } = await q;
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** 社内チャットのルーム一覧（未読件数つき） */
+export async function loadChatChannels(supabase: ServerSupabase, companyId: string): Promise<ChatChannelRow[]> {
+  const { data, error } = await supabase
+    .from("v_chat_channel_list")
+    .select("*")
+    .eq("company_id", companyId)
+    .eq("is_active", true)
+    .order("sort_order")
+    .order("name");
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** ルームの発言（古い順。limit 件の直近を返す） */
+export async function loadChatMessages(supabase: ServerSupabase, channelId: string, limit = 100): Promise<ChatMessageRow[]> {
+  const { data, error } = await supabase
+    .from("v_chat_message_list")
+    .select("*")
+    .eq("channel_id", channelId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []).slice().reverse();
+}
+
+/** 未読の合計（ナビのバッジ） */
+export async function loadChatUnreadTotal(supabase: ServerSupabase): Promise<number> {
+  const { data, error } = await supabase.rpc("chat_unread_total");
+  if (error) return 0;
+  return Number(data ?? 0);
+}
+
+/** AI チャットの会話一覧（新しい順） */
+export async function loadAiConversations(supabase: ServerSupabase, companyId: string, limit = 30): Promise<AiConversationRow[]> {
+  const { data, error } = await supabase
+    .from("v_ai_conversation_list")
+    .select("*")
+    .eq("company_id", companyId)
+    .order("last_message_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** AI チャットの発言（古い順） */
+export async function loadAiMessages(supabase: ServerSupabase, conversationId: string): Promise<AiMessage[]> {
+  const { data, error } = await supabase.from("ai_messages").select("*").eq("conversation_id", conversationId).order("created_at");
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** アラート（既定は未対応のみ、重い順・新しい順） */
+export async function loadAlerts(
+  supabase: ServerSupabase,
+  companyId: string,
+  opts: { status?: AlertStatus | "all"; month?: string; limit?: number } = {},
+): Promise<Alert[]> {
+  let q = supabase.from("alerts").select("*").eq("company_id", companyId);
+  if (opts.status !== "all") q = q.eq("status", opts.status ?? "open");
+  if (opts.month) q = q.eq("month", monthToDate(opts.month));
+  const { data, error } = await q.order("severity").order("detected_at", { ascending: false }).limit(opts.limit ?? 100);
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** 未対応アラートの件数（会社 × 月） */
+export async function loadAlertSummary(supabase: ServerSupabase, companyId: string, month: string): Promise<AlertSummaryRow | null> {
+  const { data, error } = await supabase.from("v_alert_summary").select("*").eq("company_id", companyId).eq("month", monthToDate(month)).maybeSingle();
+  if (error) return null;
+  return data;
+}
+
+/** 外部連携の設定（機密は含まない） */
+export async function loadIntegrations(supabase: ServerSupabase, companyId: string): Promise<Integration[]> {
+  const { data, error } = await supabase.from("integrations").select("*").eq("company_id", companyId).order("kind");
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** 外部連携の実行記録（新しい順） */
+export async function loadIntegrationLogs(supabase: ServerSupabase, companyId: string, limit = 20): Promise<IntegrationLog[]> {
+  const { data, error } = await supabase.from("integration_logs").select("*").eq("company_id", companyId).order("created_at", { ascending: false }).limit(limit);
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** 銀行明細（消込先つき。既定は新しい順） */
+export async function loadBankTransactions(
+  supabase: ServerSupabase,
+  companyId: string,
+  opts: { status?: BankTxnStatus | "all"; limit?: number } = {},
+): Promise<BankTransactionRow[]> {
+  let q = supabase.from("v_bank_transaction_list").select("*").eq("company_id", companyId);
+  if (opts.status && opts.status !== "all") q = q.eq("status", opts.status);
+  const { data, error } = await q.order("txn_date", { ascending: false }).limit(opts.limit ?? 200);
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** 銀行 CSV の取り込み履歴（新しい順） */
+export async function loadBankImports(supabase: ServerSupabase, companyId: string, limit = 10): Promise<BankImport[]> {
+  const { data, error } = await supabase.from("bank_imports").select("*").eq("company_id", companyId).order("created_at", { ascending: false }).limit(limit);
   if (error) throw error;
   return data ?? [];
 }

@@ -8,6 +8,10 @@ export type Unit = Enums<"item_unit">;
 export type MonthStatus = Enums<"month_status">;
 export type ExpenseKind = Enums<"expense_kind">;
 export type InvoiceStatus = Enums<"invoice_status">;
+export type AlertStatus = Enums<"alert_status">;
+export type AlertSeverity = Enums<"alert_severity">;
+export type IntegrationKind = Enums<"integration_kind">;
+export type BankTxnStatus = Enums<"bank_txn_status">;
 
 export type Company = Tables<"companies">;
 export type Profile = Tables<"profiles">;
@@ -31,6 +35,15 @@ export type Invoice = Tables<"invoices">;
 export type InvoiceItem = Tables<"invoice_items">;
 export type MonthTarget = Tables<"month_targets">;
 export type CashSnapshot = Tables<"cash_snapshots">;
+export type AiConversation = Tables<"ai_conversations">;
+export type AiMessage = Tables<"ai_messages">;
+export type ChatChannel = Tables<"chat_channels">;
+export type ChatMessage = Tables<"chat_messages">;
+export type Alert = Tables<"alerts">;
+export type Integration = Tables<"integrations">;
+export type IntegrationLog = Tables<"integration_logs">;
+export type BankImport = Tables<"bank_imports">;
+export type BankTransaction = Tables<"bank_transactions">;
 
 export type WorkEntryCalc = Views<"v_work_entry_calc">;
 export type DriverMonthSummary = Views<"v_driver_month_summary">;
@@ -44,6 +57,12 @@ export type MonthPl = Views<"v_month_pl">;
 export type ClientMonthSummary = Views<"v_client_month_summary">;
 export type InvoiceListRow = Views<"v_invoice_list">;
 export type ProjectPl = Views<"v_project_pl">;
+export type StaffRow = Views<"v_staff">;
+export type ChatChannelRow = Views<"v_chat_channel_list">;
+export type ChatMessageRow = Views<"v_chat_message_list">;
+export type AiConversationRow = Views<"v_ai_conversation_list">;
+export type AlertSummaryRow = Views<"v_alert_summary">;
+export type BankTransactionRow = Views<"v_bank_transaction_list">;
 
 /** 資金繰りの 1 件（RPC cash_forecast の 1 行） */
 export type CashEvent = Database["public"]["Functions"]["cash_forecast"]["Returns"][number];
@@ -85,6 +104,35 @@ export const INVOICE_STATUS_LABELS: Record<InvoiceStatus, string> = {
   draft: "下書き",
   issued: "発行済み",
   paid: "入金済み",
+};
+
+/** アラートの状態 */
+export const ALERT_STATUSES: AlertStatus[] = ["open", "resolved", "ignored"];
+export const ALERT_STATUS_LABELS: Record<AlertStatus, string> = {
+  open: "未対応",
+  resolved: "対応済み",
+  ignored: "対象外",
+};
+
+/** アラートの重さ */
+export const ALERT_SEVERITY_LABELS: Record<AlertSeverity, string> = {
+  high: "重要",
+  medium: "注意",
+  low: "参考",
+};
+
+/** 外部連携の種類 */
+export const INTEGRATION_KIND_LABELS: Record<IntegrationKind, string> = {
+  line: "LINE 公式アカウント",
+  google_drive: "Google ドライブ",
+  bank: "銀行 CSV",
+};
+
+/** 銀行明細の消込状態 */
+export const BANK_TXN_STATUS_LABELS: Record<BankTxnStatus, string> = {
+  unmatched: "未消込",
+  matched: "消込済み",
+  ignored: "対象外",
 };
 
 /** 案件 ＋ 内容（マスタ読み込み用） */
