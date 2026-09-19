@@ -114,7 +114,7 @@ vercel.json   東京リージョン（hnd1）・PDF 生成の maxDuration・定�
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | anon（publishable）キー |
 | `SUPABASE_SERVICE_ROLE_KEY` | service_role（secret）キー。サーバー専用。招待・招待リンクログイン・バックアップ保存・ユーザー管理にのみ使用 |
 | `NEXT_PUBLIC_APP_URL` | 本番 URL（招待リンク・メールのリンク生成に使用）。本番は `https://rootive-profit.vercel.app` |
-| `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` | 任意。AI（経営分析・相談・文章の下書き）を有効にする場合のみ。渡すのは集計した数字とドライバー名・案件名だけ。取り方は [docs/AI_SETUP.md](docs/AI_SETUP.md) |
+| `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` | 任意。AI（経営分析・相談・文章の下書き）を有効にする場合のみ。渡すのは集計した数字とドライバー名・案件名・取引先名だけ（口座・住所・電話は渡さない）。取り方は [docs/AI_SETUP.md](docs/AI_SETUP.md) |
 | `CRON_SECRET` | **必須（本番）**。Vercel Cron（`/api/cron/keepalive`、Supabase 一時停止防止）の認証。未設定だと 503 で無効。32 文字以上のランダム文字列（deploy スクリプト／GitHub Actions が自動生成） |
 
 ## ライセンス・取り扱い
