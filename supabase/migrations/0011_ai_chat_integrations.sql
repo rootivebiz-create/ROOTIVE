@@ -546,7 +546,8 @@ left join lateral (
   select x.role as last_role, x.content as last_content
     from public.ai_messages x
    where x.conversation_id = c.id
-   order by x.created_at desc
+   -- 同じ時刻に入っていても、AI の回答（assistant）を最後の発言とみなす
+   order by x.created_at desc, (x.role = 'assistant') desc
    limit 1
 ) l on true;
 
@@ -667,7 +668,8 @@ $$;
 create or replace function public.record_alert(
   p_company_id uuid, p_month date, p_code text, p_severity public.alert_severity,
   p_title text, p_detail text, p_amount numeric, p_ref_table text, p_ref_id text, p_href text, p_fingerprint text
-) returns text language plpgsql security definer set search_path = public as $$
+-- security invoker：呼び出した人の RLS（admin・自社のみ）がそのまま効く
+) returns text language plpgsql security invoker set search_path = public as $$
 begin
   insert into public.alerts (company_id, month, code, severity, title, detail, amount, ref_table, ref_id, href, fingerprint)
   values (p_company_id, p_month, p_code, p_severity, p_title, coalesce(p_detail, ''), p_amount,
@@ -893,7 +895,7 @@ begin
        and (p_import_id is null or import_id = p_import_id)
      order by txn_date
   loop
-    select count(*), min(i.id) into cnt, inv_id
+    select count(*), (array_agg(i.id order by i.issue_date, i.invoice_no))[1] into cnt, inv_id
       from public.invoices i
      where i.company_id = cid and i.status <> 'paid' and i.total = t.amount
        and t.txn_date >= i.issue_date - 7 and t.txn_date <= i.issue_date + 180;
@@ -1016,21 +1018,31 @@ begin
     'name', (select coalesce(nullif(display_name, ''), email) from public.profiles where id = r.profile_id));
 end $$;
 
--- LINE の連携を外す
+-- LINE の連携を外す（ドライバー本人は自分の分だけ。admin は会社のドライバーの分も外せる）
 create or replace function public.line_unlink(p_driver_id uuid default null)
-returns void language plpgsql security invoker set search_path = public as $$
+returns void language plpgsql security definer set search_path = public as $$
 declare
   cid uuid := public.current_company_id();
-  did uuid := coalesce(p_driver_id, public.current_driver_id());
+  own uuid := public.current_driver_id();
+  did uuid;
 begin
-  if did is not null then
-    if public.current_driver_id() is null and not public.is_admin() then
+  if cid is null then
+    raise exception 'ログインが必要です' using errcode = 'P0001';
+  end if;
+  if own is not null then
+    did := own; -- ドライバー本人は自分の分だけ（引数は無視する）
+  elsif p_driver_id is not null then
+    if not public.is_admin() then
       raise exception '権限がありません' using errcode = 'P0001', hint = 'FORBIDDEN';
     end if;
+    did := p_driver_id;
+  end if;
+
+  if did is not null then
     update public.drivers set line_user_id = '', line_linked_at = null where id = did and company_id = cid;
   else
     perform set_config('app.bypass_profile_guard', 'on', true);
-    update public.profiles set line_user_id = '', line_linked_at = null where id = auth.uid();
+    update public.profiles set line_user_id = '', line_linked_at = null where id = auth.uid() and company_id = cid;
     perform set_config('app.bypass_profile_guard', 'off', true);
   end if;
 end $$;
@@ -1141,5 +1153,4 @@ revoke execute on function public.handle_new_auth_user() from authenticated, ano
 revoke execute on function public.default_expense_categories(uuid) from authenticated, anon, public;
 revoke execute on function public.default_chat_channels(uuid) from authenticated, anon, public;
 revoke execute on function public.recalc_invoice(uuid) from anon, public;
-revoke execute on function public.record_alert(uuid, date, text, public.alert_severity, text, text, numeric, text, text, text, text) from authenticated, anon, public;
 revoke execute on function public.line_consume_code(text, text) from authenticated, anon, public;

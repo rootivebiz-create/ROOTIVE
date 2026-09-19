@@ -673,6 +673,176 @@ select public.t_assert(public.driver_portal_current() is null, '会社設定で�
 select public.test_login(:'owner_a');
 update public.companies set driver_portal_show_open_month = true where id = :'company_a';
 
+\echo '== 21. AI・社内チャット・異常検知・外部連携・銀行 CSV'
+select public.test_login(:'owner_a');
+
+-- ---------- 社内チャット ----------
+select public.t_assert((select count(*) = 2 from public.chat_channels where company_id = :'company_a'), '会社を作ると既定のルームが 2 つできる');
+select public.t_assert((select is_default from public.chat_channels where company_id = :'company_a' and name = '全体'), '「全体」が既定のルーム');
+
+select public.t_assert(public.chat_post((select id from public.chat_channels where company_id = :'company_a' and name = '全体'), '今月もよろしくお願いします', '[]'::jsonb) is not null, 'オーナーが発言できる');
+select public.t_assert((select m.author_name = coalesce(nullif(p.display_name, ''), p.email) and m.author_role = 'owner'
+                          from public.chat_messages m join public.profiles p on p.id = m.author_id
+                         where m.company_id = :'company_a'), '発言者の名前とロールが写る');
+select public.t_expect_error(format($$select public.chat_post((select id from public.chat_channels where company_id = '%s' and name = '全体'), '   ', '[]'::jsonb)$$, :'company_a'), 'EMPTY_BODY', '空の発言はできない');
+
+-- 閲覧者も発言できる（メンション付き）
+select public.test_login(:'viewer_a');
+select public.t_assert((select unread_count = 1 from public.v_chat_channel_list where name = '全体'), '閲覧者から見て未読 1 件');
+select public.t_assert(public.chat_post((select id from public.chat_channels where company_id = :'company_a' and name = '全体'), '@owner 確認しました', jsonb_build_array(:'owner_a')) is not null, '閲覧者も発言できる');
+select public.t_assert((select unread_count = 0 from public.v_chat_channel_list where name = '全体'), '発言すると自分の未読は 0 になる');
+select public.t_assert((select message_count = 2 from public.v_chat_channel_list where name = '全体'), 'ルームの発言数は 2');
+select public.t_assert((select count(*) = 1 from public.v_chat_message_list where is_mine), '自分の発言が 1 件');
+select public.t_assert((select count(*) >= 3 from public.v_staff), 'スタッフ一覧を閲覧者も読める');
+select public.t_assert((select count(*) = 0 from public.v_staff where role = 'driver'), 'スタッフ一覧にドライバーは含まれない');
+
+select public.test_login(:'owner_a');
+select public.t_assert((select mention_count = 1 and unread_count = 1 from public.v_chat_channel_list where name = '全体'), '自分宛のメンションが 1 件');
+select public.t_assert((select is_mentioned from public.v_chat_message_list where author_id = :'viewer_a'), 'メンションされた発言が分かる');
+select public.chat_mark_read((select id from public.chat_channels where company_id = :'company_a' and name = '全体'));
+select public.t_assert((select unread_count = 0 from public.v_chat_channel_list where name = '全体'), '既読にすると未読が 0');
+select public.t_assert(public.chat_unread_total() = 0, '未読の合計も 0');
+
+-- 他人の発言は消せない／ルームは admin 以上だけが作れる
+select public.test_login(:'admin_a');
+select public.t_assert(public.t_rowcount(format($$delete from public.chat_messages where author_id = '%s'$$, :'viewer_a')) = 0, '管理者でも他人の発言は消せない');
+select public.test_login(:'viewer_a');
+select public.t_expect_error(format($$insert into public.chat_channels (company_id, name) values ('%s', '勝手なルーム')$$, :'company_a'), null, '閲覧者はルームを作れない');
+select public.test_login(:'driver_a');
+select public.t_assert((select count(*) = 0 from public.chat_channels), 'ドライバーはチャットを読めない');
+select public.t_assert((select count(*) = 0 from public.v_staff), 'ドライバーはスタッフ一覧を読めない');
+
+-- ---------- AI チャット ----------
+select public.test_login(:'owner_a');
+insert into public.ai_conversations (id, company_id, title, month, created_by)
+values ('00000000-0000-0000-0000-0000000000c1', :'company_a', '今月の着地は？', '2026-12-01', :'owner_a');
+insert into public.ai_messages (company_id, conversation_id, role, content, created_by, created_at)
+values (:'company_a', '00000000-0000-0000-0000-0000000000c1', 'user', '今月の着地はどうなりそう？', :'owner_a', now()),
+       (:'company_a', '00000000-0000-0000-0000-0000000000c1', 'assistant', '売上は 2,559,573 円の見込みです。', null, now() + interval '2 seconds');
+select public.t_assert((select message_count = 2 from public.ai_conversations where id = '00000000-0000-0000-0000-0000000000c1'), '発言を入れると会話の件数が増える');
+select public.t_assert((select last_role = 'assistant' and message_count = 2 from public.v_ai_conversation_list where id = '00000000-0000-0000-0000-0000000000c1'), '会話一覧に最後の発言が出る');
+select public.test_login(:'viewer_a');
+select public.t_assert((select count(*) = 1 from public.ai_conversations), '閲覧者も AI の会話を読める');
+select public.test_login(:'driver_a');
+select public.t_assert((select count(*) = 0 from public.ai_conversations), 'ドライバーは AI の会話を読めない');
+
+-- 月次分析の保存形式（summary / findings / actions）
+select public.test_login(:'owner_a');
+insert into public.ai_insights (company_id, month, model, kind, summary, findings, actions, created_by)
+values (:'company_a', '2026-12-01', 'claude-sonnet-5', 'monthly', '営業利益は前月並みです。',
+        '[{"title":"利益率が低下","detail":"前月比 -2.1pt","severity":"medium"}]'::jsonb,
+        '[{"title":"三郷Amazon の単価交渉","detail":"1 件 +500 円","effect":"月 +10 万円程度"}]'::jsonb, :'owner_a');
+select public.t_assert((select kind = 'monthly' and summary <> '' and jsonb_array_length(actions) = 1
+                          from public.ai_insights where company_id = :'company_a' and month = '2026-12-01'), '月次分析に総括と改善策が入る');
+
+-- ---------- 異常の検知 ----------
+select public.test_login(:'viewer_a');
+select public.t_expect_error($$select public.detect_anomalies('2026-12-01')$$, 'FORBIDDEN', '閲覧者は検査できない');
+select public.test_login(:'owner_a');
+
+-- 数量 0 の稼働を 1 件入れると qty_zero を検知する
+insert into public.work_entries (company_id, month, driver_id, project_item_id, qty, bill_rate, pay_rate, royalty_rate)
+select :'company_a', '2026-12-01', d.id, i.id, 0, ed.bill_rate, ed.pay_rate, ed.royalty_rate
+  from public.drivers d join public.projects p on p.name = 'Temu' join public.project_items i on i.project_id = p.id
+  cross join lateral public.entry_defaults(d.id, i.id) ed where d.name = '高森豪介';
+select public.t_assert((public.detect_anomalies('2026-12-01')->>'detected')::integer > 0, '異常を検知する');
+select public.t_assert((select count(*) = 1 from public.alerts where company_id = :'company_a' and month = '2026-12-01' and code = 'qty_zero' and status = 'open'), '数量 0 の稼働を検知');
+select public.t_assert((select count(*) >= 1 from public.alerts where company_id = :'company_a' and month = '2026-12-01' and code = 'no_entry' and status = 'open'), '稼働が無い稼働中ドライバーを検知');
+select public.t_assert((select count(*) = 0 from public.alerts where company_id = :'company_a' and code = 'invoice_missing' and status = 'open'), '請求書を作った取引先は警告しない');
+
+-- 2 回流しても増えない（fingerprint で一意）
+do $$
+declare before_n integer; after_n integer;
+begin
+  select count(*) into before_n from public.alerts;
+  perform public.detect_anomalies('2026-12-01');
+  select count(*) into after_n from public.alerts;
+  perform public.t_assert(before_n = after_n, '2 回検査しても件数は増えない');
+end $$;
+
+-- 直ると自動で「対応済み」になる
+delete from public.work_entries where company_id = :'company_a' and month = '2026-12-01' and qty = 0;
+select public.t_assert((public.detect_anomalies('2026-12-01')->>'auto_resolved')::integer >= 1, '直った異常は自動で対応済みになる');
+select public.t_assert((select status = 'resolved' from public.alerts where company_id = :'company_a' and month = '2026-12-01' and code = 'qty_zero'), '数量 0 のアラートが解決済みに');
+
+-- 手で状態を変える
+select public.set_alert_status((select id from public.alerts where company_id = :'company_a' and code = 'no_entry' order by id limit 1), 'ignored', 'この人は今月お休み');
+select public.t_assert((select count(*) = 1 from public.alerts where company_id = :'company_a' and code = 'no_entry' and status = 'ignored' and note <> ''), '対象外にできる');
+select public.t_assert((select open_count >= 0 and total_count > 0 from public.v_alert_summary where company_id = :'company_a' and month = '2026-12-01'), 'アラートの集計が取れる');
+select public.test_login(:'viewer_a');
+select public.t_assert((select count(*) > 0 from public.alerts), '閲覧者はアラートを見られる');
+select public.t_expect_error(format($$select public.set_alert_status((select id from public.alerts where company_id = '%s' limit 1), 'resolved', '')$$, :'company_a'), 'FORBIDDEN', '閲覧者はアラートを閉じられない');
+select public.test_login(:'driver_a');
+select public.t_assert((select count(*) = 0 from public.alerts), 'ドライバーはアラートを読めない');
+
+-- ---------- 外部連携 ----------
+select public.test_login(:'owner_a');
+insert into public.integrations (company_id, kind, is_enabled, config) values (:'company_a', 'line', true, '{"notify_statement": true}'::jsonb);
+select public.t_assert((select is_enabled from public.integrations where company_id = :'company_a' and kind = 'line'), '連携の設定を保存できる');
+select public.test_login(:'viewer_a');
+select public.t_assert((select count(*) = 0 from public.integrations), '閲覧者は連携の設定を読めない');
+select public.test_login(:'owner_a');
+-- 機密はサービスロール（サーバー）以外から読めない
+reset role;
+insert into public.integration_secrets (company_id, kind, secrets) values (:'company_a', 'line', '{"channelAccessToken":"dummy"}'::jsonb);
+set role authenticated;
+select public.test_login(:'owner_a');
+select public.t_expect_error($$select count(*) from public.integration_secrets$$, null, 'オーナーでも機密テーブルは読めない');
+
+-- LINE の合言葉：ドライバー本人が出して、Webhook（サービスロール）が使う
+select public.test_login(:'driver_a');
+select public.t_assert(length(public.line_issue_code()) = 6, 'ドライバーが 6 桁の合言葉を出せる');
+reset role;
+select public.t_assert((public.line_consume_code((select code from public.line_link_codes where company_id = :'company_a' and used_at is null limit 1), 'U1234567890')->>'ok')::boolean, '合言葉で連携できる');
+select public.t_assert((select line_user_id = 'U1234567890' and line_linked_at is not null from public.drivers where company_id = :'company_a' and name = '相曽慧'), 'ドライバーに LINE の ID が入る');
+select public.t_assert((public.line_consume_code('000000', 'U9999999999')->>'reason') = 'not_found', '使えない合言葉は弾く');
+set role authenticated;
+select public.test_login(:'driver_a');
+select public.line_unlink();
+select public.test_login(:'owner_a');
+select public.t_assert((select line_user_id = '' from public.drivers where company_id = :'company_a' and name = '相曽慧'), '連携を解除できる');
+
+-- ---------- 銀行 CSV の取り込みと消込 ----------
+select public.test_login(:'owner_a');
+select public.set_invoice_status((select id from public.invoices where company_id = :'company_a' and month = '2026-12-01'), 'issued');
+insert into public.bank_imports (id, company_id, file_name, format, row_count, created_by)
+values ('00000000-0000-0000-0000-0000000000d1', :'company_a', 'meisai.csv', '2列型', 3, :'owner_a');
+insert into public.bank_transactions (company_id, import_id, txn_date, description, amount, balance, fingerprint)
+select :'company_a', '00000000-0000-0000-0000-0000000000d1', i.issue_date + 30, 'カ）テストウンユ', i.total, 3000000, 'fp-1'
+  from public.invoices i where i.company_id = :'company_a' and i.month = '2026-12-01';
+insert into public.bank_transactions (company_id, import_id, txn_date, description, amount, balance, fingerprint)
+select :'company_a', '00000000-0000-0000-0000-0000000000d1', i.issue_date + 30, 'デンキダイ', -18000, 2982000, 'fp-2'
+  from public.invoices i where i.company_id = :'company_a' and i.month = '2026-12-01';
+select public.t_assert((select count(*) = 2 from public.bank_transactions where company_id = :'company_a'), '明細を 2 件取り込んだ');
+select public.t_expect_error(format($$insert into public.bank_transactions (company_id, import_id, txn_date, description, amount, fingerprint) values ('%s', '00000000-0000-0000-0000-0000000000d1', '2027-01-30', '二重', 1, 'fp-1')$$, :'company_a'), null, '同じ明細は二重に入らない');
+
+select public.t_assert(public.bank_auto_match('00000000-0000-0000-0000-0000000000d1') = 1, '金額が一致する請求書を 1 件自動で消し込む');
+select public.t_assert((select status = 'matched' and auto_matched and invoice_id is not null from public.bank_transactions where fingerprint = 'fp-1'), '入金の明細が消込済みになる');
+select public.t_assert((select i.status = 'paid' and i.paid_on = (select txn_date from public.bank_transactions where fingerprint = 'fp-1')
+                          from public.invoices i where i.company_id = :'company_a' and i.month = '2026-12-01'), '請求書が入金済みになり、入金日は明細の日付');
+select public.t_assert((select invoice_no <> '' and client_name <> '' and import_file_name = 'meisai.csv'
+                          from public.v_bank_transaction_list where id = (select id from public.bank_transactions where fingerprint = 'fp-1')), '一覧に請求書番号・取引先名・取り込み元が出る');
+select public.t_assert(public.bank_auto_match('00000000-0000-0000-0000-0000000000d1') = 0, '2 回目は消し込むものが無い');
+
+-- 消込を外すと請求書は発行済みに戻る
+select public.bank_set_status((select id from public.bank_transactions where fingerprint = 'fp-1'), 'unmatched');
+select public.t_assert((select status = 'unmatched' and invoice_id is null from public.bank_transactions where fingerprint = 'fp-1'), '消込を外せる');
+select public.t_assert((select status = 'issued' and paid_on is null from public.invoices where company_id = :'company_a' and month = '2026-12-01'), '請求書が発行済みに戻る');
+
+-- 手で消し込む／対象外にする
+select public.bank_match_invoice((select id from public.bank_transactions where fingerprint = 'fp-1'), (select id from public.invoices where company_id = :'company_a' and month = '2026-12-01'));
+select public.t_assert((select status = 'matched' and not auto_matched from public.bank_transactions where fingerprint = 'fp-1'), '手で消し込める');
+select public.bank_set_status((select id from public.bank_transactions where fingerprint = 'fp-2'), 'ignored');
+select public.t_assert((select status = 'ignored' from public.bank_transactions where fingerprint = 'fp-2'), '対象外にできる');
+
+select public.test_login(:'viewer_a');
+select public.t_assert((select count(*) = 2 from public.bank_transactions), '閲覧者は明細を見られる');
+select public.t_expect_error($$select public.bank_auto_match(null)$$, 'FORBIDDEN', '閲覧者は消し込めない');
+select public.test_login(:'owner_b');
+select public.t_assert((select count(*) = 0 from public.bank_transactions), '他社の明細は見えない');
+select public.t_assert((select count(*) = 0 from public.alerts), '他社のアラートは見えない');
+select public.t_assert((select count(*) = 0 from public.chat_messages), '他社のチャットは見えない');
+
 select public.test_logout();
 reset role;
-\echo '== すべてのアサーションが通りました（18〜20 節）'
+\echo '== すべてのアサーションが通りました（18〜21 節）'
