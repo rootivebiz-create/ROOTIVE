@@ -3,6 +3,13 @@ import { createAdminClient, hasServiceRoleKey } from "@/lib/supabase/admin";
 import { multicastLineMessage } from "@/lib/integrations/line";
 import { alertMessage } from "@/lib/integrations/messages";
 import { logIntegration } from "@/lib/integrations/logs";
+import { loadMonthPl } from "@/lib/db/queries";
+import { loadExecutiveSummary } from "@/lib/executive/queries";
+import { calcCockpit } from "@/lib/executive/cockpit";
+import { calcRunway } from "@/lib/executive/runway";
+import { explainVariance, sortVarianceByImpact } from "@/lib/executive/variance";
+import { executiveBrief, BRIEF_EMPTY_TEXT } from "@/lib/executive/brief";
+import { forecastMonth } from "@/lib/calc";
 import { currentMonthJST, monthToDate } from "@/lib/month";
 
 /**
@@ -34,14 +41,16 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
   }
 
-  const results: { company: string; detected: number; open: number; notified: number; error?: string }[] = [];
+  const results: { company: string; detected: number; open: number; notified: number; briefed?: number; error?: string }[] = [];
   for (const company of companies ?? []) {
     try {
       const { data, error: rpcError } = await admin.rpc("detect_anomalies_core", { p_company_id: company.id, p_month: month });
       if (rpcError) throw new Error(rpcError.message);
       const summary = (data ?? {}) as unknown as { detected?: number; open?: number };
       const notified = await notifyHighAlerts(company.id, company.name, appUrl);
-      results.push({ company: company.id, detected: summary.detected ?? 0, open: summary.open ?? 0, notified });
+      // 代表だけに「朝のひとこと」を送る（決裁・現金・着地。AI は使わず数字だけで作る）
+      const briefed = await notifyOwnerBrief(company.id, company.name, appUrl);
+      results.push({ company: company.id, detected: summary.detected ?? 0, open: summary.open ?? 0, notified, briefed });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       results.push({ company: company.id, detected: 0, open: 0, notified: 0, error: message });
@@ -92,6 +101,130 @@ async function notifyHighAlerts(companyId: string, companyName: string, appUrl: 
     }
   }
   return sent;
+}
+
+/** 資金繰りを何日先まで見るか（代表ホームと同じ） */
+const CASH_DAYS = 120;
+
+function addDays(date: string, days: number): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/** 日本時間の今日 "YYYY-MM-DD" */
+function todayJst(now: Date): string {
+  return new Date(now.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+/**
+ * 代表の LINE に「朝のひとこと」を送る（代表 1 人だけ。決裁・現金は代表の領域なので広げない）。
+ * 書くことが無い日は送らない。
+ *
+ * サービスロールで動くので、RLS 頼りの cash_forecast ではなく
+ * 会社を明示する cash_forecast_for を使う（0017 と同じ理由）。
+ */
+async function notifyOwnerBrief(companyId: string, companyName: string, appUrl: string): Promise<number> {
+  const admin = createAdminClient();
+  const { data: owners } = await admin
+    .from("profiles")
+    .select("line_user_id, is_active, role")
+    .eq("company_id", companyId)
+    .eq("role", "owner")
+    .eq("is_active", true);
+  const to = (owners ?? []).map((o) => (o.line_user_id ?? "").trim()).filter((v) => v.length > 0);
+  if (to.length === 0) return 0;
+
+  const now = new Date();
+  const today = todayJst(now);
+  const month = currentMonthJST(now);
+
+  const [summary, pl, cashRes] = await Promise.all([
+    loadExecutiveSummary(admin, companyId).catch(() => null),
+    loadMonthPl(admin, companyId, month).catch(() => null),
+    admin.rpc("cash_forecast_for", { p_company_id: companyId, p_from: today, p_to: addDays(today, CASH_DAYS) }),
+  ]);
+  const { data: snapshots } = await admin
+    .from("cash_snapshots")
+    .select("balance")
+    .eq("company_id", companyId)
+    .order("as_of", { ascending: false })
+    .limit(1);
+
+  const runway = cashRes.error
+    ? null
+    : calcRunway({
+        from: today,
+        to: addDays(today, CASH_DAYS),
+        openingBalance: Number(snapshots?.[0]?.balance ?? 0),
+        events: cashRes.data ?? [],
+      });
+
+  const cockpit = calcCockpit({ summary, pl, runway });
+  const forecast = pl
+    ? forecastMonth({
+        month,
+        now,
+        isClosed: pl.status === "closed",
+        actual: {
+          bill: Number(pl.bill ?? 0),
+          payout: Number(pl.payout ?? 0),
+          profit: Number(pl.profit ?? 0),
+          mgmtFee: Number(pl.mgmt_fee ?? 0),
+          expenseTotal: Number(pl.expense_total ?? 0),
+          expenseFixed: Number(pl.expense_fixed ?? 0),
+          expenseVariable: Number(pl.expense_variable ?? 0),
+          operatingProfit: Number(pl.operating_profit ?? 0),
+          entryCount: Number(pl.entry_count ?? 0),
+          billTarget: Number(pl.bill_target ?? 0),
+          profitTarget: Number(pl.profit_target ?? 0),
+        },
+      })
+    : null;
+  const variance = pl
+    ? sortVarianceByImpact(
+        explainVariance(
+          { bill: Number(pl.bill_target ?? 0), operatingProfit: Number(pl.profit_target ?? 0) },
+          {
+            bill: Number(pl.bill ?? 0),
+            margin: Number(pl.margin ?? 0),
+            profit: Number(pl.profit ?? 0),
+            expenseTotal: Number(pl.expense_total ?? 0),
+            operatingProfit: Number(pl.operating_profit ?? 0),
+            activeDriverCount: Number(pl.active_driver_count ?? 0),
+          },
+        ),
+      )
+    : [];
+
+  const brief = executiveBrief({
+    date: today,
+    cockpit,
+    runway,
+    forecast: forecast
+      ? {
+          month,
+          billForecast: forecast.billForecast,
+          operatingProfitForecast: forecast.operatingProfitForecast,
+          profitTargetRate: forecast.profitTargetRate,
+        }
+      : null,
+    variance,
+    width: 0,
+  });
+  // 書くことが無い日は送らない（毎朝「特にありません」が届くと見なくなる）
+  if (brief.trim() === BRIEF_EMPTY_TEXT) return 0;
+
+  const link = appUrl ? `\n${appUrl}/executive` : "";
+  const text = `【${companyName}】代表へのお知らせ\n${brief}${link}`;
+  try {
+    const result = await multicastLineMessage(companyId, to, text);
+    await logIntegration(companyId, "line", "cron_brief", "ok", `代表へ朝のひとことを送りました（${result.sent} 件）`);
+    return result.sent;
+  } catch (e) {
+    await logIntegration(companyId, "line", "cron_brief", "error", e instanceof Error ? e.message : String(e));
+    return 0;
+  }
 }
 
 export const dynamic = "force-dynamic";
