@@ -21,6 +21,7 @@ ROOTIVE 利益管理システムの仕組みを、開発者・引き継ぎ担当
 │  app/api/export/*                     CSV / Excel / PDF / 全銀振込 / 月次パック ZIP    │
 │  app/api/cron/keepalive               Vercel Cron（毎日）→ Supabase 一時停止の防止     │
 │  app/api/cron/daily                   Vercel Cron（毎朝 7 時）→ 異常の検知と LINE 通知   │
+│  app/api/cron/weekly                  Vercel Cron（毎週月曜 8 時）→ 週次の経営サマリー   │
 │  middleware.ts                        セッション Cookie 更新・未ログインを /login へ   │
 │                                                                      │
 │  lib/calc        計算（純関数・BigInt で誤差なし）  lib/actions  Server Actions        │
@@ -377,6 +378,8 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 | 年次レポート CSV | `app/api/export/report.csv` + `lib/exports/report-csv.ts` | 月次推移（売上・会社利益・経費・営業利益・営業利益率・消費税・税込支払額・状態）＋合計行 |
 | 月次パック ZIP | `app/api/export/month-pack.zip` + `lib/exports/month-pack.ts` | その月の明細 PDF・請求書 PDF・CSV・振込データ・経営レポートを 1 つに。`?parts=` で選択。失敗したファイルは README.txt にエラーとして記録して処理を続ける |
 | 月次の経営レポート PDF | `app/api/export/month-report.pdf` + `lib/pdf/month-report.tsx` | A4 縦 3 ページ。損益サマリー（前月比・前年同月比）、目標の進捗、経営指標（説明つき）、12 か月の推移グラフ、ドライバー別・案件別の採算、気になること |
+| 労務 CSV / Excel | `app/api/export/labor.csv` `.xlsx` + `lib/exports/labor-csv.ts` | 日ごと（拘束・実働・休息・連続勤務と判定）と月ごと（合計・平均・超過日数）|
+| 支払通知の突合 CSV | `app/api/export/notice-diff.csv` + `lib/exports/notice-csv.ts` | 元請の支払通知の明細と自社の売上の差（数量・単価・金額）|
 | Excel（.xlsx）| `app/api/export/*.xlsx` + `lib/exports/xlsx.ts` | 依存なしの自前 xlsx ライター（`zip.ts` で OOXML を包む）。金額・率・数量・日付の書式、見出しの太字と固定行、オートフィルタ、列幅の自動調整。CSV と同じ 15 種類（稼働・支払・経費・請求書・案件・ドライバー別採算・資金繰り・年次レポート・単価表・個人明細・気になること・銀行明細・車両と書類・採用と契約・日報）|
 | 全銀 総合振込データ | `app/api/export/transfer.txt` + `lib/exports/zengin.ts` | Shift_JIS・固定長 120 バイト・CRLF。ヘッダ／データ／トレーラ／エンドの 4 レコード。半角カナ変換（濁点の分解・法人格の略号）。口座情報を含むため owner/admin のみ。画面は `/payouts/transfer` |
 | 振込一覧 CSV | `app/api/export/transfer.csv` | 全銀データの目視確認用（銀行・支店・預金種目・口座番号・カナ名義・税込支払額・振込予定日）|
