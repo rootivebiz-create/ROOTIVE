@@ -1,28 +1,40 @@
 import { canEdit, requireStaff } from "@/lib/auth/session";
-import { isMonthClosed, loadDailyReports, loadDayStatus, loadMasters, loadVehicles, loadWorkDayEntries } from "@/lib/db/queries";
-import { monthFromParam } from "@/lib/month";
-import { dayTabFromParam } from "@/lib/schemas/daily";
+import {
+  isMonthClosed,
+  loadDailyLabor,
+  loadDailyReports,
+  loadDayStatus,
+  loadDriverMonthLabor,
+  loadMasters,
+  loadVehicles,
+  loadWorkDayEntries,
+} from "@/lib/db/queries";
+import { monthFromParam, monthToDate } from "@/lib/month";
 import { DailyView } from "@/components/daily/daily-view";
+import { dailyTabFromParam } from "@/components/daily/tabs";
 import type { DailyChoices } from "@/components/daily/roll-call-dialog";
 
 export const metadata = { title: "日報・点呼" };
 
 /**
  * 日報・点呼（/daily）
- * 稼動月は ?m=YYYY-MM、タブは ?tab=reports|entries。
+ * 稼動月は ?m=YYYY-MM、タブは ?tab=reports|entries|labor。
  * 件数は DB ビュー v_day_status（稼働日数・承認待ち・点呼が無い日）を使う。
  */
 export default async function DailyPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const sp = await searchParams;
   const month = monthFromParam(sp.m);
-  const tab = dayTabFromParam(sp.tab);
+  const tab = dailyTabFromParam(sp.tab);
   const { supabase, profile, company } = await requireStaff();
 
-  const [reports, entries, status, closed] = await Promise.all([
+  // 労務は日報の時刻から出す見える化なので、?tab=labor のときだけ読み込む
+  const [reports, entries, status, closed, labor, driverLabor] = await Promise.all([
     loadDailyReports(supabase, company.id, { month }),
     loadWorkDayEntries(supabase, company.id, { month, status: "all" }),
     loadDayStatus(supabase, company.id, month),
     isMonthClosed(supabase, company.id, month),
+    tab === "labor" ? loadDailyLabor(supabase, company.id, monthToDate(month)) : null,
+    tab === "labor" ? loadDriverMonthLabor(supabase, company.id, monthToDate(month)) : null,
   ]);
 
   const editable = canEdit(profile.role) && !closed;
@@ -42,6 +54,8 @@ export default async function DailyPage({ searchParams }: { searchParams: Promis
       tab={tab}
       reports={reports}
       entries={entries}
+      labor={labor ?? []}
+      driverLabor={driverLabor ?? []}
       status={{
         workDayCount: Number(status?.work_day_count ?? 0),
         pendingCount: Number(status?.pending_count ?? 0),

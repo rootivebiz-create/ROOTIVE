@@ -9,21 +9,17 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { MonthLink } from "@/components/layout/month-link";
-import type { DailyReportRow, WorkDayEntryRow } from "@/lib/db/types";
+import type { DailyLaborRow, DailyReportRow, DriverMonthLaborRow, WorkDayEntryRow } from "@/lib/db/types";
 import { applyDayEntriesAction, approveDayEntriesAction } from "@/lib/actions/daily";
 import { pendingIds } from "@/lib/daily/helpers";
 import { dailyCsvUrl } from "@/lib/exports/daily-csv";
-import type { DayTab } from "@/lib/schemas/daily";
 import { formatMonthJa } from "@/lib/month";
 import { cn } from "@/lib/utils";
 import { EntryList } from "./entry-list";
+import { LaborPanel } from "./labor-panel";
 import { ReportList } from "./report-list";
+import { DAILY_TABS, type DailyTab } from "./tabs";
 import type { DailyChoices } from "./roll-call-dialog";
-
-const TABS: { key: DayTab; label: string }[] = [
-  { key: "reports", label: "日報" },
-  { key: "entries", label: "稼働報告" },
-];
 
 export interface DayStatusCounts {
   workDayCount: number;
@@ -34,9 +30,13 @@ export interface DayStatusCounts {
 export interface DailyViewProps {
   /** 稼動月 "YYYY-MM" */
   month: string;
-  tab: DayTab;
+  tab: DailyTab;
   reports: DailyReportRow[];
   entries: WorkDayEntryRow[];
+  /** 日ごとの労務（?tab=labor のときだけ読み込む） */
+  labor: DailyLaborRow[];
+  /** ドライバー × 月の労務（?tab=labor のときだけ読み込む） */
+  driverLabor: DriverMonthLaborRow[];
   status: DayStatusCounts;
   choices: DailyChoices;
   /** admin＋未締め月 */
@@ -59,7 +59,7 @@ function StatCard({ label, value, tone }: { label: string; value: number; tone?:
 }
 
 /** 日報・点呼（スタッフ向け） */
-export function DailyView({ month, tab, reports, entries, status, choices, editable, closed }: DailyViewProps) {
+export function DailyView({ month, tab, reports, entries, labor, driverLabor, status, choices, editable, closed }: DailyViewProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const pendingList = useMemo(() => pendingIds(entries), [entries]);
@@ -96,14 +96,16 @@ export function DailyView({ month, tab, reports, entries, status, choices, edita
         description={`${formatMonthJa(month)} の点呼の記録とドライバーからの稼働報告`}
         actions={
           <>
-            <a
-              href={dailyCsvUrl(month, tab === "entries" ? "entry" : "report")}
-              download
-              className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
-            >
-              <Download className="h-4 w-4" />
-              {tab === "entries" ? "稼働 CSV" : "点呼記録簿 CSV"}
-            </a>
+            {tab !== "labor" && (
+              <a
+                href={dailyCsvUrl(month, tab === "entries" ? "entry" : "report")}
+                download
+                className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+              >
+                <Download className="h-4 w-4" />
+                {tab === "entries" ? "稼働 CSV" : "点呼記録簿 CSV"}
+              </a>
+            )}
             {editable && (
               <>
                 <Button size="sm" onClick={approveAll} disabled={pending || pendingList.length === 0} aria-busy={pending}>
@@ -133,7 +135,7 @@ export function DailyView({ month, tab, reports, entries, status, choices, edita
       {/* タブ（?tab=） */}
       <div className="mb-4 -mx-1 overflow-x-auto px-1 pb-1">
         <div className="inline-flex gap-1 rounded-md bg-muted p-1">
-          {TABS.map((t) => (
+          {DAILY_TABS.map((t) => (
             <MonthLink
               key={t.key}
               href={`/daily?tab=${t.key}`}
@@ -150,11 +152,19 @@ export function DailyView({ month, tab, reports, entries, status, choices, edita
         </div>
       </div>
 
-      {tab === "entries" ? <EntryList entries={entries} editable={editable} /> : <ReportList reports={reports} editable={editable} choices={choices} />}
+      {tab === "labor" ? (
+        <LaborPanel month={month} days={labor} driverMonths={driverLabor} />
+      ) : tab === "entries" ? (
+        <EntryList entries={entries} editable={editable} />
+      ) : (
+        <ReportList reports={reports} editable={editable} choices={choices} />
+      )}
 
-      <p className="mt-3 text-xs text-muted-foreground">
-        点呼の記録は 1 年間の保存が必要です。承認した稼働報告はその月の稼働（数量）へ自動で反映されます。
-      </p>
+      {tab !== "labor" && (
+        <p className="mt-3 text-xs text-muted-foreground">
+          点呼の記録は 1 年間の保存が必要です。承認した稼働報告はその月の稼働（数量）へ自動で反映されます。
+        </p>
+      )}
     </div>
   );
 }

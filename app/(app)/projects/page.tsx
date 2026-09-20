@@ -1,19 +1,38 @@
 import { Download, FileSpreadsheet, Receipt } from "lucide-react";
 import { requireStaff } from "@/lib/auth/session";
 import { monthFromParam, monthToDate, formatMonthJa } from "@/lib/month";
-import { loadProjectPl, loadProjectPlRange } from "@/lib/db/queries";
+import { loadMasters, loadProjectPl, loadProjectPlRange } from "@/lib/db/queries";
 import { sumMoney } from "@/lib/calc";
 import type { ProjectSummary } from "@/lib/db/types";
 import { exportUrls } from "@/lib/exports/urls";
+import { projectTabFromParam, type ProjectTab } from "@/lib/schemas/quote";
 import { PageHeader } from "@/components/ui/page-header";
 import { buttonVariants } from "@/components/ui/button";
 import { MonthLink } from "@/components/layout/month-link";
 import { ProjectSummaryTable, type ProjectRow } from "@/components/projects/project-summary-table";
 import { ProjectPlTable } from "@/components/projects/project-pl-table";
+import { QuotePanel, type QuoteItemOption } from "@/components/projects/quote-panel";
 import { toProjectRow, trendMonths } from "@/components/projects/helpers";
 import { cn } from "@/lib/utils";
 
 export const metadata = { title: "案件別" };
+
+const tabBase = "inline-flex h-8 items-center justify-center whitespace-nowrap rounded-sm px-3 text-sm font-medium transition-all";
+const tabActive = "bg-card text-foreground shadow";
+
+/** 画面上部のタブ（採算 ／ 単価シミュレーター）。?m= は MonthLink が引き継ぐ */
+function TabNav({ tab }: { tab: ProjectTab }) {
+  return (
+    <div className="mb-4 inline-flex h-10 items-center rounded-md bg-muted p-1 text-muted-foreground" role="tablist" aria-label="表示">
+      <MonthLink href="/projects" role="tab" aria-selected={tab === "pl"} className={cn(tabBase, tab === "pl" && tabActive)}>
+        案件の採算
+      </MonthLink>
+      <MonthLink href="/projects?tab=quote" role="tab" aria-selected={tab === "quote"} className={cn(tabBase, tab === "quote" && tabActive)}>
+        単価シミュレーター
+      </MonthLink>
+    </div>
+  );
+}
 
 function toRow(r: ProjectSummary): ProjectRow {
   return {
@@ -72,8 +91,39 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   const { supabase, company } = await requireStaff();
   const sp = await searchParams;
   const month = monthFromParam(sp.m);
+  const tab = projectTabFromParam(sp.tab);
   const scope: "month" | "all" = sp.scope === "all" ? "all" : "month";
   const months = trendMonths(month);
+
+  // 単価シミュレーター：受注前の案件でも試算できるよう、マスタ（案件内容の単価と会社の既定）だけを読む
+  if (tab === "quote") {
+    const masters = await loadMasters(supabase, company.id, { activeOnly: true });
+    const items: QuoteItemOption[] = masters.projects.flatMap((p) =>
+      p.items.map((i) => ({
+        id: i.id,
+        projectName: p.name,
+        itemName: i.name,
+        unit: i.unit,
+        billRate: Number(i.bill_rate ?? 0),
+        payRate: Number(i.pay_rate ?? 0),
+        targetMargin: p.target_margin == null ? null : Number(p.target_margin),
+      })),
+    );
+    return (
+      <div>
+        <PageHeader title="案件別" description="元請から提示された単価で利益が出るか、目標の利益率を出すにはいくらで受けるべきかを試算します（税抜）。" />
+        <TabNav tab="quote" />
+        <QuotePanel
+          items={items}
+          defaults={{
+            royaltyRate: Number(company.default_royalty_rate ?? 0),
+            mgmtFee: Number(company.default_mgmt_fee ?? 0),
+            roundingMode: company.rounding_mode,
+          }}
+        />
+      </div>
+    );
+  }
 
   let query = supabase.from("v_project_summary").select("*").eq("company_id", company.id);
   if (scope === "month") query = query.eq("month", monthToDate(month));
@@ -87,8 +137,6 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
 
   const rows: ProjectRow[] = scope === "month" ? (summaryRes.data ?? []).map(toRow) : aggregateAll(summaryRes.data ?? []);
 
-  const tabBase = "inline-flex h-8 items-center justify-center whitespace-nowrap rounded-sm px-3 text-sm font-medium transition-all";
-  const tabActive = "bg-card text-foreground shadow";
   const csvLink = cn(buttonVariants({ variant: "outline", size: "sm" }));
 
   return (
@@ -113,6 +161,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
           </>
         }
       />
+      <TabNav tab="pl" />
 
       <section className="mb-8">
         <h2 className="mb-2 text-base font-semibold">案件ごとの採算（{formatMonthJa(month)}）</h2>

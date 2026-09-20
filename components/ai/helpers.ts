@@ -54,3 +54,19 @@ export const SUGGESTED_QUESTIONS: string[] = [
   "赤字になっているドライバーはいる？",
   "経費で見直せるところは？",
 ];
+
+/** 保存済みの週次サマリー（ai_insights の kind='weekly'）。画面に渡す形 */
+export interface WeeklyInsightView {
+  id: string;
+  /** 週のはじめ（月曜）"YYYY-MM-DD" */
+  from: string;
+  /** 週のおわり（日曜） */
+  to: string;
+  /** 「2026年9月8日〜9月14日」 */
+  label: string;
+  createdAt: string;
+  model: string;
+  summary: string;
+  findings: InsightFindingDetail[];
+  actions: InsightAction[];
+}

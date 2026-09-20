@@ -1,12 +1,15 @@
 "use client";
 
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarDays, PartyPopper } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
+import { OutboxNotice } from "@/components/offline/outbox-notice";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import type { DailyReportRow, DriverDayItem, WorkDayEntryRow } from "@/lib/db/types";
 import { dayProgress, formatWorkDate } from "@/lib/daily/helpers";
+import { OUTBOX_SYNCED_EVENT } from "@/lib/offline/sync";
 import { DayEndCard } from "./day-end-card";
 import { DayEntriesCard } from "./day-entries-card";
 import { DayHistory, type DayHistoryItem } from "./day-history";
@@ -35,6 +38,13 @@ export function TodayForm({ today, date, dateOptions, report, entries, items, ve
   const router = useRouter();
   const progress = dayProgress(report, entries);
 
+  // 未送信ぶんが送れたら、サーバーの内容で表示を作り直す
+  useEffect(() => {
+    const onSynced = () => router.refresh();
+    window.addEventListener(OUTBOX_SYNCED_EVENT, onSynced);
+    return () => window.removeEventListener(OUTBOX_SYNCED_EVENT, onSynced);
+  }, [router]);
+
   return (
     <div className="space-y-4">
       <div className="space-y-1.5">
@@ -51,6 +61,8 @@ export function TodayForm({ today, date, dateOptions, report, entries, items, ve
           ))}
         </Select>
       </div>
+
+      <OutboxNotice />
 
       {progress.done && (
         <Alert variant="success" className="flex items-center gap-2">

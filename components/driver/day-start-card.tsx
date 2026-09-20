@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { CheckCircle2, Sunrise } from "lucide-react";
+import { CheckCircle2, CloudOff, Sunrise } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -11,8 +11,8 @@ import { NumberInput } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import type { DailyReportRow } from "@/lib/db/types";
-import { saveDailyReportAction } from "@/lib/actions/daily";
-import { isoToJstTime } from "@/lib/daily/helpers";
+import { submitWithOfflineFallback } from "@/lib/offline/sync";
+import { isoToJstTime, nowJstTime, todayJST } from "@/lib/daily/helpers";
 
 export interface DayStartCardProps {
   /** 対象日 "YYYY-MM-DD" */
@@ -32,6 +32,8 @@ export function DayStartCard({ date, report, vehicles, editable }: DayStartCardP
   const [healthOk, setHealthOk] = useState(report?.pre_health_ok ?? true);
   const [inspectionOk, setInspectionOk] = useState(report?.pre_inspection_ok ?? true);
   const [vehicleId, setVehicleId] = useState(report?.vehicle_id ?? vehicles[0]?.id ?? "");
+  /** 電波が無くて端末に保存した（電波が戻ると自動で送る） */
+  const [queued, setQueued] = useState(false);
 
   const done = !!report?.pre_at;
 
@@ -41,16 +43,27 @@ export function DayStartCard({ date, report, vehicles, editable }: DayStartCardP
       return;
     }
     startTransition(async () => {
-      const res = await saveDailyReportAction({
-        work_date: date,
-        vehicle_id: vehicleId,
-        pre: { at: "", method: "app", alcohol, health_ok: healthOk, inspection_ok: inspectionOk },
+      // 電波が弱いときは端末に保存して、戻ったら自動で送る
+      const out = await submitWithOfflineFallback({
+        kind: "daily_report",
+        payload: {
+          input: {
+            work_date: date,
+            vehicle_id: vehicleId,
+            // 送信が遅れても点呼の時刻がずれないよう、入力した瞬間の時刻を持たせる
+            pre: { at: `${todayJST()}T${nowJstTime()}`, method: "app", alcohol, health_ok: healthOk, inspection_ok: inspectionOk },
+          },
+        },
       });
-      if (res.ok) {
+      if (out.status === "sent") {
+        setQueued(false);
         toast.success("出発を記録しました");
         router.refresh();
+      } else if (out.status === "queued") {
+        setQueued(true);
+        toast.success(out.message);
       } else {
-        toast.error(res.error);
+        toast.error(out.error);
       }
     });
   };
@@ -62,7 +75,12 @@ export function DayStartCard({ date, report, vehicles, editable }: DayStartCardP
           <Sunrise className="h-4 w-4" /> ① 出発前
         </CardTitle>
         <CardDescription>
-          {done ? (
+          {queued ? (
+            <span className="flex items-center gap-1 text-warning">
+              <CloudOff className="h-4 w-4 shrink-0" aria-hidden />
+              端末に保存しました（未送信）。電波が戻ると自動で送信します。
+            </span>
+          ) : done ? (
             <span className="flex items-center gap-1 text-success">
               <CheckCircle2 className="h-4 w-4" aria-hidden />
               {isoToJstTime(report?.pre_at)} に記録済み

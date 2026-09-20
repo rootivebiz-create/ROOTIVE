@@ -3,14 +3,14 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Send, Truck } from "lucide-react";
+import { CloudOff, Send, Truck } from "lucide-react";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Empty } from "@/components/ui/empty";
 import { NumberInput } from "@/components/ui/input";
 import { DAY_ENTRY_STATUS_LABELS, type DayEntryStatus, type DriverDayItem, type WorkDayEntryRow } from "@/lib/db/types";
-import { submitDayEntriesAction } from "@/lib/actions/daily";
+import { submitWithOfflineFallback } from "@/lib/offline/sync";
 import type { DayEntryRowInput } from "@/lib/schemas/daily";
 
 const STATUS_BADGE: Record<DayEntryStatus, BadgeProps["variant"]> = {
@@ -65,6 +65,9 @@ export function DayEntriesCard({ date, items, entries, editable }: DayEntriesCar
     return init;
   });
 
+  /** 電波が無くて端末に保存した（電波が戻ると自動で送る） */
+  const [queued, setQueued] = useState(false);
+
   const openRows = rows.filter((r) => r.entry?.status !== "approved");
   const canSubmit = editable && openRows.length > 0;
 
@@ -75,12 +78,17 @@ export function DayEntriesCard({ date, items, entries, editable }: DayEntriesCar
       return;
     }
     startTransition(async () => {
-      const res = await submitDayEntriesAction(date, payload);
-      if (res.ok) {
-        toast.success(res.message ?? "送信しました");
+      // 電波が弱いときは端末に保存して、戻ったら自動で送る
+      const out = await submitWithOfflineFallback({ kind: "day_entries", payload: { work_date: date, rows: payload } });
+      if (out.status === "sent") {
+        setQueued(false);
+        toast.success(out.message);
         router.refresh();
+      } else if (out.status === "queued") {
+        setQueued(true);
+        toast.success(out.message);
       } else {
-        toast.error(res.error);
+        toast.error(out.error);
       }
     });
   };
@@ -91,7 +99,16 @@ export function DayEntriesCard({ date, items, entries, editable }: DayEntriesCar
         <CardTitle className="flex items-center gap-2">
           <Truck className="h-4 w-4" /> ② 今日の稼働
         </CardTitle>
-        <CardDescription>案件内容ごとに数量を入れて送信してください。0 のままの内容は送られません。</CardDescription>
+        <CardDescription>
+          {queued ? (
+            <span className="flex items-center gap-1 text-warning">
+              <CloudOff className="h-4 w-4 shrink-0" aria-hidden />
+              端末に保存しました（未送信）。電波が戻ると自動で送信します。
+            </span>
+          ) : (
+            "案件内容ごとに数量を入れて送信してください。0 のままの内容は送られません。"
+          )}
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         {rows.length === 0 ? (

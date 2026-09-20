@@ -6,3 +6,4 @@ export * from "./parse";
 export * from "./tax";
 export * from "./forecast";
 export * from "./simulate";
+export * from "./quote";

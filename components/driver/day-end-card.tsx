@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { CheckCircle2, Moon } from "lucide-react";
+import { CheckCircle2, CloudOff, Moon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -11,8 +11,8 @@ import { NumberInput } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { DailyReportRow } from "@/lib/db/types";
-import { saveDailyReportAction } from "@/lib/actions/daily";
-import { isoToJstTime } from "@/lib/daily/helpers";
+import { submitWithOfflineFallback } from "@/lib/offline/sync";
+import { isoToJstTime, nowJstTime, todayJST } from "@/lib/daily/helpers";
 
 export interface DayEndCardProps {
   date: string;
@@ -29,6 +29,8 @@ export function DayEndCard({ date, report, editable }: DayEndCardProps) {
   const [hasIncident, setHasIncident] = useState(!!report?.post_incident);
   const [incident, setIncident] = useState(report?.post_incident ?? "");
   const [distance, setDistance] = useState(report?.distance_km == null ? "" : String(report.distance_km));
+  /** 電波が無くて端末に保存した（電波が戻ると自動で送る） */
+  const [queued, setQueued] = useState(false);
 
   const done = !!report?.post_at;
 
@@ -42,16 +44,27 @@ export function DayEndCard({ date, report, editable }: DayEndCardProps) {
       return;
     }
     startTransition(async () => {
-      const res = await saveDailyReportAction({
-        work_date: date,
-        post: { at: "", method: "app", alcohol, condition_ok: conditionOk, incident: hasIncident ? incident : "" },
-        work: { distance_km: distance },
+      // 電波が弱いときは端末に保存して、戻ったら自動で送る
+      const out = await submitWithOfflineFallback({
+        kind: "daily_report",
+        payload: {
+          input: {
+            work_date: date,
+            // 送信が遅れても点呼の時刻がずれないよう、入力した瞬間の時刻を持たせる
+            post: { at: `${todayJST()}T${nowJstTime()}`, method: "app", alcohol, condition_ok: conditionOk, incident: hasIncident ? incident : "" },
+            work: { distance_km: distance },
+          },
+        },
       });
-      if (res.ok) {
+      if (out.status === "sent") {
+        setQueued(false);
         toast.success("終了を記録しました");
         router.refresh();
+      } else if (out.status === "queued") {
+        setQueued(true);
+        toast.success(out.message);
       } else {
-        toast.error(res.error);
+        toast.error(out.error);
       }
     });
   };
@@ -63,7 +76,12 @@ export function DayEndCard({ date, report, editable }: DayEndCardProps) {
           <Moon className="h-4 w-4" /> ③ 終了後
         </CardTitle>
         <CardDescription>
-          {done ? (
+          {queued ? (
+            <span className="flex items-center gap-1 text-warning">
+              <CloudOff className="h-4 w-4 shrink-0" aria-hidden />
+              端末に保存しました（未送信）。電波が戻ると自動で送信します。
+            </span>
+          ) : done ? (
             <span className="flex items-center gap-1 text-success">
               <CheckCircle2 className="h-4 w-4" aria-hidden />
               {isoToJstTime(report?.post_at)} に記録済み

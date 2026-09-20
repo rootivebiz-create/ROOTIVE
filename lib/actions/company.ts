@@ -1,9 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireOwnerAction } from "@/lib/auth/session";
+import { requireAdminAction, requireOwnerAction } from "@/lib/auth/session";
 import { ensureNoError, runAction, type ActionResult } from "@/lib/actions/result";
-import { companyInputSchema, type CompanyFormInput } from "@/lib/schemas/company";
+import {
+  companyInputSchema,
+  laborSettingsSchema,
+  laborSettingsToColumns,
+  type CompanyFormInput,
+  type LaborSettingsFormInput,
+} from "@/lib/schemas/company";
 import type { Json } from "@/lib/db/database.types";
 
 /** 会社設定の更新（owner のみ）。yayoi_accounts は JSON オブジェクトとして保存する */
@@ -50,4 +56,24 @@ export async function updateCompanyAction(input: CompanyFormInput): Promise<Acti
     revalidatePath("/", "layout");
     return null;
   }, "会社設定を保存しました。");
+}
+
+/**
+ * 労務の基準の更新（owner / admin）
+ * 画面は時間で入力し、ここで分に直して companies.labor_* に保存する。
+ * 保存してもビュー（v_daily_labor / v_driver_month_labor）が判定をやり直すだけで、日報そのものは変わらない。
+ */
+export async function updateLaborSettingsAction(input: LaborSettingsFormInput): Promise<ActionResult<null>> {
+  return runAction(async () => {
+    const { supabase, company } = await requireAdminAction();
+    const parsed = laborSettingsSchema.parse(input);
+
+    const res = await supabase.from("companies").update(laborSettingsToColumns(parsed)).eq("id", company.id).select("id");
+    ensureNoError(res);
+    if ((res.data ?? []).length === 0) throw new Error("労務の基準を更新できませんでした（権限を確認してください）。");
+
+    revalidatePath("/settings/safety");
+    revalidatePath("/daily");
+    return null;
+  }, "労務の基準を保存しました。");
 }

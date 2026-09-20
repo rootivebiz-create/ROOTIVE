@@ -6,6 +6,7 @@ import type { BankAccountType } from "@/lib/db/types";
 import { parseNumberInput } from "@/lib/calc/parse";
 import type { RoundingMode } from "@/lib/calc/types";
 import { DEFAULT_YAYOI_ACCOUNTS, type YayoiAccounts } from "@/lib/yayoi/accounts";
+import { DEFAULT_LABOR_STANDARDS, minutesToHoursInput, type LaborStandards } from "@/lib/labor/helpers";
 
 /** 振込予定日：稼動月からのずれ（0=当月／1=翌月／2=翌々月／3=3 か月後） */
 export const PAYOUT_MONTH_OFFSETS = [0, 1, 2, 3] as const;
@@ -160,3 +161,100 @@ export function yayoiAccountsToForm(accounts: YayoiAccounts): YayoiAccountsFormI
   out.date_basis = accounts.date_basis;
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// 労務の基準（0018）
+//   画面は「時間」で入力し、DB には「分」で保存する（780 分 ↔ 13 時間）
+// ---------------------------------------------------------------------------
+
+/** 労務の基準フォームの入力（クライアント → Server Action）。時間・日数は文字列で受け取る */
+export interface LaborSettingsFormInput {
+  /** 1 日の拘束時間の目安（時間） */
+  labor_duty_limit_hours: string;
+  /** 1 日の拘束時間の上限（時間） */
+  labor_duty_max_hours: string;
+  /** 休息期間の目安（時間） */
+  labor_rest_target_hours: string;
+  /** 休息期間の下限（時間） */
+  labor_rest_min_hours: string;
+  /** 1 か月の拘束時間（時間） */
+  labor_month_duty_hours: string;
+  /** 連続勤務の日数 */
+  labor_max_consecutive_days: string;
+}
+
+/** 時間で入力された値を分（整数）にする。1 分未満の端数は認めない */
+const hoursToMinutesField = (label: string, minHours: number, maxHours: number) =>
+  z.preprocess(
+    (v) => (typeof v === "string" ? parseNumberInput(v) : v),
+    z
+      .number({ error: `${label}を入力してください` })
+      .min(minHours, `${label}は ${minHours} 時間以上で入力してください`)
+      .max(maxHours, `${label}は ${maxHours} 時間以下で入力してください`)
+      .refine((n) => Math.abs(n * 60 - Math.round(n * 60)) < 1e-6, `${label}は 1 分単位（0.5 = 30 分）で入力してください`)
+      .transform((n) => Math.round(n * 60)),
+  );
+
+export const laborSettingsSchema = z
+  .object({
+    labor_duty_limit_hours: hoursToMinutesField("1 日の拘束時間の目安", 1, 24),
+    labor_duty_max_hours: hoursToMinutesField("1 日の拘束時間の上限", 1, 24),
+    labor_rest_target_hours: hoursToMinutesField("休息期間の目安", 1, 24),
+    labor_rest_min_hours: hoursToMinutesField("休息期間の下限", 1, 24),
+    labor_month_duty_hours: hoursToMinutesField("1 か月の拘束時間", 1, 744),
+    labor_max_consecutive_days: z.preprocess(
+      (v) => (typeof v === "string" ? parseNumberInput(v) : v),
+      z
+        .number({ error: "連続勤務の日数を入力してください" })
+        .int("連続勤務の日数は整数で入力してください")
+        .min(1, "連続勤務の日数は 1 日以上で入力してください")
+        .max(31, "連続勤務の日数は 31 日以下で入力してください"),
+    ),
+  })
+  .superRefine((v, ctx) => {
+    if (v.labor_duty_max_hours < v.labor_duty_limit_hours) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["labor_duty_max_hours"],
+        message: `1 日の拘束時間の上限は、目安（${minutesToHoursInput(v.labor_duty_limit_hours)} 時間）以上で入力してください`,
+      });
+    }
+    if (v.labor_rest_min_hours > v.labor_rest_target_hours) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["labor_rest_min_hours"],
+        message: `休息期間の下限は、目安（${minutesToHoursInput(v.labor_rest_target_hours)} 時間）以下で入力してください`,
+      });
+    }
+  });
+
+/** 検証済みの入力（値はすべて分。連続勤務だけ日） */
+export type LaborSettingsParsed = z.output<typeof laborSettingsSchema>;
+
+/** 検証済みの入力を companies の列（分）へ */
+export function laborSettingsToColumns(p: LaborSettingsParsed): LaborStandards {
+  return {
+    labor_duty_limit_minutes: p.labor_duty_limit_hours,
+    labor_duty_max_minutes: p.labor_duty_max_hours,
+    labor_rest_target_minutes: p.labor_rest_target_hours,
+    labor_rest_min_minutes: p.labor_rest_min_hours,
+    labor_month_duty_minutes: p.labor_month_duty_hours,
+    labor_max_consecutive_days: p.labor_max_consecutive_days,
+  };
+}
+
+/** 保存済みの分をフォーム初期値（時間）へ。未設定の項目は既定値を使う */
+export function laborSettingsToForm(c: Partial<LaborStandards> | null | undefined): LaborSettingsFormInput {
+  const v = { ...DEFAULT_LABOR_STANDARDS, ...(c ?? {}) };
+  return {
+    labor_duty_limit_hours: minutesToHoursInput(v.labor_duty_limit_minutes),
+    labor_duty_max_hours: minutesToHoursInput(v.labor_duty_max_minutes),
+    labor_rest_target_hours: minutesToHoursInput(v.labor_rest_target_minutes),
+    labor_rest_min_hours: minutesToHoursInput(v.labor_rest_min_minutes),
+    labor_month_duty_hours: minutesToHoursInput(v.labor_month_duty_minutes),
+    labor_max_consecutive_days: String(v.labor_max_consecutive_days),
+  };
+}
+
+/** 「既定に戻す」で入れるフォームの値（改善基準告示に合わせた既定） */
+export const DEFAULT_LABOR_SETTINGS_FORM: LaborSettingsFormInput = laborSettingsToForm(DEFAULT_LABOR_STANDARDS);
