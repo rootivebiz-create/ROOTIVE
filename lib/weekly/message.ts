@@ -3,6 +3,7 @@
  * スマホの LINE で読みやすいプレーンテキスト。絵文字は使わず、全角 40 文字くらいで折り返す。
  */
 import { pct, qty as qtyText, yen } from "@/lib/format";
+import { formatDateJa } from "@/lib/month";
 import { LINE_MAX_TEXT } from "@/lib/integrations/types";
 import type { WeeklyNumbers } from "./numbers";
 
@@ -127,7 +128,7 @@ export function weeklyLineText(input: WeeklyLineInput): string {
 
   if (numbers.cash && numbers.cash.endingBalance != null) {
     parts.push("");
-    parts.push(`資金の見込み（${numbers.cash.to} 時点）${yen(numbers.cash.endingBalance)}`);
+    parts.push(`資金の見込み（${formatDateJa(numbers.cash.to)}時点）${yen(numbers.cash.endingBalance)}`);
   }
 
   parts.push("");

@@ -59,11 +59,28 @@ describe("ALERT_CODE_INFO", () => {
     "invoice_missing",
     "expense_missing",
     "cash_short",
+    // 0012：運行管理と法令対応
+    "document_expired",
+    "document_expiring",
+    "roll_call_missing",
+    "safety_manager_missing",
+    "day_entry_pending",
+    // 0014：法人の経営管理
+    "tax_due",
+    "tax_overdue",
+    "contract_renewal",
+    "contract_expired",
+    "bank_account_missing",
+    // 0018：労務と支払通知
+    "duty_long",
+    "rest_short",
+    "consecutive_days",
+    "notice_diff",
   ];
 
-  it("RPC detect_anomalies が作る 11 種類を、その並び順で持つ", () => {
+  it("RPC detect_anomalies が作る 25 種類の code を、その並び順で持つ（24 ルール。契約は更新時期と期限切れの 2 種類を出す）", () => {
     expect(ALERT_CODES).toEqual(CODES);
-    expect(Object.keys(ALERT_CODE_INFO)).toHaveLength(11);
+    expect(Object.keys(ALERT_CODE_INFO)).toHaveLength(25);
   });
 
   it("どの種類にも日本語の表示名・説明とアイコン名がある", () => {

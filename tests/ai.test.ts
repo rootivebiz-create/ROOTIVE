@@ -134,6 +134,7 @@ describe("データパックのヘルパー（context.ts）", () => {
       kpi: { break_even_bill: 1000000 },
       loans: [{}],
       tax_tasks: [{}, {}, {}],
+      labor: { driver_count: 4, over_duty_days: 2 },
     } as unknown as AiContext;
     const text = describeAiContext(ctx);
     assert.match(text, /2026年9月/);
@@ -144,6 +145,7 @@ describe("データパックのヘルパー（context.ts）", () => {
     assert.match(text, /資金繰り 7 件/);
     assert.match(text, /経営指標/);
     assert.match(text, /借入 1 件/);
+    assert.match(text, /労務（対象 4 名）/);
     assert.match(text, /近い税務の期限 3 件/);
     assert.match(text, /未対応のアラート 2 件/);
   });
@@ -165,6 +167,7 @@ describe("データパックのヘルパー（context.ts）", () => {
     assert.match(text, /締め済み/);
     assert.doesNotMatch(text, /借入/);
     assert.doesNotMatch(text, /経営指標/);
+    assert.doesNotMatch(text, /労務/);
   });
 });
 

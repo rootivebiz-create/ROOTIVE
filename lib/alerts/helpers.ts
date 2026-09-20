@@ -20,7 +20,7 @@ export interface AlertCodeInfo {
   icon: string;
 }
 
-/** RPC detect_anomalies が作る 11 種類（表示の並び順もこの順） */
+/** RPC detect_anomalies が作る 25 種類の code（24 ルール。契約だけ更新時期と期限切れで 2 種類。表示の並び順もこの順） */
 export const ALERT_CODE_INFO: Record<string, AlertCodeInfo> = {
   qty_zero: {
     label: "数量 0 の稼働",
@@ -76,6 +76,79 @@ export const ALERT_CODE_INFO: Record<string, AlertCodeInfo> = {
     label: "資金不足の見込み",
     hint: "30 日以内に残高が不足する見込みです。入金予定と支払予定を確認してください。",
     icon: "Landmark",
+  },
+  // 0012：運行管理と法令対応
+  document_expired: {
+    label: "書類の期限切れ",
+    hint: "車検・保険・免許などの期限が切れています。更新して登録し直してください。",
+    icon: "FileWarning",
+  },
+  document_expiring: {
+    label: "書類の期限が近い",
+    hint: "まもなく期限が来る書類があります。早めに更新してください。",
+    icon: "FileClock",
+  },
+  roll_call_missing: {
+    label: "点呼の未実施",
+    hint: "稼働した日は業務前・業務後の点呼を記録し、1 年間保存する必要があります。",
+    icon: "ClipboardCheck",
+  },
+  safety_manager_missing: {
+    label: "安全管理者の未選任",
+    hint: "貨物軽自動車安全管理者を営業所ごとに 1 名以上選任する必要があります。",
+    icon: "ShieldAlert",
+  },
+  day_entry_pending: {
+    label: "承認待ちの稼働報告",
+    hint: "ドライバーからの報告を承認すると、月次の稼働に反映されます。",
+    icon: "ClipboardCheck",
+  },
+  // 0014：法人の経営管理
+  tax_due: {
+    label: "税務の期限が近い",
+    hint: "申告・納付の期限が近づいています。納税資金の準備も確認してください。",
+    icon: "CalendarClock",
+  },
+  tax_overdue: {
+    label: "税務の期限切れ",
+    hint: "期限を過ぎています。対応が済んでいれば「対応済み」にしてください。",
+    icon: "CalendarClock",
+  },
+  contract_renewal: {
+    label: "契約の更新時期",
+    hint: "契約の満了が近づいています。続けるかどうかを確認してください。",
+    icon: "ScrollText",
+  },
+  contract_expired: {
+    label: "契約の期限切れ",
+    hint: "契約期間が終わっています。更新した契約書を登録してください。",
+    icon: "ScrollText",
+  },
+  bank_account_missing: {
+    label: "口座が未登録",
+    hint: "振込データを作るには、銀行・支店・口座番号・カナ名義が必要です。",
+    icon: "Banknote",
+  },
+  // 0018：労務と支払通知
+  duty_long: {
+    label: "拘束時間が長い",
+    hint: "開始から終了までが目安を超えた日があります。配車を見直してください。",
+    icon: "Timer",
+  },
+  rest_short: {
+    label: "休息が足りない",
+    hint: "前の稼働の終了から次の開始までが目安を下回っています。事故につながるため、間隔を空けてください。",
+    icon: "Timer",
+  },
+  consecutive_days: {
+    label: "連続勤務が長い",
+    hint: "休みを入れられないか確認してください。",
+    icon: "Timer",
+  },
+  notice_diff: {
+    label: "支払通知との差",
+    hint: "元請の支払通知と自社の売上に差があります。明細を突き合わせてください。",
+    icon: "FileCheck2",
   },
 };
 

@@ -225,7 +225,16 @@ export async function loadDashboardData(supabase: ServerSupabase, companyId: str
       .eq("month", monthDate),
     supabase.from("drivers").select("id, name").eq("company_id", companyId).eq("is_active", true).order("sort_order").order("name"),
     supabase.from("v_month_list").select("month, entry_count").eq("company_id", companyId).eq("status", "open").lt("month", monthToDate(pastThreshold)),
-    supabase.from("ai_insights").select("*").eq("company_id", companyId).eq("month", monthDate).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+    // 月次の分析だけを見る（週次サマリーも同じ月で保存されるため kind で絞る）
+    supabase
+      .from("ai_insights")
+      .select("*")
+      .eq("company_id", companyId)
+      .eq("month", monthDate)
+      .eq("kind", "monthly")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
     // 締め済みかどうかは summary を見るまで分からないので常に取得し、buildDashboardWarnings で締め済み月は空にする
     loadRateDiffs(supabase, month),
   ]);

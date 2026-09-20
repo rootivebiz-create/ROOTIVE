@@ -3,6 +3,7 @@
  * AI が使えないとき（ANTHROPIC_API_KEY が無いとき）は、この結果をそのまま所見として使う。
  */
 import { pct, yen } from "@/lib/format";
+import { formatDateJa } from "@/lib/month";
 import type { WeeklyComparison } from "./compare";
 import type { WeeklyAlertInput, WeeklyNumbers } from "./numbers";
 
@@ -50,7 +51,7 @@ export function weeklyHighlights(
 
   // 4. 資金の見込みがマイナス
   if (numbers.cash && numbers.cash.endingBalance != null && numbers.cash.endingBalance < 0) {
-    push(`このままだと ${numbers.cash.to} 時点の資金は ${yen(numbers.cash.endingBalance)} の見込みです。入金と支払の時期を確認してください。`);
+    push(`このままだと ${formatDateJa(numbers.cash.to)}時点の資金は ${yen(numbers.cash.endingBalance)} の見込みです。入金と支払の時期を確認してください。`);
   }
 
   // 5. 売上の大きな増減（前週の数字があるときだけ）
