@@ -87,4 +87,16 @@ export const exportUrls = {
   monthReportPdf: (month: string) => `/api/export/month-report.pdf?m=${encodeURIComponent(month)}`,
   /** 契約書ファイル（Storage の contracts バケット。署名付き URL へリダイレクト） */
   contractFile: (contractId: string) => `/api/contract-file?id=${encodeURIComponent(contractId)}`,
+
+  // ---------------------------------------------------------------------------
+  // 労務と支払通知（0018）
+  // ---------------------------------------------------------------------------
+  /** 労務 CSV（日ごとの拘束時間・実働・休息・連続勤務）。kind=day|month */
+  laborCsv: (month: string, kind: "day" | "month" = "day") =>
+    `/api/export/labor.csv?m=${encodeURIComponent(month)}&kind=${encodeURIComponent(kind)}`,
+  /** 労務 Excel */
+  laborXlsx: (month: string, kind: "day" | "month" = "day") =>
+    `/api/export/labor.xlsx?m=${encodeURIComponent(month)}&kind=${encodeURIComponent(kind)}`,
+  /** 支払通知の突合 CSV（1 件ぶんの明細と差） */
+  noticeDiffCsv: (noticeId: string) => `/api/export/notice-diff.csv?id=${encodeURIComponent(noticeId)}`,
 };
