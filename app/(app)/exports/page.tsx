@@ -156,6 +156,10 @@ export default async function ExportsPage({ searchParams }: { searchParams: Prom
             <DownloadLink href={exportUrls.hrCsv("contract")}>契約 CSV</DownloadLink>
             <DownloadLink href={exportUrls.hrXlsx("contract")}>契約 Excel</DownloadLink>
           </ExportRow>
+          <ExportRow label="書類の索引簿" description="レシート・請求書・支払通知・契約書の一覧（電子帳簿保存法の検索要件）。条件を絞って出したいときは「書類の検索」から。">
+            <DownloadLink href="/api/export/records.csv">CSV</DownloadLink>
+            <ExportPageLink href="/records">書類の検索へ</ExportPageLink>
+          </ExportRow>
           <ExportRow label="気になること・銀行明細" description="未対応のアラートと、取り込んだ銀行明細の消込状況。">
             <DownloadLink href={exportUrls.alertsCsv(month)}>気になること CSV</DownloadLink>
             <DownloadLink href={exportUrls.alertsXlsx(month)}>気になること Excel</DownloadLink>
