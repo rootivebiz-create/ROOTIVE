@@ -18,8 +18,10 @@ import type {
   BackupWorkEntry,
   MigratePreview,
   MigratePreviewMonth,
+  PassthroughBackupTable,
   SourceFormat,
 } from "./types";
+import { PASSTHROUGH_BACKUP_TABLES } from "./types";
 
 /** 固定名前空間（変更しないこと。変えると既存の取り込み済み ID と一致しなくなる） */
 export const MIGRATION_NAMESPACE = "6f1c2a3e-7b4d-5e8f-9a0b-1c2d3e4f5a6b";
@@ -431,6 +433,8 @@ const backupSchema = z.object({
   invoices: z.array(z.record(z.string(), z.unknown())).default([]),
   invoice_items: z.array(z.record(z.string(), z.unknown())).default([]),
   month_targets: z.array(z.record(z.string(), z.unknown())).default([]),
+  // 0010 以降に増えたテーブル（アプリは中身を読まず、そのまま DB の import_backup に渡す）
+  ...Object.fromEntries(PASSTHROUGH_BACKUP_TABLES.map((t) => [t, z.array(z.record(z.string(), z.unknown())).optional()])),
 });
 
 /** 本システムのバックアップ JSON を検証して正規化する */
@@ -459,7 +463,7 @@ export function normalizeBackup(json: unknown): BackupJson {
   requireId(b.invoices, "invoices");
   requireId(b.invoice_items, "invoice_items");
   return {
-    version: b.version === 2 ? 2 : 1,
+    version: typeof b.version === "number" && b.version >= 1 ? b.version : 1,
     app: b.app ?? "rootive-profit",
     exported_at: b.exported_at ?? new Date().toISOString(),
     company: (b.company ?? null) as BackupJson["company"],
@@ -479,7 +483,19 @@ export function normalizeBackup(json: unknown): BackupJson {
     invoices: b.invoices as unknown as BackupJson["invoices"],
     invoice_items: b.invoice_items as unknown as BackupJson["invoice_items"],
     month_targets: b.month_targets as unknown as BackupJson["month_targets"],
+    // 0010 以降のテーブルはそのまま持ち越す（ここで落とすと復元で消える）
+    ...passthroughTables(b as Record<string, unknown>),
   };
+}
+
+/** 0010 以降のテーブルを、配列のときだけ持ち越す */
+function passthroughTables(raw: Record<string, unknown>): Partial<Record<PassthroughBackupTable, Record<string, unknown>[]>> {
+  const out: Partial<Record<PassthroughBackupTable, Record<string, unknown>[]>> = {};
+  for (const table of PASSTHROUGH_BACKUP_TABLES) {
+    const rows = raw[table];
+    if (Array.isArray(rows)) out[table] = rows as Record<string, unknown>[];
+  }
+  return out;
 }
 
 /** 件数と月別集計（lib/calc で計算。DB のビューと同じ結果になる） */
@@ -565,6 +581,7 @@ export function previewBackup(backup: BackupJson, format: "prototype" | "backup"
       invoices: backup.invoices?.length ?? 0,
       invoice_items: backup.invoice_items?.length ?? 0,
       month_targets: backup.month_targets?.length ?? 0,
+      ...Object.fromEntries(PASSTHROUGH_BACKUP_TABLES.map((t) => [t, backup[t]?.length ?? 0])),
     },
     months,
     totals: {

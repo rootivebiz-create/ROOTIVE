@@ -25,9 +25,34 @@ export type BackupInvoice = Omit<Tables<"invoices">, "created_at" | "updated_at"
 export type BackupInvoiceItem = Omit<Tables<"invoice_items">, "created_at" | "updated_at"> & Partial<Pick<Tables<"invoice_items">, "created_at" | "updated_at">>;
 export type BackupMonthTarget = Omit<Tables<"month_targets">, "created_at" | "updated_at"> & Partial<Pick<Tables<"month_targets">, "created_at" | "updated_at">>;
 
-export interface BackupJson {
-  /** 1 = 0006 まで、2 = 0009（経費・取引先・請求書・月次目標）を含む */
-  version: 1 | 2;
+/**
+ * 0010 以降に増えたテーブル。アプリは中身を読まず、そのまま import_backup に渡す
+ * （復元の判断は DB 側の import_backup が行う。ここで落とすと復元で消えてしまう）
+ */
+export const PASSTHROUGH_BACKUP_TABLES = [
+  "cash_snapshots",
+  "vehicles",
+  "safety_managers",
+  "documents",
+  "daily_reports",
+  "work_day_entries",
+  "driver_instructions",
+  "incidents",
+  "import_profiles",
+  "applicants",
+  "applicant_events",
+  "contracts",
+  "tax_tasks",
+  "loans",
+  "loan_payments",
+  "payment_notices",
+  "payment_notice_items",
+] as const;
+export type PassthroughBackupTable = (typeof PASSTHROUGH_BACKUP_TABLES)[number];
+
+export type BackupJson = {
+  /** 1 = 0006 まで、2 = 0009、3 = 0010、4 = 0015、5 = 0018。読み取りは番号を問わない */
+  version: number;
   app: string;
   exported_at: string;
   company: BackupCompany | null;
@@ -48,7 +73,7 @@ export interface BackupJson {
   invoices?: BackupInvoice[];
   invoice_items?: BackupInvoiceItem[];
   month_targets?: BackupMonthTarget[];
-}
+} & { [K in PassthroughBackupTable]?: Record<string, unknown>[] };
 
 export interface MigratePreviewMonth {
   month: string; // YYYY-MM
@@ -62,7 +87,7 @@ export interface MigratePreviewMonth {
 
 export interface MigratePreview {
   format: "prototype" | "backup";
-  counts: {
+  counts: Record<string, number> & {
     drivers: number;
     projects: number;
     project_items: number;

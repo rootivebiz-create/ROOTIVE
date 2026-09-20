@@ -108,6 +108,44 @@ describe("試作アプリ JSON の移行（§8.5）", () => {
     expect(preview.counts.month_targets).toBe(1);
   });
 
+  it("0010 以降のテーブルは、中身を読まずにそのまま持ち越す（復元で消さない）", () => {
+    const id = (n: number) => `00000000-0000-4000-8000-0000000000${String(n).padStart(2, "0")}`;
+    const backup = normalizeBackup({
+      app: "rootive-profit",
+      version: 5,
+      drivers: [],
+      work_entries: [],
+      vehicles: [{ id: id(20), company_id: COMPANY, plate: "足立 480 あ 12-34" }],
+      daily_reports: [{ id: id(21), company_id: COMPANY, work_date: "2026-12-01" }],
+      work_day_entries: [{ id: id(22), company_id: COMPANY, work_date: "2026-12-01", qty: 1 }],
+      contracts: [{ id: id(23), company_id: COMPANY, driver_id: id(1), start_on: "2026-04-01" }],
+      loans: [{ id: id(24), company_id: COMPANY, name: "運転資金" }],
+      loan_payments: [{ id: id(25), company_id: COMPANY, loan_id: id(24), seq: 1 }],
+      tax_tasks: [{ id: id(26), company_id: COMPANY, kind: "corporate_tax_final", due_on: "2027-05-31" }],
+      payment_notices: [{ id: id(27), company_id: COMPANY, month: "2026-12-01" }],
+      payment_notice_items: [{ id: id(28), company_id: COMPANY, notice_id: id(27), raw_name: "三郷Amazon" }],
+      cash_snapshots: [{ id: id(29), company_id: COMPANY, as_of: "2026-12-01", balance: 1500000 }],
+    });
+    expect(backup.version).toBe(5);
+    expect(backup.vehicles).toHaveLength(1);
+    expect(backup.daily_reports).toHaveLength(1);
+    expect(backup.work_day_entries).toHaveLength(1);
+    expect(backup.contracts).toHaveLength(1);
+    expect(backup.loan_payments).toHaveLength(1);
+    expect(backup.payment_notice_items).toHaveLength(1);
+    expect(backup.cash_snapshots).toHaveLength(1);
+    const preview = previewBackup(backup, "backup");
+    expect(preview.counts.vehicles).toBe(1);
+    expect(preview.counts.payment_notices).toBe(1);
+    expect(preview.counts.loan_payments).toBe(1);
+  });
+
+  it("0010 以降のテーブルが無いバックアップでも壊れない", () => {
+    const backup = normalizeBackup({ app: "rootive-profit", version: 2, drivers: [], work_entries: [] });
+    expect(backup.vehicles).toBeUndefined();
+    expect(previewBackup(backup, "backup").counts.vehicles).toBe(0);
+  });
+
   it("古いバックアップ（v1）は 0009 のテーブルが空でも読める", () => {
     const backup = normalizeBackup({ app: "rootive-profit", version: 1, drivers: [], work_entries: [] });
     expect(backup.version).toBe(1);
