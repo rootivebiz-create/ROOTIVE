@@ -5,6 +5,7 @@ import { todayJST } from "@/lib/finance/date";
 import { PageHeader } from "@/components/ui/page-header";
 import { ExecutiveTabs, type ExecutiveTabItem } from "@/components/executive/tabs";
 import { CompanyProfileForm } from "@/components/executive/company-profile-form";
+import { LedgerSummary } from "@/components/executive/ledger-summary";
 import { OfficersPanel } from "@/components/executive/officers-panel";
 import { ShareholdersPanel } from "@/components/executive/shareholders-panel";
 import { InsurancePanel } from "@/components/executive/insurance-panel";
@@ -75,7 +76,12 @@ export default async function ExecutiveCompanyPage({ searchParams }: { searchPar
       <PageHeader title="会社の台帳" description={DESCRIPTIONS[tab]} />
       <ExecutiveTabs tabs={tabs} current={tab} />
 
-      {tab === "basic" && <CompanyProfileForm profile={profile} />}
+      {tab === "basic" && (
+        <>
+          <LedgerSummary officers={officers} shareholders={shareholders} policies={policies} advisors={advisors} guarantees={guarantees} today={today} />
+          <CompanyProfileForm profile={profile} />
+        </>
+      )}
       {tab === "officers" && <OfficersPanel officers={officers} today={today} />}
       {tab === "shareholders" && <ShareholdersPanel shareholders={shareholders} />}
       {tab === "insurance" && <InsurancePanel policies={policies} today={today} />}

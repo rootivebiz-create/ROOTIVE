@@ -44,7 +44,7 @@ test.describe("代表専用の領域", () => {
     await expect(page.getByText("人と会社")).toBeVisible();
     // 決裁待ちが無いときは「いまは何もありません」
     await expect(page.getByText("いまは何もありません")).toBeVisible();
-    await saveScreenshot(page, "executive-home");
+    await saveScreenshot(page, "executive-home.png");
   });
 
   test("管理者が /executive を開くとダッシュボードへ戻される", async ({ page }) => {
@@ -71,7 +71,7 @@ test.describe("代表専用の領域", () => {
 
     await loginViaMagicLink(page, E2E.users.owner.email, "/executive/approvals");
     await expect(page.getByText("新しいカーゴ車の購入")).toBeVisible();
-    await saveScreenshot(page, "executive-approvals");
+    await saveScreenshot(page, "executive-approvals.png");
 
     // 代表ホームにも決裁待ちが出る
     await page.goto("/executive");
@@ -88,7 +88,7 @@ test.describe("代表専用の領域", () => {
     );
     await loginViaMagicLink(page, E2E.users.owner.email, "/executive/company");
     await expect(page.getByText("川島幹太").first()).toBeVisible();
-    await saveScreenshot(page, "executive-company");
+    await saveScreenshot(page, "executive-company.png");
 
     await page.goto("/executive");
     // 満了の近い保険・任期の近い役員が「いま見るべきこと」に出る

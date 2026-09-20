@@ -26,14 +26,14 @@ export function MonthSelector({ months }: { months: MonthOption[] }) {
   const now = currentMonthJST();
 
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex min-w-0 items-center gap-1">
       <Button variant="ghost" size="icon" aria-label="前月" onClick={() => setMonth(addMonths(month, -1))}>
         <ChevronLeft />
       </Button>
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex min-w-[7.5rem] items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-base font-semibold hover:bg-muted"
+        className="flex min-w-0 items-center justify-center gap-1.5 truncate rounded-md px-2 py-1.5 text-base font-semibold hover:bg-muted sm:min-w-[7.5rem]"
         aria-label="稼動月を選択"
       >
         {closed && <Lock className="h-4 w-4 text-muted-foreground" aria-label="締め済み" />}

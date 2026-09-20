@@ -79,7 +79,7 @@ export function ApprovalDecideForm({ id, title }: { id: string; title: string })
           {noteError && <p className="text-xs text-destructive">却下するときは理由を入れてください</p>}
         </div>
 
-        <label className="flex items-start gap-2 rounded-lg bg-muted p-3">
+        <label htmlFor="decide-as-decision" className="flex items-start gap-2 rounded-lg bg-muted p-3">
           <Checkbox id="decide-as-decision" checked={asDecision} onCheckedChange={(v) => setAsDecision(v === true)} disabled={pending} className="mt-0.5" />
           <span>
             <span className="text-sm font-medium">意思決定として残す</span>

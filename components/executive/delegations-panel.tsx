@@ -297,8 +297,8 @@ function DelegationForm({ onOpenChange, delegation, staff, today }: DelegationDi
         <Label>対象の種別（選ばなければすべて）</Label>
         <div className="grid grid-cols-2 gap-2">
           {APPROVAL_KINDS.map((k) => (
-            <label key={k} className="flex items-center gap-2 rounded-md border border-border p-2 text-sm">
-              <Checkbox checked={kinds.includes(k)} onCheckedChange={(v) => toggleKind(k, v === true)} disabled={pending} />
+            <label key={k} htmlFor={`delegation-kind-${k}`} className="flex items-center gap-2 rounded-md border border-border p-2 text-sm">
+              <Checkbox id={`delegation-kind-${k}`} checked={kinds.includes(k)} onCheckedChange={(v) => toggleKind(k, v === true)} disabled={pending} />
               {APPROVAL_KIND_LABELS[k]}
             </label>
           ))}

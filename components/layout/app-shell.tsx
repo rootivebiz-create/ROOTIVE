@@ -39,8 +39,8 @@ export function AppShell({
   return (
     <div className="flex min-h-dvh flex-col">
       <header className="sticky top-0 z-40 border-b bg-card/95 backdrop-blur no-print">
-        <div className="flex h-14 items-center justify-between gap-1 px-3 md:gap-2 md:px-4">
-          <Link href={homeHref} className="flex items-center gap-2 font-bold">
+        <div className="flex h-14 min-w-0 items-center justify-between gap-1 overflow-hidden px-3 md:gap-2 md:px-4">
+          <Link href={homeHref} className="flex shrink-0 items-center gap-2 font-bold">
             <span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-sm text-primary-foreground">R</span>
             <span className="hidden truncate sm:inline">{companyName}</span>
           </Link>
@@ -49,9 +49,9 @@ export function AppShell({
               <MonthSelector months={months} />
             </Suspense>
           )}
-          <div className="flex items-center gap-1">
+          <div className="flex shrink-0 items-center gap-1">
             {badges && (
-              <Suspense fallback={<div className="h-11 w-11" />}>
+              <Suspense fallback={<div className="h-9 w-9" />}>
                 <NotificationBell badges={badges} role={role} />
               </Suspense>
             )}
