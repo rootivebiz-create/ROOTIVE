@@ -154,8 +154,14 @@ api_try() {
 # run_sql REF SQL_TEXT [LABEL] → SQL を実行し、結果 JSON（最後の文の行配列）を標準出力へ
 run_sql() {
   local ref="$1" sql="$2" label="${3:-SQL}"
-  local body attempt result
-  body="$(jq -cn --arg q "$sql" '{query: $q}')"
+  local body attempt result qfile
+  # SQL は 100KB を超えることがある。jq に引数で渡すと Linux の
+  # 1 引数あたりの上限（131,072 バイト）に当たって "Argument list too long" になるため、
+  # いったんファイルへ書き出して --rawfile で読ませる。
+  qfile="$(mktemp)"
+  printf '%s' "$sql" >"$qfile"
+  body="$(jq -cn --rawfile q "$qfile" '{query: $q}')"
+  rm -f "$qfile"
   for attempt in 1 2 3 4 5; do
     if result="$(api POST "/projects/$ref/database/query" "$body" 2>/tmp/setup-supabase-sql.err)"; then
       printf '%s' "$result"
