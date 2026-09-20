@@ -4,20 +4,27 @@ import { PageHeader } from "@/components/ui/page-header";
 import { buttonVariants } from "@/components/ui/button";
 import { MonthLink } from "@/components/layout/month-link";
 import { DriversTable, type DriverListRow } from "@/components/settings/drivers/drivers-table";
-import { isBankAccountFilled } from "@/lib/schemas/drivers";
+import { canSeeBankAccount } from "@/lib/schemas/drivers";
 
 export const metadata = { title: "ドライバー" };
 
 export default async function DriversSettingsPage() {
   const { supabase, profile, company } = await requireStaff();
-  const [driversRes, overridesRes, recurringRes] = await Promise.all([
+  // 振込先口座は 0020 で driver_bank_accounts へ移した。見てよい権限のときだけ読む
+  const canSeeBank = canSeeBankAccount(company.confidential_scope, profile.role);
+  const [driversRes, overridesRes, recurringRes, bankRes] = await Promise.all([
     supabase.from("drivers").select("*").eq("company_id", company.id).order("sort_order").order("name"),
     supabase.from("driver_pay_overrides").select("driver_id").eq("company_id", company.id),
     supabase.from("driver_recurring_adjustments").select("driver_id, is_active").eq("company_id", company.id),
+    canSeeBank ? supabase.from("v_driver_bank").select("driver_id, is_complete").eq("company_id", company.id) : null,
   ]);
   if (driversRes.error) throw driversRes.error;
   if (overridesRes.error) throw overridesRes.error;
   if (recurringRes.error) throw recurringRes.error;
+  if (bankRes?.error) throw bankRes.error;
+
+  // 口座がそろっているドライバー（v_driver_bank.is_complete）
+  const bankComplete = new Set((bankRes?.data ?? []).filter((b) => b.is_complete).map((b) => b.driver_id));
 
   const overrideCounts = new Map<string, number>();
   for (const o of overridesRes.data ?? []) overrideCounts.set(o.driver_id, (overrideCounts.get(o.driver_id) ?? 0) + 1);
@@ -40,11 +47,12 @@ export default async function DriversSettingsPage() {
     payout_day: d.payout_day,
     overrideCount: overrideCounts.get(d.id) ?? 0,
     recurringCount: recurringCounts.get(d.id) ?? 0,
-    hasBankAccount: isBankAccountFilled(d),
+    // 口座を見られない権限では警告を出さない（「登録済み」として扱う）
+    hasBankAccount: canSeeBank ? bankComplete.has(d.id) : true,
   }));
   const editable = canEdit(profile.role);
   const activeCount = rows.filter((r) => r.is_active).length;
-  const noBankCount = rows.filter((r) => r.is_active && !r.hasBankAccount).length;
+  const noBankCount = canSeeBank ? rows.filter((r) => r.is_active && !r.hasBankAccount).length : 0;
 
   return (
     <div>

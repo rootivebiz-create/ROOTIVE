@@ -34,6 +34,7 @@ import {
   type MonthPackEntry,
   type MonthPackError,
 } from "@/lib/exports/month-pack";
+import { canSeeBankAccount } from "@/lib/schemas/drivers";
 import { ExportError, fetchAllRows, handleExport, monthParam, requireExportRole } from "../_lib/guard";
 
 export const dynamic = "force-dynamic";
@@ -43,12 +44,20 @@ export const maxDuration = 60;
 
 const encoder = new TextEncoder();
 
-/** 振込データ（全銀）に使うドライバーの列 */
-const TRANSFER_DRIVER_COLUMNS =
-  "id, name, bank_code, bank_name, branch_code, branch_name, account_type, account_number, account_holder_kana, payout_month_offset, payout_day";
+/**
+ * 振込データ（全銀）に使う列。支払日はドライバーに残り、口座は v_driver_bank（0020）にある。
+ * 埋め込みリソースは使えないので別々に読んで JS 側で突き合わせる。
+ */
+const TRANSFER_DRIVER_COLUMNS = "id, name, payout_month_offset, payout_day";
+const TRANSFER_BANK_COLUMNS = "driver_id, bank_code, bank_name, branch_code, branch_name, account_type, account_number, account_holder_kana";
 type TransferDriverRow = {
   id: string;
   name: string;
+  payout_month_offset: number | null;
+  payout_day: number | null;
+};
+type TransferBankRow = {
+  driver_id: string;
   bank_code: string;
   bank_name: string;
   branch_code: string;
@@ -56,15 +65,16 @@ type TransferDriverRow = {
   account_type: BankAccountType | null;
   account_number: string;
   account_holder_kana: string;
-  payout_month_offset: number | null;
-  payout_day: number | null;
 };
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company } = await requireExportRole(ADMIN_ROLES);
+  const { supabase, company, profile } = await requireExportRole(ADMIN_ROLES);
   const month = monthParam(req);
   const parts = parseMonthPackParts(req.nextUrl.searchParams.get("parts"));
   if (isEmptyParts(parts)) throw new ExportError(400, "含める出力を 1 つ以上選んでください。");
+  if (parts.transfer && !canSeeBankAccount(company.confidential_scope, profile.role)) {
+    throw new ExportError(403, "振込先の口座を見る権限がありません。");
+  }
 
   // ---- ZIP に入れるファイルの一覧を先に決める --------------------------------
   const [summaries, invoiceRows, closingRes] = await Promise.all([
@@ -104,11 +114,17 @@ export const GET = handleExport(async (req: NextRequest) => {
     .map((r) => ({ id: r.id, invoiceNo: r.invoice_no, clientName: r.client_name }));
 
   // 振込データを含めるときだけ口座情報を読む
-  const driverBank = new Map<string, TransferDriverRow>();
+  const driverPayout = new Map<string, TransferDriverRow>();
+  const driverBank = new Map<string, TransferBankRow>();
   if (parts.transfer) {
-    const { data, error } = await supabase.from("drivers").select(TRANSFER_DRIVER_COLUMNS).eq("company_id", company.id);
-    if (error) throw error;
-    for (const d of (data ?? []) as TransferDriverRow[]) driverBank.set(d.id, d);
+    const [driverRes, bankRes] = await Promise.all([
+      supabase.from("drivers").select(TRANSFER_DRIVER_COLUMNS).eq("company_id", company.id),
+      supabase.from("v_driver_bank").select(TRANSFER_BANK_COLUMNS).eq("company_id", company.id),
+    ]);
+    if (driverRes.error) throw driverRes.error;
+    if (bankRes.error) throw bankRes.error;
+    for (const d of (driverRes.data ?? []) as TransferDriverRow[]) driverPayout.set(d.id, d);
+    for (const b of (bankRes.data ?? []) as TransferBankRow[]) driverBank.set(b.driver_id, b);
   }
 
   const planned = monthPackEntries({ month, parts, drivers, invoices });
@@ -250,19 +266,20 @@ export const GET = handleExport(async (req: NextRequest) => {
     const targets: TransferTarget[] = summaries
       .filter((s) => s.driver_id && Number(s.payout_incl ?? 0) > 0)
       .map((s) => {
-        const d = driverBank.get(s.driver_id ?? "");
+        const d = driverPayout.get(s.driver_id ?? "");
+        const b = driverBank.get(s.driver_id ?? "");
         const { date } = resolvePayoutDate(month, company, d ? { payout_month_offset: d.payout_month_offset, payout_day: d.payout_day } : null);
         return toTransferTarget(
           {
             driverId: s.driver_id ?? "",
             driverName: s.driver_name ?? d?.name ?? "",
-            bankCode: d?.bank_code ?? null,
-            bankName: d?.bank_name ?? null,
-            branchCode: d?.branch_code ?? null,
-            branchName: d?.branch_name ?? null,
-            accountType: d?.account_type ?? null,
-            accountNumber: d?.account_number ?? null,
-            holderKana: d?.account_holder_kana ?? null,
+            bankCode: b?.bank_code ?? null,
+            bankName: b?.bank_name ?? null,
+            branchCode: b?.branch_code ?? null,
+            branchName: b?.branch_name ?? null,
+            accountType: b?.account_type ?? null,
+            accountNumber: b?.account_number ?? null,
+            holderKana: b?.account_holder_kana ?? null,
           },
           Number(s.payout_incl ?? 0),
           date,

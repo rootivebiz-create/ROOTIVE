@@ -125,8 +125,11 @@ describe("試作アプリ JSON の移行（§8.5）", () => {
       payment_notices: [{ id: id(27), company_id: COMPANY, month: "2026-12-01" }],
       payment_notice_items: [{ id: id(28), company_id: COMPANY, notice_id: id(27), raw_name: "三郷Amazon" }],
       cash_snapshots: [{ id: id(29), company_id: COMPANY, as_of: "2026-12-01", balance: 1500000 }],
+      driver_bank_accounts: [{ driver_id: id(1), company_id: COMPANY, bank_code: "0005", branch_code: "001", account_number: "1234567", account_holder_kana: "ｱｲｿ ｻﾄｼ" }],
     });
     expect(backup.version).toBe(5);
+    expect(backup.driver_bank_accounts).toHaveLength(1);
+    expect(backup.driver_bank_accounts?.[0].account_number).toBe("1234567");
     expect(backup.vehicles).toHaveLength(1);
     expect(backup.daily_reports).toHaveLength(1);
     expect(backup.work_day_entries).toHaveLength(1);
@@ -138,6 +141,39 @@ describe("試作アプリ JSON の移行（§8.5）", () => {
     expect(preview.counts.vehicles).toBe(1);
     expect(preview.counts.payment_notices).toBe(1);
     expect(preview.counts.loan_payments).toBe(1);
+  });
+
+  it("0020 より前のバックアップは drivers に残った口座の列を落とさない（DB の import_backup が拾う）", () => {
+    const id = (n: number) => `00000000-0000-4000-8000-0000000000${String(n).padStart(2, "0")}`;
+    const backup = normalizeBackup({
+      app: "rootive-profit",
+      version: 5,
+      drivers: [
+        {
+          id: id(1),
+          company_id: COMPANY,
+          name: "相曽慧",
+          bank_code: "0005",
+          bank_name: "三菱UFJ銀行",
+          branch_code: "001",
+          branch_name: "本店",
+          account_type: "ordinary",
+          account_number: "1234567",
+          account_holder_kana: "ｱｲｿ ｻﾄｼ",
+        },
+      ],
+      work_entries: [],
+    });
+    // 変換で削らずそのまま渡す（0020 の import_backup が driver_bank_accounts へ移す）
+    const d = backup.drivers[0] as unknown as Record<string, unknown>;
+    expect(d.bank_code).toBe("0005");
+    expect(d.bank_name).toBe("三菱UFJ銀行");
+    expect(d.branch_code).toBe("001");
+    expect(d.branch_name).toBe("本店");
+    expect(d.account_type).toBe("ordinary");
+    expect(d.account_number).toBe("1234567");
+    expect(d.account_holder_kana).toBe("ｱｲｿ ｻﾄｼ");
+    expect(backup.driver_bank_accounts).toBeUndefined();
   });
 
   it("0010 以降のテーブルが無いバックアップでも壊れない", () => {

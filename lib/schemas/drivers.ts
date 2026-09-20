@@ -2,7 +2,7 @@ import { z } from "zod";
 import { memoSchema, moneySchema, nameSchema, percentToRateSchema, roundingModeSchema, signedMoneySchema, uuidSchema } from "./common";
 import { parseNumberInput } from "@/lib/calc/parse";
 import { TAX_MODES, type RoundingMode, type TaxMode } from "@/lib/calc/types";
-import { BANK_ACCOUNT_TYPES, type BankAccountType } from "@/lib/db/types";
+import { BANK_ACCOUNT_TYPES, canSeeConfidential, toConfidentialScope, type BankAccountType, type Role } from "@/lib/db/types";
 
 /**
  * ドライバー設定フォームの入力（クライアント → Server Action）。
@@ -31,20 +31,28 @@ export interface DriverFormInput {
   /** 振込予定日：会社設定に従うなら null。個別なら "0"〜"3"（月）と "0"（末日）〜"31"（日） */
   payout_month_offset: string | null;
   payout_day: string | null;
-  /** 振込先口座（総合振込データに使う）。省略・空欄は「未入力」として保存する */
-  bank_code?: string;
-  bank_name?: string;
-  branch_code?: string;
-  branch_name?: string;
-  /** "" = 未選択 */
-  account_type?: BankAccountType | "";
-  account_number?: string;
-  /** 口座名義（半角カナ。全角で入力しても保存時に半角へ寄せる） */
-  account_holder_kana?: string;
+  /**
+   * 振込先口座（`driver_bank_accounts`。0020 で drivers から分離）。
+   * 口座を見られない・書けない権限のときは送らない（undefined）＝保存時も触らない。
+   */
+  bank_account?: DriverBankFormInput | null;
   /** 案件内容ごとのドライバー別単価。受注・支払の両方が空欄なら標準（override 行を削除） */
   overrides: DriverOverrideFormInput[];
   /** 固定控除。id が null なら新規。送られてこなかった既存 id は削除 */
   recurring: DriverRecurringFormInput[];
+}
+
+/** 振込先口座の入力（空欄は「未入力」として保存する） */
+export interface DriverBankFormInput {
+  bank_code: string;
+  bank_name: string;
+  branch_code: string;
+  branch_name: string;
+  /** "" = 未選択 */
+  account_type: BankAccountType | "";
+  account_number: string;
+  /** 口座名義（半角カナ。全角で入力しても保存時に半角へ寄せる） */
+  account_holder_kana: string;
 }
 
 export interface DriverOverrideFormInput {
@@ -210,6 +218,10 @@ export const bankAccountFields = {
   account_holder_kana: accountHolderKanaSchema,
 };
 
+/** ドライバーの振込先口座（driver_bank_accounts に upsert する形） */
+export const driverBankAccountSchema = z.object(bankAccountFields);
+export type DriverBankAccountParsed = z.output<typeof driverBankAccountSchema>;
+
 /** 振込に必要な項目がそろっているか（総合振込データに出せるか） */
 export function isBankAccountFilled(v: {
   bank_code?: string | null;
@@ -218,6 +230,15 @@ export function isBankAccountFilled(v: {
   account_holder_kana?: string | null;
 }): boolean {
   return Boolean(v.bank_code && v.branch_code && v.account_number && v.account_holder_kana);
+}
+
+/**
+ * ドライバーの振込先口座を見てよいか（`companies.confidential_scope.bank_account`）。
+ * DB の `can_see_confidential('bank_account')`（0020）と同じ判定を画面側でも行う（§2 の二重チェック）。
+ * 代表は常に見られる。既定は「管理者以上」で、閲覧者・ドライバーは見られない。
+ */
+export function canSeeBankAccount(confidentialScope: unknown, role: Role): boolean {
+  return canSeeConfidential(role, toConfidentialScope(confidentialScope), "bank_account");
 }
 
 export const driverInputSchema = z.object({
@@ -244,7 +265,8 @@ export const driverInputSchema = z.object({
     .refine((s) => s === "" || /^T?\d{13}$/.test(s.replace(/[-\s]/g, "")), "適格請求書登録番号は T ＋ 13 桁の数字で入力してください"),
   payout_month_offset: optionalIntSchema(0, 3, "振込予定日（月）"),
   payout_day: optionalIntSchema(0, 31, "振込予定日（日）"),
-  ...bankAccountFields,
+  // 送られてこなければ（権限が無い／欄を出していない）口座は触らない
+  bank_account: driverBankAccountSchema.nullish(),
   overrides: z.array(driverOverrideSchema).max(500, "個別単価が多すぎます"),
   recurring: z.array(driverRecurringSchema).max(50, "固定控除が多すぎます"),
 });

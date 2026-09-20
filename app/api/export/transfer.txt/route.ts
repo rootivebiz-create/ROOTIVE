@@ -20,18 +20,23 @@ import {
   type TransferTarget,
   type ZenginInput,
 } from "@/lib/exports/zengin";
+import { canSeeBankAccount } from "@/lib/schemas/drivers";
 import { ExportError, fetchAllRows, handleExport, monthParam, requireExportRole } from "../_lib/guard";
 
 export const dynamic = "force-dynamic";
 
-const DRIVER_COLUMNS =
-  "id, name, bank_code, bank_name, branch_code, branch_name, account_type, account_number, account_holder_kana, payout_month_offset, payout_day";
+/** 支払日はドライバーに残り、口座は v_driver_bank（0020）。埋め込みリソースは使えないので別々に読む */
+const DRIVER_COLUMNS = "id, name, payout_month_offset, payout_day";
+const BANK_COLUMNS = "driver_id, bank_code, bank_name, branch_code, branch_name, account_type, account_number, account_holder_kana";
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company } = await requireExportRole(ADMIN_ROLES);
+  const { supabase, company, profile } = await requireExportRole(ADMIN_ROLES);
   const month = monthParam(req);
+  if (!canSeeBankAccount(company.confidential_scope, profile.role)) {
+    throw new ExportError(403, "振込先の口座を見る権限がありません。");
+  }
 
-  const [summaries, drivers] = await Promise.all([
+  const [summaries, drivers, banks] = await Promise.all([
     fetchAllRows((from, to) =>
       supabase
         .from("v_driver_month_summary")
@@ -43,25 +48,28 @@ export const GET = handleExport(async (req: NextRequest) => {
         .range(from, to),
     ),
     fetchAllRows((from, to) => supabase.from("drivers").select(DRIVER_COLUMNS).eq("company_id", company.id).order("sort_order").order("name").range(from, to)),
+    fetchAllRows((from, to) => supabase.from("v_driver_bank").select(BANK_COLUMNS).eq("company_id", company.id).order("sort_order").order("driver_name").range(from, to)),
   ]);
 
   const byId = new Map(drivers.map((d) => [d.id, d]));
+  const bankById = new Map(banks.filter((b) => b.driver_id).map((b) => [b.driver_id as string, b]));
   const targets: TransferTarget[] = summaries
     .filter((s) => s.driver_id && Number(s.payout_incl ?? 0) > 0)
     .map((s) => {
       const d = byId.get(s.driver_id ?? "");
+      const b = bankById.get(s.driver_id ?? "");
       const { date } = resolvePayoutDate(month, company, d ? { payout_month_offset: d.payout_month_offset, payout_day: d.payout_day } : null);
       return toTransferTarget(
         {
           driverId: s.driver_id ?? "",
           driverName: s.driver_name ?? d?.name ?? "",
-          bankCode: d?.bank_code ?? null,
-          bankName: d?.bank_name ?? null,
-          branchCode: d?.branch_code ?? null,
-          branchName: d?.branch_name ?? null,
-          accountType: d?.account_type ?? null,
-          accountNumber: d?.account_number ?? null,
-          holderKana: d?.account_holder_kana ?? null,
+          bankCode: b?.bank_code ?? null,
+          bankName: b?.bank_name ?? null,
+          branchCode: b?.branch_code ?? null,
+          branchName: b?.branch_name ?? null,
+          accountType: b?.account_type ?? null,
+          accountNumber: b?.account_number ?? null,
+          holderKana: b?.account_holder_kana ?? null,
         },
         Number(s.payout_incl ?? 0),
         date,

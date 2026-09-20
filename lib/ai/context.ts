@@ -8,8 +8,9 @@
  * - 機密（メールアドレス・API キー・住所など）は入れない。
  */
 import type { ServerSupabase } from "@/lib/supabase/server";
-import type { Alert, DriverMonthLaborRow, DriverMonthSummary, ExpenseSummaryRow, InvoiceListRow, LoanRow, MonthKpi, MonthPl, ProjectPl, TaxTaskRow } from "@/lib/db/types";
+import type { Alert, DriverMonthLaborRow, DriverMonthSummary, ExecutiveSummary, ExpenseSummaryRow, InvoiceListRow, LoanRow, MonthKpi, MonthPl, ProjectPl, TaxTaskRow } from "@/lib/db/types";
 import { emptyMonthPl, loadAlerts, loadCashForecast, loadCashSnapshots, loadDriverMonthLabor, loadLoans, loadMonthKpi, loadTaxTasks } from "@/lib/db/queries";
+import { loadExecutiveSummary } from "@/lib/executive/queries";
 import { forecastMonth, type ForecastResult } from "@/lib/calc/forecast";
 import { sumMoney } from "@/lib/calc/money";
 import { addMonths, dateToMonth, formatMonthJa, monthToDate } from "@/lib/month";
@@ -245,6 +246,21 @@ export interface AiContext {
   loans: AiLoanRow[];
   tax_tasks: AiTaxRow[];
   labor: AiLaborSummary | null;
+  governance: AiGovernanceSummary | null;
+}
+
+/**
+ * 代表の領域の「件数だけ」。件名・金額・人の名前は渡さない
+ * （代表専用の内容が外に出ないように、集計した数だけにする）。
+ */
+export interface AiGovernanceSummary {
+  pending_approvals: number;
+  overdue_approvals: number;
+  due_reviews: number;
+  expiring_insurance: number;
+  expiring_officers: number;
+  active_delegations: number;
+  sensitive_exports_30d: number;
 }
 
 export interface LoadAiContextOptions {
@@ -496,7 +512,7 @@ export async function loadAiContext(
   if (invoicesRes.error) throw invoicesRes.error;
 
   // 資金繰りとアラートは補助情報なので、取得に失敗しても分析は続ける
-  const [cashEvents, snapshots, alerts, kpi, loans, taxTasks, labor] = await Promise.all([
+  const [cashEvents, snapshots, alerts, kpi, loans, taxTasks, labor, governance] = await Promise.all([
     loadCashForecast(supabase, cashFrom, cashTo).catch(() => null),
     loadCashSnapshots(supabase, companyId, 1).catch(() => []),
     loadAlerts(supabase, companyId, { status: "open", limit: AI_CONTEXT_LIMITS.alerts }).catch(() => []),
@@ -504,6 +520,8 @@ export async function loadAiContext(
     loadLoans(supabase, companyId).catch(() => []),
     loadTaxTasks(supabase, companyId, { from: cashFrom, to: addDays(cashFrom, 90), status: "todo" }).catch(() => []),
     loadDriverMonthLabor(supabase, companyId, monthDate).catch(() => []),
+    // 代表以外が呼ぶと RLS で 0 になる（そのときは渡さない）
+    loadExecutiveSummary(supabase, companyId).catch(() => null),
   ]);
 
   const monthRows = monthsRes.data ?? [];
@@ -535,7 +553,23 @@ export async function loadAiContext(
     loans: limitRows(loans.filter((l) => l.status !== "paid"), AI_CONTEXT_LIMITS.loans).map(toLoanRow),
     tax_tasks: limitRows(taxTasks, AI_CONTEXT_LIMITS.taxTasks).map(toTaxRow),
     labor: toLaborSummary(labor),
+    governance: toGovernance(governance),
   };
+}
+
+/** 代表のサマリーを件数だけに落とす（すべて 0 なら渡さない） */
+function toGovernance(row: ExecutiveSummary | null): AiGovernanceSummary | null {
+  if (!row) return null;
+  const g: AiGovernanceSummary = {
+    pending_approvals: Number(row.pending_approvals ?? 0),
+    overdue_approvals: Number(row.overdue_approvals ?? 0),
+    due_reviews: Number(row.due_reviews ?? 0),
+    expiring_insurance: Number(row.expiring_insurance ?? 0),
+    expiring_officers: Number(row.expiring_officers ?? 0),
+    active_delegations: Number(row.active_delegations ?? 0),
+    sensitive_exports_30d: Number(row.sensitive_exports_30d ?? 0),
+  };
+  return Object.values(g).some((n) => n > 0) ? g : null;
 }
 
 /** 「何月のデータを何件渡したか」を日本語 1 行で（画面の表示用） */
@@ -553,6 +587,7 @@ export function describeAiContext(ctx: AiContext): string {
   if ((ctx.loans?.length ?? 0) > 0) parts.push(`借入 ${ctx.loans.length} 件`);
   if ((ctx.tax_tasks?.length ?? 0) > 0) parts.push(`近い税務の期限 ${ctx.tax_tasks.length} 件`);
   if (ctx.alerts.length > 0) parts.push(`未対応のアラート ${ctx.alerts.length} 件`);
+  if ((ctx.governance?.pending_approvals ?? 0) > 0) parts.push(`決裁待ち ${ctx.governance?.pending_approvals} 件`);
   return `${ctx.month_label}（${ctx.is_closed ? "締め済み" : "未締め"}）のデータを渡しました：${parts.join("・")}。`;
 }
 

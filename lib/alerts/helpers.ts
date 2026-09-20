@@ -150,6 +150,17 @@ export const ALERT_CODE_INFO: Record<string, AlertCodeInfo> = {
     hint: "元請の支払通知と自社の売上に差があります。明細を突き合わせてください。",
     icon: "FileCheck2",
   },
+  // 0019・0020：代表
+  approval_pending: {
+    label: "決裁待ちが止まっている",
+    hint: "代表の決裁を待っている申請があります。代表の画面で承認か却下をしてください。",
+    icon: "Stamp",
+  },
+  export_burst: {
+    label: "出力が急に増えた",
+    hint: "口座・明細・振込データ・バックアップの持ち出しが普段より多くなっています。誰が出したか確認してください。",
+    icon: "ShieldAlert",
+  },
 };
 
 /** 表示・CSV の並び順に使う code の一覧 */

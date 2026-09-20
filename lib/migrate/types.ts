@@ -6,6 +6,11 @@
 import type { Tables } from "@/lib/db/database.types";
 
 export type BackupCompany = Partial<Tables<"companies">>;
+/**
+ * 0020 でドライバーの振込先口座は `driver_bank_accounts` へ移ったので口座の列は無い。
+ * 古いバックアップ（0020 より前）の drivers には口座列が入っているが、
+ * normalizeBackup は行をそのまま持ち越すので DB の import_backup が拾う（ここで落とさない）。
+ */
 export type BackupDriver = Omit<Tables<"drivers">, "created_at" | "updated_at"> & Partial<Pick<Tables<"drivers">, "created_at" | "updated_at">>;
 export type BackupProject = Omit<Tables<"projects">, "created_at" | "updated_at"> & Partial<Pick<Tables<"projects">, "created_at" | "updated_at">>;
 export type BackupProjectItem = Omit<Tables<"project_items">, "created_at" | "updated_at"> & Partial<Pick<Tables<"project_items">, "created_at" | "updated_at">>;
@@ -31,6 +36,8 @@ export type BackupMonthTarget = Omit<Tables<"month_targets">, "created_at" | "up
  */
 export const PASSTHROUGH_BACKUP_TABLES = [
   "cash_snapshots",
+  // 0020：ドライバーの振込先口座（drivers から分離）
+  "driver_bank_accounts",
   "vehicles",
   "safety_managers",
   "documents",
@@ -51,7 +58,7 @@ export const PASSTHROUGH_BACKUP_TABLES = [
 export type PassthroughBackupTable = (typeof PASSTHROUGH_BACKUP_TABLES)[number];
 
 export type BackupJson = {
-  /** 1 = 0006 まで、2 = 0009、3 = 0010、4 = 0015、5 = 0018。読み取りは番号を問わない */
+  /** 1 = 0006 まで、2 = 0009、3 = 0010、4 = 0015、5 = 0018、6 = 0020。読み取りは番号を問わない */
   version: number;
   app: string;
   exported_at: string;

@@ -76,11 +76,13 @@ describe("ALERT_CODE_INFO", () => {
     "rest_short",
     "consecutive_days",
     "notice_diff",
+    "approval_pending",
+    "export_burst",
   ];
 
-  it("RPC detect_anomalies が作る 25 種類の code を、その並び順で持つ（24 ルール。契約は更新時期と期限切れの 2 種類を出す）", () => {
+  it("RPC detect_anomalies が作る 27 種類の code を、その並び順で持つ（26 ルール。契約は更新時期と期限切れの 2 種類を出す）", () => {
     expect(ALERT_CODES).toEqual(CODES);
-    expect(Object.keys(ALERT_CODE_INFO)).toHaveLength(25);
+    expect(Object.keys(ALERT_CODE_INFO)).toHaveLength(27);
   });
 
   it("どの種類にも日本語の表示名・説明とアイコン名がある", () => {

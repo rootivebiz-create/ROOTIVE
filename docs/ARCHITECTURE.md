@@ -237,6 +237,18 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 | `cash_forecast(from, to)` | staff | 入金予定（未入金の請求書）・入金実績・ドライバーへの支払予定（税込）・経費（実績と未計上の固定費）を日付順に返す。入金は ＋、支払は −（`0010`） |
 | `driver_portal_current()` | driver | 本人の最新の未締め月の暫定額（速報）。会社設定 `driver_portal_show_open_month` が off なら null（`0009`） |
 | `default_expense_categories(company_id)` | 内部 | 既定の経費カテゴリ 12 件を投入（会社作成トリガーから使用）（`0009`） |
+| `request_approval(kind, title, detail, amount, ref_table, ref_id, href, due_on)` | admin+ | 代表に決裁をお願いする（`0019`） |
+| `decide_approval(id, approve, note)` | 代表 / 委任された admin | 承認・却下。代理のときは `on_behalf_of` に代表が入る（`0019` / `0020`） |
+| `withdraw_approval(id, note)` | 申請者本人 / 代表 | 申請の取り下げ（`0019`） |
+| `approval_required(kind, amount)` | staff | その操作に代表の決裁が要るか（しきい値は `approval_rules`）（`0020`） |
+| `can_decide_approval(kind, amount)` | staff | 自分がその申請を決裁できるか（代表、または有効な委任を持つ admin）（`0020`） |
+| `can_see_confidential(key)` | staff | 借入・現金・振込口座を見てよいか（`companies.confidential_scope`）（`0020`） |
+| `decision_from_approval(approval_id)` | 代表 | 承認した申請から意思決定ログの下書きを作る（二度は作らない）（`0020`） |
+| `ensure_plan_years(plan_id)` | 代表 | 中期計画の期間ぶんの年を用意する（`0019`） |
+| `spread_plan_year(plan_id, year, 'even' \| 'actual')` | 代表 | 年間目標を 12 か月の `month_targets` へ配分（端数は 12 月。手入力済みの月は変えない）（`0020`） |
+| `record_login_event(profile_id, kind, ip, user_agent)` | **サービスロール専用** | ログイン・ログアウトの記録。1 年より古い記録は消える（`0019`） |
+| `record_export(profile_id, kind, label, month, rows, ip, user_agent)` | **サービスロール専用** | 出力（持ち出し）の記録。1 年より古い記録は消える（`0020`） |
+| `default_approval_rules(company_id)` | 内部 | 既定の決裁ルール 6 件を投入（会社作成トリガーから使用）（`0020`） |
 | `current_company_id()` / `current_app_role()` / `current_driver_id()` / `is_owner()` / `is_admin()` / `is_staff()` / `is_driver_user()` / `is_month_closed()` | ヘルパー | security definer で profiles を参照（is_active 必須） |
 
 ### トリガー（`0001` / `0002` / `0009`）
@@ -254,6 +266,10 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 | `t04_sync_project_client` | projects / clients | `client_id` から `client_name` を同期。`client_name` だけ入力された場合は取引先を自動作成。取引先の改名も案件に反映（`0009`） |
 | `t06_invoice_item_amount` / `t07_recalc_invoice` | invoice_items / invoices | 明細の金額 = 数量 × 単価、請求書の小計・消費税・合計を自動再計算（`0009`） |
 | `t20_company_seed_defaults` | companies | 会社を作ったときに既定の経費カテゴリを投入（`0009`） |
+| `t20_default_approval_rules` | companies | 会社を作ったときに既定の決裁ルール 6 件を投入（`0020`） |
+| `t01_approval_names` / `t01_decision_name` / `t01_delegation_name` | approvals / decisions / approval_delegations | 申請者・決裁者・委任先の名前を行に写す（閲覧者は他人の `profiles` を読めないため）（`0019` / `0020`） |
+| `t02_approval_guard` | approvals | 決裁できるのは `can_decide_approval` が真の人だけ、取り下げは申請者本人か代表だけ、決裁済みは代表以外が触れない（hint `FORBIDDEN`）（`0019` / `0020`） |
+| `t01_plan_year_company` | plan_years | 計画から company_id を補完し、計画の期間の外の年を拒否（`0019`） |
 | `t90_audit` | 主要 19 テーブル | INSERT/UPDATE/DELETE を audit_logs に記録（差分の無い UPDATE は除外。invitations.token と month_closings.snapshot は除外） |
 | `on_auth_user_created` | auth.users | 招待を照合して profiles を作成。招待が無ければ例外（hint `INVITATION_REQUIRED`）で登録自体を拒否 |
 
@@ -279,6 +295,12 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 | 監査ログ閲覧 | ○ | ○ | × | × |
 | 自分の締め済み月の明細・PDF | — | — | — | ○ |
 | 表示名・パスワードの変更（本人） | ○ | ○ | ○ | ○ |
+| **代表への申請（`request_approval`）** | ○ | ○ | × | × |
+| **決裁（承認・却下）** | ○ | 委任があるときだけ | × | × |
+| **意思決定ログ・会社の台帳・中期計画・ログインと持ち出しの記録** | ○ | × | × | × |
+| **決裁のルール・委任・機密の見せ方の変更** | ○ | × | × | × |
+| **借入・納税・現金残高の閲覧** | ○ | 既定で ○ | 既定で × | × |
+| **ドライバーの振込口座の閲覧** | ○ | 既定で ○ | × | × |
 
 ### 4-2. 二重チェックの考え方
 
@@ -287,6 +309,48 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 3. **DB（RLS + トリガー + RPC 内の権限チェック）**：全テーブル `company_id = current_company_id()`。書き込みは `is_admin()`、companies / invitations の更新は `is_owner()`。driver は work_entries / driver_months / adjustments を「自分かつ締め済み月」のみ SELECT、drivers・projects・project_items は自分に関係する行のみ。audit_logs は admin+ のみ SELECT、書き込みはトリガー（security definer）のみ。anon には一切の権限を与えない（`0006_storage_grants.sql` で revoke）。
 4. 無効化されたユーザー（`profiles.is_active = false`）はヘルパー関数が null を返すため、すべての RLS で不一致となり何も見えません。
 
+### 4-2b. 代表（owner）だけの領域（0019・0020）
+
+`/executive` 配下は `requirePageRole(["owner"])` で入口を閉じ、DB 側でも
+`decisions` / `company_profile` / `officers` / `shareholders` / `insurance_policies` / `advisors` /
+`guarantees` / `plans` / `plan_years` / `login_events` / `export_logs` の RLS が
+`public.is_owner()` を必須にしています。代表以外にはビュー越しでも 1 行も見えません。
+
+- **`approvals` だけはスタッフ全員が読めます**（自分が出した申請の行方が分かるように）。
+  追加は `is_admin()`、状態を `approved` / `rejected` に変えられるのは
+  `can_decide_approval(kind, amount)` が真の人だけで、RLS・トリガー・RPC の 3 か所すべてで確認します。
+- **代表だけの気づきは `alerts` に載せません。** `alerts` の SELECT は `is_staff()` なので、
+  保険・役員・意思決定などを載せると管理者・閲覧者に漏れます。代わりに
+  `v_executive_tasks` / `v_executive_summary`（どちらも `security_invoker`）で代表にだけ出します。
+- **バックアップも RLS が効きます。** `export_backup` は `security invoker` なので、
+  管理者が書き出すと代表専用のぶんは空の配列になります。`import_backup` はもともと owner 専用です。
+
+#### 機密の隔離（`confidential_scope` と `can_see_confidential`）
+
+`companies.confidential_scope`（jsonb）の 3 つのキーを owner / admin / staff の 3 段階で持ちます。
+
+| キー | 対象 | 既定 |
+|---|---|:-:|
+| `loans` | `loans` / `loan_payments` / `tax_tasks` | admin |
+| `cash` | `cash_snapshots`（と資金繰り） | admin |
+| `bank_account` | `driver_bank_accounts`（振込口座） | admin |
+
+判定は DB の `can_see_confidential(key)` の 1 本だけで、ポリシーもビューも画面もここを見ます
+（アプリ側の同じ判定は `canSeeConfidential(role, scope, key)`）。
+
+**落とし穴**：`*_write` のポリシーは `for all` で作られており、`FOR ALL` は SELECT も含みます。
+select 側だけを閉じても write 側のポリシーで読めてしまうため、両方に判定を入れています。
+
+**ドライバーの振込口座**：PostgreSQL の RLS は行単位で、列単位では閉じられません。
+`drivers` は閲覧者も読む（名前・案件の紐づけ）ため、口座の列を同じ行に置いたままでは隠せませんでした。
+0020 で `driver_bank_accounts`（主キー `driver_id`）へ分離し、読み取りは `v_driver_bank` に統一しています。
+
+#### 代理決裁（`approval_delegations`）
+
+代表が 1 人なので、不在のあいだ決裁が止まると会社が止まります。かといって owner へ昇格させる経路は
+乗っ取られたときに最も危ないので作りません。**期間・上限金額・種別を切った一時的な委任**だけを許し、
+代理で決めたときは `approvals.on_behalf_of` に本来の決裁者（代表）を必ず残します。
+
 ### 4-3. サービスロール（`lib/supabase/admin.ts`）
 
 `SUPABASE_SERVICE_ROLE_KEY` は RLS を無視できるため、**サーバー専用**で用途を次に限定しています。
@@ -294,6 +358,8 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 - 招待リンクの表示・受諾（`invitations` の参照、`auth.admin.createUser` / `generateLink`、`apply_invitation`）
 - ユーザー管理（`auth.admin.listUsers` / `updateUserById`、無効化）
 - 月締め時のバックアップ JSON を Storage へ保存、署名付き URL の発行
+- ログインの記録（`record_login_event`）と持ち出しの記録（`record_export`）。
+  どちらも `authenticated` から `execute` を剥奪済みで、**失敗してもログインや出力を止めません**
 
 ブラウザへ渡す `NEXT_PUBLIC_*` には含めません。`next.config.ts` の `serverExternalPackages` と `server-only` で誤ってクライアントへ混入しない構成です。
 

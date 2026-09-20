@@ -47,6 +47,7 @@ const company: Company = {
   labor_max_consecutive_days: 13,
   logo_path: "c1/logo-20260916T000000Z.png",
   seal_path: null,
+  confidential_scope: { loans: "admin", cash: "admin", bank_account: "admin" },
   created_at: "",
   updated_at: "",
 };

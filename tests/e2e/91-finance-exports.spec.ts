@@ -175,9 +175,12 @@ test.describe("振込データ（全銀）", () => {
       `update public.companies set fb_consignor_code = '1234567890', fb_consignor_kana = 'ｶ)ﾙｰﾃｨﾌﾞ', fb_bank_code = '0005',
               fb_bank_name = '三菱UFJ銀行', fb_branch_code = '001', fb_branch_name = '本店', fb_account_type = 'ordinary', fb_account_number = '7654321'
         where id = '${companyId}';
-       update public.drivers set bank_code = '0005', bank_name = '三菱UFJ銀行', branch_code = '001', branch_name = '本店',
-              account_type = 'ordinary', account_number = '1234567', account_holder_kana = 'ｱｲｿ ｻﾄｼ'
-        where id = '${driverIdByName("相曽慧")}';`,
+       insert into public.driver_bank_accounts
+         (driver_id, company_id, bank_code, bank_name, branch_code, branch_name, account_type, account_number, account_holder_kana)
+       values ('${driverIdByName("相曽慧")}', '${companyId}', '0005', '三菱UFJ銀行', '001', '本店', 'ordinary', '1234567', 'ｱｲｿ ｻﾄｼ')
+       on conflict (driver_id) do update set bank_code = excluded.bank_code, bank_name = excluded.bank_name,
+              branch_code = excluded.branch_code, branch_name = excluded.branch_name, account_type = excluded.account_type,
+              account_number = excluded.account_number, account_holder_kana = excluded.account_holder_kana;`,
     );
 
     await page.reload();

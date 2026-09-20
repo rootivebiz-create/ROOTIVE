@@ -5,6 +5,7 @@ import { uuidSchema } from "@/lib/schemas/common";
 import { PageHeader } from "@/components/ui/page-header";
 import { Badge } from "@/components/ui/badge";
 import { DriverForm, type DriverFormProject } from "@/components/settings/drivers/driver-form";
+import { canSeeBankAccount, type DriverBankFormInput } from "@/lib/schemas/drivers";
 
 export const metadata = { title: "ドライバーの編集" };
 
@@ -26,6 +27,31 @@ export default async function DriverDetailPage({ params }: { params: Promise<{ i
   if (entriesRes.error) throw entriesRes.error;
   if (monthsRes.error) throw monthsRes.error;
   const driver = driverRes.data;
+
+  // 振込先口座（0020 で driver_bank_accounts に分離）。見てよい権限のときだけ読む
+  const canSeeBank = canSeeBankAccount(company.confidential_scope, profile.role);
+  let bankAccount: DriverBankFormInput | null = null;
+  if (canSeeBank) {
+    const bankRes = await supabase
+      .from("v_driver_bank")
+      .select("bank_code, bank_name, branch_code, branch_name, account_type, account_number, account_holder_kana")
+      .eq("company_id", company.id)
+      .eq("driver_id", id)
+      .maybeSingle();
+    if (bankRes.error) throw bankRes.error;
+    const b = bankRes.data;
+    if (b) {
+      bankAccount = {
+        bank_code: b.bank_code ?? "",
+        bank_name: b.bank_name ?? "",
+        branch_code: b.branch_code ?? "",
+        branch_name: b.branch_name ?? "",
+        account_type: b.account_type ?? "",
+        account_number: b.account_number ?? "",
+        account_holder_kana: b.account_holder_kana ?? "",
+      };
+    }
+  }
 
   // null（標準）は null のまま渡す（0 に潰さない）
   const overrides = masters.overrides
@@ -69,6 +95,8 @@ export default async function DriverDetailPage({ params }: { params: Promise<{ i
           payout_day: Number(company.payout_day ?? 0),
         }}
         driver={driver}
+        canSeeBank={canSeeBank}
+        bankAccount={bankAccount}
         overrides={overrides}
         recurring={recurringRes.data ?? []}
         projects={projects}

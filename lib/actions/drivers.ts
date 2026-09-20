@@ -5,7 +5,7 @@ import type { PostgrestError } from "@supabase/supabase-js";
 import { requireAdminAction } from "@/lib/auth/session";
 import { ActionError, ensureNoError, runAction, unwrap, type ActionResult } from "@/lib/actions/result";
 import { uuidSchema } from "@/lib/schemas/common";
-import { driverInputSchema, reorderInputSchema, type DriverFormInput, type ReorderInput } from "@/lib/schemas/drivers";
+import { canSeeBankAccount, driverInputSchema, reorderInputSchema, type DriverFormInput, type ReorderInput } from "@/lib/schemas/drivers";
 import type { ServerSupabase } from "@/lib/supabase/server";
 
 /** ドライバー設定の変更が影響する画面 */
@@ -30,8 +30,14 @@ async function hasRows(query: PromiseLike<{ count: number | null; data: unknown[
 /** ドライバーの新規登録・更新（個別単価・固定控除を含む） */
 export async function saveDriverAction(input: DriverFormInput): Promise<ActionResult<{ id: string }>> {
   return runAction(async () => {
-    const { supabase, company } = await requireAdminAction();
+    const { supabase, company, profile, user } = await requireAdminAction();
     const parsed = driverInputSchema.parse(input);
+
+    // 振込先口座（0020 で driver_bank_accounts に分離）。見られない権限からは書かせない
+    // （UI でも欄を出さない。DB 側も RLS で拒否する＝三重）
+    if (parsed.bank_account && !canSeeBankAccount(company.confidential_scope, profile.role)) {
+      throw new ActionError("振込先の口座を編集する権限がありません。");
+    }
 
     // 名前は会社内で一意
     let dupQuery = supabase.from("drivers").select("id").eq("company_id", company.id).eq("name", parsed.name).limit(1);
@@ -58,14 +64,6 @@ export async function saveDriverAction(input: DriverFormInput): Promise<ActionRe
       // 支払日は両方揃って個別、片方でも空なら会社設定に従う
       payout_month_offset: parsed.payout_month_offset != null && parsed.payout_day != null ? parsed.payout_month_offset : null,
       payout_day: parsed.payout_month_offset != null && parsed.payout_day != null ? parsed.payout_day : null,
-      // 振込先口座（空欄は "" のまま保存。預金種目だけ未選択は null）
-      bank_code: parsed.bank_code,
-      bank_name: parsed.bank_name,
-      branch_code: parsed.branch_code,
-      branch_name: parsed.branch_name,
-      account_type: parsed.account_type,
-      account_number: parsed.account_number,
-      account_holder_kana: parsed.account_holder_kana,
     };
 
     let driverId: string;
@@ -78,6 +76,15 @@ export async function saveDriverAction(input: DriverFormInput): Promise<ActionRe
       const sort_order = Number(maxRes.data?.[0]?.sort_order ?? 0) + 1;
       const res = await supabase.from("drivers").insert({ ...fields, company_id: company.id, sort_order }).select("id").single();
       driverId = unwrap(res).id;
+    }
+
+    // 振込先口座：送られてきたときだけ書く（空欄は "" のまま保存。預金種目だけ未選択は null）
+    if (parsed.bank_account) {
+      ensureNoError(
+        await supabase
+          .from("driver_bank_accounts")
+          .upsert({ driver_id: driverId, company_id: company.id, updated_by: user.id, ...parsed.bank_account }, { onConflict: "driver_id" }),
+      );
     }
 
     // ドライバー別単価：受注・支払とも空欄なら削除、どちらかに値があれば upsert（null は標準）

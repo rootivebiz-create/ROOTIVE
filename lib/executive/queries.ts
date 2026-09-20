@@ -2,7 +2,6 @@ import type { ServerSupabase } from "@/lib/supabase/server";
 import type {
   Advisor,
   Approval,
-  ApprovalDelegation,
   ApprovalRow,
   ApprovalRule,
   ApprovalStatus,
