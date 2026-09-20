@@ -4,7 +4,7 @@
  * 判定そのもの（滞留・期限切れ・達成率など）は DB のビューが持っている。
  * ここでは「ビューが出した値をどう見せるか」だけを決める。
  */
-import { APPROVAL_KIND_LABELS, type ApprovalKind } from "@/lib/db/types";
+import { APPROVAL_KIND_LABELS, EXPORT_KIND_LABELS, type ApprovalKind } from "@/lib/db/types";
 import { daysBetweenDates } from "@/lib/finance/date";
 import { formatDateJa } from "@/lib/month";
 import { yen } from "@/lib/format";
@@ -115,13 +115,21 @@ export function toOptionList(value: unknown): string[] {
   return value.map((v) => (typeof v === "string" ? v : typeof v === "number" ? String(v) : "")).filter((v) => v !== "");
 }
 
-/** 1 行 1 つの選択肢 ←→ 配列 */
-export function optionsToText(value: unknown): string {
-  return toOptionList(value).join("\n");
+/** ユーザーエージェントを「どの端末から入ったか」の一言に（記録はそのまま残る） */
+export function deviceText(userAgent: string | null | undefined): string {
+  const ua = userAgent ?? "";
+  if (ua === "") return "—";
+  if (/iPhone/i.test(ua)) return "iPhone";
+  if (/iPad/i.test(ua)) return "iPad";
+  if (/Android/i.test(ua)) return "Android";
+  if (/Macintosh|Mac OS X/i.test(ua)) return "Mac";
+  if (/Windows/i.test(ua)) return "Windows";
+  if (/Linux/i.test(ua)) return "Linux";
+  return "その他の端末";
 }
-export function textToOptions(text: string): string[] {
-  return text
-    .split("\n")
-    .map((s) => s.trim())
-    .filter((s) => s !== "");
+
+/** 出力（持ち出し）の種別の表示名（表に無いものはそのまま出す） */
+export function exportKindLabel(kind: string | null | undefined): string {
+  const k = kind ?? "";
+  return EXPORT_KIND_LABELS[k] ?? (k || "その他");
 }
