@@ -117,8 +117,9 @@ export async function saveOutboxItem(item: OutboxItem): Promise<boolean> {
     return true;
   }
   const ok = await withStore<boolean>("readwrite", (store) => store.put(safe), false, () => true);
-  // 保存できなかったとき（容量不足など）はメモリへ退避する
-  if (!ok) memory.set(safe.id, safe);
+  // 保存できなかったとき（容量不足など）はメモリへ退避し、保存できたら退避を消す
+  if (ok) memory.delete(safe.id);
+  else memory.set(safe.id, safe);
   return true;
 }
 

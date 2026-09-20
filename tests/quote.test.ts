@@ -12,6 +12,7 @@ import {
   type QuoteInput,
   type RoundingMode,
 } from "@/lib/calc";
+import { defaultQuoteForm, parseQuoteForm, projectTabFromParam } from "@/lib/schemas/quote";
 
 /** 基本の条件（ドライバー 1 名・日給 20 日・ロイヤリティ 10%・管理費 15,000 円） */
 function input(over: Partial<QuoteInput> = {}): QuoteInput {
@@ -405,6 +406,56 @@ describe("例外的な条件", () => {
     expect(r.verdict.level).toBe("thin");
     expect(r.verdict.message).toContain("入力すると試算できます");
     expect(r.breakEvenBillRate).toBeNull();
+  });
+});
+
+describe("フォームの検証（parseQuoteForm）", () => {
+  const form = defaultQuoteForm({ royaltyRate: 0.1, mgmtFee: 15000, roundingMode: "floor" });
+
+  it("会社設定の既定（ロイヤリティ率・管理費・端数処理）が初期値に入る", () => {
+    expect(form.royalty_rate).toBe("10");
+    expect(form.mgmt_fee).toBe("15000");
+    expect(form.rounding_mode).toBe("floor");
+    expect(form.driver_count).toBe("1");
+  });
+
+  it("全角・カンマ・¥ 付きの入力も読み取れる", () => {
+    const parsed = parseQuoteForm({ ...form, bill_rate: "２３，０２５", pay_rate: "¥21,780", qty: "20" });
+    expect(parsed.ok).toBe(true);
+    expect(parsed.input.billRate).toBe(23025);
+    expect(parsed.input.payRate).toBe(21780);
+    expect(parsed.input.qty).toBe(20);
+  });
+
+  it("空欄は 0 として扱う（入力の途中でも試算できる）", () => {
+    const parsed = parseQuoteForm({ ...form, bill_rate: "", target_margin: "" });
+    expect(parsed.ok).toBe(true);
+    expect(parsed.input.billRate).toBe(0);
+    expect(parsed.targetMargin).toBe(0);
+  });
+
+  it("数値にならない入力は日本語のエラーになり、その項目は 0 として計算する", () => {
+    const parsed = parseQuoteForm({ ...form, bill_rate: "いくら？" });
+    expect(parsed.ok).toBe(false);
+    expect(parsed.errors.bill_rate).toBeTruthy();
+    expect(parsed.input.billRate).toBe(0);
+  });
+
+  it("ドライバー数は 0〜999 の整数だけ（小数・超過はエラー）", () => {
+    expect(parseQuoteForm({ ...form, driver_count: "2.5" }).errors.driver_count).toContain("整数");
+    expect(parseQuoteForm({ ...form, driver_count: "1000" }).errors.driver_count).toContain("999");
+    expect(parseQuoteForm({ ...form, driver_count: "-1" }).errors.driver_count).toBeTruthy();
+  });
+
+  it("目標利益率はパーセントで入力し、率（0.15）として返る", () => {
+    const parsed = parseQuoteForm({ ...form, target_margin: "15" });
+    expect(parsed.targetMargin).toBe(0.15);
+  });
+
+  it("?tab= からタブを取り出す（不正・未指定なら採算）", () => {
+    expect(projectTabFromParam("quote")).toBe("quote");
+    expect(projectTabFromParam(undefined)).toBe("pl");
+    expect(projectTabFromParam("xxx")).toBe("pl");
   });
 });
 

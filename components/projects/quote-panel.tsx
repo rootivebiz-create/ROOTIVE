@@ -14,6 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
   calcQuote,
   quoteSensitivity,
+  rateToPercent,
   ROUNDING_LABELS,
   ROUNDING_MODES,
   SENSITIVITY_FIELD_LABELS,
@@ -47,13 +48,8 @@ export interface QuoteDefaults {
   roundingMode: RoundingMode;
 }
 
+/** 判定の色（良好 ＝ 緑／薄利 ＝ 黄／赤字 ＝ 赤） */
 const VERDICT_VARIANT: Record<QuoteVerdictLevel, "success" | "warning" | "destructive"> = {
-  good: "success",
-  thin: "warning",
-  loss: "destructive",
-};
-
-const VERDICT_BADGE: Record<QuoteVerdictLevel, "success" | "warning" | "destructive"> = {
   good: "success",
   thin: "warning",
   loss: "destructive",
@@ -161,7 +157,7 @@ export function QuotePanel({ items, defaults }: { items: QuoteItemOption[]; defa
       ...s,
       bill_rate: String(item.billRate),
       pay_rate: String(item.payRate),
-      target_margin: item.targetMargin != null ? String(Math.round(item.targetMargin * 1000) / 10) : s.target_margin,
+      target_margin: item.targetMargin != null ? String(rateToPercent(item.targetMargin)) : s.target_margin,
     }));
   };
 
@@ -236,7 +232,7 @@ export function QuotePanel({ items, defaults }: { items: QuoteItemOption[]; defa
 
       <Alert variant={VERDICT_VARIANT[result.verdict.level]}>
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant={VERDICT_BADGE[result.verdict.level]}>{result.verdict.label}</Badge>
+          <Badge variant={VERDICT_VARIANT[result.verdict.level]}>{result.verdict.label}</Badge>
           <span className="text-xs">目標 {pct(result.targetMargin)}</span>
         </div>
         <p className="mt-2 leading-relaxed">{result.verdict.message}</p>

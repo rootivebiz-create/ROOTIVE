@@ -1,4 +1,4 @@
-import { Download, FileSpreadsheet } from "lucide-react";
+import { Download, FileCheck2, FileSpreadsheet } from "lucide-react";
 import { requireStaff, canEdit } from "@/lib/auth/session";
 import { loadClients } from "@/lib/db/queries";
 import { formatMonthJa, monthFromParam, monthToDate } from "@/lib/month";
@@ -89,6 +89,10 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
         description={`${formatMonthJa(month)} の取引先ごとの売上と請求書`}
         actions={
           <>
+            <MonthLink href="/invoices/notices" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+              <FileCheck2 className="h-4 w-4" />
+              支払通知の突合
+            </MonthLink>
             <a href={exportUrls.invoicesCsv(month)} download className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
               <Download className="h-4 w-4" />
               CSV
@@ -119,6 +123,14 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
 
           <p className="mt-3 text-xs text-muted-foreground">
             売上は取引先を設定した案件の稼働のみ集計します（設定 → 案件・単価で取引先を選んでください）。請求金額は税込、売上は税抜です。
+          </p>
+
+          <p className="mt-1 text-xs text-muted-foreground">
+            元請から支払通知書（支払明細書）が届いたら、
+            <MonthLink href="/invoices/notices" className="underline underline-offset-2">
+              支払通知の突合
+            </MonthLink>
+            に登録すると、自社の売上との差額を明細ごとに確認できます。
           </p>
         </>
       )}

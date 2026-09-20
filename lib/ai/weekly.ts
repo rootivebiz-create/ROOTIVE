@@ -552,7 +552,10 @@ export interface WeeklyInsightRow {
   actions: InsightAction[];
 }
 
-/** 保存済みの週次サマリーを新しい順に読む（画面の履歴） */
+/**
+ * 保存済みの週次サマリーを新しい順に読む（画面の履歴）。
+ * 同じ週を作り直したときは新しいものだけを残す（作り直しても履歴が二重に並ばない）。
+ */
 export async function loadWeeklyInsights(supabase: WeeklySupabase, companyId: string, limit = 12): Promise<WeeklyInsightRow[]> {
   const { data, error } = await supabase
     .from("ai_insights")
@@ -560,9 +563,9 @@ export async function loadWeeklyInsights(supabase: WeeklySupabase, companyId: st
     .eq("company_id", companyId)
     .eq("kind", "weekly")
     .order("created_at", { ascending: false })
-    .limit(limit);
+    .limit(Math.max(limit, 1) * 3);
   if (error) throw error;
-  return (data ?? []).map((row) => {
+  const rows = (data ?? []).map((row) => {
     const parsed = parseWeeklySummary(row.summary);
     const range = parsed ? weekRangeFrom(parsed.from) : null;
     return {
@@ -577,4 +580,14 @@ export async function loadWeeklyInsights(supabase: WeeklySupabase, companyId: st
       actions: normalizeActions(row.actions),
     };
   });
+  const seen = new Set<string>();
+  const unique: WeeklyInsightRow[] = [];
+  for (const row of rows) {
+    const key = row.from || row.id;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(row);
+    if (unique.length >= limit) break;
+  }
+  return unique;
 }

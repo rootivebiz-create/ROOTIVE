@@ -117,7 +117,8 @@ export function weeklyLineText(input: WeeklyLineInput): string {
     parts.push(note);
   }
 
-  const points = highlights.map((h) => (h ?? "").trim()).filter((h) => h.length > 0);
+  // 総括と同じ文が要点にも入っているときは繰り返さない（AI 無しのときは総括＝要点の 1 件目）
+  const points = highlights.map((h) => (h ?? "").trim()).filter((h) => h.length > 0 && h !== note);
   if (points.length > 0) {
     parts.push("");
     parts.push("気になる点");
