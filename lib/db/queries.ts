@@ -45,6 +45,11 @@ import type {
   LoanRow,
   LoanPaymentRow,
   TaxTaskRow,
+  DailyLaborRow,
+  DriverMonthLaborRow,
+  PaymentNoticeRow,
+  PaymentNoticeDiffRow,
+  PaymentNoticeItem,
   TaxTaskStatus,
   ImportRun,
 } from "@/lib/db/types";
@@ -564,6 +569,64 @@ export async function loadTaxTasks(supabase: ServerSupabase, companyId: string, 
   if (opts.to) q = q.lte("due_on", opts.to);
   if (opts.status) q = q.eq("status", opts.status);
   const { data, error } = await q.order("due_on");
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** 日ごとの労務（拘束時間・休息・連続勤務）。月で絞る */
+export async function loadDailyLabor(supabase: ServerSupabase, companyId: string, month: string, opts: { driverId?: string } = {}): Promise<DailyLaborRow[]> {
+  let q = supabase.from("v_daily_labor").select("*").eq("company_id", companyId).eq("month", month);
+  if (opts.driverId) q = q.eq("driver_id", opts.driverId);
+  const { data, error } = await q.order("work_date").order("driver_id");
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** ドライバー × 月の労務サマリー */
+export async function loadDriverMonthLabor(supabase: ServerSupabase, companyId: string, month: string): Promise<DriverMonthLaborRow[]> {
+  const { data, error } = await supabase
+    .from("v_driver_month_labor")
+    .select("*")
+    .eq("company_id", companyId)
+    .eq("month", month)
+    .order("driver_sort_order")
+    .order("driver_name");
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** 元請の支払通知書（新しい月が先） */
+export async function loadPaymentNotices(supabase: ServerSupabase, companyId: string, opts: { month?: string; limit?: number } = {}): Promise<PaymentNoticeRow[]> {
+  let q = supabase.from("v_payment_notice_list").select("*").eq("company_id", companyId);
+  if (opts.month) q = q.eq("month", opts.month);
+  const { data, error } = await q.order("month", { ascending: false }).order("notice_no").limit(opts.limit ?? 100);
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** 支払通知書 1 件 */
+export async function loadPaymentNotice(supabase: ServerSupabase, companyId: string, noticeId: string): Promise<PaymentNoticeRow | null> {
+  const { data, error } = await supabase.from("v_payment_notice_list").select("*").eq("company_id", companyId).eq("id", noticeId).maybeSingle();
+  if (error) throw error;
+  return data ?? null;
+}
+
+/** 支払通知の明細と自社の売上の差 */
+export async function loadPaymentNoticeDiff(supabase: ServerSupabase, companyId: string, noticeId: string): Promise<PaymentNoticeDiffRow[]> {
+  const { data, error } = await supabase
+    .from("v_payment_notice_diff")
+    .select("*")
+    .eq("company_id", companyId)
+    .eq("notice_id", noticeId)
+    .order("sort_order")
+    .order("raw_name");
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** 支払通知の明細（編集用の生データ） */
+export async function loadPaymentNoticeItems(supabase: ServerSupabase, companyId: string, noticeId: string): Promise<PaymentNoticeItem[]> {
+  const { data, error } = await supabase.from("payment_notice_items").select("*").eq("company_id", companyId).eq("notice_id", noticeId).order("sort_order");
   if (error) throw error;
   return data ?? [];
 }

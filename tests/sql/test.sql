@@ -641,8 +641,8 @@ select public.t_assert((select count(*) = 0 from public.cash_snapshots), '他社
 select public.t_assert((select count(*) = 0 from public.v_project_pl), '他社の案件損益は見えない');
 select public.test_login(:'owner_a');
 
--- バックアップ（0015 で version 4 に上がった）に含まれる
-select public.t_assert((public.export_backup()->>'version') = '4', 'バックアップは version 4');
+-- バックアップ（0018 で version 5 に上がった）に含まれる
+select public.t_assert((public.export_backup()->>'version') = '5', 'バックアップは version 5');
 select public.t_assert(jsonb_array_length(public.export_backup()->'cash_snapshots') = 1, 'バックアップに現金残高が入る');
 select public.t_assert((select count(*) from public.import_backup(public.export_backup())) >= 0, '復元（同じデータ）');
 select public.t_assert((select count(*) = 1 and max(balance) = 1500000 from public.cash_snapshots where company_id = :'company_a'), '復元後も現金残高は同じ');
@@ -1109,7 +1109,7 @@ set role authenticated;
 select public.test_login(:'owner_a');
 
 -- 書き出しに新しいテーブルが入る
-select public.t_assert((public.export_backup()->>'version') = '4', 'バックアップは version 4');
+select public.t_assert((public.export_backup()->>'version') = '5', 'バックアップは version 5');
 select public.t_assert(jsonb_array_length(public.export_backup()->'vehicles') > 0, 'バックアップに車両が入る');
 select public.t_assert(jsonb_array_length(public.export_backup()->'documents') > 0, 'バックアップに書類が入る');
 select public.t_assert(jsonb_array_length(public.export_backup()->'daily_reports') > 0, 'バックアップに日報が入る');
@@ -1195,4 +1195,86 @@ select public.t_expect_error($$select count(*) from public.rate_diffs_for('00000
 select public.t_assert((select count(*) >= 0 from public.cash_forecast('2026-01-01', '2026-12-31')), '入口の資金繰りは自社ぶんが見える');
 select public.test_logout();
 reset role;
-\echo '== すべてのアサーションが通りました（18〜25 節）'
+
+\echo '== 26. 労務（拘束時間・休息・連続勤務）と、元請の支払通知との突合'
+set role authenticated;
+select public.test_login(:'owner_a');
+
+-- ---------- 日報から拘束時間・休息・連続勤務を出す（2026-11 は未締め） ----------
+insert into public.daily_reports (company_id, work_date, driver_id, start_at, end_at, break_minutes, distance_km)
+values
+  (:'company_a', '2026-11-10', (select id from public.drivers where company_id = :'company_a' and name = '相曽慧'), '2026-11-10 06:00+09', '2026-11-10 20:00+09', 60, 120),
+  (:'company_a', '2026-11-11', (select id from public.drivers where company_id = :'company_a' and name = '相曽慧'), '2026-11-11 03:00+09', '2026-11-11 19:00+09', 60, 150),
+  (:'company_a', '2026-11-12', (select id from public.drivers where company_id = :'company_a' and name = '相曽慧'), '2026-11-12 08:00+09', '2026-11-12 17:00+09', 60, 90);
+
+select public.t_assert((select duty_minutes = 840 and work_minutes = 780 and duty_status = 'over' from public.v_daily_labor where company_id = :'company_a' and work_date = '2026-11-10'), '14 時間の拘束は「超過」と判定する');
+select public.t_assert((select duty_minutes = 960 and duty_status = 'severe' from public.v_daily_labor where company_id = :'company_a' and work_date = '2026-11-11'), '16 時間の拘束は「大幅超過」と判定する');
+select public.t_assert((select rest_minutes = 420 and rest_status = 'severe' from public.v_daily_labor where company_id = :'company_a' and work_date = '2026-11-11'), '前日 20 時 → 当日 3 時は休息 7 時間で「不足」');
+select public.t_assert((select rest_status = 'ok' from public.v_daily_labor where company_id = :'company_a' and work_date = '2026-11-12'), '13 時間空けば休息は「問題なし」');
+select public.t_assert((select rest_minutes is null from public.v_daily_labor where company_id = :'company_a' and work_date = '2026-11-10'), '前の稼働が無い日は休息を判定しない');
+select public.t_assert((select consecutive_days = 3 from public.v_daily_labor where company_id = :'company_a' and work_date = '2026-11-12'), '連続 3 日として数える');
+select public.t_assert((select duty_status = 'ok' and break_status = 'ok' from public.v_daily_labor where company_id = :'company_a' and work_date = '2026-11-12'), '9 時間・休憩 60 分は問題なし');
+
+-- 休憩が足りない日
+update public.daily_reports set break_minutes = 20 where company_id = :'company_a' and work_date = '2026-11-12';
+select public.t_assert((select break_status = 'short' from public.v_daily_labor where company_id = :'company_a' and work_date = '2026-11-12'), '実働 8 時間超で休憩 20 分は「不足」');
+update public.daily_reports set break_minutes = 60 where company_id = :'company_a' and work_date = '2026-11-12';
+
+-- 月のサマリー
+select public.t_assert((select report_days = 3 and over_duty_days = 1 and severe_duty_days = 1 and severe_rest_days = 1 and max_consecutive_days = 3
+                          from public.v_driver_month_labor where company_id = :'company_a' and month = '2026-11-01'), '月のサマリーに超過日数と連続勤務が出る');
+select public.t_assert((select duty_minutes_total = 840 + 960 + 540 from public.v_driver_month_labor where company_id = :'company_a' and month = '2026-11-01'), '拘束時間の合計が合う');
+select public.t_assert((select month_duty_over = false from public.v_driver_month_labor where company_id = :'company_a' and month = '2026-11-01'), '月 284 時間は超えていない');
+
+-- 会社ごとに基準を変えられる
+update public.companies set labor_duty_limit_minutes = 900, labor_duty_max_minutes = 1000 where id = :'company_a';
+select public.t_assert((select duty_status = 'ok' from public.v_daily_labor where company_id = :'company_a' and work_date = '2026-11-10'), '基準を 15 時間にすると 14 時間は問題なしになる');
+update public.companies set labor_duty_limit_minutes = 780, labor_duty_max_minutes = 900 where id = :'company_a';
+
+-- ---------- 元請の支払通知との突合 ----------
+insert into public.payment_notices (id, company_id, month, notice_no, received_on, total_amount)
+select '00000000-0000-0000-0000-00000000aa01', :'company_a', '2026-12-01', 'PN-001', '2027-01-20', coalesce(sum(bill), 0) + 1000
+  from public.v_work_entry_calc where company_id = :'company_a' and month = '2026-12-01';
+select public.t_assert((select total_diff = 1000 from public.v_payment_notice_list where id = '00000000-0000-0000-0000-00000000aa01'), '通知の合計と自社の売上の差が出る');
+
+insert into public.payment_notice_items (notice_id, raw_name, qty, unit_price)
+values ('00000000-0000-0000-0000-00000000aa01', '三郷Amazon 標準', 10, 23025);
+select public.t_assert((select amount = 230250 from public.payment_notice_items where notice_id = '00000000-0000-0000-0000-00000000aa01'), '金額が 0 なら 数量 × 単価 で埋まる');
+select public.t_assert((select company_id = :'company_a' from public.payment_notice_items where notice_id = '00000000-0000-0000-0000-00000000aa01'), '明細の会社はトリガーが補完する');
+select public.t_assert((select diff_status = 'unmatched' from public.v_payment_notice_diff where notice_id = '00000000-0000-0000-0000-00000000aa01'), '案件内容が未紐づけなら unmatched');
+
+-- 名前の一致で紐づける
+select public.t_assert(public.match_notice_items('00000000-0000-0000-0000-00000000aa01') = 1, '名前の一致で案件内容を紐づけられる');
+select public.t_assert((select project_item_id is not null from public.payment_notice_items where notice_id = '00000000-0000-0000-0000-00000000aa01'), '紐づけ後は project_item_id が入る');
+select public.t_assert((select item_name = '標準' and project_name = '三郷Amazon' from public.v_payment_notice_diff where notice_id = '00000000-0000-0000-0000-00000000aa01'), '差の一覧に案件名と内容名が出る');
+select public.t_assert((select diff_status in ('notice_more', 'notice_less', 'ok') from public.v_payment_notice_diff where notice_id = '00000000-0000-0000-0000-00000000aa01'), '紐づけ後は差の判定が出る');
+select public.t_assert(public.match_notice_items('00000000-0000-0000-0000-00000000aa01') = 0, '紐づけ済みの行は二度紐づけない');
+
+-- ---------- 異常の検知（21〜24） ----------
+select public.detect_anomalies('2026-11-01');
+select public.t_assert((select count(*) = 1 from public.alerts where company_id = :'company_a' and code = 'duty_long' and status = 'open'), '拘束時間の長い日を検知');
+select public.t_assert((select count(*) = 1 from public.alerts where company_id = :'company_a' and code = 'rest_short' and status = 'open'), '休息の足りない日を検知');
+select public.detect_anomalies('2026-12-01');
+select public.t_assert((select count(*) = 1 from public.alerts where company_id = :'company_a' and code = 'notice_diff' and status = 'open'), '支払通知との差を検知');
+
+-- ---------- 権限と会社分離 ----------
+select public.test_login(:'viewer_a');
+select public.t_assert((select count(*) > 0 from public.v_daily_labor where company_id = :'company_a'), '閲覧者は労務を読める');
+select public.t_assert((select count(*) > 0 from public.payment_notices where company_id = :'company_a'), '閲覧者は支払通知を読める');
+select public.t_expect_error($$insert into public.payment_notices (company_id, month, notice_no) values ('00000000-0000-0000-0000-00000000000a', '2026-12-01', 'NG')$$, '', '閲覧者は支払通知を追加できない');
+select public.t_expect_error($$select public.match_notice_items('00000000-0000-0000-0000-00000000aa01')$$, 'FORBIDDEN', '閲覧者は自動の紐づけができない');
+
+select public.test_login(:'owner_b');
+select public.t_assert((select count(*) = 0 from public.v_daily_labor), '他社の労務は見えない');
+select public.t_assert((select count(*) = 0 from public.payment_notices), '他社の支払通知は見えない');
+select public.t_assert((select count(*) = 0 from public.v_payment_notice_diff), '他社の差の一覧は見えない');
+
+-- ---------- バックアップに入る ----------
+select public.test_login(:'owner_a');
+select public.t_assert(jsonb_array_length(public.export_backup()->'payment_notices') = 1, 'バックアップに支払通知が入る');
+select public.t_assert(jsonb_array_length(public.export_backup()->'payment_notice_items') = 1, 'バックアップに支払通知の明細が入る');
+select public.t_assert((public.export_backup()->'company'->>'labor_duty_limit_minutes') = '780', 'バックアップに労務の基準が入る');
+
+select public.test_logout();
+reset role;
+\echo '== すべてのアサーションが通りました（18〜26 節）'

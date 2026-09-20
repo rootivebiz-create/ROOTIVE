@@ -23,6 +23,7 @@ export type ContractStatus = Enums<"contract_status">;
 export type BankAccountType = Enums<"bank_account_type">;
 export type TaxTaskStatus = Enums<"tax_task_status">;
 export type LoanStatus = Enums<"loan_status">;
+export type NoticeStatus = Enums<"notice_status">;
 
 export type Company = Tables<"companies">;
 export type Profile = Tables<"profiles">;
@@ -70,6 +71,8 @@ export type Contract = Tables<"contracts">;
 export type TaxTask = Tables<"tax_tasks">;
 export type Loan = Tables<"loans">;
 export type LoanPayment = Tables<"loan_payments">;
+export type PaymentNotice = Tables<"payment_notices">;
+export type PaymentNoticeItem = Tables<"payment_notice_items">;
 
 export type WorkEntryCalc = Views<"v_work_entry_calc">;
 export type DriverMonthSummary = Views<"v_driver_month_summary">;
@@ -101,6 +104,10 @@ export type MonthKpi = Views<"v_month_kpi">;
 export type LoanRow = Views<"v_loan_list">;
 export type LoanPaymentRow = Views<"v_loan_payment_list">;
 export type TaxTaskRow = Views<"v_tax_task_list">;
+export type DailyLaborRow = Views<"v_daily_labor">;
+export type DriverMonthLaborRow = Views<"v_driver_month_labor">;
+export type PaymentNoticeRow = Views<"v_payment_notice_list">;
+export type PaymentNoticeDiffRow = Views<"v_payment_notice_diff">;
 
 /** ドライバーの「今日の報告」で選べる案件内容（RPC driver_day_items の 1 行） */
 export type DriverDayItem = Database["public"]["Functions"]["driver_day_items"]["Returns"][number];
@@ -328,4 +335,38 @@ export const LOAN_STATUS_LABELS: Record<LoanStatus, string> = {
   active: "返済中",
   paid: "完済",
   planned: "予定",
+};
+
+/** 支払通知書の状態 */
+export const NOTICE_STATUS_LABELS: Record<NoticeStatus, string> = {
+  received: "受領",
+  checked: "確認済み",
+  resolved: "解決済み",
+};
+
+/** 労務の判定（v_daily_labor の duty_status / rest_status / break_status） */
+export const LABOR_DUTY_LABELS: Record<string, string> = {
+  ok: "問題なし",
+  over: "長い",
+  severe: "かなり長い",
+  unknown: "時刻の記録なし",
+};
+export const LABOR_REST_LABELS: Record<string, string> = {
+  ok: "問題なし",
+  short: "やや短い",
+  severe: "不足",
+  unknown: "前の稼働なし",
+};
+export const LABOR_BREAK_LABELS: Record<string, string> = {
+  ok: "問題なし",
+  short: "不足",
+  unknown: "時刻の記録なし",
+};
+
+/** 支払通知と自社の売上の差（v_payment_notice_diff.diff_status） */
+export const NOTICE_DIFF_LABELS: Record<string, string> = {
+  ok: "一致",
+  notice_more: "通知のほうが多い",
+  notice_less: "通知のほうが少ない",
+  unmatched: "案件内容が未紐づけ",
 };

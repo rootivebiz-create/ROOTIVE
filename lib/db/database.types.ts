@@ -680,6 +680,12 @@ export type Database = {
           fb_branch_name: string
           fb_account_type: Database["public"]["Enums"]["bank_account_type"] | null
           fb_account_number: string
+          labor_duty_limit_minutes: number
+          labor_duty_max_minutes: number
+          labor_rest_target_minutes: number
+          labor_rest_min_minutes: number
+          labor_month_duty_minutes: number
+          labor_max_consecutive_days: number
         }
         Insert: {
           id?: string
@@ -711,6 +717,12 @@ export type Database = {
           fb_branch_name?: string
           fb_account_type?: Database["public"]["Enums"]["bank_account_type"] | null
           fb_account_number?: string
+          labor_duty_limit_minutes?: number
+          labor_duty_max_minutes?: number
+          labor_rest_target_minutes?: number
+          labor_rest_min_minutes?: number
+          labor_month_duty_minutes?: number
+          labor_max_consecutive_days?: number
         }
         Update: {
           id?: string
@@ -742,6 +754,12 @@ export type Database = {
           fb_branch_name?: string
           fb_account_type?: Database["public"]["Enums"]["bank_account_type"] | null
           fb_account_number?: string
+          labor_duty_limit_minutes?: number
+          labor_duty_max_minutes?: number
+          labor_rest_target_minutes?: number
+          labor_rest_min_minutes?: number
+          labor_month_duty_minutes?: number
+          labor_max_consecutive_days?: number
         }
         Relationships: []
       }
@@ -1933,6 +1951,99 @@ export type Database = {
         }
         Relationships: []
       }
+      payment_notice_items: {
+        Row: {
+          id: string
+          company_id: string
+          notice_id: string
+          project_item_id: string | null
+          raw_name: string
+          qty: number
+          unit_price: number
+          amount: number
+          memo: string
+          sort_order: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          notice_id: string
+          project_item_id?: string | null
+          raw_name?: string
+          qty?: number
+          unit_price?: number
+          amount?: number
+          memo?: string
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          notice_id?: string
+          project_item_id?: string | null
+          raw_name?: string
+          qty?: number
+          unit_price?: number
+          amount?: number
+          memo?: string
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      payment_notices: {
+        Row: {
+          id: string
+          company_id: string
+          client_id: string | null
+          month: string
+          notice_no: string
+          received_on: string | null
+          total_amount: number
+          tax_amount: number
+          status: Database["public"]["Enums"]["notice_status"]
+          memo: string
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          client_id?: string | null
+          month: string
+          notice_no?: string
+          received_on?: string | null
+          total_amount?: number
+          tax_amount?: number
+          status?: Database["public"]["Enums"]["notice_status"]
+          memo?: string
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          client_id?: string | null
+          month?: string
+          notice_no?: string
+          received_on?: string | null
+          total_amount?: number
+          tax_amount?: number
+          status?: Database["public"]["Enums"]["notice_status"]
+          memo?: string
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           id: string
@@ -2539,6 +2650,31 @@ export type Database = {
         }
         Relationships: []
       }
+      v_daily_labor: {
+        Row: {
+          id: string | null
+          company_id: string | null
+          driver_id: string | null
+          work_date: string | null
+          month: string | null
+          start_at: string | null
+          end_at: string | null
+          break_minutes: number | null
+          distance_km: number | null
+          duty_minutes: number | null
+          work_minutes: number | null
+          rest_minutes: number | null
+          consecutive_days: number | null
+          labor_duty_limit_minutes: number | null
+          labor_duty_max_minutes: number | null
+          labor_rest_target_minutes: number | null
+          labor_rest_min_minutes: number | null
+          duty_status: string | null
+          rest_status: string | null
+          break_status: string | null
+        }
+        Relationships: []
+      }
       v_daily_report_list: {
         Row: {
           id: string | null
@@ -2610,6 +2746,34 @@ export type Database = {
           created_at: string | null
           days_left: number | null
           expiry_status: string | null
+        }
+        Relationships: []
+      }
+      v_driver_month_labor: {
+        Row: {
+          company_id: string | null
+          month: string | null
+          driver_id: string | null
+          driver_name: string | null
+          driver_sort_order: number | null
+          driver_is_active: boolean | null
+          report_days: number | null
+          measured_days: number | null
+          duty_minutes_total: number | null
+          duty_minutes_avg: number | null
+          duty_minutes_max: number | null
+          work_minutes_total: number | null
+          distance_km_total: number | null
+          over_duty_days: number | null
+          severe_duty_days: number | null
+          short_rest_days: number | null
+          severe_rest_days: number | null
+          short_break_days: number | null
+          max_consecutive_days: number | null
+          labor_month_duty_minutes: number | null
+          labor_max_consecutive_days: number | null
+          month_duty_over: boolean | null
+          consecutive_over: boolean | null
         }
         Relationships: []
       }
@@ -2901,6 +3065,55 @@ export type Database = {
           closing_note: string | null
           tax: number | null
           payout_incl: number | null
+        }
+        Relationships: []
+      }
+      v_payment_notice_diff: {
+        Row: {
+          id: string | null
+          company_id: string | null
+          notice_id: string | null
+          month: string | null
+          client_id: string | null
+          client_name: string | null
+          project_item_id: string | null
+          raw_name: string | null
+          project_name: string | null
+          item_name: string | null
+          notice_qty: number | null
+          notice_unit_price: number | null
+          notice_amount: number | null
+          sort_order: number | null
+          our_qty: number | null
+          our_amount: number | null
+          our_unit_price: number | null
+          qty_diff: number | null
+          amount_diff: number | null
+          diff_status: string | null
+        }
+        Relationships: []
+      }
+      v_payment_notice_list: {
+        Row: {
+          id: string | null
+          company_id: string | null
+          client_id: string | null
+          month: string | null
+          notice_no: string | null
+          received_on: string | null
+          total_amount: number | null
+          tax_amount: number | null
+          status: Database["public"]["Enums"]["notice_status"] | null
+          memo: string | null
+          created_by: string | null
+          created_at: string | null
+          updated_at: string | null
+          client_name: string | null
+          item_count: number | null
+          unmatched_count: number | null
+          item_total: number | null
+          our_bill: number | null
+          total_diff: number | null
         }
         Relationships: []
       }
@@ -3409,6 +3622,12 @@ export type Database = {
         }
         Returns: undefined
       }
+      match_notice_items: {
+        Args: {
+          p_notice_id: string
+        }
+        Returns: number
+      }
       month_day_date: {
         Args: {
           p_month: string
@@ -3422,6 +3641,12 @@ export type Database = {
           p_month: string
         }
         Returns: Json
+      }
+      normalize_name: {
+        Args: {
+          p_text: string
+        }
+        Returns: string
       }
       rate_diffs: {
         Args: {
@@ -3609,6 +3834,7 @@ export type Database = {
       item_unit: "day" | "piece"
       loan_status: "active" | "paid" | "planned"
       month_status: "open" | "closed"
+      notice_status: "received" | "checked" | "resolved"
       roll_call_method: "face" | "phone" | "video" | "app"
       rounding_mode: "none" | "floor" | "round" | "ceil"
       tax_mode: "taxable" | "exempt"
