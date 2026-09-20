@@ -48,7 +48,7 @@ export function AiWorkspace({
 }: AiWorkspaceProps) {
   return (
     <Tabs defaultValue={defaultTab}>
-      <TabsList className="grid w-full grid-cols-2 gap-1 sm:grid-cols-4">
+      <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-4">
         <TabsTrigger value="chat">相談する</TabsTrigger>
         <TabsTrigger value="analysis">月次の分析</TabsTrigger>
         <TabsTrigger value="weekly">週次サマリー</TabsTrigger>

@@ -54,7 +54,7 @@ export interface NoticeCsvResult {
   rows: NoticeCsvRow[];
   /** 判定した区切り */
   delimiter: NoticeDelimiter;
-  /** ヘッダー行（0 始まり。見つからなければ -1） */
+  /** ヘッダー行（空行を除いた何行目か。0 始まり。見つからなければ -1） */
   headerRow: number;
   /** ヘッダー行の列名（見つからなければ空配列） */
   headers: string[];

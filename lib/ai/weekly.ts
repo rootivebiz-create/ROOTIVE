@@ -9,7 +9,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/lib/db/database.types";
-import type { RoundingMode, TaxMode } from "@/lib/calc";
+import type { RoundingMode } from "@/lib/calc";
 import { resolveEntryDefaults } from "@/lib/calc";
 import { monthToDate } from "@/lib/month";
 import {
@@ -220,7 +220,7 @@ export async function loadWeeklySource(
       payRate: rate.payRate,
       royaltyRate: rate.royaltyRate,
       roundingMode: rate.roundingMode,
-      taxMode: (driver?.tax_mode as TaxMode | undefined) ?? "taxable",
+      taxMode: driver?.tax_mode ?? "taxable",
     });
   }
 
@@ -242,7 +242,7 @@ export async function loadWeeklySource(
     .limit(1);
   const balance = snapshots && snapshots[0] ? Number(snapshots[0].balance ?? 0) : null;
 
-  const tax = company ? { rate: Number(company.tax_rate ?? 0), rounding: (company.tax_rounding as RoundingMode) ?? "floor" } : null;
+  const tax = company ? { rate: Number(company.tax_rate ?? 0), rounding: company.tax_rounding ?? "floor" } : null;
   const currentEntries = entries.filter((e) => inRange(e.workDate, range));
   const previousEntries = entries.filter((e) => inRange(e.workDate, prevRange));
 

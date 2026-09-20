@@ -7,6 +7,18 @@ import { useRef } from "react";
 import { LogOut, Moon, Sun, UserCircle, Monitor } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { ROLE_LABELS, type Role } from "@/lib/db/types";
+import { clearOutbox } from "@/lib/offline/queue";
+import { clearServiceWorkerCache } from "@/lib/offline/register-sw";
+
+/** ログアウトの前に、端末に残っているキャッシュと未送信の控えを消す（失敗してもログアウトは続ける） */
+async function signOutCleanup(): Promise<void> {
+  try {
+    clearServiceWorkerCache();
+    await clearOutbox();
+  } catch {
+    // 消せなくてもログアウトは止めない
+  }
+}
 
 export function UserMenu({ displayName, email, role }: { displayName: string; email: string; role: Role }) {
   const { theme, setTheme } = useTheme();
@@ -73,7 +85,8 @@ export function UserMenu({ displayName, email, role }: { displayName: string; em
               className="flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm outline-none hover:bg-muted data-[highlighted]:bg-muted"
               onSelect={(e) => {
                 e.preventDefault();
-                signOutForm.current?.requestSubmit();
+                // 共有の端末で次の利用者に見えないよう、キャッシュと未送信の控えを消してから出る
+                void signOutCleanup().finally(() => signOutForm.current?.requestSubmit());
               }}
             >
               <LogOut className="h-4 w-4" /> ログアウト

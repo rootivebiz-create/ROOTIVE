@@ -126,3 +126,12 @@ input[type="number"]::-webkit-outer-spin-button {
 .pb-safe {
   padding-bottom: max(env(safe-area-inset-bottom), 0.5rem);
 }
+
+/* オフラインの帯（components/offline/offline-banner.tsx）のぶんだけ、
+   画面全体と固定ヘッダーを押し下げる。帯が出ていないときは 0px。 */
+body {
+  padding-top: var(--offline-banner-h, 0px);
+}
+header.sticky {
+  top: var(--offline-banner-h, 0px);
+}

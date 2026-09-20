@@ -7,17 +7,10 @@ import { flushOutbox } from "@/lib/offline/sync";
 import { cn } from "@/lib/utils";
 import { useOfflineStatus } from "./use-offline";
 
-/** 帯のぶんだけ本文を下げ、固定ヘッダーの位置も合わせる */
-const STYLE_ID = "rootive-offline-banner-style";
-const STYLE_CSS = "body{padding-top:var(--offline-banner-h,0px)}header.sticky{top:var(--offline-banner-h,0px)}";
-
-function ensureStyle(): void {
-  if (typeof document === "undefined" || document.getElementById(STYLE_ID)) return;
-  const el = document.createElement("style");
-  el.id = STYLE_ID;
-  el.textContent = STYLE_CSS;
-  document.head.appendChild(el);
-}
+/*
+ * 帯のぶんだけ本文と固定ヘッダーを下げる CSS は app/globals.css にある。
+ * ここでは高さ（--offline-banner-h）だけを設定する。
+ */
 
 /**
  * 画面上部の細い帯
@@ -30,7 +23,6 @@ export function OfflineBanner() {
   const visible = !online || pending > 0;
 
   useEffect(() => {
-    ensureStyle();
   }, []);
 
   useEffect(() => {

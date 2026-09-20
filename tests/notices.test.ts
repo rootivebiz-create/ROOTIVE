@@ -61,7 +61,7 @@ describe("parseNoticeCsv（見出しのある CSV）", () => {
   });
 
   it("全角数字・カンマ・「¥」「円」・単位が付いていても数値として読む", () => {
-    const csv = ["内容,数量,単価,金額", "定期便,２０個,¥23,025,460,500円"].join("\n");
+    const csv = ['内容,数量,単価,金額', '定期便,２０個,"¥23,025","460,500円"'].join("\n");
     const result = parseNoticeCsv(csv);
     expect(result.rows[0]).toMatchObject({ qty: 20, unit_price: 23025, amount: 460500 });
   });
@@ -69,7 +69,8 @@ describe("parseNoticeCsv（見出しのある CSV）", () => {
   it("前置きの行（宛名・タイトル）があってもヘッダー行を見つける", () => {
     const csv = ["株式会社ROOTIVE 御中", "2026年9月分 支払明細書", "", "内容,数量,単価,金額", "定期便,20,23025,460500"].join("\n");
     const result = parseNoticeCsv(csv);
-    expect(result.headerRow).toBe(3);
+    // headerRow は空行を除いた何行目か（0 始まり）
+    expect(result.headerRow).toBe(2);
     expect(result.rows).toHaveLength(1);
   });
 
