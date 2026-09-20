@@ -43,6 +43,48 @@ export type Database = {
         }
         Relationships: []
       }
+      advisors: {
+        Row: {
+          id: string
+          company_id: string
+          kind: string
+          name: string
+          contact: string
+          fee: number
+          memo: string
+          is_active: boolean
+          sort_order: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          kind?: string
+          name: string
+          contact?: string
+          fee?: number
+          memo?: string
+          is_active?: boolean
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          kind?: string
+          name?: string
+          contact?: string
+          fee?: number
+          memo?: string
+          is_active?: boolean
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       ai_conversations: {
         Row: {
           id: string
@@ -314,6 +356,75 @@ export type Database = {
           checklist?: Json
           memo?: string
           created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      approvals: {
+        Row: {
+          id: string
+          company_id: string
+          kind: Database["public"]["Enums"]["approval_kind"]
+          title: string
+          detail: string
+          amount: number | null
+          ref_table: string
+          ref_id: string
+          href: string
+          due_on: string | null
+          status: Database["public"]["Enums"]["approval_status"]
+          requested_by: string | null
+          requested_by_name: string
+          requested_at: string
+          decided_by: string | null
+          decided_by_name: string
+          decided_at: string | null
+          decision_note: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          kind?: Database["public"]["Enums"]["approval_kind"]
+          title: string
+          detail?: string
+          amount?: number | null
+          ref_table?: string
+          ref_id?: string
+          href?: string
+          due_on?: string | null
+          status?: Database["public"]["Enums"]["approval_status"]
+          requested_by?: string | null
+          requested_by_name?: string
+          requested_at?: string
+          decided_by?: string | null
+          decided_by_name?: string
+          decided_at?: string | null
+          decision_note?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          kind?: Database["public"]["Enums"]["approval_kind"]
+          title?: string
+          detail?: string
+          amount?: number | null
+          ref_table?: string
+          ref_id?: string
+          href?: string
+          due_on?: string | null
+          status?: Database["public"]["Enums"]["approval_status"]
+          requested_by?: string | null
+          requested_by_name?: string
+          requested_at?: string
+          decided_by?: string | null
+          decided_by_name?: string
+          decided_at?: string | null
+          decision_note?: string
           created_at?: string
           updated_at?: string
         }
@@ -763,6 +874,63 @@ export type Database = {
         }
         Relationships: []
       }
+      company_profile: {
+        Row: {
+          company_id: string
+          corporate_number: string
+          established_on: string | null
+          capital: number | null
+          registered_address: string
+          representative_name: string
+          business_purpose: string
+          transport_office: string
+          transport_number: string
+          transport_notified_on: string | null
+          labor_insurance_number: string
+          social_insurance_number: string
+          memo: string
+          updated_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          corporate_number?: string
+          established_on?: string | null
+          capital?: number | null
+          registered_address?: string
+          representative_name?: string
+          business_purpose?: string
+          transport_office?: string
+          transport_number?: string
+          transport_notified_on?: string | null
+          labor_insurance_number?: string
+          social_insurance_number?: string
+          memo?: string
+          updated_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          corporate_number?: string
+          established_on?: string | null
+          capital?: number | null
+          registered_address?: string
+          representative_name?: string
+          business_purpose?: string
+          transport_office?: string
+          transport_number?: string
+          transport_notified_on?: string | null
+          labor_insurance_number?: string
+          social_insurance_number?: string
+          memo?: string
+          updated_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       contracts: {
         Row: {
           id: string
@@ -917,6 +1085,72 @@ export type Database = {
           memo?: string
           created_by?: string | null
           updated_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      decisions: {
+        Row: {
+          id: string
+          company_id: string
+          title: string
+          context: string
+          options: Json
+          decision: string
+          reason: string
+          expected_effect: string
+          amount: number | null
+          decided_on: string
+          review_on: string | null
+          outcome: string
+          outcome_on: string | null
+          status: Database["public"]["Enums"]["decision_status"]
+          approval_id: string | null
+          created_by: string | null
+          created_by_name: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          title: string
+          context?: string
+          options?: Json
+          decision?: string
+          reason?: string
+          expected_effect?: string
+          amount?: number | null
+          decided_on?: string
+          review_on?: string | null
+          outcome?: string
+          outcome_on?: string | null
+          status?: Database["public"]["Enums"]["decision_status"]
+          approval_id?: string | null
+          created_by?: string | null
+          created_by_name?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          title?: string
+          context?: string
+          options?: Json
+          decision?: string
+          reason?: string
+          expected_effect?: string
+          amount?: number | null
+          decided_on?: string
+          review_on?: string | null
+          outcome?: string
+          outcome_on?: string | null
+          status?: Database["public"]["Enums"]["decision_status"]
+          approval_id?: string | null
+          created_by?: string | null
+          created_by_name?: string
           created_at?: string
           updated_at?: string
         }
@@ -1330,6 +1564,51 @@ export type Database = {
         }
         Relationships: []
       }
+      guarantees: {
+        Row: {
+          id: string
+          company_id: string
+          lender: string
+          kind: string
+          amount: number
+          loan_id: string | null
+          starts_on: string | null
+          ends_on: string | null
+          is_active: boolean
+          memo: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          lender?: string
+          kind?: string
+          amount?: number
+          loan_id?: string | null
+          starts_on?: string | null
+          ends_on?: string | null
+          is_active?: boolean
+          memo?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          lender?: string
+          kind?: string
+          amount?: number
+          loan_id?: string | null
+          starts_on?: string | null
+          ends_on?: string | null
+          is_active?: boolean
+          memo?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       import_profiles: {
         Row: {
           id: string
@@ -1481,6 +1760,54 @@ export type Database = {
           cost?: number
           memo?: string
           created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      insurance_policies: {
+        Row: {
+          id: string
+          company_id: string
+          kind: string
+          insurer: string
+          policy_no: string
+          starts_on: string | null
+          expires_on: string | null
+          premium: number
+          covers: string
+          memo: string
+          is_active: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          kind?: string
+          insurer?: string
+          policy_no?: string
+          starts_on?: string | null
+          expires_on?: string | null
+          premium?: number
+          covers?: string
+          memo?: string
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          kind?: string
+          insurer?: string
+          policy_no?: string
+          starts_on?: string | null
+          expires_on?: string | null
+          premium?: number
+          covers?: string
+          memo?: string
+          is_active?: boolean
           created_at?: string
           updated_at?: string
         }
@@ -1870,6 +2197,45 @@ export type Database = {
         }
         Relationships: []
       }
+      login_events: {
+        Row: {
+          id: string
+          company_id: string
+          profile_id: string | null
+          email: string
+          display_name: string
+          role: Database["public"]["Enums"]["user_role"] | null
+          kind: Database["public"]["Enums"]["login_event_kind"]
+          ip: string
+          user_agent: string
+          at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          profile_id?: string | null
+          email?: string
+          display_name?: string
+          role?: Database["public"]["Enums"]["user_role"] | null
+          kind?: Database["public"]["Enums"]["login_event_kind"]
+          ip?: string
+          user_agent?: string
+          at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          profile_id?: string | null
+          email?: string
+          display_name?: string
+          role?: Database["public"]["Enums"]["user_role"] | null
+          kind?: Database["public"]["Enums"]["login_event_kind"]
+          ip?: string
+          user_agent?: string
+          at?: string
+        }
+        Relationships: []
+      }
       month_closings: {
         Row: {
           company_id: string
@@ -1948,6 +2314,48 @@ export type Database = {
           updated_at?: string
           expense_target?: number
           driver_target?: number
+        }
+        Relationships: []
+      }
+      officers: {
+        Row: {
+          id: string
+          company_id: string
+          name: string
+          title: string
+          appointed_on: string | null
+          term_end_on: string | null
+          is_active: boolean
+          memo: string
+          sort_order: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          name: string
+          title?: string
+          appointed_on?: string | null
+          term_end_on?: string | null
+          is_active?: boolean
+          memo?: string
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          name?: string
+          title?: string
+          appointed_on?: string | null
+          term_end_on?: string | null
+          is_active?: boolean
+          memo?: string
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
         }
         Relationships: []
       }
@@ -2038,6 +2446,87 @@ export type Database = {
           tax_amount?: number
           status?: Database["public"]["Enums"]["notice_status"]
           memo?: string
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      plan_years: {
+        Row: {
+          id: string
+          company_id: string
+          plan_id: string
+          year: number
+          bill_target: number
+          profit_target: number
+          driver_target: number
+          memo: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          plan_id: string
+          year: number
+          bill_target?: number
+          profit_target?: number
+          driver_target?: number
+          memo?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          plan_id?: string
+          year?: number
+          bill_target?: number
+          profit_target?: number
+          driver_target?: number
+          memo?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      plans: {
+        Row: {
+          id: string
+          company_id: string
+          name: string
+          from_year: number
+          to_year: number
+          vision: string
+          memo: string
+          is_active: boolean
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          name: string
+          from_year: number
+          to_year: number
+          vision?: string
+          memo?: string
+          is_active?: boolean
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          name?: string
+          from_year?: number
+          to_year?: number
+          vision?: string
+          memo?: string
+          is_active?: boolean
           created_by?: string | null
           created_at?: string
           updated_at?: string
@@ -2273,6 +2762,39 @@ export type Database = {
           notified_on?: string | null
           memo?: string
           is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      shareholders: {
+        Row: {
+          id: string
+          company_id: string
+          name: string
+          shares: number
+          memo: string
+          sort_order: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          name: string
+          shares?: number
+          memo?: string
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          name?: string
+          shares?: number
+          memo?: string
+          sort_order?: number
           created_at?: string
           updated_at?: string
         }
@@ -2552,6 +3074,34 @@ export type Database = {
         }
         Relationships: []
       }
+      v_approval_list: {
+        Row: {
+          id: string | null
+          company_id: string | null
+          kind: Database["public"]["Enums"]["approval_kind"] | null
+          title: string | null
+          detail: string | null
+          amount: number | null
+          ref_table: string | null
+          ref_id: string | null
+          href: string | null
+          due_on: string | null
+          status: Database["public"]["Enums"]["approval_status"] | null
+          requested_by: string | null
+          requested_by_name: string | null
+          requested_at: string | null
+          decided_by: string | null
+          decided_by_name: string | null
+          decided_at: string | null
+          decision_note: string | null
+          created_at: string | null
+          updated_at: string | null
+          waiting_days: number | null
+          is_overdue: boolean | null
+          urgency: string | null
+        }
+        Relationships: []
+      }
       v_bank_transaction_list: {
         Row: {
           id: string | null
@@ -2808,6 +3358,40 @@ export type Database = {
           tax_base: number | null
           tax: number | null
           payout_incl: number | null
+        }
+        Relationships: []
+      }
+      v_executive_summary: {
+        Row: {
+          company_id: string | null
+          pending_approvals: number | null
+          overdue_approvals: number | null
+          oldest_pending_at: string | null
+          open_decisions: number | null
+          due_reviews: number | null
+          expiring_insurance: number | null
+          expiring_officers: number | null
+          guarantee_total: number | null
+          loan_balance: number | null
+          high_alerts: number | null
+          officer_count: number | null
+          shares_total: number | null
+          has_profile: boolean | null
+          active_plans: number | null
+        }
+        Relationships: []
+      }
+      v_executive_tasks: {
+        Row: {
+          company_id: string | null
+          kind: string | null
+          severity: string | null
+          title: string | null
+          detail: string | null
+          due_on: string | null
+          amount: number | null
+          href: string | null
+          ref_id: string | null
         }
         Relationships: []
       }
@@ -3114,6 +3698,30 @@ export type Database = {
           item_total: number | null
           our_bill: number | null
           total_diff: number | null
+        }
+        Relationships: []
+      }
+      v_plan_year_actual: {
+        Row: {
+          id: string | null
+          company_id: string | null
+          plan_id: string | null
+          year: number | null
+          bill_target: number | null
+          profit_target: number | null
+          driver_target: number | null
+          memo: string | null
+          plan_name: string | null
+          plan_is_active: boolean | null
+          bill_actual: number | null
+          profit_actual: number | null
+          driver_actual: number | null
+          month_count: number | null
+          bill_achievement: number | null
+          profit_achievement: number | null
+          bill_diff: number | null
+          profit_diff: number | null
+          profit_rate: number | null
         }
         Relationships: []
       }
@@ -3468,6 +4076,14 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: string
       }
+      decide_approval: {
+        Args: {
+          p_id: string
+          p_approve: boolean
+          p_note?: string
+        }
+        Returns: Database["public"]["Tables"]["approvals"]["Row"]
+      }
       default_chat_channels: {
         Args: {
           p_company_id: string
@@ -3535,6 +4151,12 @@ export type Database = {
           p_driver_id: string
         }
         Returns: string
+      }
+      ensure_plan_years: {
+        Args: {
+          p_plan_id: string
+        }
+        Returns: number
       }
       ensure_tax_tasks: {
         Args: {
@@ -3717,11 +4339,33 @@ export type Database = {
         }
         Returns: string
       }
+      record_login_event: {
+        Args: {
+          p_profile_id: string
+          p_kind?: Database["public"]["Enums"]["login_event_kind"]
+          p_ip?: string
+          p_user_agent?: string
+        }
+        Returns: string
+      }
       reopen_month: {
         Args: {
           p_month: string
         }
         Returns: undefined
+      }
+      request_approval: {
+        Args: {
+          p_kind: Database["public"]["Enums"]["approval_kind"]
+          p_title: string
+          p_detail?: string
+          p_amount?: number
+          p_ref_table?: string
+          p_ref_id?: string
+          p_href?: string
+          p_due_on?: string
+        }
+        Returns: string
       }
       reset_company_data: {
         Args: {
@@ -3805,6 +4449,13 @@ export type Database = {
         }
         Returns: number
       }
+      withdraw_approval: {
+        Args: {
+          p_id: string
+          p_note?: string
+        }
+        Returns: Database["public"]["Tables"]["approvals"]["Row"]
+      }
       write_audit: {
         Args: {
           p_company_id: string
@@ -3821,10 +4472,13 @@ export type Database = {
       alert_severity: "high" | "medium" | "low"
       alert_status: "open" | "resolved" | "ignored"
       applicant_stage: "applied" | "contacted" | "interview" | "docs" | "contract" | "started" | "declined" | "rejected"
+      approval_kind: "expense" | "rate_change" | "project" | "contract" | "loan" | "month_reopen" | "payout" | "purchase" | "hire" | "other"
+      approval_status: "pending" | "approved" | "rejected" | "withdrawn"
       bank_account_type: "ordinary" | "checking" | "savings"
       bank_txn_status: "unmatched" | "matched" | "ignored"
       contract_status: "draft" | "active" | "ended"
       day_entry_status: "submitted" | "approved" | "rejected"
+      decision_status: "open" | "reviewed" | "dropped"
       document_kind: "license" | "vehicle_inspection" | "compulsory_insurance" | "voluntary_insurance" | "health_check" | "safety_training" | "contract" | "other"
       entry_source: "staff" | "driver" | "import" | "line"
       expense_kind: "fixed" | "variable"
@@ -3833,6 +4487,7 @@ export type Database = {
       invoice_status: "draft" | "issued" | "paid"
       item_unit: "day" | "piece"
       loan_status: "active" | "paid" | "planned"
+      login_event_kind: "login" | "logout" | "invite"
       month_status: "open" | "closed"
       notice_status: "received" | "checked" | "resolved"
       roll_call_method: "face" | "phone" | "video" | "app"

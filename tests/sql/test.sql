@@ -641,8 +641,8 @@ select public.t_assert((select count(*) = 0 from public.cash_snapshots), '他社
 select public.t_assert((select count(*) = 0 from public.v_project_pl), '他社の案件損益は見えない');
 select public.test_login(:'owner_a');
 
--- バックアップ（0018 で version 5 に上がった）に含まれる
-select public.t_assert((public.export_backup()->>'version') = '5', 'バックアップは version 5');
+-- バックアップ（0019 で version 6 に上がった）に含まれる
+select public.t_assert((public.export_backup()->>'version') = '6', 'バックアップは version 6');
 select public.t_assert(jsonb_array_length(public.export_backup()->'cash_snapshots') = 1, 'バックアップに現金残高が入る');
 select public.t_assert((select count(*) from public.import_backup(public.export_backup())) >= 0, '復元（同じデータ）');
 select public.t_assert((select count(*) = 1 and max(balance) = 1500000 from public.cash_snapshots where company_id = :'company_a'), '復元後も現金残高は同じ');
@@ -1109,7 +1109,7 @@ set role authenticated;
 select public.test_login(:'owner_a');
 
 -- 書き出しに新しいテーブルが入る
-select public.t_assert((public.export_backup()->>'version') = '5', 'バックアップは version 5');
+select public.t_assert((public.export_backup()->>'version') = '6', 'バックアップは version 6');
 select public.t_assert(jsonb_array_length(public.export_backup()->'vehicles') > 0, 'バックアップに車両が入る');
 select public.t_assert(jsonb_array_length(public.export_backup()->'documents') > 0, 'バックアップに書類が入る');
 select public.t_assert(jsonb_array_length(public.export_backup()->'daily_reports') > 0, 'バックアップに日報が入る');
@@ -1277,4 +1277,182 @@ select public.t_assert((public.export_backup()->'company'->>'labor_duty_limit_mi
 
 select public.test_logout();
 reset role;
-\echo '== すべてのアサーションが通りました（18〜26 節）'
+
+\echo '== 27. 代表（承認・意思決定ログ・会社の基本情報・中期計画・ログイン記録）'
+set role authenticated;
+
+-- ---------- 承認：申請は管理者以上、決裁は代表だけ ----------
+select public.test_login(:'admin_a');
+\set approval_1 '00000000-0000-0000-0000-00000000ee01'
+select public.t_assert(public.request_approval('expense', '新しいカーゴ車の購入', '中古で 120 万円', 1200000, 'expenses', '', '/expenses', '2027-01-31') is not null, '管理者は代表に決裁を申請できる');
+select public.t_assert((select count(*) = 1 from public.approvals where company_id = :'company_a' and status = 'pending'), '申請は「決裁待ち」で入る');
+select public.t_assert((select requested_by = :'admin_a' from public.approvals where company_id = :'company_a'), '申請者が記録される');
+select public.t_assert((select requested_by_name = (select coalesce(nullif(display_name, ''), email) from public.profiles where id = :'admin_a') from public.approvals where company_id = :'company_a'), '申請者の名前が行に写る（閲覧者も読めるように）');
+select public.t_expect_error($$select public.request_approval('other', '')$$, '', '件名が空だと申請できない');
+
+-- 管理者は自分では決裁できない（RPC でもテーブル直更新でも）
+select public.t_expect_error($$select public.decide_approval((select id from public.approvals where company_id = '00000000-0000-0000-0000-00000000000a'), true, '')$$, 'FORBIDDEN', '管理者は決裁できない');
+select public.t_expect_error($$update public.approvals set status = 'approved' where company_id = '00000000-0000-0000-0000-00000000000a'$$, 'FORBIDDEN', '管理者がテーブルを直接更新しても決裁できない');
+
+-- 閲覧者は読めるが申請できない
+select public.test_login(:'viewer_a');
+select public.t_assert((select count(*) = 1 from public.approvals where company_id = :'company_a'), '閲覧者も申請の行方を見られる');
+select public.t_expect_error($$select public.request_approval('other', 'NG')$$, 'FORBIDDEN', '閲覧者は申請できない');
+
+-- 代表が決裁する
+select public.test_login(:'owner_a');
+select public.t_assert((select count(*) = 1 from public.v_approval_list where company_id = :'company_a' and status = 'pending' and urgency = 'waiting'), '申請した当日は「待ち」');
+select public.t_assert((select (public.decide_approval(id, true, '見積を 3 社取ること')).status = 'approved' from public.approvals where company_id = :'company_a'), '代表は承認できる');
+select public.t_assert((select decided_by = :'owner_a' and decided_by_name <> '' and decision_note = '見積を 3 社取ること' from public.approvals where company_id = :'company_a'), '決裁者と付記が残る');
+select public.t_expect_error($$select public.decide_approval((select id from public.approvals where company_id = '00000000-0000-0000-0000-00000000000a'), false, '')$$, '', '決裁済みの申請は二度決裁できない');
+
+-- 滞留と期限切れの判定
+insert into public.approvals (id, company_id, kind, title, requested_by, requested_at, due_on)
+values (:'approval_1', :'company_a', 'loan', '運転資金の借入 500 万円', :'admin_a', now() - interval '10 days', current_date - 1);
+select public.t_assert((select is_overdue and urgency = 'overdue' and waiting_days = 10 from public.v_approval_list where id = :'approval_1'), '期限を過ぎた申請は「期限切れ」');
+select public.t_assert((select pending_approvals = 1 and overdue_approvals = 1 from public.v_executive_summary where company_id = :'company_a'), 'サマリーに決裁待ちと期限切れが出る');
+select public.t_assert((select count(*) = 1 from public.v_executive_tasks where company_id = :'company_a' and kind = 'approval' and severity = 'high'), '代表のやることに期限切れの申請が出る');
+
+-- 異常の検知（25）
+select public.detect_anomalies('2026-12-01');
+select public.t_assert((select count(*) = 1 from public.alerts where company_id = :'company_a' and code = 'approval_pending' and status = 'open' and severity = 'high'), '決裁の滞留を検知する');
+
+-- 取り下げ（申請した本人）
+select public.test_login(:'admin_a');
+select public.t_assert((select (public.withdraw_approval(:'approval_1', 'いったん取り下げ')).status = 'withdrawn'), '申請した本人は取り下げられる');
+select public.detect_anomalies('2026-12-01');
+select public.t_assert((select count(*) = 0 from public.alerts where company_id = :'company_a' and code = 'approval_pending' and status = 'open'), '取り下げると滞留のアラートは解決になる');
+
+-- ---------- 意思決定ログ（代表だけ） ----------
+select public.test_login(:'owner_a');
+insert into public.decisions (company_id, title, context, decision, reason, decided_on, review_on, created_by)
+values (:'company_a', '三郷案件の単価交渉', '燃料費が上がっている', '受注単価を 5% 上げてもらう', '利益率が目標を下回ったため', '2026-12-01', current_date - 40, :'owner_a');
+select public.t_assert((select created_by_name <> '' from public.decisions where company_id = :'company_a'), '記録した人の名前が入る');
+select public.t_assert((select due_reviews = 1 and open_decisions = 1 from public.v_executive_summary where company_id = :'company_a'), '見直し日が来た意思決定がサマリーに出る');
+select public.t_assert((select count(*) = 1 from public.v_executive_tasks where company_id = :'company_a' and kind = 'decision_review'), '代表のやることに見直しが出る');
+update public.decisions set status = 'reviewed', outcome = '交渉成立', outcome_on = current_date where company_id = :'company_a';
+select public.t_assert((select due_reviews = 0 from public.v_executive_summary where company_id = :'company_a'), '振り返りを書くと見直しの件数が減る');
+
+select public.test_login(:'admin_a');
+select public.t_assert((select count(*) = 0 from public.decisions), '管理者には意思決定ログが一行も見えない');
+select public.t_expect_error($$insert into public.decisions (company_id, title) values ('00000000-0000-0000-0000-00000000000a', 'NG')$$, '', '管理者は意思決定ログを書けない');
+select public.test_login(:'viewer_a');
+select public.t_assert((select count(*) = 0 from public.decisions), '閲覧者にも意思決定ログは見えない');
+
+-- ---------- 会社の基本情報・役員・株主・保険・顧問・個人保証（代表だけ） ----------
+select public.test_login(:'owner_a');
+insert into public.company_profile (company_id, corporate_number, established_on, capital, representative_name, transport_number)
+values (:'company_a', '1234567890123', '2023-04-03', 3000000, '川島幹太', '関自貨第 12345 号');
+select public.t_assert((select has_profile from public.v_executive_summary where company_id = :'company_a'), 'サマリーに会社の基本情報ありが出る');
+select public.t_expect_error($$update public.company_profile set corporate_number = '123' where company_id = '00000000-0000-0000-0000-00000000000a'$$, '', '法人番号は 13 桁でないと入らない');
+
+insert into public.officers (company_id, name, title, appointed_on, term_end_on)
+values (:'company_a', '川島幹太', '代表取締役', '2023-04-03', current_date + 30);
+insert into public.shareholders (company_id, name, shares) values (:'company_a', '川島幹太', 100);
+insert into public.insurance_policies (company_id, kind, insurer, policy_no, expires_on, premium)
+values (:'company_a', '貨物保険', '○○海上', 'P-1', current_date + 20, 120000);
+insert into public.advisors (company_id, kind, name, fee) values (:'company_a', '税理士', '○○会計事務所', 33000);
+insert into public.guarantees (company_id, lender, kind, amount, loan_id, starts_on)
+select :'company_a', '日本政策金融公庫', '個人保証', 5000000, id, '2026-01-01' from public.loans where company_id = :'company_a' limit 1;
+
+select public.t_assert((select officer_count = 1 and expiring_officers = 1 and expiring_insurance = 1 and shares_total = 100 and guarantee_total = 5000000
+                          from public.v_executive_summary where company_id = :'company_a'), 'サマリーに役員・保険・株数・個人保証が出る');
+select public.t_assert((select count(*) = 1 from public.v_executive_tasks where company_id = :'company_a' and kind = 'insurance_expiry'), '満了が近い保険がやることに出る');
+select public.t_assert((select count(*) = 1 from public.v_executive_tasks where company_id = :'company_a' and kind = 'officer_term'), '任期満了が近い役員がやることに出る');
+
+-- 代表専用のことは alerts には出さない（スタッフ全員が読めるため）
+select public.detect_anomalies('2026-12-01');
+select public.t_assert((select count(*) = 0 from public.alerts where company_id = :'company_a' and code in ('insurance_expiry', 'officer_term', 'decision_review')), '代表だけの情報はアラートに出さない');
+
+select public.test_login(:'admin_a');
+select public.t_assert((select count(*) = 0 from public.company_profile) and (select count(*) = 0 from public.officers)
+                       and (select count(*) = 0 from public.shareholders) and (select count(*) = 0 from public.insurance_policies)
+                       and (select count(*) = 0 from public.advisors) and (select count(*) = 0 from public.guarantees), '管理者には代表専用のテーブルが一行も見えない');
+select public.t_assert((select pending_approvals = 0 and guarantee_total = 0 and officer_count = 0 from public.v_executive_summary where company_id = :'company_a'), '管理者が見るとサマリーは 0 になる');
+select public.t_assert((select count(*) = 0 from public.v_executive_tasks), '管理者には代表のやることが見えない');
+
+-- ---------- 中期計画 ----------
+select public.test_login(:'owner_a');
+\set plan_1 '00000000-0000-0000-0000-00000000ef01'
+insert into public.plans (id, company_id, name, from_year, to_year, vision, created_by)
+values (:'plan_1', :'company_a', '第 1 次 3 か年計画', 2026, 2028, 'ドライバー 20 名・売上 3 億円', :'owner_a');
+select public.t_assert(public.ensure_plan_years(:'plan_1') = 3, '計画の期間ぶんの年ができる');
+select public.t_assert(public.ensure_plan_years(:'plan_1') = 3, '二度実行しても年は増えない');
+select public.t_assert((select count(*) = 3 from public.plan_years where plan_id = :'plan_1'), '年は 3 件');
+select public.t_assert((select company_id = :'company_a' from public.plan_years where plan_id = :'plan_1' and year = 2026), '年の会社はトリガーが補完する');
+select public.t_expect_error($$insert into public.plan_years (plan_id, year) values ('00000000-0000-0000-0000-00000000ef01', 2030)$$, '', '計画の期間の外の年は入らない');
+
+update public.plan_years set bill_target = 100000000, profit_target = 12000000, driver_target = 12 where plan_id = :'plan_1' and year = 2026;
+select public.t_assert((select bill_actual > 0 and month_count > 0 from public.v_plan_year_actual where plan_id = :'plan_1' and year = 2026), '2026 年の実績が出る');
+select public.t_assert((select bill_achievement is not null and profit_achievement is not null from public.v_plan_year_actual where plan_id = :'plan_1' and year = 2026), '達成率が出る');
+select public.t_assert((select bill_achievement is null from public.v_plan_year_actual where plan_id = :'plan_1' and year = 2028), '目標が 0 の年は達成率を出さない');
+select public.t_assert((select plan_name = '第 1 次 3 か年計画' from public.v_plan_year_actual where plan_id = :'plan_1' and year = 2027), '計画名が付く');
+
+select public.test_login(:'admin_a');
+select public.t_assert((select count(*) = 0 from public.v_plan_year_actual), '管理者には中期計画が見えない');
+select public.t_expect_error($$select public.ensure_plan_years('00000000-0000-0000-0000-00000000ef01')$$, 'FORBIDDEN', '管理者は中期計画の年を作れない');
+
+-- ---------- ログインの記録（書き込みはサービスロール、閲覧は代表だけ） ----------
+select public.test_login(:'owner_a');
+select public.t_expect_error($$select public.record_login_event('00000000-0000-0000-0000-0000000000a1', 'login', '', '')$$, '', 'ログイン中のユーザーはログイン記録を書けない');
+select public.test_logout();
+reset role;
+
+set role service_role;
+select public.t_assert(public.record_login_event(:'owner_a', 'login', '203.0.113.9', 'Mozilla/5.0') is not null, 'サービスロールはログインを記録できる');
+select public.t_assert(public.record_login_event('00000000-0000-0000-0000-0000000000ff', 'login', '', '') is null, '存在しないユーザーなら何も記録しない');
+reset role;
+
+set role authenticated;
+select public.test_login(:'owner_a');
+select public.t_assert((select count(*) = 1 from public.login_events where company_id = :'company_a'), '代表はログインの記録を見られる');
+select public.t_assert((select email = 'owner@a.test' and display_name <> '' and role = 'owner' and ip = '203.0.113.9' from public.login_events where company_id = :'company_a'), '記録にメール・名前・ロール・IP が入る');
+select public.test_login(:'admin_a');
+select public.t_assert((select count(*) = 0 from public.login_events), '管理者にはログインの記録が見えない');
+
+-- ---------- 会社そのものの書類を置ける（0012 は ドライバー か 車両 が必須だった） ----------
+select public.test_login(:'owner_a');
+insert into public.documents (company_id, kind, label, expires_on) values (:'company_a', 'other', '貨物軽自動車運送事業経営届出書', null);
+select public.t_assert((select count(*) = 1 from public.documents where company_id = :'company_a' and driver_id is null and vehicle_id is null), '会社そのものの書類を置ける');
+
+-- ---------- 会社分離 ----------
+select public.test_login(:'owner_b');
+select public.t_assert((select count(*) = 0 from public.approvals), '他社の申請は見えない');
+select public.t_assert((select count(*) = 0 from public.decisions), '他社の意思決定ログは見えない');
+select public.t_assert((select count(*) = 0 from public.officers), '他社の役員は見えない');
+select public.t_assert((select count(*) = 0 from public.login_events), '他社のログイン記録は見えない');
+select public.t_assert((select count(*) = 0 from public.v_plan_year_actual), '他社の中期計画は見えない');
+select public.t_assert((select pending_approvals = 0 from public.v_executive_summary where company_id = :'company_b'), '自社のサマリーは 0 件');
+
+-- ---------- バックアップ（version 6）に入る ----------
+select public.test_login(:'owner_a');
+select public.t_assert((public.export_backup()->>'version') = '6', 'バックアップは version 6');
+select public.t_assert(jsonb_array_length(public.export_backup()->'approvals') = 2, 'バックアップに申請が入る');
+select public.t_assert(jsonb_array_length(public.export_backup()->'decisions') = 1, 'バックアップに意思決定ログが入る');
+select public.t_assert(jsonb_array_length(public.export_backup()->'officers') = 1, 'バックアップに役員が入る');
+select public.t_assert(jsonb_array_length(public.export_backup()->'plan_years') = 3, 'バックアップに中期計画の年が入る');
+select public.t_assert((public.export_backup()->'company_profile'->>'corporate_number') = '1234567890123', 'バックアップに会社の基本情報が入る');
+select public.t_assert(not (public.export_backup() ? 'login_events'), 'ログインの記録はバックアップに含めない');
+
+-- 管理者が書き出すと、代表専用のぶんは RLS により空になる
+select public.test_login(:'admin_a');
+select public.t_assert(jsonb_array_length(public.export_backup()->'decisions') = 0, '管理者のバックアップに意思決定ログは入らない');
+select public.t_assert(jsonb_array_length(public.export_backup()->'officers') = 0, '管理者のバックアップに役員は入らない');
+select public.t_assert(jsonb_typeof(public.export_backup()->'company_profile') = 'null', '管理者のバックアップに会社の基本情報は入らない');
+select public.t_assert(jsonb_array_length(public.export_backup()->'approvals') = 2, '申請はスタッフ共通なので管理者のバックアップにも入る');
+
+-- 復元（二度実行しても増えない）
+select public.test_login(:'owner_a');
+create temp table t_backup27 as select public.export_backup() as data;
+select public.import_backup((select data from t_backup27));
+select public.import_backup((select data from t_backup27));
+select public.t_assert((select count(*) = 2 from public.approvals where company_id = :'company_a'), '復元しても申請は 2 件のまま');
+select public.t_assert((select count(*) = 1 from public.decisions where company_id = :'company_a'), '復元しても意思決定ログは 1 件');
+select public.t_assert((select count(*) = 3 from public.plan_years where company_id = :'company_a'), '復元しても中期計画の年は 3 件');
+select public.t_assert((select corporate_number = '1234567890123' from public.company_profile where company_id = :'company_a'), '復元しても会社の基本情報は同じ');
+select public.t_assert((select count(*) = 1 from public.guarantees where company_id = :'company_a' and amount = 5000000), '復元しても個人保証は 1 件');
+
+select public.test_logout();
+reset role;
+
+\echo '== すべてのアサーションが通りました（18〜27 節）'
