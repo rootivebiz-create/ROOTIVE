@@ -85,7 +85,7 @@ export function delegationBannerText(d: { to_name: string | null; to_on: string 
   const name = d.to_name || "管理者";
   const until = dateText(d.to_on);
   const limit = d.max_amount == null ? "金額の上限なしで" : `${yen(d.max_amount)} まで`;
-  return `${name} さんが ${until}まで、${limit}代理で決裁できます`;
+  return `${name}さんが ${until}まで、${limit}代理で決裁できます`;
 }
 
 /** 株主の持株比率（総数が 0 なら null） */
