@@ -22,6 +22,7 @@ import {
 } from "@/lib/exports/zengin";
 import { canSeeBankAccount } from "@/lib/schemas/drivers";
 import { ExportError, fetchAllRows, handleExport, monthParam, requireExportRole } from "../_lib/guard";
+import { recordExport } from "@/lib/exports/record";
 
 export const dynamic = "force-dynamic";
 
@@ -125,5 +126,6 @@ export const GET = handleExport(async (req: NextRequest) => {
     throw new ExportError(400, `全銀データを作成できませんでした：${e instanceof Error ? e.message : String(e)}`);
   }
 
+    await recordExport({ profileId: profile.id, kind: "transfer", label: "振込データ（全銀）", month, rows: rows.length, req });
   return binaryResponse(transferFileName(month, "txt"), bytes, "text/plain; charset=Shift_JIS");
 });

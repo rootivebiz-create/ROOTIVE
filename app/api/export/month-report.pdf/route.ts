@@ -7,15 +7,17 @@ import { STAFF_ROLES } from "@/lib/auth/session";
 import { loadMonthReportData, monthReportPdfFilename, renderMonthReportPdf } from "@/lib/pdf/month-report";
 import { pdfResponse } from "@/lib/exports/download";
 import { handleExport, monthParam, requireExportRole } from "../_lib/guard";
+import { recordExport } from "@/lib/exports/record";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company } = await requireExportRole(STAFF_ROLES);
+  const { supabase, company, profile } = await requireExportRole(STAFF_ROLES);
   const month = monthParam(req);
 
   const data = await loadMonthReportData(supabase, company, month);
   const pdf = await renderMonthReportPdf(data);
+  await recordExport({ profileId: profile.id, kind: "report", label: "月次レポート PDF", month, rows: 1, req });
   return pdfResponse(monthReportPdfFilename(month), pdf);
 });

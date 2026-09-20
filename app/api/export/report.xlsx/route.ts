@@ -11,6 +11,7 @@ import { REPORT_CSV_HEADERS, reportToCsvRow, reportTotalCsvRow } from "@/lib/exp
 import { buildXlsx, sheetFromRows, type XlsxCell, type XlsxCellType, type XlsxSheet } from "@/lib/exports/xlsx";
 import { xlsxResponse } from "@/lib/exports/download";
 import { ExportError, handleExport, requireExportRole } from "../_lib/guard";
+import { recordExport } from "@/lib/exports/record";
 
 export const dynamic = "force-dynamic";
 
@@ -54,7 +55,7 @@ function totalSheet(total: (string | number | null | undefined)[]): XlsxSheet {
 }
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company } = await requireExportRole(STAFF_ROLES);
+  const { supabase, company, profile } = await requireExportRole(STAFF_ROLES);
   const year = yearParam(req);
   const { from, to } = yearRange(year);
 
@@ -62,5 +63,6 @@ export const GET = handleExport(async (req: NextRequest) => {
   const monthRows = toReportRows(pl, year);
 
   const trend = sheetFromRows("月次推移", [[...REPORT_CSV_HEADERS], ...monthRows.map(reportToCsvRow)], { types: TYPES });
+  await recordExport({ profileId: profile.id, kind: "report", label: "年次レポート Excel", req });
   return xlsxResponse(`年次レポート_${year}.xlsx`, buildXlsx([trend, totalSheet(reportTotalCsvRow(monthRows))]));
 });

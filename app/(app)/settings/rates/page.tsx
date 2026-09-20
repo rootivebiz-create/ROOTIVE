@@ -8,6 +8,8 @@ import { PageHeader } from "@/components/ui/page-header";
 import { buttonVariants } from "@/components/ui/button";
 import { RatesEditor } from "@/components/settings/rates/rates-editor";
 import { toRateMasters } from "@/components/settings/rates/helpers";
+import { checkApprovalRequired } from "@/lib/executive/queries";
+import { RequestApprovalDialog } from "@/components/approvals/request-approval-dialog";
 
 export const metadata = { title: "ドライバー別単価" };
 
@@ -27,6 +29,10 @@ export default async function RatesSettingsPage({ searchParams }: { searchParams
   const [masters, closed] = await Promise.all([loadMasters(supabase, company.id), isMonthClosed(supabase, company.id, month)]);
   const diffs = await loadRateDiffs(supabase, month, { closed });
 
+  // 単価の変更に代表の決裁が要るか（しきい値は DB の approval_rules）。申請できるのは admin 以上
+  const editable = canEdit(profile.role);
+  const approval = editable ? await checkApprovalRequired(supabase, "rate_change", null) : null;
+
   return (
     <div>
       <PageHeader
@@ -43,6 +49,17 @@ export default async function RatesSettingsPage({ searchParams }: { searchParams
           </>
         }
       />
+      {approval && (
+        <RequestApprovalDialog
+          className="mb-4"
+          kind="rate_change"
+          notice={{ required: approval.required, label: approval.label, dueOn: approval.due_on }}
+          description="単価を変えるときは、先に代表へ申請してください。代表の承認後にこの画面で変更して保存できます。"
+          defaultTitle="ドライバー別単価の変更"
+          refTable="driver_pay_overrides"
+          href={`/settings/rates?m=${month}`}
+        />
+      )}
       <RatesEditor
         masters={toRateMasters(masters)}
         month={month}

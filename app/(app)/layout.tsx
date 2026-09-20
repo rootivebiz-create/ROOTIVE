@@ -2,11 +2,12 @@ import { AppShell } from "@/components/layout/app-shell";
 import type { CommandItem } from "@/components/layout/command-palette";
 import { requireStaff } from "@/lib/auth/session";
 import { loadChatUnreadTotal, loadMonthList } from "@/lib/db/queries";
+import { loadPendingApprovalCount } from "@/lib/executive/queries";
 import { dateToMonth, formatMonthJa } from "@/lib/month";
-import type { Role } from "@/lib/db/types";
+import { visibleForRole, type RoleVisibility } from "@/lib/nav/visibility";
 
 /** 設定のサブナビ（サイドナビ・スマホのメニューシート・コマンドパレットで共用） */
-const SETTINGS_SUBNAV: { href: string; label: string; keywords?: string[]; ownerOnly?: boolean; adminOnly?: boolean }[] = [
+const SETTINGS_SUBNAV: ({ href: string; label: string; keywords?: string[] } & RoleVisibility)[] = [
   { href: "/settings/drivers", label: "ドライバー", keywords: ["driver", "どらいばー", "運転手"] },
   { href: "/settings/projects", label: "案件・単価", keywords: ["project", "あんけん", "たんか", "単価"] },
   { href: "/settings/rates", label: "ドライバー別単価", keywords: ["rate", "たんか", "個別単価"] },
@@ -22,8 +23,15 @@ const SETTINGS_SUBNAV: { href: string; label: string; keywords?: string[]; owner
   { href: "/settings/account", label: "アカウント", keywords: ["account", "あかうんと", "ぱすわーど"] },
 ];
 
-/** コマンドパレットの「画面」候補（サイドナビと同じ項目 ＋ 一覧に出さない画面） */
-const MAIN_PAGES: { href: string; label: string; keywords: string[] }[] = [
+/** コマンドパレットの「画面」候補（サイドナビと同じ項目 ＋ 一覧に出さない画面。出し分けは visibleForRole） */
+const MAIN_PAGES: ({ href: string; label: string; keywords: string[] } & RoleVisibility)[] = [
+  { href: "/executive", label: "代表", keywords: ["executive", "だいひょう", "代表", "経営", "owner", "オーナー"], ownerOnly: true },
+  { href: "/executive/approvals", label: "決裁（承認）", keywords: ["approval", "けっさい", "決裁", "承認", "申請", "稟議"], ownerOnly: true },
+  { href: "/executive/decisions", label: "意思決定ログ", keywords: ["decision", "いしけってい", "意思決定", "判断", "振り返り", "見直し"], ownerOnly: true },
+  { href: "/executive/company", label: "会社の台帳（登記・役員・株主・保険）", keywords: ["company", "とうき", "登記", "やくいん", "役員", "かぶぬし", "株主", "ほけん", "保険", "顧問", "保証"], ownerOnly: true },
+  { href: "/executive/plan", label: "中期計画", keywords: ["plan", "ちゅうきけいかく", "中期", "計画", "3 か年", "目標"], ownerOnly: true },
+  { href: "/executive/rules", label: "決裁のルールと委任", keywords: ["rule", "delegation", "るーる", "ルール", "いにん", "委任", "代理", "しきい値"], ownerOnly: true },
+  { href: "/executive/security", label: "ログインと持ち出しの記録", keywords: ["security", "login", "ろぐいん", "ログイン", "もちだし", "持ち出し", "出力", "きろく", "記録"], ownerOnly: true },
   { href: "/dashboard", label: "ホーム", keywords: ["home", "dashboard", "ほーむ", "だっしゅぼーど", "売上", "利益"] },
   { href: "/entries", label: "稼働", keywords: ["entries", "work", "かどう", "稼働入力"] },
   { href: "/daily", label: "日報・点呼", keywords: ["daily", "にっぽう", "てんこ", "点呼", "アルコール", "業務記録", "承認"] },
@@ -52,9 +60,6 @@ const MAIN_PAGES: { href: string; label: string; keywords: string[] }[] = [
   { href: "/settings", label: "設定", keywords: ["settings", "せってい", "マスタ"] },
 ];
 
-const visibleForRole = (role: Role, s: { ownerOnly?: boolean; adminOnly?: boolean }) =>
-  s.ownerOnly ? role === "owner" : s.adminOnly ? role !== "viewer" : true;
-
 export const dynamic = "force-dynamic";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -71,7 +76,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     supabase.from("alerts").select("id", { count: "exact", head: true }).eq("company_id", company.id).eq("status", "open"),
   ]);
 
-  const settingsItems = SETTINGS_SUBNAV.filter((s) => visibleForRole(role, s));
+  const settingsItems = visibleForRole(SETTINGS_SUBNAV, role);
   const subItems = settingsItems.map(({ href, label }) => ({ href, label }));
 
   const monthOptions = months.map((m) => ({
@@ -87,7 +92,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const clients = [...(clientsRes.error ? [] : (clientsRes.data ?? []))].sort(byName);
 
   const commandItems: CommandItem[] = [
-    ...MAIN_PAGES.map((p) => ({ id: `page:${p.href}`, group: "page" as const, label: p.label, href: p.href, keywords: p.keywords, hint: "画面" })),
+    ...visibleForRole(MAIN_PAGES, role).map((p) => ({ id: `page:${p.href}`, group: "page" as const, label: p.label, href: p.href, keywords: p.keywords, hint: "画面" })),
     ...settingsItems.map((s) => ({
       id: `page:${s.href}`,
       group: "page" as const,
@@ -144,10 +149,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       })),
   ];
 
+  // 決裁待ちの件数は代表だけ（ナビの「代表」とヘッダーのベルで使う。0019・0020 未適用の環境では 0）
+  const pendingApprovals = role === "owner" ? await loadPendingApprovalCount(supabase, company.id).catch(() => 0) : 0;
+
   // ナビのバッジ（0011 未適用の環境でも壊さないようエラーは 0 として扱う）
   const badges: Record<string, number> = {
     "/chat": unread,
     "/alerts": alertsRes.error ? 0 : (alertsRes.count ?? 0),
+    "/executive": pendingApprovals,
   };
 
   return (

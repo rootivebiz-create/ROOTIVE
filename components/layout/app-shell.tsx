@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import { BottomTabs, SideNav, type NavBadges, type NavVariant } from "./nav";
+import { BottomTabs, NotificationBell, SideNav, type NavBadges, type NavVariant } from "./nav";
 import { CommandPalette, type CommandItem } from "./command-palette";
 import { MonthSelector, type MonthOption } from "./month-selector";
 import { UserMenu } from "./user-menu";
@@ -50,6 +50,11 @@ export function AppShell({
             </Suspense>
           )}
           <div className="flex items-center gap-1">
+            {badges && (
+              <Suspense fallback={<div className="h-11 w-11" />}>
+                <NotificationBell badges={badges} role={role} />
+              </Suspense>
+            )}
             {commandItems && commandItems.length > 0 && (
               <Suspense fallback={<div className="h-9 w-9" />}>
                 <CommandPalette items={commandItems} />
@@ -61,14 +66,14 @@ export function AppShell({
       </header>
       <div className="flex flex-1">
         <Suspense fallback={<div className="hidden w-56 md:block" />}>
-          <SideNav variant={navVariant} sub={subNav} badges={badges} />
+          <SideNav variant={navVariant} sub={subNav} badges={badges} role={role} />
         </Suspense>
         <main className="min-w-0 flex-1 px-4 pb-24 pt-4 md:px-6 md:pb-8">
           <div className="mx-auto w-full max-w-6xl">{children}</div>
         </main>
       </div>
       <Suspense fallback={null}>
-        <BottomTabs variant={navVariant} sub={subNav} badges={badges} />
+        <BottomTabs variant={navVariant} sub={subNav} badges={badges} role={role} />
       </Suspense>
     </div>
   );

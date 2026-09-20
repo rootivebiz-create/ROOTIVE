@@ -25,6 +25,7 @@ import { toProjectRow } from "@/components/projects/helpers";
 import { buildZenginBytes, missingBankFields, pickTransferDate, toTransferTarget, transferRows, type TransferTarget } from "@/lib/exports/zengin";
 import { buildZip, type ZipEntry } from "@/lib/exports/zip";
 import { binaryResponse } from "@/lib/exports/download";
+import { recordExport } from "@/lib/exports/record";
 import {
   isEmptyParts,
   monthPackEntries,
@@ -159,6 +160,7 @@ export const GET = handleExport(async (req: NextRequest) => {
   });
   zipEntries.push({ name: readme.name, data: encoder.encode(readmeText), mtime });
 
+  await recordExport({ profileId: profile.id, kind: "month-pack", label: "月次パック ZIP", month, rows: zipEntries.length, req });
   return binaryResponse(monthPackFilename(month), buildZip(zipEntries, { now: mtime }), "application/zip");
 
   // -------------------------------------------------------------------------

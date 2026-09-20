@@ -9,11 +9,12 @@ import { toProjectsCsv } from "@/lib/exports/projects-csv";
 import { csvResponse } from "@/lib/exports/download";
 import { toProjectRow } from "@/components/projects/helpers";
 import { fetchAllRows, handleExport, monthParam, requireExportRole } from "../_lib/guard";
+import { recordExport } from "@/lib/exports/record";
 
 export const dynamic = "force-dynamic";
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company } = await requireExportRole(STAFF_ROLES);
+  const { supabase, company, profile } = await requireExportRole(STAFF_ROLES);
   const month = monthParam(req, { allowAll: true });
 
   const rows = await fetchAllRows((from, to) => {
@@ -22,5 +23,6 @@ export const GET = handleExport(async (req: NextRequest) => {
     return filtered.order("month").order("project_sort_order").order("project_name").range(from, to);
   });
 
+  await recordExport({ profileId: profile.id, kind: "other", label: "案件別採算 CSV", month, rows: rows.length, req });
   return csvResponse(`案件別採算_${monthFileLabel(month)}.csv`, toProjectsCsv(rows.map(toProjectRow)));
 });

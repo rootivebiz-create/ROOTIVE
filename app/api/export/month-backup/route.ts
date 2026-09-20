@@ -7,11 +7,12 @@ import { ADMIN_ROLES } from "@/lib/auth/session";
 import { createAdminClient, hasServiceRoleKey } from "@/lib/supabase/admin";
 import { monthToDate } from "@/lib/month";
 import { ExportError, handleExport, monthParam, requireExportRole } from "../_lib/guard";
+import { recordExport } from "@/lib/exports/record";
 
 export const dynamic = "force-dynamic";
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company } = await requireExportRole(ADMIN_ROLES);
+  const { supabase, company, profile } = await requireExportRole(ADMIN_ROLES);
   const month = monthParam(req);
 
   const { data: closing, error } = await supabase.from("month_closings").select("backup_path, status").eq("company_id", company.id).eq("month", monthToDate(month)).maybeSingle();
@@ -28,5 +29,6 @@ export const GET = handleExport(async (req: NextRequest) => {
   const { data: signed, error: signErr } = await storage.from("backups").createSignedUrl(path, 60);
   if (signErr || !signed?.signedUrl) throw new ExportError(500, `バックアップのダウンロード URL を作成できませんでした: ${signErr?.message ?? "unknown"}`);
 
+  await recordExport({ profileId: profile.id, kind: "backup", label: "締め時バックアップ", month, req });
   return NextResponse.redirect(signed.signedUrl, { status: 302, headers: { "Cache-Control": "private, no-store" } });
 });

@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { absoluteUrlFromRequest } from "@/lib/request-url";
+import { recordLoginEvent } from "@/lib/auth/login-events";
 
 /**
  * next パラメータの検証：サイト内の絶対パス、または同一ホストの絶対 URL（メールテンプレートの {{ .RedirectTo }}）のみ許可する。
@@ -40,6 +41,8 @@ export async function GET(request: NextRequest) {
         if (profile?.role === "driver" && !next.startsWith("/driver")) {
           next = next.startsWith("/settings/account") ? "/driver/account" : "/driver";
         }
+        // ログイン（招待メールからのときは「招待の受諾」）の記録（0019）。失敗してもログインは止めない
+        await recordLoginEvent(user.id, type === "invite" ? "invite" : "login", request);
       }
       return NextResponse.redirect(absoluteUrlFromRequest(request, next));
     }

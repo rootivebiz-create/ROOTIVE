@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { absoluteUrlFromRequest } from "@/lib/request-url";
+import { recordLoginEvent } from "@/lib/auth/login-events";
 
 /** ログアウト（POST のみ）。他サイトからの自動送信（CSRF）を防ぐため Origin / Referer が自サイトであることを確認する */
 export async function POST(request: NextRequest) {
@@ -12,6 +13,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
   const supabase = await createClient();
+  // ログアウトの記録（0019）。サインアウトすると誰だったか分からなくなるので、先に記録する
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  await recordLoginEvent(user?.id, "logout", request);
   await supabase.auth.signOut();
   return NextResponse.redirect(absoluteUrlFromRequest(request, "/login"), { status: 303 });
 }

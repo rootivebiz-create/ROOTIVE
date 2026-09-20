@@ -10,6 +10,7 @@ import { toDriversPlCsvRows } from "@/lib/exports/drivers-pl-csv";
 import { buildXlsx, sheetFromRows, type XlsxCellType } from "@/lib/exports/xlsx";
 import { xlsxResponse } from "@/lib/exports/download";
 import { fetchAllRows, handleExport, monthParam, requireExportRole } from "../_lib/guard";
+import { recordExport } from "@/lib/exports/record";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +33,7 @@ const TYPES: XlsxCellType[] = [
 ];
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company } = await requireExportRole(STAFF_ROLES);
+  const { supabase, company, profile } = await requireExportRole(STAFF_ROLES);
   const month = monthParam(req);
   const includeInactive = req.nextUrl.searchParams.get("inactive") === "1";
 
@@ -54,5 +55,6 @@ export const GET = handleExport(async (req: NextRequest) => {
 
   const rows = visibleDriverPlRows(buildDriverPlRows(summaries, entries), { includeInactive });
   const sheet = sheetFromRows("ドライバー別採算", toDriversPlCsvRows(rows), { types: TYPES, boldLastRow: true });
+  await recordExport({ profileId: profile.id, kind: "other", label: "ドライバー別採算 Excel", month, rows: rows.length, req });
   return xlsxResponse(`ドライバー別採算_${month}.xlsx`, buildXlsx([sheet]));
 });

@@ -1,6 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { filterCommands, normalizeText, COMMAND_GROUP_ORDER, type CommandItem } from "@/components/layout/command-palette";
-import { BOTTOM_NAV, BOTTOM_NAV_HREFS, BOTTOM_TABS_MAX, DRIVER_NAV, MAIN_NAV, MORE_NAV, badgeText, bottomItemsFor, navItemsFor } from "@/components/layout/nav";
+import {
+  BOTTOM_NAV,
+  BOTTOM_NAV_HREFS,
+  BOTTOM_TABS_MAX,
+  DRIVER_NAV,
+  MAIN_NAV,
+  MORE_NAV,
+  badgeText,
+  bottomItemsFor,
+  moreItemsFor,
+  navItemsFor,
+  notificationRows,
+} from "@/components/layout/nav";
+import { NAV_ADMIN_ROLES, isVisibleForRole, visibleForRole } from "@/lib/nav/visibility";
 
 const item = (id: string, label: string, extra: Partial<CommandItem> = {}): CommandItem => ({ id, group: "page", label, ...extra });
 
@@ -81,23 +94,29 @@ describe("コマンドパレットの検索（filterCommands）", () => {
 });
 
 describe("ナビの定義", () => {
-  it("PC のサイドナビは 20 項目（入力・経営・管理・相談のまとまり ＋ ホームと設定）", () => {
-    expect(MAIN_NAV).toHaveLength(20);
+  it("PC のサイドナビは 21 項目（代表 ＋ 入力・経営・管理・相談のまとまり ＋ ホームと設定）", () => {
+    expect(MAIN_NAV).toHaveLength(21);
     expect(MAIN_NAV.map((i) => i.href)).toEqual([
-      "/dashboard", "/entries", "/daily", "/intake", "/payouts", "/invoices", "/expenses", "/bank",
+      "/executive", "/dashboard", "/entries", "/daily", "/intake", "/payouts", "/invoices", "/expenses", "/bank",
       "/cashflow", "/projects", "/finance", "/reports", "/alerts", "/fleet", "/hr", "/records", "/exports", "/ai", "/chat", "/settings",
     ]);
     expect(MAIN_NAV.map((i) => i.label)).toEqual([
-      "ホーム", "稼働", "日報・点呼", "取り込み", "支払", "請求", "経費", "入金",
+      "代表", "ホーム", "稼働", "日報・点呼", "取り込み", "支払", "請求", "経費", "入金",
       "資金繰り", "案件", "財務", "レポート", "気になること", "車両と書類", "採用と契約", "書類の検索", "出力", "AI 相談", "チャット", "設定",
     ]);
   });
 
-  it("見出し（group）は 入力・経営・管理・相談 の 4 つで、ホームと設定には付かない", () => {
+  it("代表だけ ownerOnly で、ほかの項目には付かない", () => {
+    expect(MAIN_NAV.filter((i) => i.ownerOnly).map((i) => i.href)).toEqual(["/executive"]);
+    expect(DRIVER_NAV.some((i) => i.ownerOnly)).toBe(false);
+  });
+
+  it("見出し（group）は 代表・入力・経営・管理・相談 の 5 つで、ホームと設定には付かない", () => {
     const groups = MAIN_NAV.map((i) => i.group);
-    expect(groups[0]).toBeUndefined();
+    expect(groups[0]).toBe("代表");
+    expect(groups[1]).toBeUndefined(); // ホーム
     expect(groups[groups.length - 1]).toBeUndefined();
-    expect([...new Set(groups.filter(Boolean))]).toEqual(["入力", "経営", "管理", "相談"]);
+    expect([...new Set(groups.filter(Boolean))]).toEqual(["代表", "入力", "経営", "管理", "相談"]);
     // 同じ見出しは連続していること（サイドナビが見出しを 1 回だけ出すため）
     const seen: string[] = [];
     for (const g of groups) {
@@ -120,9 +139,9 @@ describe("ナビの定義", () => {
     expect(BOTTOM_NAV.map((i) => i.label)).toEqual(["ホーム", "稼働", "支払", "請求"]);
   });
 
-  it("メニューシートには下タブに入らない 16 項目が入り、合計はサイドナビと一致する", () => {
+  it("メニューシートには下タブに入らない 17 項目が入り、合計はサイドナビと一致する", () => {
     expect(MORE_NAV.map((i) => i.href)).toEqual([
-      "/daily", "/intake", "/expenses", "/bank", "/cashflow", "/projects", "/finance", "/reports", "/alerts",
+      "/executive", "/daily", "/intake", "/expenses", "/bank", "/cashflow", "/projects", "/finance", "/reports", "/alerts",
       "/fleet", "/hr", "/records", "/exports", "/ai", "/chat", "/settings",
     ]);
     expect(BOTTOM_NAV.length + MORE_NAV.length).toBe(MAIN_NAV.length);
@@ -145,9 +164,90 @@ describe("ナビの定義", () => {
     expect(navItemsFor("staff")).toEqual(MAIN_NAV);
     expect(navItemsFor(undefined)).toEqual(MAIN_NAV);
     expect(bottomItemsFor(undefined)).toEqual(BOTTOM_NAV);
+    expect(navItemsFor("driver", "driver")).toEqual(DRIVER_NAV);
+    expect(bottomItemsFor("driver", "driver")).toEqual(DRIVER_NAV);
+  });
+
+  it("「代表」はオーナーのときだけナビに出る（下タブは今までどおり 4 項目）", () => {
+    expect(navItemsFor("staff", "owner").map((i) => i.href)).toEqual(MAIN_NAV.map((i) => i.href));
+    for (const role of ["admin", "viewer", "driver"] as const) {
+      expect(navItemsFor("staff", role).map((i) => i.href)).not.toContain("/executive");
+      expect(navItemsFor("staff", role)).toHaveLength(MAIN_NAV.length - 1);
+      expect(moreItemsFor(role).map((i) => i.href)).not.toContain("/executive");
+    }
+    expect(moreItemsFor("owner").map((i) => i.href)).toEqual(MORE_NAV.map((i) => i.href));
+    expect(moreItemsFor()).toEqual(MORE_NAV);
+    // 下タブ（ホーム・稼働・支払・請求）はロールで変わらない
+    for (const role of ["owner", "admin", "viewer"] as const) {
+      expect(bottomItemsFor("staff", role).map((i) => i.href)).toEqual(BOTTOM_NAV_HREFS);
+    }
   });
 
   it("コマンドパレットのグループはすべて定義されている", () => {
     expect(COMMAND_GROUP_ORDER).toEqual(["page", "driver", "project", "client", "month"]);
+  });
+});
+
+describe("ロールごとの出し分け（visibleForRole）", () => {
+  const ITEMS = [
+    { href: "/settings/drivers", label: "ドライバー" },
+    { href: "/settings/safety", label: "安全管理", adminOnly: true },
+    { href: "/settings/company", label: "会社設定", ownerOnly: true },
+  ];
+
+  it("role を省略すると今までどおり全部返す", () => {
+    expect(visibleForRole(ITEMS)).toEqual(ITEMS);
+    expect(visibleForRole(ITEMS, undefined).map((i) => i.href)).toEqual(ITEMS.map((i) => i.href));
+  });
+
+  it("owner はすべて、admin は ownerOnly 以外、viewer は制限の無いものだけ", () => {
+    expect(visibleForRole(ITEMS, "owner").map((i) => i.label)).toEqual(["ドライバー", "安全管理", "会社設定"]);
+    expect(visibleForRole(ITEMS, "admin").map((i) => i.label)).toEqual(["ドライバー", "安全管理"]);
+    expect(visibleForRole(ITEMS, "viewer").map((i) => i.label)).toEqual(["ドライバー"]);
+  });
+
+  it("driver は adminOnly を通さない（以前の role !== \"viewer\" では通っていた）", () => {
+    expect(visibleForRole(ITEMS, "driver").map((i) => i.label)).toEqual(["ドライバー"]);
+    expect(isVisibleForRole({ adminOnly: true }, "driver")).toBe(false);
+    expect(isVisibleForRole({ adminOnly: true }, "viewer")).toBe(false);
+    expect(isVisibleForRole({ adminOnly: true }, "admin")).toBe(true);
+    expect(isVisibleForRole({ adminOnly: true }, "owner")).toBe(true);
+    expect(NAV_ADMIN_ROLES).toEqual(["owner", "admin"]);
+  });
+
+  it("ownerOnly と adminOnly が両方付いていたら owner だけ", () => {
+    const item = { ownerOnly: true, adminOnly: true };
+    expect(isVisibleForRole(item, "owner")).toBe(true);
+    expect(isVisibleForRole(item, "admin")).toBe(false);
+  });
+
+  it("元の配列と順番を壊さない", () => {
+    const before = ITEMS.map((i) => i.href);
+    visibleForRole(ITEMS, "viewer");
+    expect(ITEMS.map((i) => i.href)).toEqual(before);
+    expect(visibleForRole(ITEMS, "owner")).not.toBe(ITEMS);
+  });
+});
+
+describe("ヘッダーのベルの行（notificationRows）", () => {
+  it("0 件の行は出さない", () => {
+    expect(notificationRows({ "/alerts": 0, "/chat": 0 }, "owner")).toEqual([]);
+    expect(notificationRows(undefined, "admin")).toEqual([]);
+    expect(notificationRows({}, "viewer")).toEqual([]);
+  });
+
+  it("気になること・未読のチャットを件数つきで出す", () => {
+    expect(notificationRows({ "/alerts": 3, "/chat": 2 }, "admin")).toEqual([
+      { href: "/alerts", label: "気になること", count: 3 },
+      { href: "/chat", label: "未読のチャット", count: 2 },
+    ]);
+    expect(notificationRows({ "/chat": 1 }, "viewer")).toEqual([{ href: "/chat", label: "未読のチャット", count: 1 }]);
+  });
+
+  it("「決裁待ち」は代表のときだけ（件数は /executive のバッジ、行き先は決裁の一覧）", () => {
+    expect(notificationRows({ "/executive": 2 }, "owner")).toEqual([{ href: "/executive/approvals", label: "決裁待ち", count: 2 }]);
+    expect(notificationRows({ "/executive": 2 }, "admin")).toEqual([]);
+    expect(notificationRows({ "/executive": 2 })).toEqual([]);
+    expect(notificationRows({ "/alerts": 1, "/chat": 1, "/executive": 1 }, "owner").map((r) => r.href)).toEqual(["/alerts", "/chat", "/executive/approvals"]);
   });
 });

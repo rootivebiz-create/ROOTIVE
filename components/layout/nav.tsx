@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import * as Popover from "@radix-ui/react-popover";
 import {
   Home,
   ClipboardList,
@@ -26,9 +28,13 @@ import {
   FileText,
   UserCircle,
   Menu,
+  Bell,
+  Crown,
   type LucideIcon,
 } from "lucide-react";
 import { useMonth } from "@/lib/hooks/use-month";
+import { visibleForRole } from "@/lib/nav/visibility";
+import type { Role } from "@/lib/db/types";
 import { cn } from "@/lib/utils";
 import { MoreMenu } from "./more-menu";
 
@@ -38,13 +44,16 @@ export interface NavItem {
   icon: LucideIcon;
   /** PC のサイドナビの見出し（同じ見出しが続く項目はひとまとまりに表示する） */
   group?: string;
+  /** 代表（owner）だけに出す（画面側は requirePageRole(["owner"]) でも閉じる） */
+  ownerOnly?: boolean;
 }
 
 /** 未読・未対応の件数（href をキーにした数。0 は出さない） */
 export type NavBadges = Record<string, number>;
 
-/** PC のサイドナビ（20 項目。group ごとに見出しを付けて表示する） */
+/** PC のサイドナビ（21 項目。group ごとに見出しを付けて表示する。「代表」は owner だけ） */
 export const MAIN_NAV: NavItem[] = [
+  { href: "/executive", label: "代表", icon: Crown, group: "代表", ownerOnly: true },
   { href: "/dashboard", label: "ホーム", icon: Home },
   { href: "/entries", label: "稼働", icon: ClipboardList, group: "入力" },
   { href: "/daily", label: "日報・点呼", icon: ClipboardCheck, group: "入力" },
@@ -91,14 +100,22 @@ export const DRIVER_NAV: NavItem[] = [
 
 export type NavVariant = "staff" | "driver";
 
-/** Server Component からは関数（アイコン）を渡せないため、種別の文字列で選ぶ */
-export function navItemsFor(variant: NavVariant | undefined): NavItem[] {
-  return variant === "driver" ? DRIVER_NAV : MAIN_NAV;
+/**
+ * Server Component からは関数（アイコン）を渡せないため、種別の文字列で選ぶ。
+ * role を渡すと ownerOnly の項目を出し分ける（省略したときは今までどおり全部返す）
+ */
+export function navItemsFor(variant: NavVariant | undefined, role?: Role): NavItem[] {
+  return visibleForRole(variant === "driver" ? DRIVER_NAV : MAIN_NAV, role);
 }
 
 /** スマホの下タブに出すリンク（ドライバーはメニュー無しで全項目） */
-export function bottomItemsFor(variant: NavVariant | undefined): NavItem[] {
-  return variant === "driver" ? DRIVER_NAV : BOTTOM_NAV;
+export function bottomItemsFor(variant: NavVariant | undefined, role?: Role): NavItem[] {
+  return visibleForRole(variant === "driver" ? DRIVER_NAV : BOTTOM_NAV, role);
+}
+
+/** スマホの「メニュー」シートに出す項目（下タブに入らない残り。代表はここに入る） */
+export function moreItemsFor(role?: Role): NavItem[] {
+  return visibleForRole(MORE_NAV, role);
 }
 
 /** 未読・未対応の件数バッジ（99 を超えたら 99+） */
@@ -132,19 +149,22 @@ export function BottomTabs({
   variant,
   sub,
   badges,
+  role,
 }: {
   variant?: NavVariant;
   sub?: { parent: string; items: { href: string; label: string }[] };
   badges?: NavBadges;
+  role?: Role;
 }) {
   const isDriver = variant === "driver";
-  const all = navItemsFor(variant);
-  const items = bottomItemsFor(variant);
+  const all = navItemsFor(variant, role);
+  const items = bottomItemsFor(variant, role);
+  const more = isDriver ? [] : moreItemsFor(role);
   const pathname = usePathname();
   const { href } = useMonth();
   const columns = items.length + (isDriver ? 0 : 1);
-  const moreActive = !isDriver && MORE_NAV.some((i) => isActive(pathname, i.href, all));
-  const moreCount = isDriver ? 0 : MORE_NAV.reduce((sum, i) => sum + (badges?.[i.href] ?? 0), 0);
+  const moreActive = more.some((i) => isActive(pathname, i.href, all));
+  const moreCount = more.reduce((sum, i) => sum + (badges?.[i.href] ?? 0), 0);
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t bg-card/95 backdrop-blur md:hidden pb-safe no-print" aria-label="メインナビゲーション">
       <ul className="grid" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
@@ -166,7 +186,7 @@ export function BottomTabs({
         })}
         {!isDriver && (
           <li>
-            <MoreMenu items={MORE_NAV} sub={sub} active={moreActive} badges={badges} count={moreCount} />
+            <MoreMenu items={more} sub={sub} active={moreActive} badges={badges} count={moreCount} />
           </li>
         )}
       </ul>
@@ -179,12 +199,14 @@ export function SideNav({
   variant,
   sub,
   badges,
+  role,
 }: {
   variant?: NavVariant;
   sub?: { parent: string; items: { href: string; label: string }[] };
   badges?: NavBadges;
+  role?: Role;
 }) {
-  const items = navItemsFor(variant);
+  const items = navItemsFor(variant, role);
   const pathname = usePathname();
   const { href } = useMonth();
   return (
@@ -222,5 +244,71 @@ export function SideNav({
         );
       })}
     </nav>
+  );
+}
+
+/** ヘッダーのベルに出す 1 行 */
+export interface NotificationRow {
+  href: string;
+  label: string;
+  count: number;
+}
+
+/**
+ * ベルにまとめて出す未対応の件数（純関数）。
+ * 材料はナビのバッジ（href をキーにした件数）だけで、新しい問い合わせはしない。
+ * 「決裁待ち」は代表のときだけ（件数は /executive のバッジとして渡ってくる）。0 件の行は出さない。
+ */
+export function notificationRows(badges: NavBadges | undefined, role?: Role): NotificationRow[] {
+  const rows: NotificationRow[] = [
+    { href: "/alerts", label: "気になること", count: badges?.["/alerts"] ?? 0 },
+    { href: "/chat", label: "未読のチャット", count: badges?.["/chat"] ?? 0 },
+  ];
+  if (role === "owner") rows.push({ href: "/executive/approvals", label: "決裁待ち", count: badges?.["/executive"] ?? 0 });
+  return rows.filter((r) => r.count > 0);
+}
+
+/** ヘッダーのベル（未対応の件数をまとめて出す。スマホでも押せるよう 44px 角） */
+export function NotificationBell({ badges, role }: { badges?: NavBadges; role?: Role }) {
+  const [open, setOpen] = useState(false);
+  const { href } = useMonth();
+  const rows = notificationRows(badges, role);
+  const total = rows.reduce((sum, r) => sum + r.count, 0);
+  return (
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger asChild>
+        <button
+          type="button"
+          aria-label={total > 0 ? `お知らせ ${badgeText(total)} 件` : "お知らせ"}
+          className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted no-print"
+        >
+          <Bell className="h-5 w-5" />
+          <NavBadge count={total} className="absolute right-1 top-1.5" />
+        </button>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content align="end" sideOffset={6} className="z-50 w-64 rounded-md border bg-card p-1 shadow-lg no-print">
+          <p className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">お知らせ</p>
+          {rows.length === 0 ? (
+            <p className="px-2 pb-3 pt-1 text-sm text-muted-foreground">いまは何もありません</p>
+          ) : (
+            <ul>
+              {rows.map((row) => (
+                <li key={row.href}>
+                  <Link
+                    href={href(row.href)}
+                    onClick={() => setOpen(false)}
+                    className="flex min-h-11 items-center justify-between gap-2 rounded px-2 py-2 text-sm hover:bg-muted"
+                  >
+                    <span className="truncate">{row.label}</span>
+                    <NavBadge count={row.count} />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }

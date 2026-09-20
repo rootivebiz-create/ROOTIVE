@@ -20,6 +20,7 @@ import {
 import { buildXlsx, sheetFromRows, xlsxFilename, type XlsxCellType } from "@/lib/exports/xlsx";
 import { xlsxResponse } from "@/lib/exports/download";
 import { fetchAllRows, handleExport, monthParam, requireExportRole } from "../_lib/guard";
+import { recordExport } from "@/lib/exports/record";
 
 export const dynamic = "force-dynamic";
 
@@ -64,7 +65,7 @@ async function loadStaffNames(supabase: ServerSupabase): Promise<Map<string, str
 }
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company } = await requireExportRole(STAFF_ROLES);
+  const { supabase, company, profile } = await requireExportRole(STAFF_ROLES);
   const month = monthParam(req, { allowAll: true });
   const kind = dailyCsvKindFromParam(req.nextUrl.searchParams.get("kind"));
   const monthDate = month === "all" ? null : monthToDate(month);
@@ -85,6 +86,7 @@ export const GET = handleExport(async (req: NextRequest) => {
       approved_by_name: e.approved_by ? (staff.get(e.approved_by) ?? "") : "",
     }));
     const sheet = sheetFromRows("日別の稼働", dayEntriesCsvRows(sheetRows), { types: ENTRY_TYPES });
+    await recordExport({ profileId: profile.id, kind: "other", label: "日別の稼働 Excel", month, rows: sheetRows.length, req });
     return xlsxResponse(filename, buildXlsx([sheet]));
   }
 
@@ -120,5 +122,6 @@ export const GET = handleExport(async (req: NextRequest) => {
   });
 
   const sheet = sheetFromRows("点呼記録簿", dailyReportsCsvRows(sheetRows), { types: REPORT_TYPES });
+  await recordExport({ profileId: profile.id, kind: "other", label: "点呼記録簿 Excel", month, rows: sheetRows.length, req });
   return xlsxResponse(filename, buildXlsx([sheet]));
 });

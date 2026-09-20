@@ -7,10 +7,15 @@ import { statementToCsv } from "@/lib/exports/statement-csv";
 import { csvResponse, safeFilePart } from "@/lib/exports/download";
 import { handleExport } from "../_lib/guard";
 import { loadStatementForExport } from "../_lib/statement";
+import { getSessionContext } from "@/lib/auth/session";
+import { recordExport } from "@/lib/exports/record";
 
 export const dynamic = "force-dynamic";
 
 export const GET = handleExport(async (req: NextRequest) => {
   const { data, showRoyaltyRate } = await loadStatementForExport(req);
+  // 持ち出しの記録（0020）。getSessionContext は同一リクエスト内でキャッシュされる
+  const ctx = await getSessionContext();
+  await recordExport({ profileId: ctx?.profile.id, kind: "statement", label: "支払明細 CSV", month: data.month, rows: 1, req });
   return csvResponse(`支払明細_${data.month}_${safeFilePart(data.driverName)}.csv`, statementToCsv(data, { showRoyaltyRate }));
 });

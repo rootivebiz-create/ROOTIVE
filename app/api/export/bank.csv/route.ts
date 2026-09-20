@@ -8,11 +8,12 @@ import { bankCsv, bankCsvFilename } from "@/lib/exports/bank-csv";
 import { bankStatusFromParam } from "@/lib/schemas/bank";
 import { csvResponse } from "@/lib/exports/download";
 import { fetchAllRows, handleExport, requireExportRole } from "../_lib/guard";
+import { recordExport } from "@/lib/exports/record";
 
 export const dynamic = "force-dynamic";
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company } = await requireExportRole(STAFF_ROLES);
+  const { supabase, company, profile } = await requireExportRole(STAFF_ROLES);
   const status = bankStatusFromParam(req.nextUrl.searchParams.get("status") ?? undefined);
 
   const rows = await fetchAllRows((from, to) => {
@@ -21,5 +22,6 @@ export const GET = handleExport(async (req: NextRequest) => {
     return filtered.order("txn_date", { ascending: false }).order("created_at", { ascending: false }).range(from, to);
   });
 
+  await recordExport({ profileId: profile.id, kind: "other", label: "銀行明細 CSV", rows: rows.length, req });
   return csvResponse(bankCsvFilename(status), bankCsv(rows));
 });

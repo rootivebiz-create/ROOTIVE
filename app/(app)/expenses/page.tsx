@@ -6,6 +6,8 @@ import type { ExpenseChoices } from "@/components/expenses/expense-dialog";
 import { toCategoryTotal, toExpenseRow } from "@/components/expenses/helpers";
 import { ReceiptUpload } from "@/components/intake/receipt-upload";
 import { isAiInsightsEnabled } from "@/lib/ai/config";
+import { checkApprovalRequired } from "@/lib/executive/queries";
+import { RequestApprovalDialog } from "@/components/approvals/request-approval-dialog";
 
 export const metadata = { title: "経費" };
 
@@ -35,8 +37,23 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
         }
       : null;
 
+  // 代表の決裁が要るか（しきい値は DB の approval_rules。画面に金額を書かない）。
+  // 申請できるのは admin 以上なので、編集できる人にだけ入口を出す
+  const approval = editable ? await checkApprovalRequired(supabase, "expense", null) : null;
+
   return (
     <div className="space-y-4">
+      {approval && (
+        <RequestApprovalDialog
+          kind="expense"
+          notice={{ required: approval.required, label: approval.label, dueOn: approval.due_on }}
+          description="金額の大きい経費は、先に代表へ申請してください。代表の承認後にこの画面から登録できます。"
+          defaultTitle="経費の登録"
+          withAmount
+          refTable="expenses"
+          href={`/expenses?m=${month}`}
+        />
+      )}
       <ExpensesView
         month={month}
         rows={expenses.map(toExpenseRow)}

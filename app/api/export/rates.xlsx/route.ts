@@ -9,16 +9,18 @@ import { ratesCsvFilename, ratesToCsvRows } from "@/lib/exports/rates-csv";
 import { buildXlsx, sheetFromRows, xlsxFilename, type XlsxCellType } from "@/lib/exports/xlsx";
 import { xlsxResponse } from "@/lib/exports/download";
 import { handleExport, requireExportRole } from "../_lib/guard";
+import { recordExport } from "@/lib/exports/record";
 
 export const dynamic = "force-dynamic";
 
 /** RATES_CSV_HEADERS と同じ並びの列の型 */
 const TYPES: XlsxCellType[] = ["text", "text", "text", "text", "money", "money", "money", "text", "text", "money", "money"];
 
-export const GET = handleExport(async (_req: NextRequest) => {
-  const { supabase, company } = await requireExportRole(STAFF_ROLES);
+export const GET = handleExport(async (req: NextRequest) => {
+  const { supabase, company, profile } = await requireExportRole(STAFF_ROLES);
   const masters = await loadMasters(supabase, company.id, { activeOnly: true });
 
   const sheet = sheetFromRows("単価表", ratesToCsvRows(masters), { types: TYPES });
+  await recordExport({ profileId: profile.id, kind: "rates", label: "単価表 Excel", req });
   return xlsxResponse(xlsxFilename(ratesCsvFilename()), buildXlsx([sheet]));
 });

@@ -13,6 +13,7 @@ import { laborCsvFilename, laborCsvKindFromParam, laborDaysCsvRows, laborMonthsC
 import { buildXlsx, sheetFromRows, xlsxFilename, type XlsxCellType } from "@/lib/exports/xlsx";
 import { xlsxResponse } from "@/lib/exports/download";
 import { fetchAllRows, handleExport, monthParam, requireExportRole } from "../_lib/guard";
+import { recordExport } from "@/lib/exports/record";
 
 export const dynamic = "force-dynamic";
 
@@ -66,7 +67,7 @@ async function loadDriverNames(supabase: ServerSupabase, companyId: string): Pro
 }
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company } = await requireExportRole(STAFF_ROLES);
+  const { supabase, company, profile } = await requireExportRole(STAFF_ROLES);
   const month = monthParam(req);
   const kind = laborCsvKindFromParam(req.nextUrl.searchParams.get("kind"));
   const monthDate = monthToDate(month);
@@ -85,6 +86,7 @@ export const GET = handleExport(async (req: NextRequest) => {
         .range(from, to),
     );
     const sheet = sheetFromRows("労務（月別）", laborMonthsCsvRows(rows), { types: MONTH_TYPES });
+    await recordExport({ profileId: profile.id, kind: "other", label: "労務（月まとめ）Excel", month, rows: rows.length, req });
     return xlsxResponse(filename, buildXlsx([sheet]));
   }
 
@@ -97,5 +99,6 @@ export const GET = handleExport(async (req: NextRequest) => {
 
   const sheetRows: LaborDayCsvSource[] = rows.map((r) => ({ ...r, driver_name: r.driver_id ? (drivers.get(r.driver_id) ?? "") : "" }));
   const sheet = sheetFromRows("労務（日別）", laborDaysCsvRows(sheetRows), { types: DAY_TYPES });
+  await recordExport({ profileId: profile.id, kind: "other", label: "労務（日別）Excel", month, rows: sheetRows.length, req });
   return xlsxResponse(filename, buildXlsx([sheet]));
 });

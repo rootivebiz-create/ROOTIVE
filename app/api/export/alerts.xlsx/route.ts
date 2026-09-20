@@ -11,6 +11,7 @@ import { alertFilterSchema, type AlertFilter } from "@/lib/schemas/alerts";
 import { buildXlsx, sheetFromRows, type XlsxCellType } from "@/lib/exports/xlsx";
 import { xlsxResponse } from "@/lib/exports/download";
 import { ExportError, fetchAllRows, handleExport, monthParam, requireExportRole } from "../_lib/guard";
+import { recordExport } from "@/lib/exports/record";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,7 @@ function statusParam(req: NextRequest): AlertFilter {
 }
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company } = await requireExportRole(STAFF_ROLES);
+  const { supabase, company, profile } = await requireExportRole(STAFF_ROLES);
   const month = monthParam(req, { allowAll: true });
   const status = statusParam(req);
 
@@ -39,5 +40,6 @@ export const GET = handleExport(async (req: NextRequest) => {
   });
 
   const sheet = sheetFromRows("気になること", alertsCsvRows(rows), { types: TYPES });
+  await recordExport({ profileId: profile.id, kind: "other", label: "気になること Excel", month, rows: rows.length, req });
   return xlsxResponse(`気になること_${monthFileLabel(month)}.xlsx`, buildXlsx([sheet]));
 });

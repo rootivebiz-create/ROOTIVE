@@ -11,11 +11,12 @@ import { buildYayoiRows, toYayoiCsvBuffer, type YayoiDriverInput } from "@/lib/y
 import { monthFileLabel } from "@/lib/exports/csv";
 import { binaryResponse } from "@/lib/exports/download";
 import { fetchAllRows, handleExport, monthParam, requireExportRole } from "../_lib/guard";
+import { recordExport } from "@/lib/exports/record";
 
 export const dynamic = "force-dynamic";
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company } = await requireExportRole(STAFF_ROLES);
+  const { supabase, company, profile } = await requireExportRole(STAFF_ROLES);
   const month = monthParam(req, { allowAll: true });
   const accounts = resolveYayoiAccounts(company.yayoi_accounts);
 
@@ -71,5 +72,6 @@ export const GET = handleExport(async (req: NextRequest) => {
     rows.push(...buildYayoiRows({ month: m, accounts, payoutDate: payoutDate(m, company.payout_month_offset, company.payout_day), drivers }));
   }
 
+  await recordExport({ profileId: profile.id, kind: "other", label: "弥生仕訳 CSV", month, rows: rows.length, req });
   return binaryResponse(`弥生仕訳_${monthFileLabel(month)}.csv`, toYayoiCsvBuffer(rows), "text/csv; charset=Shift_JIS");
 });

@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { absoluteUrlFromRequest } from "@/lib/request-url";
+import { recordLoginEvent } from "@/lib/auth/login-events";
 
 /** PKCE フロー（code パラメータ） */
 export async function GET(request: NextRequest) {
@@ -11,7 +12,14 @@ export async function GET(request: NextRequest) {
   if (code) {
     const supabase = await createClient();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (!error) return NextResponse.redirect(absoluteUrlFromRequest(request, next));
+    if (!error) {
+      // ログインの記録（0019）。失敗してもログインは止めない
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      await recordLoginEvent(user?.id, "login", request);
+      return NextResponse.redirect(absoluteUrlFromRequest(request, next));
+    }
   }
   const login = absoluteUrlFromRequest(request, "/login");
   login.searchParams.set("error", "failed");

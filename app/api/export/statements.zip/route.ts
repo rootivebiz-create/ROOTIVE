@@ -12,12 +12,13 @@ import { renderStatementPdf, statementPdfFilename } from "@/lib/pdf/statement";
 import { buildZip, uniqueZipName, type ZipEntry } from "@/lib/exports/zip";
 import { binaryResponse, safeFilePart } from "@/lib/exports/download";
 import { ExportError, fetchAllRows, handleExport, monthParam, requireExportRole } from "../_lib/guard";
+import { recordExport } from "@/lib/exports/record";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company } = await requireExportRole(STAFF_ROLES);
+  const { supabase, company, profile } = await requireExportRole(STAFF_ROLES);
   const month = monthParam(req);
 
   const summaries = await fetchAllRows<DriverMonthSummary>((from, to) =>
@@ -42,5 +43,6 @@ export const GET = handleExport(async (req: NextRequest) => {
   }
   if (entries.length === 0) throw new ExportError(404, "この月の支払明細はありません。");
 
+  await recordExport({ profileId: profile.id, kind: "statements", label: "支払明細の一括 PDF", month, rows: entries.length, req });
   return binaryResponse(`支払明細_${month}_全員.zip`, buildZip(entries, { now: mtime }), "application/zip");
 });

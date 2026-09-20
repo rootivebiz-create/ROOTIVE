@@ -12,6 +12,7 @@ import { monthFileLabel } from "@/lib/exports/csv";
 import { laborCsvFilename, laborCsvKindFromParam, toLaborDaysCsv, toLaborMonthsCsv, type LaborDayCsvSource } from "@/lib/exports/labor-csv";
 import { csvResponse } from "@/lib/exports/download";
 import { fetchAllRows, handleExport, monthParam, requireExportRole } from "../_lib/guard";
+import { recordExport } from "@/lib/exports/record";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,7 @@ async function loadDriverNames(supabase: ServerSupabase, companyId: string): Pro
 }
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company } = await requireExportRole(STAFF_ROLES);
+  const { supabase, company, profile } = await requireExportRole(STAFF_ROLES);
   const month = monthParam(req);
   const kind = laborCsvKindFromParam(req.nextUrl.searchParams.get("kind"));
   const monthDate = monthToDate(month);
@@ -45,6 +46,7 @@ export const GET = handleExport(async (req: NextRequest) => {
         .order("driver_id")
         .range(from, to),
     );
+    await recordExport({ profileId: profile.id, kind: "other", label: "労務（月まとめ）CSV", month, rows: rows.length, req });
     return csvResponse(filename, toLaborMonthsCsv(rows));
   }
 
@@ -56,5 +58,6 @@ export const GET = handleExport(async (req: NextRequest) => {
   ]);
 
   const csvRows: LaborDayCsvSource[] = rows.map((r) => ({ ...r, driver_name: r.driver_id ? (drivers.get(r.driver_id) ?? "") : "" }));
+  await recordExport({ profileId: profile.id, kind: "other", label: "労務（日別）CSV", month, rows: csvRows.length, req });
   return csvResponse(filename, toLaborDaysCsv(csvRows));
 });

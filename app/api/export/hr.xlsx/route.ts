@@ -10,6 +10,7 @@ import { hrCsvKindSchema, type HrCsvKind } from "@/lib/schemas/hr";
 import { buildXlsx, sheetFromRows, xlsxFilename, type XlsxCellType } from "@/lib/exports/xlsx";
 import { xlsxResponse } from "@/lib/exports/download";
 import { ExportError, fetchAllRows, handleExport, requireExportRole } from "../_lib/guard";
+import { recordExport } from "@/lib/exports/record";
 
 export const dynamic = "force-dynamic";
 
@@ -46,7 +47,7 @@ function kindParam(req: NextRequest): HrCsvKind {
 }
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company } = await requireExportRole(STAFF_ROLES);
+  const { supabase, company, profile } = await requireExportRole(STAFF_ROLES);
   const kind = kindParam(req);
 
   if (kind === "contract") {
@@ -60,6 +61,7 @@ export const GET = handleExport(async (req: NextRequest) => {
         .range(from, to),
     );
     const sheet = sheetFromRows("業務委託契約", contractsCsvRows(rows), { types: CONTRACT_TYPES });
+    await recordExport({ profileId: profile.id, kind: "other", label: "契約 Excel", rows: rows.length, req });
     return xlsxResponse(xlsxFilename(hrCsvFilename(kind)), buildXlsx([sheet]));
   }
 
@@ -67,5 +69,6 @@ export const GET = handleExport(async (req: NextRequest) => {
     supabase.from("v_applicant_list").select("*").eq("company_id", company.id).order("applied_on", { ascending: false }).order("name").range(from, to),
   );
   const sheet = sheetFromRows("応募者", applicantsCsvRows(rows), { types: APPLICANT_TYPES });
+  await recordExport({ profileId: profile.id, kind: "other", label: "応募者 Excel", rows: rows.length, req });
   return xlsxResponse(xlsxFilename(hrCsvFilename(kind)), buildXlsx([sheet]));
 });

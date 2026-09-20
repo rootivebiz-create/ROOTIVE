@@ -19,6 +19,7 @@ import {
 } from "@/lib/exports/daily-csv";
 import { csvResponse } from "@/lib/exports/download";
 import { fetchAllRows, handleExport, monthParam, requireExportRole } from "../_lib/guard";
+import { recordExport } from "@/lib/exports/record";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +35,7 @@ async function loadStaffNames(supabase: ServerSupabase): Promise<Map<string, str
 }
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company } = await requireExportRole(STAFF_ROLES);
+  const { supabase, company, profile } = await requireExportRole(STAFF_ROLES);
   const month = monthParam(req, { allowAll: true });
   const kind = dailyCsvKindFromParam(req.nextUrl.searchParams.get("kind"));
   const monthDate = month === "all" ? null : monthToDate(month);
@@ -53,6 +54,7 @@ export const GET = handleExport(async (req: NextRequest) => {
       ...e,
       approved_by_name: e.approved_by ? (staff.get(e.approved_by) ?? "") : "",
     }));
+    await recordExport({ profileId: profile.id, kind: "other", label: "日別の稼働 CSV", month, rows: csvRows.length, req });
     return csvResponse(dailyCsvFilename(monthFileLabel(month), "entry"), toDayEntriesCsv(csvRows));
   }
 
@@ -87,5 +89,6 @@ export const GET = handleExport(async (req: NextRequest) => {
     };
   });
 
+  await recordExport({ profileId: profile.id, kind: "other", label: "点呼記録簿 CSV", month, rows: csvRows.length, req });
   return csvResponse(dailyCsvFilename(monthFileLabel(month), "report"), toDailyReportsCsv(csvRows));
 });

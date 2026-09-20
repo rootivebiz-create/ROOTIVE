@@ -27,6 +27,19 @@ npx playwright show-report                # HTML レポート（playwright-repor
 - **ラベル・ボタン名は実装のとおり**（`components/**`・`app/**` から取得）。セレクタは `getByRole` / `getByLabel` / `getByText` を優先し、一覧の行はスマホのカードと PC の表の両方に当たる `listRow()` で探します
 - **金額は画面と同じ書式**で比較します（`helpers.yen()` ＝ `lib/format.yen`：`¥2,559,573`）
 
+## ロールの扱い（代表 ＝ owner を含む）
+
+| ロール | ログインの仕方（E2E） | ナビ・通知 |
+|---|---|---|
+| owner | `loginViaMagicLink(page, E2E.users.owner.email)` | サイドナビの先頭に「代表」（スマホは「メニュー」シートの中。下タブの 4 項目は変わらない）。ベルに「気になること」「未読のチャット」「決裁待ち」 |
+| admin | `createInvitation({ role: "admin" })` ＋ `loginViaInvite` | 「代表」は出ない。ベルは「気になること」「未読のチャット」だけ |
+| viewer | `createInvitation({ role: "viewer" })` ＋ `loginViaInvite` | 同上（編集 UI も出ない） |
+| driver | `createInvitation({ role: "driver", driverId })` ＋ `loginViaInvite` | ドライバーポータルの 3 項目のみ（ベルは出ない） |
+
+- 出し分けの判定は純関数 `lib/nav/visibility.ts` の `visibleForRole(items, role)` 1 本で、ナビ（`components/layout/nav.tsx`）・コマンドパレット（`app/(app)/layout.tsx`）・設定の一覧（`app/(app)/settings/page.tsx`）が共用します（単体テストは `tests/nav.test.ts`）
+- 画面を隠すだけでは足りないので、`/executive` 配下は `requirePageRole(["owner"])` でも閉じています。E2E では **admin・viewer が直接 URL を開いて `/dashboard` に戻される**ことまで確認します
+- ヘッダーのベルは `AppShell` が受け取っている `badges`（href をキーにした件数）だけを材料にします。決裁待ちは `/executive` の件数として渡り、行き先は `/executive/approvals` です。0 件の行は出さず、全部 0 ならバッジも出しません
+
 ## 各 spec の内容
 
 | ファイル | 内容 | 前提 |
@@ -37,7 +50,7 @@ npx playwright show-report                # HTML レポート（playwright-repor
 | `30-payouts.spec.ts` | `/payouts?m=2026-09`（相曽慧 税抜 ¥396,643／税込 ¥436,307）→ 明細（小計（税抜）・消費税（10%）¥39,664・お支払額（税込）・振込予定日 2026年10月31日・会社側の内訳 会社利益 ¥86,882）→ 「管理費・調整を編集」（管理費 15,000、リース代 −30,000 利益計上 → 税抜 ¥366,642／税込 ¥406,306）→ 明細テキストをコピー（小計（税抜）・消費税・お支払額（税込）の行を検証）→ 個人明細 CSV（BOM・「小計（税抜）」「消費税（10%）」「支払額（税込）」行）／PDF（`%PDF`、10KB 超）／印刷用ページ → 全員分の PDF（ZIP：`PK` シグネチャ・終端レコードのエントリ数 8・ファイル名 UTF-8、存在しない月は 404）→ 案件別（当月／全期間） | `resetToSeed()`（終了後に相曽慧の管理費・調整を初期値へ戻す） |
 | `40-settings.spec.ts` | ドライバー追加（テスト太郎・率 10%・管理費 15,000）→ 一覧 → 編集で停止中 → 案件追加（テスト案件：配送A 日給／配送B 個数）→ 会社設定（住所・電話を保存 → 再表示で保持、印刷用明細に反映）→ ユーザー管理で viewer を招待（招待リンク `/invite/…` を表示）→ 監査ログ（drivers の INSERT／UPDATE）→ **ドライバー別単価**（黒岩亜夢莉の三郷Amazon 受注 23,500 を保存 → 「個別」バッジ・当月反映バナー → ダッシュボード警告 → 稼働入力の「単価変更あり」バッジと「マスタの値に更新」ダイアログ（行を選んで更新）→ 単価表で 23,600 に変更 → 「2026年9月 の稼働に反映」→ 案件ごとの見方 → 単価表 CSV の実効単価と出所）→ **会社設定の消費税**（税率 8%・四捨五入 → 明細の消費税 ¥31,731・お支払額（税込）¥428,374 → 戻す）→ **ロゴのアップロード**（`public/icons/icon-192.png` → `/api/company-asset/logo` が image/png → 印刷用ページと PDF に反映 → 削除で 404）→ **ドライバー別の支払日**（黒岩亜夢莉を翌々月 15 日 → 明細の振込予定日 2026年11月15日、他のドライバーは翌月末のまま → 戻す） | `seedInitialData()`、同名マスタの削除 |
 | `50-closing.spec.ts` | 2026-09 を締める → 締め済みバッジ・締め日時・メモ・「バックアップ」→ 稼働入力に「稼働を追加」が無く締め済みバッジ、一括入力も無効 → 明細に編集ボタンが無い → データ画面の締め時バックアップ一覧に 2026年9月 → `/api/export/month-backup` が Storage の JSON を返す（存在しない月は 404）→ 締めを解除（owner）→ 追加ボタンが戻る → 再度締める → 監査ログに月締め・締め解除 | `seedInitialData()`、`setMonthClosed("2026-09", false)` |
-| `60-roles.spec.ts` | **viewer**：追加・編集・削除・複製・一括入力が無い、`/settings/users`・`/settings/company` は `/dashboard` へ、`backup.json` は 403・`entries.csv` は 200、supabase-js からの書き込みも拒否（トリガー／RLS）。**driver**（相曽慧）：`/driver` に 2026年9月 税込 ¥436,307 → 明細に「お支払額（税込）」「小計（税抜）」があり「会社利益」「会社売上」が無い → 自分の PDF は 200、他人・未締め月・スタッフ向け出力は 403 → `/dashboard` 等は `/driver` へ → 未締め月は「集計中」→ ログアウト | `resetToSeed()`、driver の前に `setMonthClosed("2026-09", true)` |
+| `60-roles.spec.ts` | **viewer**：追加・編集・削除・複製・一括入力が無い、`/settings/users`・`/settings/company` は `/dashboard` へ、`backup.json` は 403・`entries.csv` は 200、supabase-js からの書き込みも拒否（トリガー／RLS）。**driver**（相曽慧）：`/driver` に 2026年9月 税込 ¥436,307 → 明細に「お支払額（税込）」「小計（税抜）」があり「会社利益」「会社売上」が無い → 自分の PDF は 200、他人・未締め月・スタッフ向け出力は 403 → `/dashboard` 等は `/driver` へ → 未締め月は「集計中」→ ログアウト。**owner（代表）**：ナビとコマンドパレットに「代表」（`/executive`）が出る／**admin・viewer には出ず、`/executive`・`/executive/approvals` は `/dashboard` へ戻される**（`requirePageRole(["owner"])`）／ヘッダーのベルは 0 件なら「いまは何もありません」・44px 角、決裁待ちを 1 件入れると代表のベルにだけ「決裁待ち」が出る | `resetToSeed()`、driver の前に `setMonthClosed("2026-09", true)`、代表のテストの前にアラート・チャット・決裁を削除 |
 | `70-expenses.spec.ts` | `/expenses?m=2026-09`：経費を 2 件追加（燃料費 ¥50,000・車両リース ¥120,000）→ KPI（固定費／変動費／経費合計）とカテゴリ別小計 → ダッシュボードの「経費」「営業利益 ¥482,490」→ **設定 → 経費カテゴリ**で「毎月かかる経費」（保険料 ¥30,000）を登録 → 経費画面で「毎月かかる経費をこの月に計上」（1 件 → 2 回目は 0 件）→ 経費 CSV → 締め済み月は編集 UI なし・閲覧者も追加不可 | `resetToSeed()`、経費の削除 |
 | `75-invoices.spec.ts` | **設定 → 取引先**で取引先を登録 → 案件「三郷Amazon」に紐づけ → `/invoices?m=2026-09` で売上 ¥1,151,250 → 「請求書を作成」→ 明細・小計 ¥1,151,250／消費税 ¥115,125／合計 ¥1,266,375・番号 `202609-01` → 「発行済みにする」（作り直しボタンが消える）→ 「入金済みにする」→ 一覧に「入金済み」→ 請求書一覧 CSV と請求書 PDF（`%PDF`・5KB 超）→ 閲覧者は作成不可 | `resetToSeed()`、取引先・請求書の削除 |
 | `80-reports.spec.ts` | `/reports?y=2026`：年間サマリー（売上 ¥2,559,573／経費 ¥200,000／営業利益 ¥452,490）・月次の内訳・ドライバー別／案件別／経費カテゴリ別 → 年次レポート CSV → ダッシュボードで月次目標（売上 260 万・営業利益 40 万）を設定 → 達成率 98.4% / 113.1% → 閲覧者は編集不可 | `resetToSeed()`、経費 2 件の投入 |

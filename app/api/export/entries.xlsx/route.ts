@@ -9,6 +9,7 @@ import { entriesCsvRows, monthFileLabel } from "@/lib/exports/csv";
 import { buildXlsx, sheetFromRows, type XlsxCellType } from "@/lib/exports/xlsx";
 import { xlsxResponse } from "@/lib/exports/download";
 import { fetchAllRows, handleExport, monthParam, requireExportRole } from "../_lib/guard";
+import { recordExport } from "@/lib/exports/record";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +33,7 @@ const TYPES: XlsxCellType[] = [
 ];
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company } = await requireExportRole(STAFF_ROLES);
+  const { supabase, company, profile } = await requireExportRole(STAFF_ROLES);
   const month = monthParam(req, { allowAll: true });
 
   const rows = await fetchAllRows((from, to) => {
@@ -42,5 +43,6 @@ export const GET = handleExport(async (req: NextRequest) => {
   });
 
   const sheet = sheetFromRows("稼働明細", entriesCsvRows(rows), { types: TYPES });
+  await recordExport({ profileId: profile.id, kind: "entries", label: "稼働明細 Excel", month, rows: rows.length, req });
   return xlsxResponse(`稼働明細_${monthFileLabel(month)}.xlsx`, buildXlsx([sheet]));
 });

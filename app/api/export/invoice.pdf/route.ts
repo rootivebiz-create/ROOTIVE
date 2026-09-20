@@ -10,12 +10,13 @@ import { renderInvoicePdf } from "@/lib/pdf/invoice";
 import { pdfResponse, safeFilePart } from "@/lib/exports/download";
 import { uuidSchema } from "@/lib/schemas/common";
 import { ExportError, handleExport, requireExportRole } from "../_lib/guard";
+import { recordExport } from "@/lib/exports/record";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company } = await requireExportRole(STAFF_ROLES);
+  const { supabase, company, profile } = await requireExportRole(STAFF_ROLES);
   const parsed = uuidSchema.safeParse(req.nextUrl.searchParams.get("id") ?? "");
   if (!parsed.success) throw new ExportError(400, "請求書は ?id=<ID> で指定してください。");
 
@@ -24,5 +25,6 @@ export const GET = handleExport(async (req: NextRequest) => {
 
   const assets = await loadStatementAssets(company);
   const pdf = await renderInvoicePdf(data, { assets });
+  await recordExport({ profileId: profile.id, kind: "invoices", label: "請求書 PDF", month: data.month, rows: 1, req });
   return pdfResponse(invoicePdfFilename({ month: data.month, client: { name: safeFilePart(data.client.name) } }), pdf);
 });

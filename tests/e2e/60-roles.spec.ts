@@ -1,15 +1,18 @@
 /**
- * ロール（§3・§4.6）：viewer は閲覧と CSV のみ、driver は自分の締め済み月の明細のみ
+ * ロール（§3・§4.6）：viewer は閲覧と CSV のみ、driver は自分の締め済み月の明細のみ、
+ * 代表（owner）だけが「代表」のナビ・コマンドパレットの候補・決裁待ちの通知を見られる（0019・0020）
  * 前提：resetToSeed（2026-09 は未締め）。driver のテストの前に RPC で 2026-09 を締める
  */
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import {
+  E2E,
   adminSql,
   countEntries,
   createInvitation,
   driverIdByName,
   listRow,
   loginViaInvite,
+  loginViaMagicLink,
   logout,
   projectItemIdByName,
   readState,
@@ -180,5 +183,137 @@ test.describe("ロール", () => {
 
     await logout(page);
     await expect(page).toHaveURL(/\/login/);
+  });
+});
+
+/**
+ * 代表（owner）だけの領域（0019・0020）。画面は /executive 配下。
+ * ここではナビ・コマンドパレット・ヘッダーのベルの出し分けと、管理者が直接開いたときの差し戻しを見る。
+ */
+test.describe("代表（owner）の出し分け", () => {
+  const MONTH = "2026-09";
+
+  /** スマホは下タブの「メニュー」シート、PC はサイドナビを見る */
+  async function navScope(page: Page, isMobile: boolean) {
+    const nav = page.getByRole("navigation", { name: "メインナビゲーション" });
+    if (!isMobile) return nav;
+    await nav.getByRole("button", { name: "メニュー", exact: true }).click();
+    const sheet = page.getByRole("dialog");
+    await expect(sheet.getByRole("heading", { name: "メニュー" })).toBeVisible();
+    return sheet;
+  }
+
+  test.beforeAll(async () => {
+    const state = readState();
+    if (!state || state.appSkipped) return;
+    await resetToSeed();
+    // ベルが 0 件から始まるように、ほかの spec が残した未対応を消す（reset_company_data は決裁だけを消す）
+    const { companyId } = requireState();
+    adminSql(`delete from public.alerts where company_id = '${companyId}'`);
+    adminSql(`delete from public.chat_messages where company_id = '${companyId}'`);
+    adminSql(`delete from public.approvals where company_id = '${companyId}'`);
+  });
+
+  test("代表：ナビに「代表」が出て、コマンドパレットにも代表の画面が並ぶ", async ({ page }, testInfo) => {
+    const isMobile = testInfo.project.name === "mobile";
+    await loginViaMagicLink(page, E2E.users.owner.email, `/dashboard?m=${MONTH}`);
+
+    const scope = await navScope(page, isMobile);
+    await expect(scope.getByRole("link", { name: "代表", exact: true }).filter({ visible: true }).first()).toBeVisible();
+    if (isMobile) await page.keyboard.press("Escape");
+
+    // コマンドパレット：代表の画面（決裁・意思決定ログ・中期計画）が候補に出る
+    await page.getByRole("button", { name: "検索" }).first().click();
+    await page.getByLabel("検索語").fill("代表");
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByText("代表", { exact: true }).first()).toBeVisible();
+    await page.getByLabel("検索語").fill("決裁");
+    await expect(dialog.getByText("決裁（承認）").first()).toBeVisible();
+    await expect(dialog.getByText("決裁のルールと委任").first()).toBeVisible();
+    await page.getByLabel("検索語").fill("ちゅうきけいかく");
+    await expect(dialog.getByText("中期計画").first()).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByLabel("検索語")).toHaveCount(0);
+
+    await logout(page);
+  });
+
+  test("管理者：ナビにもコマンドパレットにも「代表」が出ず、/executive はダッシュボードへ戻される", async ({ page }, testInfo) => {
+    const isMobile = testInfo.project.name === "mobile";
+    const email = `admin-exec-${testInfo.project.name}-${Date.now()}@example.com`;
+    const token = createInvitation({ email, role: "admin", displayName: "管理者テスト" });
+    await loginViaInvite(page, token);
+    await expect(page).toHaveURL(/\/dashboard/);
+
+    const scope = await navScope(page, isMobile);
+    await expect(scope.getByRole("link", { name: "代表", exact: true })).toHaveCount(0);
+    if (isMobile) await page.keyboard.press("Escape");
+
+    // コマンドパレットにも出ない
+    await page.getByRole("button", { name: "検索" }).first().click();
+    await page.getByLabel("検索語").fill("代表");
+    await expect(page.getByRole("dialog").getByText("該当する候補はありません。")).toBeVisible();
+    await page.keyboard.press("Escape");
+
+    // 直接開いても requirePageRole(["owner"]) でダッシュボードへ戻される
+    await page.goto("/executive");
+    await expect(page).toHaveURL(/\/dashboard/);
+    await page.goto("/executive/approvals");
+    await expect(page).toHaveURL(/\/dashboard/);
+
+    await logout(page);
+  });
+
+  test("閲覧者：ナビに「代表」が出ず、/executive はダッシュボードへ戻される", async ({ page }, testInfo) => {
+    const isMobile = testInfo.project.name === "mobile";
+    const email = `viewer-exec-${testInfo.project.name}-${Date.now()}@example.com`;
+    const token = createInvitation({ email, role: "viewer", displayName: "閲覧者テスト" });
+    await loginViaInvite(page, token);
+    await expect(page).toHaveURL(/\/dashboard/);
+
+    const scope = await navScope(page, isMobile);
+    await expect(scope.getByRole("link", { name: "代表", exact: true })).toHaveCount(0);
+    if (isMobile) await page.keyboard.press("Escape");
+
+    await page.goto("/executive");
+    await expect(page).toHaveURL(/\/dashboard/);
+
+    await logout(page);
+  });
+
+  test("ヘッダーのベル：未対応が無ければ「いまは何もありません」、決裁待ちは代表だけに出る", async ({ page }) => {
+    const { companyId } = requireState();
+    await loginViaMagicLink(page, E2E.users.owner.email, `/dashboard?m=${MONTH}`);
+
+    // 0 件：バッジを出さず、開いても何も並ばない
+    const bell = page.getByRole("button", { name: "お知らせ", exact: true });
+    await expect(bell).toBeVisible();
+    const box = await bell.boundingBox();
+    expect(box?.height ?? 0).toBeGreaterThanOrEqual(44); // スマホでも押せる大きさ
+    expect(box?.width ?? 0).toBeGreaterThanOrEqual(44);
+    await bell.click();
+    await expect(page.getByText("いまは何もありません")).toBeVisible();
+    await page.keyboard.press("Escape");
+
+    // 決裁待ちを 1 件入れると、代表のベルに「決裁待ち」が出る
+    adminSql(`insert into public.approvals (company_id, kind, title, status) values ('${companyId}', 'expense', 'E2E の決裁テスト', 'pending')`);
+    await page.reload();
+    await page.getByRole("button", { name: /^お知らせ/ }).click();
+    const approvalRow = page.getByRole("link", { name: /決裁待ち/ });
+    await expect(approvalRow).toBeVisible();
+    await expect(approvalRow).toContainText("1");
+    await page.keyboard.press("Escape");
+    await logout(page);
+
+    // 管理者には決裁待ちの行が出ない（決裁は代表の仕事）
+    const email = `admin-bell-${Date.now()}@example.com`;
+    await loginViaInvite(page, createInvitation({ email, role: "admin", displayName: "管理者テスト" }));
+    await page.getByRole("button", { name: /^お知らせ/ }).click();
+    await expect(page.getByRole("link", { name: /決裁待ち/ })).toHaveCount(0);
+    await expect(page.getByText("いまは何もありません")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await logout(page);
+
+    adminSql(`delete from public.approvals where company_id = '${companyId}'`);
   });
 });

@@ -9,11 +9,12 @@ import { buildDriverPlRows, visibleDriverPlRows } from "@/components/drivers-pl/
 import { driversPlCsvFilename, toDriversPlCsv } from "@/lib/exports/drivers-pl-csv";
 import { csvResponse } from "@/lib/exports/download";
 import { fetchAllRows, handleExport, monthParam, requireExportRole } from "../_lib/guard";
+import { recordExport } from "@/lib/exports/record";
 
 export const dynamic = "force-dynamic";
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company } = await requireExportRole(STAFF_ROLES);
+  const { supabase, company, profile } = await requireExportRole(STAFF_ROLES);
   const month = monthParam(req);
   const includeInactive = req.nextUrl.searchParams.get("inactive") === "1";
 
@@ -34,5 +35,6 @@ export const GET = handleExport(async (req: NextRequest) => {
   ]);
 
   const rows = visibleDriverPlRows(buildDriverPlRows(summaries, entries), { includeInactive });
+  await recordExport({ profileId: profile.id, kind: "other", label: "ドライバー別採算 CSV", month, rows: rows.length, req });
   return csvResponse(driversPlCsvFilename(month), toDriversPlCsv(rows));
 });

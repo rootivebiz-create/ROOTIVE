@@ -15,6 +15,7 @@ import { csvResponse } from "@/lib/exports/download";
 import { toTransferTarget, transferFileName, type TransferTarget } from "@/lib/exports/zengin";
 import { canSeeBankAccount } from "@/lib/schemas/drivers";
 import { ExportError, fetchAllRows, handleExport, monthParam, requireExportRole } from "../_lib/guard";
+import { recordExport } from "@/lib/exports/record";
 
 export const dynamic = "force-dynamic";
 
@@ -84,5 +85,6 @@ export const GET = handleExport(async (req: NextRequest) => {
     t.payoutDate,
   ]);
 
+    await recordExport({ profileId: profile.id, kind: "transfer", label: "振込一覧 CSV", month, rows: rows.length, req });
   return csvResponse(transferFileName(month, "csv"), toCsv([[...HEADERS], ...rows]));
 });

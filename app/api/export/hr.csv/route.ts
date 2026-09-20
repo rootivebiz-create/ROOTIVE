@@ -8,6 +8,7 @@ import { applicantsCsv, contractsCsv, hrCsvFilename } from "@/lib/exports/hr-csv
 import { hrCsvKindSchema, type HrCsvKind } from "@/lib/schemas/hr";
 import { csvResponse } from "@/lib/exports/download";
 import { ExportError, fetchAllRows, handleExport, requireExportRole } from "../_lib/guard";
+import { recordExport } from "@/lib/exports/record";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,7 @@ function kindParam(req: NextRequest): HrCsvKind {
 }
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company } = await requireExportRole(STAFF_ROLES);
+  const { supabase, company, profile } = await requireExportRole(STAFF_ROLES);
   const kind = kindParam(req);
 
   if (kind === "contract") {
@@ -34,11 +35,13 @@ export const GET = handleExport(async (req: NextRequest) => {
         .order("driver_name")
         .range(from, to),
     );
+    await recordExport({ profileId: profile.id, kind: "other", label: "契約 CSV", rows: rows.length, req });
     return csvResponse(hrCsvFilename(kind), contractsCsv(rows));
   }
 
   const rows = await fetchAllRows((from, to) =>
     supabase.from("v_applicant_list").select("*").eq("company_id", company.id).order("applied_on", { ascending: false }).order("name").range(from, to),
   );
+  await recordExport({ profileId: profile.id, kind: "other", label: "応募者 CSV", rows: rows.length, req });
   return csvResponse(hrCsvFilename(kind), applicantsCsv(rows));
 });

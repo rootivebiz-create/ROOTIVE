@@ -9,6 +9,7 @@ import { bankStatusFromParam } from "@/lib/schemas/bank";
 import { buildXlsx, sheetFromRows, type XlsxCellType } from "@/lib/exports/xlsx";
 import { xlsxResponse } from "@/lib/exports/download";
 import { fetchAllRows, handleExport, requireExportRole } from "../_lib/guard";
+import { recordExport } from "@/lib/exports/record";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,7 @@ export const dynamic = "force-dynamic";
 const TYPES: XlsxCellType[] = ["date", "text", "money", "money", "money", "text", "text", "text", "text", "text", "text"];
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company } = await requireExportRole(STAFF_ROLES);
+  const { supabase, company, profile } = await requireExportRole(STAFF_ROLES);
   const status = bankStatusFromParam(req.nextUrl.searchParams.get("status") ?? undefined);
 
   const rows = await fetchAllRows((from, to) => {
@@ -27,5 +28,6 @@ export const GET = handleExport(async (req: NextRequest) => {
 
   const label = BANK_CSV_STATUS_LABELS[status] ?? "すべて";
   const sheet = sheetFromRows("銀行明細", bankCsvRows(rows), { types: TYPES });
+  await recordExport({ profileId: profile.id, kind: "other", label: "銀行明細 Excel", rows: rows.length, req });
   return xlsxResponse(`銀行明細_${label}.xlsx`, buildXlsx([sheet]));
 });

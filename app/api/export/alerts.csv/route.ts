@@ -10,6 +10,7 @@ import { alertsCsv, alertsCsvFilename } from "@/lib/exports/alerts-csv";
 import { alertFilterSchema, type AlertFilter } from "@/lib/schemas/alerts";
 import { csvResponse } from "@/lib/exports/download";
 import { ExportError, fetchAllRows, handleExport, monthParam, requireExportRole } from "../_lib/guard";
+import { recordExport } from "@/lib/exports/record";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,7 @@ function statusParam(req: NextRequest): AlertFilter {
 }
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company } = await requireExportRole(STAFF_ROLES);
+  const { supabase, company, profile } = await requireExportRole(STAFF_ROLES);
   const month = monthParam(req, { allowAll: true });
   const status = statusParam(req);
 
@@ -34,5 +35,6 @@ export const GET = handleExport(async (req: NextRequest) => {
     return q.order("month").order("severity").order("detected_at", { ascending: false }).range(from, to);
   });
 
+  await recordExport({ profileId: profile.id, kind: "other", label: "気になること CSV", month, rows: rows.length, req });
   return csvResponse(alertsCsvFilename(monthFileLabel(month)), alertsCsv(rows));
 });

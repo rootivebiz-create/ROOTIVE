@@ -4,6 +4,7 @@
  */
 import type { NextRequest } from "next/server";
 import { handleExport, requireExportRole } from "../_lib/guard";
+import { recordExport } from "@/lib/exports/record";
 import { csvResponse } from "@/lib/exports/download";
 import { recordsCsvFilename, recordsToCsv } from "@/lib/exports/records-csv";
 import { loadRecordDocs } from "@/lib/records/load";
@@ -26,7 +27,7 @@ function kindsParam(raw: string | null): RecordKind[] {
 }
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company } = await requireExportRole(["owner", "admin", "viewer"]);
+  const { supabase, company, profile } = await requireExportRole(["owner", "admin", "viewer"]);
   const sp = req.nextUrl.searchParams;
   const from = sp.get("from");
   const to = sp.get("to");
@@ -41,5 +42,6 @@ export const GET = handleExport(async (req: NextRequest) => {
   };
 
   const docs = filterRecords(await loadRecordDocs(supabase, company.id), filter);
+  await recordExport({ profileId: profile.id, kind: "records", label: "書類の索引簿 CSV", rows: docs.length, req });
   return csvResponse(recordsCsvFilename(filter.from, filter.to), recordsToCsv(docs));
 });

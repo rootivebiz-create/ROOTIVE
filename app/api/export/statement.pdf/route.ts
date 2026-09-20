@@ -8,6 +8,7 @@ import { loadStatementAssets } from "@/lib/company-assets";
 import { renderStatementPdf, statementPdfFilename } from "@/lib/pdf/statement";
 import { pdfResponse, safeFilePart } from "@/lib/exports/download";
 import { handleExport } from "../_lib/guard";
+import { recordExport } from "@/lib/exports/record";
 import { loadStatementForExport } from "../_lib/statement";
 
 export const dynamic = "force-dynamic";
@@ -19,5 +20,6 @@ export const GET = handleExport(async (req: NextRequest) => {
   const ctx = await getSessionContext();
   const assets = ctx ? await loadStatementAssets(ctx.company) : {};
   const pdf = await renderStatementPdf(data, { showRoyaltyRate, assets });
+  await recordExport({ profileId: ctx?.profile.id, kind: "statement", label: "支払明細 PDF", month: data.month, rows: 1, req });
   return pdfResponse(statementPdfFilename({ month: data.month, driverName: safeFilePart(data.driverName) }), pdf);
 });

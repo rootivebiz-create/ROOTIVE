@@ -9,6 +9,7 @@ import { monthFileLabel, payoutsCsvRows } from "@/lib/exports/csv";
 import { buildXlsx, sheetFromRows, type XlsxCellType } from "@/lib/exports/xlsx";
 import { xlsxResponse } from "@/lib/exports/download";
 import { fetchAllRows, handleExport, monthParam, requireExportRole } from "../_lib/guard";
+import { recordExport } from "@/lib/exports/record";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,7 @@ export const dynamic = "force-dynamic";
 const TYPES: XlsxCellType[] = ["text", "text", "money", "money", "money", "money", "money", "money", "money", "money", "money", "money"];
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company } = await requireExportRole(STAFF_ROLES);
+  const { supabase, company, profile } = await requireExportRole(STAFF_ROLES);
   const month = monthParam(req, { allowAll: true });
 
   const rows = await fetchAllRows((from, to) => {
@@ -26,5 +27,6 @@ export const GET = handleExport(async (req: NextRequest) => {
   });
 
   const sheet = sheetFromRows("支払一覧", payoutsCsvRows(rows), { types: TYPES });
+  await recordExport({ profileId: profile.id, kind: "payouts", label: "支払一覧 Excel", month, rows: rows.length, req });
   return xlsxResponse(`支払一覧_${monthFileLabel(month)}.xlsx`, buildXlsx([sheet]));
 });
