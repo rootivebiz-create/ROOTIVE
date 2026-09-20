@@ -67,6 +67,7 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
 - **会社を明示する RPC（0017）**：`cash_forecast` / `rate_diffs` は RLS 頼りで会社を絞っていたため、サービスロールの definer から呼ぶと全社が混ざった。実体を `cash_forecast_for(company_id, from, to)` / `rate_diffs_for(company_id, month)`（**サービスロール専用**）に移し、入口の 2 つは権限を確認して自社ぶんを返す
 - **毎朝の自動チェック（0016）**：`detect_anomalies(p_month)` は権限を確認して `detect_anomalies_core(p_company_id, p_month)`（**サービスロール専用**。ログイン中のユーザーからは呼べない）を呼ぶだけになった。Vercel の Cron（`/api/cron/daily`）が会社ごとに当月を検知し、24 時間以内に出た重大な未対応を LINE 連携済みのスタッフへ知らせる（`CRON_SECRET` が必要）
 - **労務・安全（0018）**：日報の `start_at` / `end_at` / `break_minutes` から `v_daily_labor` が 拘束時間（終了 − 開始）・実働（拘束 − 休憩）・休息期間（当日の開始 − 前回の終了）・連続勤務日数を出す。判定の基準は `companies.labor_*`（既定は改善基準告示に合わせた目安：拘束 13 時間／上限 15 時間、休息 11 時間／下限 9 時間、月 284 時間、連続 13 日）で会社ごとに変えられる。月のまとめは `v_driver_month_labor`
+- **書類の検索（電子帳簿保存法）**：`/records` と `lib/records`。レシート（`expenses.receipt_path`）・請求書・支払通知・契約書を 1 つにまとめ、**取引年月日・取引金額・取引先**で範囲と組み合わせの検索ができる。DB の追加は無く、既存のテーブルとビューから組み立てる（`lib/records/load.ts`）。索引簿は `/api/export/records.csv`
 - **元請の支払通知との突合（0018）**：`payment_notices` / `payment_notice_items` に元請の支払通知書を取り込み、`v_payment_notice_diff` が自社の売上（`v_work_entry_calc`）と案件内容ごとに比べる。明細の `project_item_id` は RPC `match_notice_items(notice_id)` が名前の一致（`normalize_name` で空白と記号を無視）で埋める。金額が 0 の明細はトリガーが 数量 × 単価 で埋める
 - 異常の検知は 24 ルール（0011 の 11 ＋ 0012 の 5 ＋ 0014 の 4 ＋ 0018 の 4：拘束時間が長い日・休息の不足・連続勤務の超過・支払通知との差）。**再発したアラートは「未対応」に戻る。「対象外」にしたものは戻らない**
 - ロール：owner（すべて）／admin（登録・編集・月締め・出力）／viewer（閲覧・CSV・チャット・AI 相談）／driver（自分の締め済み月の明細、今日の報告（点呼・稼働）、自分の書類・車両・契約）
