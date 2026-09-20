@@ -45,7 +45,8 @@ test.describe("ナビとコマンドパレット", () => {
         await expect(nav.getByRole("link", { name: label, exact: true })).toBeVisible();
       }
       // 見出し（入力・経営・管理・相談）でまとまっている
-      for (const group of ["代表", "入力", "経営", "管理", "相談"]) {
+      // 「代表」は同名のリンクがあるため、見出しの確認からは外す（リンク側で確認済み）
+      for (const group of ["入力", "経営", "管理", "相談"]) {
         await expect(nav.getByText(group, { exact: true })).toBeVisible();
       }
       await nav.getByRole("link", { name: "レポート", exact: true }).click();

@@ -51,7 +51,7 @@ export function AppShell({
           )}
           <div className="flex shrink-0 items-center gap-1">
             {badges && (
-              <Suspense fallback={<div className="h-9 w-9" />}>
+              <Suspense fallback={<div className="h-11 w-11" />}>
                 <NotificationBell badges={badges} role={role} />
               </Suspense>
             )}

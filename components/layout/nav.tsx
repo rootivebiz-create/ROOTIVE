@@ -280,7 +280,7 @@ export function NotificationBell({ badges, role }: { badges?: NavBadges; role?: 
         <button
           type="button"
           aria-label={total > 0 ? `お知らせ ${badgeText(total)} 件` : "お知らせ"}
-          className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted no-print"
+          className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted no-print"
         >
           <Bell className="h-5 w-5" />
           <NavBadge count={total} className="absolute right-1 top-1.5" />
