@@ -134,14 +134,19 @@ function RequestApprovalForm({
   const [check, setCheck] = useState<ApprovalNotice>(notice);
 
   // 金額を入れ終わったら、その金額のときに決裁が要るかをサーバーへ聞き直す
+  // （しきい値は DB の approval_rules にしか無いので、画面では判定しない）
   useEffect(() => {
     if (!withAmount) return;
+    if (amount.trim() === "") {
+      setCheck(notice);
+      return;
+    }
     const id = setTimeout(async () => {
       const res = await checkApprovalRequiredAction(kind, amount);
       if (res.ok) setCheck({ required: res.data.required, label: res.data.label, dueOn: res.data.due_on });
     }, 400);
     return () => clearTimeout(id);
-  }, [withAmount, kind, amount]);
+  }, [withAmount, kind, amount, notice]);
 
   const amountNum = parseNumberInput(amount);
 

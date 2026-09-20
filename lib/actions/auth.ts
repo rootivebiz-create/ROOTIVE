@@ -1,5 +1,6 @@
 "use server";
 
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -8,6 +9,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { appUrl } from "@/lib/env";
 import { emailSchema } from "@/lib/schemas/common";
 import { getSessionContext } from "@/lib/auth/session";
+import { recordLoginEvent } from "@/lib/auth/login-events";
 
 export interface AuthFormState {
   ok?: boolean;
@@ -54,8 +56,10 @@ export async function signInWithPasswordAction(_prev: AuthFormState, formData: F
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "入力内容を確認してください。" };
   const next = safeNext(formData.get("next"));
   const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword(parsed.data);
+  const { data, error } = await supabase.auth.signInWithPassword(parsed.data);
   if (error) return { error: translateAuthError(error.message) };
+  // ログインの記録（代表だけが見られる。失敗してもログインは止めない）
+  await recordLoginEvent(data.user?.id, "login", { headers: await headers() });
   redirect(next);
 }
 
@@ -152,12 +156,13 @@ export async function acceptInviteAction(_prev: AuthFormState, formData: FormDat
   }
 
   const supabase = await createClient();
-  const { error: verifyErr } = await supabase.auth.verifyOtp({ token_hash: link.properties.hashed_token, type: "magiclink" });
+  const { data: verified, error: verifyErr } = await supabase.auth.verifyOtp({ token_hash: link.properties.hashed_token, type: "magiclink" });
   if (verifyErr) {
     await releaseClaim();
     return { error: `ログインに失敗しました: ${translateAuthError(verifyErr.message)}` };
   }
   await admin.from("invitations").update({ accepted_at: inv.accepted_at ?? new Date().toISOString() }).eq("id", inv.id);
+  await recordLoginEvent(verified.user?.id, "invite", { headers: await headers() });
 
   redirect(inv.role === "driver" ? "/driver" : "/dashboard");
 }
