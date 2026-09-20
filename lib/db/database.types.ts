@@ -361,6 +361,96 @@ export type Database = {
         }
         Relationships: []
       }
+      approval_delegations: {
+        Row: {
+          id: string
+          company_id: string
+          to_profile_id: string
+          to_name: string
+          from_on: string
+          to_on: string
+          max_amount: number | null
+          kinds: Database["public"]["Enums"]["approval_kind"][]
+          is_active: boolean
+          memo: string
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          to_profile_id: string
+          to_name?: string
+          from_on?: string
+          to_on: string
+          max_amount?: number | null
+          kinds?: Database["public"]["Enums"]["approval_kind"][]
+          is_active?: boolean
+          memo?: string
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          to_profile_id?: string
+          to_name?: string
+          from_on?: string
+          to_on?: string
+          max_amount?: number | null
+          kinds?: Database["public"]["Enums"]["approval_kind"][]
+          is_active?: boolean
+          memo?: string
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      approval_rules: {
+        Row: {
+          id: string
+          company_id: string
+          kind: Database["public"]["Enums"]["approval_kind"]
+          label: string
+          threshold_amount: number | null
+          is_enabled: boolean
+          due_days: number
+          note: string
+          sort_order: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          kind: Database["public"]["Enums"]["approval_kind"]
+          label?: string
+          threshold_amount?: number | null
+          is_enabled?: boolean
+          due_days?: number
+          note?: string
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          kind?: Database["public"]["Enums"]["approval_kind"]
+          label?: string
+          threshold_amount?: number | null
+          is_enabled?: boolean
+          due_days?: number
+          note?: string
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       approvals: {
         Row: {
           id: string
@@ -383,6 +473,7 @@ export type Database = {
           decision_note: string
           created_at: string
           updated_at: string
+          on_behalf_of: string | null
         }
         Insert: {
           id?: string
@@ -405,6 +496,7 @@ export type Database = {
           decision_note?: string
           created_at?: string
           updated_at?: string
+          on_behalf_of?: string | null
         }
         Update: {
           id?: string
@@ -427,6 +519,7 @@ export type Database = {
           decision_note?: string
           created_at?: string
           updated_at?: string
+          on_behalf_of?: string | null
         }
         Relationships: []
       }
@@ -797,6 +890,7 @@ export type Database = {
           labor_rest_min_minutes: number
           labor_month_duty_minutes: number
           labor_max_consecutive_days: number
+          confidential_scope: Json
         }
         Insert: {
           id?: string
@@ -834,6 +928,7 @@ export type Database = {
           labor_rest_min_minutes?: number
           labor_month_duty_minutes?: number
           labor_max_consecutive_days?: number
+          confidential_scope?: Json
         }
         Update: {
           id?: string
@@ -871,6 +966,7 @@ export type Database = {
           labor_rest_min_minutes?: number
           labor_month_duty_minutes?: number
           labor_max_consecutive_days?: number
+          confidential_scope?: Json
         }
         Relationships: []
       }
@@ -1213,6 +1309,51 @@ export type Database = {
         }
         Relationships: []
       }
+      driver_bank_accounts: {
+        Row: {
+          driver_id: string
+          company_id: string
+          bank_code: string
+          bank_name: string
+          branch_code: string
+          branch_name: string
+          account_type: Database["public"]["Enums"]["bank_account_type"] | null
+          account_number: string
+          account_holder_kana: string
+          updated_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          driver_id: string
+          company_id: string
+          bank_code?: string
+          bank_name?: string
+          branch_code?: string
+          branch_name?: string
+          account_type?: Database["public"]["Enums"]["bank_account_type"] | null
+          account_number?: string
+          account_holder_kana?: string
+          updated_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          driver_id?: string
+          company_id?: string
+          bank_code?: string
+          bank_name?: string
+          branch_code?: string
+          branch_name?: string
+          account_type?: Database["public"]["Enums"]["bank_account_type"] | null
+          account_number?: string
+          account_holder_kana?: string
+          updated_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       driver_instructions: {
         Row: {
           id: string
@@ -1392,13 +1533,6 @@ export type Database = {
           payout_day: number | null
           line_user_id: string
           line_linked_at: string | null
-          bank_code: string
-          bank_name: string
-          branch_code: string
-          branch_name: string
-          account_type: Database["public"]["Enums"]["bank_account_type"] | null
-          account_number: string
-          account_holder_kana: string
         }
         Insert: {
           id?: string
@@ -1422,13 +1556,6 @@ export type Database = {
           payout_day?: number | null
           line_user_id?: string
           line_linked_at?: string | null
-          bank_code?: string
-          bank_name?: string
-          branch_code?: string
-          branch_name?: string
-          account_type?: Database["public"]["Enums"]["bank_account_type"] | null
-          account_number?: string
-          account_holder_kana?: string
         }
         Update: {
           id?: string
@@ -1452,13 +1579,6 @@ export type Database = {
           payout_day?: number | null
           line_user_id?: string
           line_linked_at?: string | null
-          bank_code?: string
-          bank_name?: string
-          branch_code?: string
-          branch_name?: string
-          account_type?: Database["public"]["Enums"]["bank_account_type"] | null
-          account_number?: string
-          account_holder_kana?: string
         }
         Relationships: []
       }
@@ -1561,6 +1681,54 @@ export type Database = {
           updated_at?: string
           receipt_path?: string
           ocr?: Json
+        }
+        Relationships: []
+      }
+      export_logs: {
+        Row: {
+          id: string
+          company_id: string
+          profile_id: string | null
+          profile_name: string
+          role: Database["public"]["Enums"]["user_role"] | null
+          kind: string
+          label: string
+          month: string | null
+          row_count: number
+          is_sensitive: boolean
+          ip: string
+          user_agent: string
+          at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          profile_id?: string | null
+          profile_name?: string
+          role?: Database["public"]["Enums"]["user_role"] | null
+          kind?: string
+          label?: string
+          month?: string | null
+          row_count?: number
+          is_sensitive?: boolean
+          ip?: string
+          user_agent?: string
+          at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          profile_id?: string | null
+          profile_name?: string
+          role?: Database["public"]["Enums"]["user_role"] | null
+          kind?: string
+          label?: string
+          month?: string | null
+          row_count?: number
+          is_sensitive?: boolean
+          ip?: string
+          user_agent?: string
+          at?: string
         }
         Relationships: []
       }
@@ -3018,6 +3186,25 @@ export type Database = {
       }
     }
     Views: {
+      v_active_delegation: {
+        Row: {
+          id: string | null
+          company_id: string | null
+          to_profile_id: string | null
+          to_name: string | null
+          from_on: string | null
+          to_on: string | null
+          max_amount: number | null
+          kinds: Database["public"]["Enums"]["approval_kind"][] | null
+          is_active: boolean | null
+          memo: string | null
+          created_by: string | null
+          created_at: string | null
+          updated_at: string | null
+          is_current: boolean | null
+        }
+        Relationships: []
+      }
       v_ai_conversation_list: {
         Row: {
           id: string | null
@@ -3096,9 +3283,11 @@ export type Database = {
           decision_note: string | null
           created_at: string | null
           updated_at: string | null
+          on_behalf_of: string | null
           waiting_days: number | null
           is_overdue: boolean | null
           urgency: string | null
+          can_decide: boolean | null
         }
         Relationships: []
       }
@@ -3299,6 +3488,25 @@ export type Database = {
         }
         Relationships: []
       }
+      v_driver_bank: {
+        Row: {
+          driver_id: string | null
+          company_id: string | null
+          driver_name: string | null
+          driver_kana: string | null
+          is_active: boolean | null
+          sort_order: number | null
+          bank_code: string | null
+          bank_name: string | null
+          branch_code: string | null
+          branch_name: string | null
+          account_type: Database["public"]["Enums"]["bank_account_type"] | null
+          account_number: string | null
+          account_holder_kana: string | null
+          is_complete: boolean | null
+        }
+        Relationships: []
+      }
       v_driver_month_labor: {
         Row: {
           company_id: string | null
@@ -3378,6 +3586,10 @@ export type Database = {
           shares_total: number | null
           has_profile: boolean | null
           active_plans: number | null
+          active_delegations: number | null
+          exports_30d: number | null
+          sensitive_exports_30d: number | null
+          bank_account_count: number | null
         }
         Relationships: []
       }
@@ -3432,6 +3644,26 @@ export type Database = {
           expense_count: number | null
           amount: number | null
           taxable_amount: number | null
+        }
+        Relationships: []
+      }
+      v_export_log_list: {
+        Row: {
+          id: string | null
+          company_id: string | null
+          profile_id: string | null
+          profile_name: string | null
+          role: Database["public"]["Enums"]["user_role"] | null
+          kind: string | null
+          label: string | null
+          month: string | null
+          row_count: number | null
+          is_sensitive: boolean | null
+          ip: string | null
+          user_agent: string | null
+          at: string | null
+          export_date: string | null
+          export_month: string | null
         }
         Relationships: []
       }
@@ -3948,6 +4180,13 @@ export type Database = {
         }
         Returns: number
       }
+      approval_required: {
+        Args: {
+          p_kind: Database["public"]["Enums"]["approval_kind"]
+          p_amount?: number
+        }
+        Returns: Json
+      }
       approve_day_entries: {
         Args: {
           p_ids: string[]
@@ -3990,6 +4229,19 @@ export type Database = {
           p_rows: Json
         }
         Returns: Json
+      }
+      can_decide_approval: {
+        Args: {
+          p_kind: Database["public"]["Enums"]["approval_kind"]
+          p_amount?: number
+        }
+        Returns: boolean
+      }
+      can_see_confidential: {
+        Args: {
+          p_key: string
+        }
+        Returns: boolean
       }
       cash_forecast: {
         Args: {
@@ -4083,6 +4335,18 @@ export type Database = {
           p_note?: string
         }
         Returns: Database["public"]["Tables"]["approvals"]["Row"]
+      }
+      decision_from_approval: {
+        Args: {
+          p_approval_id: string
+        }
+        Returns: string
+      }
+      default_approval_rules: {
+        Args: {
+          p_company_id: string
+        }
+        Returns: undefined
       }
       default_chat_channels: {
         Args: {
@@ -4339,6 +4603,18 @@ export type Database = {
         }
         Returns: string
       }
+      record_export: {
+        Args: {
+          p_profile_id: string
+          p_kind: string
+          p_label?: string
+          p_month?: string
+          p_rows?: number
+          p_ip?: string
+          p_user_agent?: string
+        }
+        Returns: string
+      }
       record_login_event: {
         Args: {
           p_profile_id: string
@@ -4408,6 +4684,14 @@ export type Database = {
           p_path: string
         }
         Returns: undefined
+      }
+      spread_plan_year: {
+        Args: {
+          p_plan_id: string
+          p_year: number
+          p_weight?: string
+        }
+        Returns: number
       }
       submit_day_entries: {
         Args: {

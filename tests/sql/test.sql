@@ -634,15 +634,16 @@ select public.t_expect_error(format($$insert into public.cash_snapshots (company
 
 -- 権限
 select public.test_login(:'viewer_a');
-select public.t_assert((select count(*) = 1 from public.cash_snapshots), 'viewer は残高を閲覧できる');
+-- 0020：現金は既定で「管理者まで」。閲覧者には見えない（companies.confidential_scope で変えられる）
+select public.t_assert((select count(*) = 0 from public.cash_snapshots), 'viewer は残高を閲覧できない（0020 の機密の隔離）');
 select public.t_expect_error(format($$insert into public.cash_snapshots (company_id, as_of, balance) values ('%s', '2027-01-01', 1)$$, :'company_a'), null, 'viewer は残高を登録できない');
 select public.test_login(:'owner_b');
 select public.t_assert((select count(*) = 0 from public.cash_snapshots), '他社の残高は見えない');
 select public.t_assert((select count(*) = 0 from public.v_project_pl), '他社の案件損益は見えない');
 select public.test_login(:'owner_a');
 
--- バックアップ（0019 で version 6 に上がった）に含まれる
-select public.t_assert((public.export_backup()->>'version') = '6', 'バックアップは version 6');
+-- バックアップ（0020 で version 7 に上がった）に含まれる
+select public.t_assert((public.export_backup()->>'version') = '7', 'バックアップは version 7');
 select public.t_assert(jsonb_array_length(public.export_backup()->'cash_snapshots') = 1, 'バックアップに現金残高が入る');
 select public.t_assert((select count(*) from public.import_backup(public.export_backup())) >= 0, '復元（同じデータ）');
 select public.t_assert((select count(*) = 1 and max(balance) = 1500000 from public.cash_snapshots where company_id = :'company_a'), '復元後も現金残高は同じ');
@@ -1059,13 +1060,16 @@ select public.t_assert((select bill_achievement is not null from public.v_month_
 select public.t_assert((select expense_target = 300000 and driver_target = 3 from public.v_month_kpi where company_id = :'company_a' and month = '2026-12-01'), '経費とドライバー数の予算が出る');
 select public.t_assert((select break_even_bill >= 0 from public.v_month_kpi where company_id = :'company_a' and month = '2026-12-01'), '損益分岐点売上高が出る');
 
--- ---------- 口座情報 ----------
-update public.drivers set bank_code = '0005', bank_name = '三菱ＵＦＪ銀行', branch_code = '001', branch_name = '本店',
-       account_type = 'ordinary', account_number = '1234567', account_holder_kana = 'ｱｲｿ ｻﾄｼ'
- where company_id = :'company_a' and name = '相曽慧';
-select public.t_assert((select account_number = '1234567' from public.drivers where company_id = :'company_a' and name = '相曽慧'), '口座情報を保存できる');
-select public.t_expect_error($$update public.drivers set bank_code = '12' where name = '相曽慧'$$, '', '銀行コードは 4 桁でないと保存できない');
-select public.t_expect_error($$update public.drivers set account_number = '12345678' where name = '相曽慧'$$, '', '口座番号は 7 桁までしか保存できない');
+-- ---------- 口座情報（0020 で drivers から driver_bank_accounts へ移した） ----------
+insert into public.driver_bank_accounts (driver_id, company_id, bank_code, bank_name, branch_code, branch_name, account_type, account_number, account_holder_kana)
+select id, :'company_a', '0005', '三菱ＵＦＪ銀行', '001', '本店', 'ordinary', '1234567', 'ｱｲｿ ｻﾄｼ'
+  from public.drivers where company_id = :'company_a' and name = '相曽慧'
+on conflict (driver_id) do update set bank_code = excluded.bank_code, bank_name = excluded.bank_name,
+  branch_code = excluded.branch_code, branch_name = excluded.branch_name, account_type = excluded.account_type,
+  account_number = excluded.account_number, account_holder_kana = excluded.account_holder_kana;
+select public.t_assert((select account_number = '1234567' and is_complete from public.v_driver_bank where company_id = :'company_a' and driver_name = '相曽慧'), '口座情報を保存できる');
+select public.t_expect_error($$update public.driver_bank_accounts set bank_code = '12'$$, '', '銀行コードは 4 桁でないと保存できない');
+select public.t_expect_error($$update public.driver_bank_accounts set account_number = '12345678'$$, '', '口座番号は 7 桁までしか保存できない');
 update public.companies set fb_consignor_code = '1234567890', fb_consignor_kana = 'ｶ)ﾙｰﾃｨﾌﾞ', fb_bank_code = '0005',
        fb_bank_name = '三菱ＵＦＪ銀行', fb_branch_code = '001', fb_branch_name = '本店',
        fb_account_type = 'ordinary', fb_account_number = '7654321' where id = :'company_a';
@@ -1088,8 +1092,10 @@ select public.t_assert((select count(*) = 0 from public.alerts where company_id 
 
 -- ---------- 権限 ----------
 select public.test_login(:'viewer_a');
-select public.t_assert((select count(*) > 0 from public.tax_tasks where company_id = :'company_a'), '閲覧者は税務の期限を読める');
-select public.t_assert((select count(*) > 0 from public.v_loan_list where company_id = :'company_a'), '閲覧者は借入を読める');
+-- 0020：借入と納税は既定で「管理者まで」。閲覧者には見えない
+select public.t_assert((select count(*) = 0 from public.tax_tasks where company_id = :'company_a'), '閲覧者は税務の期限を読めない（0020 の機密の隔離）');
+select public.t_assert((select count(*) = 0 from public.v_loan_list where company_id = :'company_a'), '閲覧者は借入を読めない（0020 の機密の隔離）');
+select public.t_assert((select count(*) = 0 from public.v_driver_bank where company_id = :'company_a'), '閲覧者はドライバーの口座を読めない');
 select public.t_expect_error($$insert into public.loans (company_id, name, principal, start_on) values ('00000000-0000-0000-0000-00000000000a', 'だめ', 1, '2026-12-01')$$, '', '閲覧者は借入を追加できない');
 select public.t_expect_error($$select public.generate_loan_schedule('00000000-0000-0000-0000-0000000000f1')$$, 'FORBIDDEN', '閲覧者は返済予定を作れない');
 select public.t_expect_error($$select public.ensure_tax_tasks(2029)$$, 'FORBIDDEN', '閲覧者は税務の期限を作れない');
@@ -1109,7 +1115,7 @@ set role authenticated;
 select public.test_login(:'owner_a');
 
 -- 書き出しに新しいテーブルが入る
-select public.t_assert((public.export_backup()->>'version') = '6', 'バックアップは version 6');
+select public.t_assert((public.export_backup()->>'version') = '7', 'バックアップは version 7');
 select public.t_assert(jsonb_array_length(public.export_backup()->'vehicles') > 0, 'バックアップに車両が入る');
 select public.t_assert(jsonb_array_length(public.export_backup()->'documents') > 0, 'バックアップに書類が入る');
 select public.t_assert(jsonb_array_length(public.export_backup()->'daily_reports') > 0, 'バックアップに日報が入る');
@@ -1122,7 +1128,7 @@ select public.t_assert(jsonb_array_length(public.export_backup()->'tax_tasks') >
 select public.t_assert(jsonb_array_length(public.export_backup()->'loans') > 0, 'バックアップに借入が入る');
 select public.t_assert(jsonb_array_length(public.export_backup()->'loan_payments') > 0, 'バックアップに返済予定が入る');
 select public.t_assert((public.export_backup()->'company'->>'fiscal_month') is not null, 'バックアップに決算月が入る');
-select public.t_assert((select (x->>'account_number') = '1234567' from jsonb_array_elements(public.export_backup()->'drivers') x where x->>'name' = '相曽慧'), 'バックアップにドライバーの口座情報が入る');
+select public.t_assert((select count(*) = 1 from jsonb_array_elements(public.export_backup()->'driver_bank_accounts') x where x->>'account_number' = '1234567'), 'バックアップにドライバーの口座情報が入る');
 -- トークンや秘密は含めない
 select public.t_assert((public.export_backup() ? 'integration_secrets') = false, 'バックアップに外部連携のトークンは含めない');
 
@@ -1154,7 +1160,7 @@ select public.t_assert((select count(*) from public.contracts where company_id =
 select public.t_assert((select count(*) from public.tax_tasks where company_id = '00000000-0000-0000-0000-00000000000a') = (select tax_tasks from t_before24), '復元後も税務の期限の件数が同じ');
 select public.t_assert((select count(*) from public.loan_payments where company_id = '00000000-0000-0000-0000-00000000000a') = (select loan_payments from t_before24), '復元後も返済予定の件数が同じ');
 select public.t_assert((select count(*) from public.work_entries where company_id = '00000000-0000-0000-0000-00000000000a') = (select work_entries from t_before24), '復元後も稼働行の件数が同じ');
-select public.t_assert((select account_number = '1234567' and account_holder_kana = 'ｱｲｿ ｻﾄｼ' from public.drivers where company_id = '00000000-0000-0000-0000-00000000000a' and name = '相曽慧'), '復元後もドライバーの口座情報が同じ');
+select public.t_assert((select account_number = '1234567' and account_holder_kana = 'ｱｲｿ ｻﾄｼ' from public.v_driver_bank where company_id = '00000000-0000-0000-0000-00000000000a' and driver_name = '相曽慧'), '復元後もドライバーの口座情報が同じ');
 select public.t_assert((select fiscal_month = 3 and fb_consignor_code = '1234567890' from public.companies where id = '00000000-0000-0000-0000-00000000000a'), '復元後も決算月と振込元が同じ');
 select public.t_assert((select expense_target = 300000 and driver_target = 3 from public.month_targets where company_id = '00000000-0000-0000-0000-00000000000a' and month = '2026-12-01'), '復元後も経費とドライバー数の予算が同じ');
 select public.t_assert((select abs(sum(principal) - 3000000) < 100 from public.loan_payments where company_id = '00000000-0000-0000-0000-00000000000a'), '復元後も返済予定の元金合計が同じ');
@@ -1426,7 +1432,7 @@ select public.t_assert((select pending_approvals = 0 from public.v_executive_sum
 
 -- ---------- バックアップ（version 6）に入る ----------
 select public.test_login(:'owner_a');
-select public.t_assert((public.export_backup()->>'version') = '6', 'バックアップは version 6');
+select public.t_assert((public.export_backup()->>'version') = '7', 'バックアップは version 7');
 select public.t_assert(jsonb_array_length(public.export_backup()->'approvals') = 2, 'バックアップに申請が入る');
 select public.t_assert(jsonb_array_length(public.export_backup()->'decisions') = 1, 'バックアップに意思決定ログが入る');
 select public.t_assert(jsonb_array_length(public.export_backup()->'officers') = 1, 'バックアップに役員が入る');
@@ -1455,4 +1461,179 @@ select public.t_assert((select count(*) = 1 from public.guarantees where company
 select public.test_logout();
 reset role;
 
-\echo '== すべてのアサーションが通りました（18〜27 節）'
+
+\echo '== 28. 代表の守り（機密の隔離・決裁のルールと委任・持ち出しの記録・計画の配分）'
+set role authenticated;
+
+-- ---------- 機密の見せ方 ----------
+select public.test_login(:'owner_a');
+select public.t_assert(public.can_see_confidential('loans') and public.can_see_confidential('cash') and public.can_see_confidential('bank_account'), '代表はすべての機密を見られる');
+select public.test_login(:'admin_a');
+select public.t_assert(public.can_see_confidential('loans') and public.can_see_confidential('cash'), '既定では管理者も借入と現金を見られる');
+select public.t_assert((select count(*) > 0 from public.v_loan_list where company_id = :'company_a'), '管理者は借入を読める');
+select public.test_login(:'viewer_a');
+select public.t_assert(not public.can_see_confidential('loans'), '閲覧者は借入を見られない');
+select public.t_assert(not public.can_see_confidential('bank_account'), '閲覧者はドライバーの口座を見られない');
+
+-- 代表だけに絞る
+select public.test_login(:'owner_a');
+update public.companies set confidential_scope = '{"loans":"owner","cash":"owner","bank_account":"owner"}'::jsonb where id = :'company_a';
+select public.test_login(:'admin_a');
+select public.t_assert(not public.can_see_confidential('loans'), '「代表のみ」にすると管理者も借入を見られない');
+select public.t_assert((select count(*) = 0 from public.v_loan_list where company_id = :'company_a'), '管理者にも借入の一覧が見えなくなる');
+select public.t_assert((select count(*) = 0 from public.v_driver_bank), '管理者にも口座が見えなくなる');
+select public.t_assert(public.t_rowcount($$update public.driver_bank_accounts set bank_name = 'NG'$$) = 0, '見られない行は更新もできない');
+select public.t_expect_error($$insert into public.driver_bank_accounts (driver_id, company_id, bank_code) select d.id, d.company_id, '0001' from public.drivers d where d.company_id = '00000000-0000-0000-0000-00000000000a' and d.name <> '相曽慧' order by d.sort_order limit 1$$, '', '見られないときは追加もできない');
+-- 閲覧者まで開ける
+select public.test_login(:'owner_a');
+update public.companies set confidential_scope = '{"loans":"staff","cash":"staff","bank_account":"admin"}'::jsonb where id = :'company_a';
+select public.test_login(:'viewer_a');
+select public.t_assert((select count(*) > 0 from public.v_loan_list where company_id = :'company_a'), '「閲覧者まで」にすると閲覧者も借入を読める');
+select public.t_assert((select count(*) = 0 from public.v_driver_bank), '口座は「管理者まで」のままなので閲覧者には見えない');
+-- 既定に戻す
+select public.test_login(:'owner_a');
+update public.companies set confidential_scope = '{"loans":"admin","cash":"admin","bank_account":"admin"}'::jsonb where id = :'company_a';
+
+-- ---------- 決裁のルール ----------
+select public.t_assert((select count(*) = 6 from public.approval_rules where company_id = :'company_a'), '会社に既定の決裁ルールが 6 件入る');
+select public.t_assert((public.approval_required('expense', 100000)->>'required')::boolean = false, '30 万円未満の経費は決裁が要らない');
+select public.t_assert((public.approval_required('expense', 500000)->>'required')::boolean, '30 万円以上の経費は決裁が要る');
+select public.t_assert((public.approval_required('expense', -500000)->>'required')::boolean, 'マイナスでも金額の大きさで判定する');
+select public.t_assert((public.approval_required('rate_change', 0)->>'required')::boolean, '単価の変更は金額を問わず決裁が要る');
+select public.t_assert((public.approval_required('expense', 500000)->>'due_on')::date = current_date + 3, '期限は既定の日数ぶん先になる');
+update public.approval_rules set is_enabled = false where company_id = :'company_a' and kind = 'rate_change';
+select public.t_assert((public.approval_required('rate_change', 0)->>'required')::boolean = false, '止めたルールは判定に使わない');
+update public.approval_rules set is_enabled = true where company_id = :'company_a' and kind = 'rate_change';
+select public.t_assert((public.approval_required('hire', 999999)->>'required')::boolean = false, 'ルールが無い種別は決裁が要らない');
+
+select public.test_login(:'admin_a');
+select public.t_assert((select count(*) = 6 from public.approval_rules where company_id = :'company_a'), '管理者もルールを読める（自分の操作が回るか分かるように）');
+select public.t_assert(public.t_rowcount($$update public.approval_rules set threshold_amount = 1 where company_id = '00000000-0000-0000-0000-00000000000a'$$) = 0, '管理者はルールを変えられない');
+select public.t_expect_error($$insert into public.approval_rules (company_id, kind) values ('00000000-0000-0000-0000-00000000000a', 'hire')$$, '', '管理者はルールを増やせない');
+
+-- ---------- 代理決裁 ----------
+select public.test_login(:'owner_a');
+\set delegation_1 '00000000-0000-0000-0000-00000000ea01'
+\set approval_2 '00000000-0000-0000-0000-00000000ee02'
+insert into public.approvals (id, company_id, kind, title, amount, requested_by)
+values (:'approval_2', :'company_a', 'expense', '事務所の複合機', 400000, :'admin_a');
+select public.test_login(:'admin_a');
+select public.t_assert((select can_decide = false from public.v_approval_list where id = :'approval_2'), '委任が無ければ管理者は決裁できない');
+select public.t_expect_error($$select public.decide_approval('00000000-0000-0000-0000-00000000ee02', true, '')$$, 'FORBIDDEN', '委任が無ければ決裁の RPC も拒否される');
+
+select public.test_login(:'owner_a');
+insert into public.approval_delegations (id, company_id, to_profile_id, from_on, to_on, max_amount, kinds, created_by)
+values (:'delegation_1', :'company_a', :'admin_a', current_date - 1, current_date + 3, 500000, array['expense']::public.approval_kind[], :'owner_a');
+select public.t_assert((select to_name <> '' from public.approval_delegations where id = :'delegation_1'), '委任先の名前が入る');
+select public.t_assert((select is_current from public.v_active_delegation where id = :'delegation_1'), 'いま有効な委任として出る');
+select public.t_expect_error(format($$insert into public.approval_delegations (company_id, to_profile_id, to_on) values ('%s', '%s', current_date)$$, :'company_a', :'viewer_a'), '', '閲覧者には委任できない');
+select public.t_expect_error(format($$insert into public.approval_delegations (company_id, to_profile_id, to_on) values ('%s', '%s', current_date)$$, :'company_a', :'owner_b'), '', '他社のユーザーには委任できない');
+
+select public.test_login(:'admin_a');
+select public.t_assert(public.can_decide_approval('expense', 400000), '委任された管理者は上限内の経費を決裁できる');
+select public.t_assert(not public.can_decide_approval('expense', 900000), '上限を超えると決裁できない');
+select public.t_assert(not public.can_decide_approval('loan', 100), '委任していない種別は決裁できない');
+select public.t_assert((select (public.decide_approval(:'approval_2', true, '代理で承認')).status = 'approved'), '代理で承認できる');
+select public.t_assert((select decided_by = :'admin_a' and on_behalf_of = :'owner_a' from public.approvals where id = :'approval_2'), '誰の代わりに決めたかが残る');
+
+-- 期間が切れたら決裁できない
+select public.test_login(:'owner_a');
+update public.approval_delegations set to_on = current_date - 1 where id = :'delegation_1';
+select public.test_login(:'admin_a');
+select public.t_assert(not public.can_decide_approval('expense', 100), '期間が切れた委任では決裁できない');
+
+-- ---------- 決裁 → 意思決定ログの下書き ----------
+select public.test_login(:'owner_a');
+select public.t_assert(public.decision_from_approval(:'approval_2') is not null, '承認した申請から意思決定ログを作れる');
+select public.t_assert(public.decision_from_approval(:'approval_2') = (select id from public.decisions where approval_id = :'approval_2'), '同じ申請から二度は作らない');
+select public.t_assert((select review_on = decided_on + 90 from public.decisions where approval_id = :'approval_2'), '見直し日は 3 か月後になる');
+select public.test_login(:'admin_a');
+select public.t_expect_error($$select public.decision_from_approval('00000000-0000-0000-0000-00000000ee02')$$, 'FORBIDDEN', '管理者は意思決定ログを作れない');
+
+-- ---------- 中期計画 → 月次目標の配分 ----------
+select public.test_login(:'owner_a');
+update public.plan_years set bill_target = 120000000, profit_target = 12000000, driver_target = 12
+ where plan_id = '00000000-0000-0000-0000-00000000ef01' and year = 2028;
+select public.t_assert(public.spread_plan_year('00000000-0000-0000-0000-00000000ef01', 2028, 'even') = 12, '12 か月に配分する');
+select public.t_assert((select coalesce(sum(bill_target), 0) = 120000000 from public.month_targets where company_id = :'company_a' and month between '2028-01-01' and '2028-12-01'), '配分の合計は年間目標と一致する');
+select public.t_assert((select bill_target = 10000000 from public.month_targets where company_id = :'company_a' and month = '2028-01-01'), '均等なら 1 か月 1,000 万円');
+-- 手で入れた月は上書きしない
+update public.month_targets set bill_target = 5000000 where company_id = :'company_a' and month = '2028-03-01';
+select public.t_assert(public.spread_plan_year('00000000-0000-0000-0000-00000000ef01', 2028, 'even') = 12, 'もう一度配分できる');
+select public.t_assert((select bill_target = 5000000 from public.month_targets where company_id = :'company_a' and month = '2028-03-01'), '手で入れた月は上書きしない');
+select public.test_login(:'admin_a');
+select public.t_expect_error($$select public.spread_plan_year('00000000-0000-0000-0000-00000000ef01', 2028, 'even')$$, 'FORBIDDEN', '管理者は配分できない');
+
+-- ---------- 持ち出しの記録 ----------
+select public.test_login(:'owner_a');
+select public.t_expect_error($$select public.record_export('00000000-0000-0000-0000-0000000000a1', 'transfer', '', null, 0, '', '')$$, '', 'ログイン中のユーザーは持ち出しを記録できない');
+select public.test_logout();
+reset role;
+
+set role service_role;
+select public.t_assert(public.record_export(:'admin_a', 'transfer', '2026-12 の振込データ', '2026-12-01', 8, '203.0.113.9', 'curl') is not null, 'サービスロールは持ち出しを記録できる');
+select public.t_assert(public.record_export(:'viewer_a', 'entries', '2026-12 の稼働 CSV', '2026-12-01', 10, '', '') is not null, '個人情報を含まない出力も記録する');
+reset role;
+
+set role authenticated;
+select public.test_login(:'owner_a');
+select public.t_assert((select count(*) = 2 from public.export_logs where company_id = :'company_a'), '代表は持ち出しの記録を見られる');
+select public.t_assert((select is_sensitive from public.export_logs where company_id = :'company_a' and kind = 'transfer'), '振込データは個人情報を含む出力としるしが付く');
+select public.t_assert((select not is_sensitive from public.export_logs where company_id = :'company_a' and kind = 'entries'), '稼働 CSV にはしるしが付かない');
+select public.t_assert((select sensitive_exports_30d = 1 and exports_30d = 2 from public.v_executive_summary where company_id = :'company_a'), 'サマリーに 30 日間の持ち出しの件数が出る');
+select public.test_login(:'admin_a');
+select public.t_assert((select count(*) = 0 from public.export_logs), '管理者には持ち出しの記録が見えない');
+
+-- 持ち出しの急増を検知（26）
+reset role;
+set role service_role;
+do $$
+declare i integer;
+begin
+  for i in 1 .. 12 loop
+    perform public.record_export('00000000-0000-0000-0000-0000000000a2', 'backup', 'バックアップ', null, 0, '', '');
+  end loop;
+end $$;
+select public.detect_anomalies_core('00000000-0000-0000-0000-00000000000a', '2026-12-01');
+reset role;
+set role authenticated;
+select public.test_login(:'owner_a');
+select public.t_assert((select count(*) = 1 from public.alerts where company_id = :'company_a' and code = 'export_burst' and status = 'open'), '個人情報を含む出力の急増を検知する');
+
+-- ---------- バックアップ（version 7） ----------
+select public.t_assert((public.export_backup()->>'version') = '7', 'バックアップは version 7');
+select public.t_assert(jsonb_array_length(public.export_backup()->'approval_rules') = 6, 'バックアップに決裁のルールが入る');
+select public.t_assert(jsonb_array_length(public.export_backup()->'approval_delegations') = 1, 'バックアップに決裁の委任が入る');
+select public.t_assert(jsonb_array_length(public.export_backup()->'driver_bank_accounts') = 1, 'バックアップにドライバーの口座が入る');
+select public.t_assert(not (public.export_backup() ? 'export_logs'), '持ち出しの記録はバックアップに含めない');
+select public.t_assert((select count(*) = 0 from jsonb_array_elements(public.export_backup()->'drivers') x where x ? 'account_number'), 'ドライバーの行に口座は残っていない');
+
+create temp table t_backup28 as select public.export_backup() as data;
+select public.import_backup((select data from t_backup28));
+select public.import_backup((select data from t_backup28));
+select public.t_assert((select count(*) = 6 from public.approval_rules where company_id = :'company_a'), '復元しても決裁のルールは 6 件');
+select public.t_assert((select count(*) = 1 from public.approval_delegations where company_id = :'company_a'), '復元しても委任は 1 件');
+select public.t_assert((select account_number = '1234567' from public.v_driver_bank where company_id = :'company_a' and driver_name = '相曽慧'), '復元しても口座は同じ');
+
+-- 古いバックアップ（version 6 以前。drivers の中に口座がある）からも戻せる
+delete from public.driver_bank_accounts where company_id = :'company_a';
+select public.import_backup(
+  ((select data from t_backup28) - 'driver_bank_accounts')
+  || jsonb_build_object('drivers',
+       (select jsonb_agg(x || jsonb_build_object('bank_code','0005','bank_name','三菱ＵＦＪ銀行','branch_code','001','branch_name','本店','account_type','ordinary','account_number','7654321','account_holder_kana','ｱｲｿ ｻﾄｼ'))
+          from jsonb_array_elements((select data from t_backup28)->'drivers') x
+         where x->>'name' = '相曽慧'))
+);
+select public.t_assert((select account_number = '7654321' from public.v_driver_bank where company_id = :'company_a' and driver_name = '相曽慧'), '古いバックアップの口座も戻せる');
+
+-- ---------- 会社分離 ----------
+select public.test_login(:'owner_b');
+select public.t_assert((select count(*) = 0 from public.export_logs), '他社の持ち出しの記録は見えない');
+select public.t_assert((select count(*) = 0 from public.approval_delegations), '他社の委任は見えない');
+select public.t_assert((select count(*) = 0 from public.v_driver_bank), '他社の口座は見えない');
+select public.t_assert((select count(*) = 6 from public.approval_rules), '自社の既定のルールは入っている');
+
+select public.test_logout();
+reset role;
+
+\echo '== すべてのアサーションが通りました（18〜28 節）'

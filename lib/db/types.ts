@@ -370,3 +370,141 @@ export const NOTICE_DIFF_LABELS: Record<string, string> = {
   notice_less: "通知のほうが少ない",
   unmatched: "案件内容が未紐づけ",
 };
+
+// =============================================================================
+// 0019・0020 代表（Executive）
+// =============================================================================
+export type ApprovalKind = Enums<"approval_kind">;
+export type ApprovalStatus = Enums<"approval_status">;
+export type DecisionStatus = Enums<"decision_status">;
+export type LoginEventKind = Enums<"login_event_kind">;
+
+export type Approval = Tables<"approvals">;
+export type ApprovalRule = Tables<"approval_rules">;
+export type ApprovalDelegation = Tables<"approval_delegations">;
+export type Decision = Tables<"decisions">;
+export type CompanyProfile = Tables<"company_profile">;
+export type Officer = Tables<"officers">;
+export type Shareholder = Tables<"shareholders">;
+export type InsurancePolicy = Tables<"insurance_policies">;
+export type Advisor = Tables<"advisors">;
+export type Guarantee = Tables<"guarantees">;
+export type Plan = Tables<"plans">;
+export type PlanYear = Tables<"plan_years">;
+export type LoginEvent = Tables<"login_events">;
+export type ExportLog = Tables<"export_logs">;
+export type DriverBankAccount = Tables<"driver_bank_accounts">;
+
+export type ApprovalRow = Views<"v_approval_list">;
+export type PlanYearActual = Views<"v_plan_year_actual">;
+export type ExecutiveTask = Views<"v_executive_tasks">;
+export type ExecutiveSummary = Views<"v_executive_summary">;
+export type DelegationRow = Views<"v_active_delegation">;
+export type ExportLogRow = Views<"v_export_log_list">;
+export type DriverBankRow = Views<"v_driver_bank">;
+
+/** 決裁が要る操作の種別 */
+export const APPROVAL_KIND_LABELS: Record<ApprovalKind, string> = {
+  expense: "経費",
+  rate_change: "単価の変更",
+  project: "案件・取引先",
+  contract: "契約",
+  loan: "借入",
+  month_reopen: "締めた月の解除",
+  payout: "支払",
+  purchase: "購入",
+  hire: "採用",
+  other: "その他",
+};
+
+/** 決裁の状態 */
+export const APPROVAL_STATUS_LABELS: Record<ApprovalStatus, string> = {
+  pending: "決裁待ち",
+  approved: "承認",
+  rejected: "却下",
+  withdrawn: "取り下げ",
+};
+
+/** 決裁の急ぎぐあい（v_approval_list.urgency） */
+export const APPROVAL_URGENCY_LABELS: Record<string, string> = {
+  overdue: "期限切れ",
+  stale: "滞留",
+  waiting: "待ち",
+  done: "決裁済み",
+};
+
+/** 意思決定ログの状態 */
+export const DECISION_STATUS_LABELS: Record<DecisionStatus, string> = {
+  open: "見直し前",
+  reviewed: "振り返り済み",
+  dropped: "取りやめ",
+};
+
+/** 代表がいま見るべきことの種別（v_executive_tasks.kind） */
+export const EXECUTIVE_TASK_LABELS: Record<string, string> = {
+  approval: "決裁",
+  decision_review: "意思決定の見直し",
+  insurance_expiry: "保険の満了",
+  officer_term: "役員の任期",
+  delegation_end: "委任の期限",
+};
+
+/** ログインの記録の種別 */
+export const LOGIN_EVENT_LABELS: Record<LoginEventKind, string> = {
+  login: "ログイン",
+  logout: "ログアウト",
+  invite: "招待の受諾",
+};
+
+/** 持ち出し（出力）の種別 */
+export const EXPORT_KIND_LABELS: Record<string, string> = {
+  entries: "稼働 CSV",
+  payouts: "支払一覧",
+  statement: "支払明細 PDF",
+  statements: "支払明細の一括 PDF",
+  transfer: "振込データ（全銀）",
+  backup: "バックアップ JSON",
+  drivers: "ドライバー一覧",
+  expenses: "経費 CSV",
+  invoices: "請求 CSV",
+  rates: "単価表 CSV",
+  records: "書類の索引簿",
+  "month-pack": "月次パック ZIP",
+  report: "月次レポート PDF",
+  other: "その他",
+};
+
+/** 機密の見せ方（companies.confidential_scope の値） */
+export type ConfidentialLevel = "owner" | "admin" | "staff";
+export const CONFIDENTIAL_LEVEL_LABELS: Record<ConfidentialLevel, string> = {
+  owner: "代表のみ",
+  admin: "管理者まで",
+  staff: "閲覧者まで",
+};
+export const CONFIDENTIAL_KEY_LABELS: Record<string, string> = {
+  loans: "借入と納税",
+  cash: "現金残高と資金繰り",
+  bank_account: "ドライバーの振込口座",
+};
+export type ConfidentialScope = { loans: ConfidentialLevel; cash: ConfidentialLevel; bank_account: ConfidentialLevel };
+export const DEFAULT_CONFIDENTIAL_SCOPE: ConfidentialScope = { loans: "admin", cash: "admin", bank_account: "admin" };
+
+/** companies.confidential_scope（jsonb）を型のある形に直す */
+export function toConfidentialScope(value: unknown): ConfidentialScope {
+  const levels: ConfidentialLevel[] = ["owner", "admin", "staff"];
+  const pick = (key: keyof ConfidentialScope): ConfidentialLevel => {
+    const raw = value && typeof value === "object" ? (value as Record<string, unknown>)[key] : undefined;
+    return typeof raw === "string" && (levels as string[]).includes(raw) ? (raw as ConfidentialLevel) : DEFAULT_CONFIDENTIAL_SCOPE[key];
+  };
+  return { loans: pick("loans"), cash: pick("cash"), bank_account: pick("bank_account") };
+}
+
+/** その機密をこのロールが見てよいか（DB の can_see_confidential と同じ判定） */
+export function canSeeConfidential(role: Role, scope: ConfidentialScope, key: keyof ConfidentialScope): boolean {
+  if (role === "owner") return true;
+  if (role === "driver") return false;
+  const level = scope[key];
+  if (level === "staff") return true;
+  if (level === "admin") return role === "admin";
+  return false;
+}
