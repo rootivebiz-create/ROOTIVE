@@ -14,6 +14,7 @@ import {
   BarChart3,
   PiggyBank,
   Download,
+  FolderSearch,
   ClipboardCheck,
   Truck,
   UserPlus,
@@ -42,7 +43,7 @@ export interface NavItem {
 /** 未読・未対応の件数（href をキーにした数。0 は出さない） */
 export type NavBadges = Record<string, number>;
 
-/** PC のサイドナビ（19 項目。group ごとに見出しを付けて表示する） */
+/** PC のサイドナビ（20 項目。group ごとに見出しを付けて表示する） */
 export const MAIN_NAV: NavItem[] = [
   { href: "/dashboard", label: "ホーム", icon: Home },
   { href: "/entries", label: "稼働", icon: ClipboardList, group: "入力" },
@@ -59,6 +60,7 @@ export const MAIN_NAV: NavItem[] = [
   { href: "/alerts", label: "気になること", icon: TriangleAlert, group: "経営" },
   { href: "/fleet", label: "車両と書類", icon: Truck, group: "管理" },
   { href: "/hr", label: "採用と契約", icon: UserPlus, group: "管理" },
+  { href: "/records", label: "書類の検索", icon: FolderSearch, group: "管理" },
   { href: "/exports", label: "出力", icon: Download, group: "管理" },
   { href: "/ai", label: "AI 相談", icon: Sparkles, group: "相談" },
   { href: "/chat", label: "チャット", icon: MessagesSquare, group: "相談" },

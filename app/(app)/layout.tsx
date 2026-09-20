@@ -40,6 +40,7 @@ const MAIN_PAGES: { href: string; label: string; keywords: string[] }[] = [
   { href: "/drivers-pl", label: "ドライバー別の採算", keywords: ["driver", "どらいばー", "採算", "利益", "シミュレーション", "単価"] },
   { href: "/ai?tab=draft", label: "AI で文章を作る", keywords: ["draft", "ぶんしょう", "案内", "督促", "お知らせ", "作文"] },
   { href: "/finance", label: "財務（予算・借入・税務）", keywords: ["finance", "ざいむ", "よさん", "予算", "予実", "かりいれ", "借入", "返済", "ぜいむ", "税務", "決算", "しんこく"] },
+  { href: "/records", label: "書類の検索（電子帳簿保存法）", keywords: ["records", "しょるい", "書類", "けんさく", "検索", "領収書", "レシート", "電子帳簿", "保存", "索引"] },
   { href: "/exports", label: "出力（Excel・振込・月次パック）", keywords: ["export", "しゅつりょく", "excel", "えくせる", "csv", "振込", "ふりこみ", "全銀", "zip", "ぱっく", "pdf"] },
   { href: "/reports", label: "レポート", keywords: ["report", "れぽーと", "年次", "分析"] },
   { href: "/alerts", label: "気になること", keywords: ["alert", "あらーと", "異常", "警告", "けんさ", "注意"] },
