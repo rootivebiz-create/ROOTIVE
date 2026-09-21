@@ -12,6 +12,7 @@ import { logIntegration } from "@/lib/integrations/logs";
 import { replyLineMessage, verifyLineSignature } from "@/lib/integrations/line";
 import { guideMessage, linkFailedMessage, linkedMessage, welcomeMessage } from "@/lib/integrations/messages";
 import { LINE_LINK_CODE_RE } from "@/lib/integrations/types";
+import { answerLineQuestion } from "@/lib/line/answer";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -87,6 +88,21 @@ async function handleEvent(event: LineEvent, ctx: { companyId: string; token: st
 
   const text = (event.message?.text ?? "").trim();
   if (!LINE_LINK_CODE_RE.test(text)) {
+    // 合言葉でなければ「質問」として扱う。
+    // 答えられたらその場で数字を返し、判定できなければ今までどおり案内を返す。
+    if (lineUserId) {
+      try {
+        const answer = await answerLineQuestion({ admin: createAdminClient(), companyId, lineUserId, text });
+        if (answer) {
+          await reply(event.replyToken, answer, token, companyId);
+          await logIntegration(companyId, "line", "ask", "ok", `LINE から質問に答えました: ${text.slice(0, 40)}`);
+          return;
+        }
+      } catch (e) {
+        // 答えられなくても案内は返す（トークが無反応にならないように）
+        await logIntegration(companyId, "line", "ask", "error", e instanceof Error ? e.message : String(e));
+      }
+    }
     await reply(event.replyToken, guideMessage(), token, companyId);
     return;
   }

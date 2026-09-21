@@ -21,6 +21,9 @@ const nextConfig: NextConfig = {
   },
   experimental: {
     serverActions: { bodySizeLimit: "20mb" },
+    // 一度開いた画面は数十秒のあいだ手元に残す。
+    // タブを行き来したり「戻る」を押したときにサーバーを待たずに出る（0021）。
+    staleTimes: { dynamic: 30, static: 180 },
   },
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders }];

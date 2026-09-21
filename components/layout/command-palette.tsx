@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { normalizeText } from "@/lib/text";
 import { useMonth } from "@/lib/hooks/use-month";
 import { cn } from "@/lib/utils";
 
@@ -41,17 +42,8 @@ export const COMMAND_GROUP_ORDER: CommandGroup[] = ["page", "driver", "project",
 /** グループごとに表示する候補の上限（どのグループも必ず出るようにする） */
 const MAX_PER_GROUP = 15;
 
-/**
- * 検索用の正規化：全角→半角・大文字→小文字・カタカナ→ひらがな・空白と長音を除去
- * （日本語のあいまい検索。「ドライバー」「どらいば」「ﾄﾞﾗｲﾊﾞｰ」をすべて同じ文字列にする）
- */
-export function normalizeText(s: string): string {
-  return s
-    .normalize("NFKC")
-    .toLowerCase()
-    .replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60))
-    .replace(/[\s　ー・･-]/g, "");
-}
+/** 検索用の正規化（LINE の質問の判定と共用。実体は lib/text.ts） */
+export { normalizeText };
 
 /** 1 つの語に対する一致度（0 = 前方一致、1 = 部分一致、null = 不一致） */
 function termScore(haystacks: string[], term: string): number | null {
@@ -101,15 +93,44 @@ export function openCommandPalette() {
 }
 
 /** ヘッダーの検索ボタン ＋ コマンドパレット（⌘K / Ctrl+K） */
-export function CommandPalette({ items }: { items: CommandItem[] }) {
+/**
+ * ドライバー・案件・取引先の候補は画面を開くたびには要らないので、
+ * **最初に ⌘K を開いたときに 1 回だけ**取りに行き、タブの中で使い回す。
+ * （以前はレイアウトで毎回 3 本のクエリを投げていて、タップの待ち時間になっていた）
+ */
+let extraItemsCache: CommandItem[] | null = null;
+
+export function CommandPalette({ items, extraItemsUrl = "/api/command-items" }: { items: CommandItem[]; extraItemsUrl?: string }) {
   const router = useRouter();
   const { href, setMonth } = useMonth();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
+  const [extra, setExtra] = useState<CommandItem[]>(() => extraItemsCache ?? []);
   const listRef = useRef<HTMLDivElement>(null);
 
-  const results = useMemo(() => filterCommands(items, query), [items, query]);
+  // 開いたときに一度だけ読む（失敗しても画面の候補だけで使える）
+  useEffect(() => {
+    if (!open || extraItemsCache !== null || !extraItemsUrl) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(extraItemsUrl, { headers: { accept: "application/json" } });
+        if (!res.ok) return;
+        const json = (await res.json()) as { items?: CommandItem[] };
+        extraItemsCache = json.items ?? [];
+        if (!cancelled) setExtra(extraItemsCache);
+      } catch {
+        // 通信できないときは画面の候補だけで検索できる
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, extraItemsUrl]);
+
+  const allItems = useMemo(() => (extra.length > 0 ? [...items, ...extra] : items), [items, extra]);
+  const results = useMemo(() => filterCommands(allItems, query), [allItems, query]);
   const groups = useMemo(
     () => COMMAND_GROUP_ORDER.map((g) => ({ group: g, items: results.filter((r) => r.group === g).slice(0, MAX_PER_GROUP) })).filter((g) => g.items.length > 0),
     [results],

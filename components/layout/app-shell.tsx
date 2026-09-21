@@ -4,6 +4,7 @@ import { BottomTabs, NotificationBell, SideNav, type NavBadges, type NavVariant 
 import { CommandPalette, type CommandItem } from "./command-palette";
 import { MonthSelector, type MonthOption } from "./month-selector";
 import { UserMenu } from "./user-menu";
+import { RouteProgress } from "./route-progress";
 import type { Role } from "@/lib/db/types";
 
 export function AppShell({
@@ -38,6 +39,9 @@ export function AppShell({
 }) {
   return (
     <div className="flex min-h-dvh flex-col">
+      <Suspense fallback={null}>
+        <RouteProgress />
+      </Suspense>
       <header className="sticky top-0 z-40 border-b bg-card/95 backdrop-blur no-print">
         <div className="flex h-14 min-w-0 items-center justify-between gap-1 overflow-hidden px-3 md:gap-2 md:px-4">
           <Link href={homeHref} className="flex shrink-0 items-center gap-2 font-bold">

@@ -120,6 +120,8 @@ export function LineCard({ canEdit, status, config, mask, webhookUrl, people, se
         </div>
         <CardDescription>
           支払明細ができたことや重要なお知らせを LINE で送ります。ドライバーは合言葉（8 桁）を公式アカウントに送るだけで連携できます。
+          連携したスタッフは、トークでそのまま数字を聞けます（例：「今月どう？」「支払は？」「気になることある？」。一覧は「ヘルプ」）。
+          借入・現金・決裁は、会社設定の「機密の見せ方」とロールに従って答えます。
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

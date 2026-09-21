@@ -4514,6 +4514,10 @@ export type Database = {
         }
         Returns: number
       }
+      me: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
       month_day_date: {
         Args: {
           p_month: string
@@ -4526,6 +4530,10 @@ export type Database = {
         Args: {
           p_month: string
         }
+        Returns: Json
+      }
+      nav_badges: {
+        Args: Record<PropertyKey, never>
         Returns: Json
       }
       normalize_name: {

@@ -630,3 +630,11 @@ export async function loadPaymentNoticeItems(supabase: ServerSupabase, companyId
   if (error) throw error;
   return data ?? [];
 }
+
+/** ナビのバッジ（未対応のアラート・未読のチャット・決裁待ち）を 1 往復で取る（0021） */
+export async function loadNavBadges(supabase: ServerSupabase): Promise<{ alerts: number; chat: number; approvals: number }> {
+  const { data, error } = await supabase.rpc("nav_badges");
+  if (error || !data) return { alerts: 0, chat: 0, approvals: 0 };
+  const row = data as unknown as { alerts?: number; chat?: number; approvals?: number };
+  return { alerts: Number(row.alerts ?? 0), chat: Number(row.chat ?? 0), approvals: Number(row.approvals ?? 0) };
+}

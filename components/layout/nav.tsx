@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import * as Popover from "@radix-ui/react-popover";
 import {
@@ -12,6 +12,7 @@ import {
   Coins,
   Banknote,
   Landmark,
+  Loader2,
   Briefcase,
   BarChart3,
   PiggyBank,
@@ -124,6 +125,38 @@ export function badgeText(count: number | undefined): string | null {
   return count > 99 ? "99+" : String(count);
 }
 
+/**
+ * 押した瞬間に「効いた」と分かるようにする（Link の中でだけ使える）。
+ *
+ * サーバーの応答を待っているあいだ、押した項目を選択中の見た目にして
+ * アイコンをくるくるに差し替える。タップの空振り感をなくすのが目的。
+ */
+function usePending(): boolean {
+  const { pending } = useLinkStatus();
+  return pending;
+}
+
+/** 押しているあいだだけ出るくるくる（アイコンと同じ大きさ） */
+function NavPendingIcon({ icon: Icon, className }: { icon: LucideIcon; className?: string }) {
+  const pending = usePending();
+  if (pending) return <Loader2 className={cn(className, "animate-spin")} aria-hidden />;
+  return <Icon className={className} />;
+}
+
+/** 下タブ：押しているあいだ、その項目に色を付ける（押した場所で反応が返る） */
+function NavPendingTab() {
+  const pending = usePending();
+  if (!pending) return null;
+  return <span className="pointer-events-none absolute inset-x-2 top-0 h-0.5 rounded-full bg-primary" aria-hidden />;
+}
+
+/** 押しているあいだ、その項目を選択中の見た目にする */
+function NavPendingHighlight({ className }: { className: string }) {
+  const pending = usePending();
+  if (!pending) return null;
+  return <span className={cn("pointer-events-none absolute inset-0 -z-10 rounded-md", className)} aria-hidden />;
+}
+
 function NavBadge({ count, className }: { count?: number; className?: string }) {
   const text = badgeText(count);
   if (!text) return null;
@@ -174,10 +207,14 @@ export function BottomTabs({
             <li key={item.href}>
               <Link
                 href={href(item.href)}
-                className={cn("relative flex flex-col items-center gap-0.5 py-2 text-[11px]", active ? "text-primary" : "text-muted-foreground")}
+                className={cn(
+                  "relative flex flex-col items-center gap-0.5 py-2 text-[11px] transition-colors active:bg-muted",
+                  active ? "text-primary" : "text-muted-foreground",
+                )}
                 aria-current={active ? "page" : undefined}
               >
-                <item.icon className="h-5 w-5" />
+                <NavPendingTab />
+                <NavPendingIcon icon={item.icon} className="h-5 w-5" />
                 <NavBadge count={badges?.[item.href]} className="absolute right-[22%] top-1" />
                 {item.label}
               </Link>
@@ -219,10 +256,14 @@ export function SideNav({
             {newGroup && <p className="px-3 pb-1 text-[11px] font-semibold text-muted-foreground">{item.group}</p>}
             <Link
               href={href(item.href)}
-              className={cn("flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium", active ? "bg-accent text-accent-foreground" : "hover:bg-muted")}
+              className={cn(
+                "relative isolate flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors active:bg-muted",
+                active ? "bg-accent text-accent-foreground" : "hover:bg-muted",
+              )}
               aria-current={active ? "page" : undefined}
             >
-              <item.icon className="h-4 w-4 shrink-0" />
+              <NavPendingHighlight className="bg-accent" />
+              <NavPendingIcon icon={item.icon} className="h-4 w-4 shrink-0" />
               <span className="truncate">{item.label}</span>
               <NavBadge count={badges?.[item.href]} className="ml-auto" />
             </Link>

@@ -29,13 +29,24 @@ export async function updateSession(request: NextRequest) {
     },
   });
 
-  // getUser はトークンを Auth サーバーで検証する（getSession は信用しない）
+  // ここでやることは 2 つだけ：
+  //   1. 期限が近いアクセストークンを更新して Cookie に書き戻す
+  //   2. 未ログインならログイン画面へ寄せる（体感のため。本当の可否判定ではない）
+  //
+  // 以前は毎回 auth.getUser() を呼んでいたが、これは **Auth サーバーへの往復**で、
+  // 画面を開くたびに直列の待ち時間が増えていた（0021 で見直し）。
+  // getSession() はトークンが生きていればローカルで読むだけ、
+  // 期限切れのときだけ更新の通信をする。
+  //
+  // **認可は必ず後段で行う**：ページ・Server Action は getSessionContext()（RPC `me()`）を通り、
+  // PostgREST が JWT を検証し、さらに DB の RLS が効く。
+  // ここを通り抜けても、偽のトークンでは 1 行も読めない。
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
 
   const { pathname } = request.nextUrl;
-  if (!user && !isPublicPath(pathname) && pathname !== "/") {
+  if (!session && !isPublicPath(pathname) && pathname !== "/") {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
     loginUrl.search = "";

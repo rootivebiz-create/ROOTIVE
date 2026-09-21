@@ -4,27 +4,41 @@ import { redirect } from "next/navigation";
 import { createClient, type ServerSupabase } from "@/lib/supabase/server";
 import type { Company, Profile, Role } from "@/lib/db/types";
 import { ActionError } from "@/lib/actions/result";
-import type { User } from "@supabase/supabase-js";
+
+/** ログイン中のユーザー（profiles.id は auth.users.id と同じ） */
+export interface SessionUser {
+  id: string;
+  email: string;
+}
 
 export interface SessionContext {
   supabase: ServerSupabase;
-  user: User;
+  user: SessionUser;
   profile: Profile;
   company: Company;
 }
 
-/** ログイン中ユーザーのプロフィールと会社（リクエスト内でメモ化） */
+/**
+ * ログイン中ユーザーのプロフィールと会社（リクエスト内でメモ化）。
+ *
+ * **1 往復で取る**（0021）。以前は auth.getUser() → profiles → companies と
+ * 3 回続けて待っていたため、画面を開くたびに体感で遅くなっていた。
+ *
+ * RPC `me()` は security invoker なので RLS がそのまま効く。
+ * PostgREST が JWT を検証したうえで auth.uid() を渡すので、
+ * **行が返ること自体が「正しいセッションである」ことの証明**になる
+ * （偽のトークン・期限切れのトークンでは 401 か 0 行になる）。
+ * トークンの更新は middleware が行う（lib/supabase/middleware.ts）。
+ */
 export const getSessionContext = cache(async (): Promise<SessionContext | null> => {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return null;
-  const { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
-  if (!profile || !profile.is_active) return null;
-  const { data: company } = await supabase.from("companies").select("*").eq("id", profile.company_id).maybeSingle();
-  if (!company) return null;
-  return { supabase, user, profile, company };
+  const { data, error } = await supabase.rpc("me");
+  if (error || !data) return null;
+  const row = data as unknown as { profile?: Profile; company?: Company } | null;
+  const profile = row?.profile;
+  const company = row?.company;
+  if (!profile || !profile.is_active || !company) return null;
+  return { supabase, user: { id: profile.id, email: profile.email }, profile, company };
 });
 
 export const STAFF_ROLES: Role[] = ["owner", "admin", "viewer"];

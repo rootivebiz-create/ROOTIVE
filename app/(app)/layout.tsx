@@ -1,8 +1,7 @@
 import { AppShell } from "@/components/layout/app-shell";
 import type { CommandItem } from "@/components/layout/command-palette";
 import { requireStaff } from "@/lib/auth/session";
-import { loadChatUnreadTotal, loadMonthList } from "@/lib/db/queries";
-import { loadPendingApprovalCount } from "@/lib/executive/queries";
+import { loadMonthList, loadNavBadges } from "@/lib/db/queries";
 import { dateToMonth, formatMonthJa } from "@/lib/month";
 import { visibleForRole, type RoleVisibility } from "@/lib/nav/visibility";
 
@@ -66,15 +65,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const { supabase, profile, company } = await requireStaff();
   const role = profile.role;
 
-  // コマンドパレットの候補（停止中も含める。0009 未適用の環境でもナビを壊さないようエラーは無視する）
-  const [months, driversRes, projectsRes, clientsRes, unread, alertsRes] = await Promise.all([
-    loadMonthList(supabase, company.id),
-    supabase.from("drivers").select("id, name, is_active").eq("company_id", company.id).order("sort_order").order("name"),
-    supabase.from("projects").select("id, name, is_active").eq("company_id", company.id).order("sort_order").order("name"),
-    supabase.from("clients").select("id, name, is_active").eq("company_id", company.id).order("sort_order").order("name"),
-    loadChatUnreadTotal(supabase),
-    supabase.from("alerts").select("id", { count: "exact", head: true }).eq("company_id", company.id).eq("status", "open"),
-  ]);
+  // 画面を 1 つ開くたびに走るのはこの 2 本だけにする（0021）。
+  // ドライバー・案件・取引先の候補は ⌘K を開いたときに /api/command-items から読む。
+  const [months, badgeCounts] = await Promise.all([loadMonthList(supabase, company.id), loadNavBadges(supabase)]);
 
   const settingsItems = visibleForRole(SETTINGS_SUBNAV, role);
   const subItems = settingsItems.map(({ href, label }) => ({ href, label }));
@@ -86,11 +79,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     entry_count: m.entry_count,
   }));
 
-  const byName = (a: { is_active: boolean }, b: { is_active: boolean }) => Number(b.is_active) - Number(a.is_active);
-  const drivers = [...(driversRes.error ? [] : (driversRes.data ?? []))].sort(byName);
-  const projects = [...(projectsRes.error ? [] : (projectsRes.data ?? []))].sort(byName);
-  const clients = [...(clientsRes.error ? [] : (clientsRes.data ?? []))].sort(byName);
-
   const commandItems: CommandItem[] = [
     ...visibleForRole(MAIN_PAGES, role).map((p) => ({ id: `page:${p.href}`, group: "page" as const, label: p.label, href: p.href, keywords: p.keywords, hint: "画面" })),
     ...settingsItems.map((s) => ({
@@ -100,42 +88,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       href: s.href,
       keywords: [s.label, ...(s.keywords ?? []), "設定"],
       hint: "設定",
-    })),
-    ...drivers.map((d) => ({
-      id: `driver:${d.id}`,
-      group: "driver" as const,
-      label: d.name,
-      href: `/payouts/${d.id}/statement`,
-      keywords: [d.name],
-      hint: "支払明細",
-      inactive: !d.is_active,
-    })),
-    ...drivers.map((d) => ({
-      id: `driver-settings:${d.id}`,
-      group: "driver" as const,
-      label: `${d.name}（設定）`,
-      href: `/settings/drivers/${d.id}`,
-      keywords: [d.name, "設定", "単価", "ロイヤリティ"],
-      hint: "ドライバー設定",
-      inactive: !d.is_active,
-    })),
-    ...projects.map((p) => ({
-      id: `project:${p.id}`,
-      group: "project" as const,
-      label: p.name,
-      href: `/settings/projects/${p.id}`,
-      keywords: [p.name, "案件", "単価"],
-      hint: "案件・単価",
-      inactive: !p.is_active,
-    })),
-    ...clients.map((c) => ({
-      id: `client:${c.id}`,
-      group: "client" as const,
-      label: c.name,
-      href: "/settings/clients",
-      keywords: [c.name, "取引先", "請求先"],
-      hint: "取引先",
-      inactive: !c.is_active,
     })),
     ...monthOptions
       .filter((m) => m.month)
@@ -149,14 +101,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       })),
   ];
 
-  // 決裁待ちの件数は代表だけ（ナビの「代表」とヘッダーのベルで使う。0019・0020 未適用の環境では 0）
-  const pendingApprovals = role === "owner" ? await loadPendingApprovalCount(supabase, company.id).catch(() => 0) : 0;
-
-  // ナビのバッジ（0011 未適用の環境でも壊さないようエラーは 0 として扱う）
+  // ナビのバッジ（RPC nav_badges が 1 往復でまとめて返す。未適用の環境では 0）
   const badges: Record<string, number> = {
-    "/chat": unread,
-    "/alerts": alertsRes.error ? 0 : (alertsRes.count ?? 0),
-    "/executive": pendingApprovals,
+    "/chat": badgeCounts.chat,
+    "/alerts": badgeCounts.alerts,
+    "/executive": role === "owner" ? badgeCounts.approvals : 0,
   };
 
   return (
