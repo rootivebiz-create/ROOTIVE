@@ -1252,6 +1252,54 @@ export type Database = {
         }
         Relationships: []
       }
+      dispatch_assignments: {
+        Row: {
+          id: string
+          company_id: string
+          on_date: string
+          driver_id: string
+          project_item_id: string
+          qty_plan: number
+          status: Database["public"]["Enums"]["dispatch_status"]
+          note: string
+          confirmed_at: string | null
+          confirmed_by: string | null
+          notified_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          on_date: string
+          driver_id: string
+          project_item_id: string
+          qty_plan?: number
+          status?: Database["public"]["Enums"]["dispatch_status"]
+          note?: string
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          notified_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          on_date?: string
+          driver_id?: string
+          project_item_id?: string
+          qty_plan?: number
+          status?: Database["public"]["Enums"]["dispatch_status"]
+          note?: string
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          notified_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       documents: {
         Row: {
           id: string
@@ -1349,6 +1397,48 @@ export type Database = {
           account_number?: string
           account_holder_kana?: string
           updated_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      driver_day_offs: {
+        Row: {
+          id: string
+          company_id: string
+          driver_id: string
+          on_date: string
+          status: Database["public"]["Enums"]["day_off_status"]
+          reason: string
+          decided_by: string | null
+          decided_at: string | null
+          decided_note: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          driver_id: string
+          on_date: string
+          status?: Database["public"]["Enums"]["day_off_status"]
+          reason?: string
+          decided_by?: string | null
+          decided_at?: string | null
+          decided_note?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          driver_id?: string
+          on_date?: string
+          status?: Database["public"]["Enums"]["day_off_status"]
+          reason?: string
+          decided_by?: string | null
+          decided_at?: string | null
+          decided_note?: string
           created_at?: string
           updated_at?: string
         }
@@ -1533,6 +1623,7 @@ export type Database = {
           payout_day: number | null
           line_user_id: string
           line_linked_at: string | null
+          weekly_off: number[]
         }
         Insert: {
           id?: string
@@ -1556,6 +1647,7 @@ export type Database = {
           payout_day?: number | null
           line_user_id?: string
           line_linked_at?: string | null
+          weekly_off?: number[]
         }
         Update: {
           id?: string
@@ -1579,6 +1671,7 @@ export type Database = {
           payout_day?: number | null
           line_user_id?: string
           line_linked_at?: string | null
+          weekly_off?: number[]
         }
         Relationships: []
       }
@@ -2749,6 +2842,69 @@ export type Database = {
         }
         Relationships: []
       }
+      project_demand_days: {
+        Row: {
+          id: string
+          company_id: string
+          project_item_id: string
+          on_date: string
+          need: number
+          note: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          project_item_id: string
+          on_date: string
+          need?: number
+          note?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          project_item_id?: string
+          on_date?: string
+          need?: number
+          note?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      project_demands: {
+        Row: {
+          id: string
+          company_id: string
+          project_item_id: string
+          weekday: number
+          need: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          project_item_id: string
+          weekday: number
+          need?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          project_item_id?: string
+          weekday?: number
+          need?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       project_items: {
         Row: {
           id: string
@@ -3505,6 +3661,22 @@ export type Database = {
         }
         Relationships: []
       }
+      v_day_off_list: {
+        Row: {
+          id: string | null
+          company_id: string | null
+          on_date: string | null
+          status: Database["public"]["Enums"]["day_off_status"] | null
+          reason: string | null
+          decided_at: string | null
+          decided_note: string | null
+          driver_id: string | null
+          driver_name: string | null
+          driver_sort_order: number | null
+          created_at: string | null
+        }
+        Relationships: []
+      }
       v_day_status: {
         Row: {
           company_id: string | null
@@ -3513,6 +3685,43 @@ export type Database = {
           approved_count: number | null
           work_day_count: number | null
           roll_call_missing_count: number | null
+        }
+        Relationships: []
+      }
+      v_dispatch_list: {
+        Row: {
+          id: string | null
+          company_id: string | null
+          on_date: string | null
+          status: Database["public"]["Enums"]["dispatch_status"] | null
+          qty_plan: number | null
+          note: string | null
+          notified_at: string | null
+          driver_id: string | null
+          driver_name: string | null
+          driver_sort_order: number | null
+          project_item_id: string | null
+          project_id: string | null
+          project_name: string | null
+          item_name: string | null
+          unit: Database["public"]["Enums"]["item_unit"] | null
+          bill_rate: number | null
+          pay_rate: number | null
+          has_report: boolean | null
+        }
+        Relationships: []
+      }
+      v_dispatch_outlook: {
+        Row: {
+          company_id: string | null
+          on_date: string | null
+          need: number | null
+          assigned: number | null
+          confirmed: number | null
+          shortage: number | null
+          plan_bill: number | null
+          plan_pay: number | null
+          plan_margin: number | null
         }
         Relationships: []
       }
@@ -4352,6 +4561,20 @@ export type Database = {
         }
         Returns: Json
       }
+      confirm_dispatch: {
+        Args: {
+          p_from: string
+          p_to: string
+        }
+        Returns: number
+      }
+      copy_dispatch_week: {
+        Args: {
+          p_from_start: string
+          p_to_start: string
+        }
+        Returns: number
+      }
       copy_previous_month: {
         Args: {
           p_month: string
@@ -4386,6 +4609,14 @@ export type Database = {
           p_note?: string
         }
         Returns: Database["public"]["Tables"]["approvals"]["Row"]
+      }
+      decide_day_off: {
+        Args: {
+          p_id: string
+          p_approve: boolean
+          p_note?: string
+        }
+        Returns: undefined
       }
       decision_from_approval: {
         Args: {
@@ -4565,6 +4796,13 @@ export type Database = {
         }
         Returns: undefined
       }
+      mark_dispatch_notified: {
+        Args: {
+          p_company_id: string
+          p_ids: string[]
+        }
+        Returns: number
+      }
       match_notice_items: {
         Args: {
           p_notice_id: string
@@ -4708,6 +4946,13 @@ export type Database = {
         }
         Returns: string
       }
+      request_day_off: {
+        Args: {
+          p_on_date: string
+          p_reason?: string
+        }
+        Returns: string
+      }
       reset_company_data: {
         Args: {
           p_company_name: string
@@ -4745,6 +4990,12 @@ export type Database = {
         }
         Returns: undefined
       }
+      set_dispatch_bulk: {
+        Args: {
+          p_rows: Json
+        }
+        Returns: Json
+      }
       set_invoice_status: {
         Args: {
           p_invoice_id: string
@@ -4766,6 +5017,23 @@ export type Database = {
           p_notify_line: boolean
         }
         Returns: Json
+      }
+      set_project_demand: {
+        Args: {
+          p_project_item_id: string
+          p_weekday: unknown
+          p_need: number
+        }
+        Returns: undefined
+      }
+      set_project_demand_day: {
+        Args: {
+          p_project_item_id: string
+          p_on_date: string
+          p_need: number
+          p_note?: string
+        }
+        Returns: undefined
       }
       spread_plan_year: {
         Args: {
@@ -4793,6 +5061,18 @@ export type Database = {
           p_project_item_id: string
         }
         Returns: undefined
+      }
+      t30_driver: {
+        Args: {
+          p_name: string
+        }
+        Returns: string
+      }
+      t30_item: {
+        Args: {
+          p_project: string
+        }
+        Returns: string
       }
       t_assert: {
         Args: {
@@ -4844,7 +5124,9 @@ export type Database = {
       bank_txn_status: "unmatched" | "matched" | "ignored"
       contract_status: "draft" | "active" | "ended"
       day_entry_status: "submitted" | "approved" | "rejected"
+      day_off_status: "requested" | "approved" | "rejected"
       decision_status: "open" | "reviewed" | "dropped"
+      dispatch_status: "planned" | "confirmed" | "cancelled"
       document_kind: "license" | "vehicle_inspection" | "compulsory_insurance" | "voluntary_insurance" | "health_check" | "safety_training" | "contract" | "other"
       entry_source: "staff" | "driver" | "import" | "line"
       expense_kind: "fixed" | "variable"

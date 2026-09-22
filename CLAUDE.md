@@ -14,6 +14,7 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
 - `lib/calc/` 純関数の計算ロジック（正）。DB ビュー `v_*` と同じ結果を返すこと
 - `lib/ai/` AI（`config.ts` 有効判定・`context.ts` データパック・`analysis.ts` 月次分析・`chat.ts` 相談・`draft.ts` 文章・`findings.ts` 応答の正規化）
 - `lib/voice/` 声で入力（`parse.ts` 純関数の解析・`speech.ts` 音声認識の包み）
+- `lib/dispatch/` 配車（`board.ts` 純関数の週のボード・過不足・自動割り当て・見通し・`queries.ts` サーバー専用の読み取り）
 - `lib/push/` 通知（`targets.ts` 純関数の宛先と文面・`config.ts` VAPID・`send.ts` 送信・`client.ts` ブラウザ側の購読・`notify-chat.ts` / `notify-daily.ts` 実際の通知）
 - `lib/alerts/` `lib/chat/` `lib/bank/` `lib/integrations/` `lib/daily/` `lib/fleet/` `lib/intake/` `lib/hr/` `lib/executive/`（代表：読み取り `queries.ts`・信号 `cockpit.ts`・現金の残り日数 `runway.ts`・予実の分解 `variance.ts`・朝のひとこと `brief.ts`） 各機能の純関数とサーバー専用の処理
 - `lib/db/database.types.ts` supabase-js 用の型（自動生成）、`lib/db/types.ts` 型エイリアス、`lib/db/queries.ts` 共通クエリ
@@ -23,7 +24,7 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
 - `lib/month.ts` 稼動月ユーティリティ、`lib/format.ts` 表示書式（円・%・数量）
 - `components/ui/*` UI 部品（shadcn/ui 相当）、`components/layout/*` シェル・ナビ・月セレクタ
 - `app/(app)/*` スタッフ画面（ホーム・稼働・支払・請求・経費・資金繰り・案件・レポート・ドライバー別の採算・設定）、`app/driver/*` ドライバーポータル、`app/(auth)/*` ログイン・招待、`app/api/export/*` 出力
-- `supabase/migrations/*.sql` スキーマ（0001 テーブル、0002 認証・RLS、0003 ビュー、0004 RPC、0005 ポータル・初期データ、0006 Storage・権限、0007 ドライバー別単価（bill_rate 上書き・rate_diffs・apply_master_rates）、0008 消費税・ロゴと認印・ドライバーごとの支払日、0009 経費と営業利益・取引先と請求書・月次目標、0010 資金繰り・案件別採算、0011 AI チャット・社内チャット・異常検知・外部連携、0012 運行管理と法令対応（点呼・業務記録・日別の稼働・車両・書類）、0013 取り込みと採用・契約、0014 法人の経営管理（振込先口座・決算と税務カレンダー・借入金・経営指標・契約書の保管）、0015 バックアップと復元を全テーブルへ拡張、0016 異常の検知を毎日自動で回す、0017 会社を明示して集計する RPC、0018 労務（拘束時間・休息）と元請の支払通知との突合、0019 代表（決裁・意思決定ログ・会社の台帳・中期計画・ログインの記録）、0020 代表の守り（機密の隔離・決裁のルールと委任・持ち出しの記録・計画の配分・振込口座の分離）、0021 表示を速くする（me / nav_badges）、0022 通知（端末への通知の購読・受け取り方の設定））
+- `supabase/migrations/*.sql` スキーマ（0001 テーブル、0002 認証・RLS、0003 ビュー、0004 RPC、0005 ポータル・初期データ、0006 Storage・権限、0007 ドライバー別単価（bill_rate 上書き・rate_diffs・apply_master_rates）、0008 消費税・ロゴと認印・ドライバーごとの支払日、0009 経費と営業利益・取引先と請求書・月次目標、0010 資金繰り・案件別採算、0011 AI チャット・社内チャット・異常検知・外部連携、0012 運行管理と法令対応（点呼・業務記録・日別の稼働・車両・書類）、0013 取り込みと採用・契約、0014 法人の経営管理（振込先口座・決算と税務カレンダー・借入金・経営指標・契約書の保管）、0015 バックアップと復元を全テーブルへ拡張、0016 異常の検知を毎日自動で回す、0017 会社を明示して集計する RPC、0018 労務（拘束時間・休息）と元請の支払通知との突合、0019 代表（決裁・意思決定ログ・会社の台帳・中期計画・ログインの記録）、0020 代表の守り（機密の隔離・決裁のルールと委任・持ち出しの記録・計画の配分・振込口座の分離）、0021 表示を速くする（me / nav_badges）、0022 通知（端末への通知の購読・受け取り方の設定）、0023 配車・シフト（必要人数・割り当て・休み希望・定休日））
 - `tests/` Vitest（`*.test.ts`）、`tests/sql/`（psql）、`tests/e2e/`（Playwright ＋ `supabase-lite` テストサーバー）
 
 ## 必ず守る規約
@@ -82,8 +83,8 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
 - **決裁のルールと代理決裁（0020）**：しきい値は `approval_rules`（会社を作ると既定 6 件）。判定は RPC `approval_required(kind, amount)` で、**画面や Server Action に金額を手書きしない**。代表が不在のときは `approval_delegations`（期間・上限金額・種別を切った一時的な委任）で admin が決裁でき、`can_decide_approval` が RLS・トリガー・RPC の 3 か所すべてで使われる。代理のときは `approvals.on_behalf_of` に代表が入る。**権限そのものの昇格はしない**
 - **持ち出しの記録（0020）**：`export_logs` に CSV・振込データ・バックアップ・明細 PDF の出力を残す（閲覧は代表のみ、書き込みは `record_export` のサービスロール専用、1 年で消える）。**記録に失敗しても出力自体は止めない**
 - **中期計画 → 月次目標（0020）**：`spread_plan_year(plan_id, year, 'even' | 'actual')` が年間目標を 12 か月へ配分する（端数は 12 月。手で入れてある月は上書きしない）。承認した申請からは `decision_from_approval` で意思決定ログの下書きを作る（同じ申請から二度は作らない）
-- 異常の検知は 26 ルール（0011 の 11 ＋ 0012 の 5 ＋ 0014 の 4 ＋ 0018 の 4 ＋ 0019 の 1（決裁の滞留）＋ 0020 の 1（出力の急増））。code は 27 種類
-- バックアップは **version 7**。代表のテーブル（0019）と決裁のルール・委任・振込口座（0020）まで入る。**外部連携のトークン・社内チャット・AI の履歴・監査ログ・アラート・ログインの記録・持ち出しの記録は含めない**。version 6 以前の `drivers` に入っていた口座も復元できる
+- 異常の検知は 29 ルール（0011 の 11 ＋ 0012 の 5 ＋ 0014 の 4 ＋ 0018 の 4 ＋ 0019 の 1（決裁の滞留）＋ 0020 の 1（出力の急増）＋ 0023 の 3（配車））。code は 30 種類
+- バックアップは **version 8**。代表のテーブル（0019）・決裁のルール・委任・振込口座（0020）・配車（0023：必要人数・特定日・休み希望・割り当て）まで入る。**外部連携のトークン・社内チャット・AI の履歴・監査ログ・アラート・ログインの記録・持ち出しの記録は含めない**。version 6 以前の `drivers` に入っていた口座も復元できる
 - **表示の速さ（0021）**：画面を 1 つ開くたびの Supabase への往復を減らす。
   - `getSessionContext()` は RPC **`me()`** の 1 往復だけ（以前は `getUser()` → `profiles` → `companies` の 3 連続）。
     `me()` は security invoker で、**行が返ること自体が正しいセッションの証明**（PostgREST が JWT を検証する）
@@ -113,7 +114,16 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
   - 受け取り方は `profiles.notify_chat`（`all` / `mention`（既定） / `off`）と `profiles.notify_line`。判定は純関数 `shouldNotifyChat` / `shouldNotifyLine` に集約し、画面や DB に条件を散らさない
   - 送信は Server Action の中で待たない。**`after()`** で返事を返したあとに送り、失敗しても本来の操作（発言・承認）は成立させる
   - Service Worker の `push` は**必ず通知を出す**（黙って受け取ると iOS が購読を止める）。iPhone は「ホーム画面に追加」した状態でしか購読できないため、画面でそう案内する
-- ロール：owner（すべて ＋ `/executive` の決裁・意思決定・会社の台帳・中期計画・守り）／admin（登録・編集・月締め・出力・代表への申請）／viewer（閲覧・CSV・チャット・AI 相談。借入・納税・現金・振込口座は既定で見えない）／driver（自分の締め済み月の明細、今日の報告（点呼・稼働）、自分の書類・車両・契約）
+- **配車・シフト（0023）**：これまで扱えなかった「これから先の予定」。**予定と実績は分けたまま**にし、配車から実績（`work_day_entries`）を作らない（作ると「予定していたのに報告が無い」を検知できなくなる）。
+  - 必要人数は `project_demands`（曜日のパターン）と `project_demand_days`（特定の日。**曜日より優先**）。解決は純関数 `needFor`
+  - 割り当ては `dispatch_assignments`（日 × ドライバー × 案件内容で一意）。書き込みは RPC `set_dispatch_bulk`（qty_plan が 0 以下なら外す。数量が変わると `notified_at` を外して知らせ直す）／`copy_dispatch_week`（承認済みの休みの日は写さない）／`confirm_dispatch`
+  - 休みは `driver_day_offs`（本人が `request_day_off`、管理者が `decide_day_off`。過ぎた日は申請できない hint `PAST_DATE`）と `drivers.weekly_off`（定休日の曜日）
+  - **自動割り当て（`autoAssign`）は提案だけで保存しない**。承認済みの休みと定休日を外す → その案件の経験 → 割り当ての少ない人 → 名前の順で、**同じ入力なら必ず同じ結果**になる
+  - ダッシュボードは配車表と同じ読み方をしない。ビュー **`v_dispatch_outlook`**（今日から 14 日・日ごとに 1 行）を `summarizeOutlook` でまとめる（2 往復）
+  - 確定した翌日ぶんは `/api/cron/dispatch`（毎日 18:00 JST）が本人へ通知・LINE で知らせる（`lib/push/notify-dispatch.ts`）
+  - 異常の検知は 29 ルール（0023 の 3：人が足りない日・予定はあるのに報告が無い・休み希望が決まっていない）。バックアップは **version 8**
+- **新しいテーブルには必ず権限を出す**：0020 の末尾にある `grant ... on all tables in schema public to authenticated` は**そのあとの番号で作ったテーブルには届かない**。`security invoker` の RPC は RLS の手前で `permission denied` になる。テーブルを足したマイグレーションの末尾で grant を出し直すこと（`tests/sql/run.sh` が 1 回目の適用直後に抜けを検出する）
+- ロール：owner（すべて ＋ `/executive` の決裁・意思決定・会社の台帳・中期計画・守り）／admin（登録・編集・月締め・出力・代表への申請）／viewer（閲覧・CSV・チャット・AI 相談。借入・納税・現金・振込口座は既定で見えない）／driver（自分の締め済み月の明細、今日の報告（点呼・稼働）、自分の予定と休みの申請、自分の書類・車両・契約）
 
 ## supabase-js の使い方の制約（E2E 用の互換テストサーバーが対応する範囲に限定する）
 - `from(table|view).select("col, col2" | "*")` — **埋め込みリソース（`drivers(name)` など）は使わない**。名称が必要なら `v_*` ビューを使う

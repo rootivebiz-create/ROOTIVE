@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { CSV_BOM, ENTRIES_CSV_HEADERS, PAYOUTS_CSV_HEADERS, csvCell, entriesToCsv, entryToCsvRow, monthFileLabel, payoutToCsvRow, payoutsToCsv, toCsv, type EntryCsvSource, type PayoutCsvSource } from "@/lib/exports/csv";
 import { STATEMENT_CSV_HEADERS, statementToCsv, statementToCsvRows } from "@/lib/exports/statement-csv";
 import { asciiFallbackName, contentDisposition, encodeRfc5987, safeFilePart, timestampJST } from "@/lib/exports/download";
+import { DISPATCH_CSV_HEADERS, dispatchCsvFilename, dispatchCsvRows, dispatchToCsv, type DispatchCsvSource } from "@/lib/exports/dispatch-csv";
 import type { StatementData } from "@/lib/statement";
 
 describe("toCsv", () => {
@@ -216,5 +217,59 @@ describe("ダウンロード応答", () => {
   it("バックアップのタイムスタンプは日本時間 YYYYMMDD_HHMM", () => {
     expect(timestampJST(new Date("2026-09-16T15:04:00Z"))).toBe("20260917_0004");
     expect(timestampJST(new Date("2026-01-05T01:02:00Z"))).toBe("20260105_1002");
+  });
+});
+
+describe("配車予定 CSV", () => {
+  const ROW: DispatchCsvSource = {
+    on_date: "2026-09-22",
+    driver_name: "相曽慧",
+    project_name: "三郷Amazon",
+    item_name: "標準",
+    status: "confirmed",
+    qty_plan: 1,
+    unit: "day",
+    bill_rate: 23025,
+    pay_rate: 21780,
+    has_report: false,
+    note: "",
+  };
+
+  it("見出しと 1 行を出し、予定の売上・粗利は 単価 × 数量", () => {
+    const rows = dispatchCsvRows([ROW]);
+    expect(rows[0]).toEqual([...DISPATCH_CSV_HEADERS]);
+    expect(rows[1]).toEqual([
+      "2026-09-22",
+      "火",
+      "相曽慧",
+      "三郷Amazon",
+      "標準",
+      "確定",
+      "1",
+      "日給",
+      "23025",
+      "21780",
+      "23025",
+      "21780",
+      "1245",
+      "",
+      "",
+    ]);
+  });
+
+  it("報告があれば「あり」、状態は日本語になる", () => {
+    const [, planned] = dispatchCsvRows([{ ...ROW, status: "planned", has_report: true, qty_plan: 800, unit: "piece", bill_rate: 180, pay_rate: 162 }]);
+    expect(planned[5]).toBe("予定");
+    expect(planned[7]).toBe("個数");
+    expect(planned[10]).toBe("144000");
+    expect(planned[12]).toBe("14400");
+    expect(planned[13]).toBe("あり");
+  });
+
+  it("CSV は BOM と CRLF、ファイル名に期間が入る", () => {
+    const csv = dispatchToCsv([ROW]);
+    expect(csv.startsWith(CSV_BOM)).toBe(true);
+    expect(csv).not.toMatch(/[^\r]\n/);
+    expect(dispatchCsvFilename("2026-09-21", "2026-09-27")).toBe("配車_2026-09-21_2026-09-27.csv");
   });
 });

@@ -99,4 +99,11 @@ export const exportUrls = {
     `/api/export/labor.xlsx?m=${encodeURIComponent(month)}&kind=${encodeURIComponent(kind)}`,
   /** 支払通知の突合 CSV（1 件ぶんの明細と差） */
   noticeDiffCsv: (noticeId: string) => `/api/export/notice-diff.csv?id=${encodeURIComponent(noticeId)}`,
+
+  // ---------------------------------------------------------------------------
+  // 配車（0023）
+  // ---------------------------------------------------------------------------
+  /** 配車予定 CSV（期間。未指定なら今日から 2 週間） */
+  dispatchCsv: (from?: string, to?: string) =>
+    from && to ? `/api/export/dispatch.csv?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}` : "/api/export/dispatch.csv",
 };

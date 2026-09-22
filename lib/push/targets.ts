@@ -121,3 +121,39 @@ export function dayEntryLineText(opts: { companyName: string; approved: boolean;
   if (opts.companyName) lines.push(`（${opts.companyName}）`);
   return lines.join("\n");
 }
+
+/** 明日の配車 1 行（「三郷Amazon 1日」） */
+export interface DispatchLine {
+  label: string;
+  qtyPlan: number;
+  unitSuffix: string;
+}
+
+/** 明日の配車を 1 行ずつの文にする */
+export function dispatchLines(lines: readonly DispatchLine[]): string[] {
+  return lines.map((l) => `${l.label} ${l.qtyPlan}${l.unitSuffix}`);
+}
+
+/** 明日の配車の通知（ドライバー本人あて） */
+export function dispatchPushPayload(opts: { dateLabel: string; lines: readonly DispatchLine[] }): PushPayload {
+  const body = dispatchLines(opts.lines).join("／");
+  return {
+    title: `${opts.dateLabel}の予定`,
+    body: body || "予定はありません",
+    url: "/driver/schedule",
+    tag: "dispatch",
+  };
+}
+
+/** 明日の配車を LINE で知らせる文面 */
+export function dispatchLineText(opts: {
+  companyName: string;
+  dateLabel: string;
+  lines: readonly DispatchLine[];
+  appUrl: string;
+}): string {
+  const out = [`🚚 ${opts.dateLabel}の配車`, ...dispatchLines(opts.lines).map((l) => `・${l}`)];
+  if (opts.appUrl) out.push(`${opts.appUrl.replace(/\/$/, "")}/driver/schedule`);
+  if (opts.companyName) out.push(`（${opts.companyName}）`);
+  return out.join("\n");
+}

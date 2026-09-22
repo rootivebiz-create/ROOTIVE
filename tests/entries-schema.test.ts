@@ -249,8 +249,8 @@ describe("helpers", () => {
       updated_at: "",
     },
     drivers: [
-      { id: DRIVER, company_id: COMPANY, name: "相曽慧", kana: "", is_active: true, royalty_rate: null, mgmt_fee: 15000, rounding_mode: null, phone: "", email: "", bank_info: "", memo: "", sort_order: 1, tax_mode: "taxable", invoice_reg_no: "", payout_month_offset: null, payout_day: null, line_user_id: "", line_linked_at: null, created_at: "", updated_at: "" },
-      { id: DRIVER2, company_id: COMPANY, name: "吉田雅一", kana: "", is_active: false, royalty_rate: 0.125, mgmt_fee: 15000, rounding_mode: "round", phone: "", email: "", bank_info: "", memo: "", sort_order: 2, tax_mode: "taxable", invoice_reg_no: "", payout_month_offset: null, payout_day: null, line_user_id: "", line_linked_at: null, created_at: "", updated_at: "" },
+      { id: DRIVER, company_id: COMPANY, name: "相曽慧", kana: "", is_active: true, royalty_rate: null, mgmt_fee: 15000, rounding_mode: null, phone: "", email: "", bank_info: "", memo: "", sort_order: 1, tax_mode: "taxable", invoice_reg_no: "", payout_month_offset: null, payout_day: null, line_user_id: "", line_linked_at: null, weekly_off: [], created_at: "", updated_at: "" },
+      { id: DRIVER2, company_id: COMPANY, name: "吉田雅一", kana: "", is_active: false, royalty_rate: 0.125, mgmt_fee: 15000, rounding_mode: "round", phone: "", email: "", bank_info: "", memo: "", sort_order: 2, tax_mode: "taxable", invoice_reg_no: "", payout_month_offset: null, payout_day: null, line_user_id: "", line_linked_at: null, weekly_off: [], created_at: "", updated_at: "" },
     ],
     projects: [
       {

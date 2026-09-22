@@ -25,6 +25,8 @@ import { expenseBreakdown, needsExpenseWarning } from "@/components/dashboard/he
 import { toKpiValues } from "@/lib/kpi/metrics";
 import { AlertCard } from "@/components/alerts/alert-card";
 import { DayStatusCard } from "@/components/daily/day-status-card";
+import { DispatchOutlookCard } from "@/components/dispatch/outlook-card";
+import { loadDispatchOutlook } from "@/lib/dispatch/queries";
 import { ExpiryCard } from "@/components/fleet/expiry-card";
 import { todayJST, toFleetDocument } from "@/lib/fleet/helpers";
 import { HrCard } from "@/components/hr/hr-card";
@@ -40,7 +42,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const sp = await searchParams;
   const month = monthFromParam(sp.m);
   const prev = prevMonth(month);
-  const [data, pl, prevPlRes, expenseRows, openAlerts, alertSummary, dayStatus, documentRows, applicants, contracts, kpiRow, prevKpiRow] = await Promise.all([
+  const [data, pl, prevPlRes, expenseRows, openAlerts, alertSummary, dayStatus, documentRows, applicants, contracts, kpiRow, prevKpiRow, dispatchOutlook] = await Promise.all([
     loadDashboardData(supabase, company.id, month),
     loadMonthPl(supabase, company.id, month),
     supabase.from("v_month_pl").select("*").eq("company_id", company.id).eq("month", monthToDate(prev)).maybeSingle(),
@@ -53,6 +55,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     loadContracts(supabase, company.id),
     loadMonthKpi(supabase, company.id, monthToDate(month)),
     loadMonthKpi(supabase, company.id, monthToDate(prev)),
+    loadDispatchOutlook(supabase, company.id),
   ]);
   if (prevPlRes.error) throw prevPlRes.error;
   const aiEnabled = isAiInsightsEnabled();
@@ -140,6 +143,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
+        <DispatchOutlookCard days={dispatchOutlook.days} pendingDayOffs={dispatchOutlook.pendingDayOffs} />
         <DayStatusCard
           workDayCount={Number(dayStatus?.work_day_count ?? 0)}
           pendingCount={Number(dayStatus?.pending_count ?? 0)}

@@ -4,6 +4,9 @@ import {
   chatPushPayload,
   dayEntryLineText,
   dayEntryPushPayload,
+  dispatchLineText,
+  dispatchLines,
+  dispatchPushPayload,
   formatDayLabel,
   shouldNotifyChat,
   shouldNotifyLine,
@@ -158,5 +161,41 @@ describe("dayEntryLineText", () => {
     expect(ng).toContain("稼働を差し戻しました");
     expect(ng).toContain("理由：写真が無い");
     expect(ng).not.toContain("http");
+  });
+});
+
+describe("明日の配車の知らせ", () => {
+  const lines = [
+    { label: "三郷Amazon", qtyPlan: 1, unitSuffix: "日" },
+    { label: "和光ヤマト（宅急便）", qtyPlan: 120, unitSuffix: "個" },
+  ];
+
+  it("1 行ずつの文にする", () => {
+    expect(dispatchLines(lines)).toEqual(["三郷Amazon 1日", "和光ヤマト（宅急便） 120個"]);
+  });
+
+  it("端末の通知は日付を見出しにして 1 行にまとめる", () => {
+    const p = dispatchPushPayload({ dateLabel: "9月23日（水）", lines });
+    expect(p.title).toBe("9月23日（水）の予定");
+    expect(p.body).toBe("三郷Amazon 1日／和光ヤマト（宅急便） 120個");
+    expect(p.url).toBe("/driver/schedule");
+    expect(p.tag).toBe("dispatch");
+  });
+
+  it("予定が無ければそう伝える", () => {
+    expect(dispatchPushPayload({ dateLabel: "9月23日（水）", lines: [] }).body).toBe("予定はありません");
+  });
+
+  it("LINE は箇条書きにしてリンクを付ける", () => {
+    const text = dispatchLineText({ companyName: "株式会社ROOTIVE", dateLabel: "9月23日（水）", lines, appUrl: "https://example.test/" });
+    expect(text).toContain("🚚 9月23日（水）の配車");
+    expect(text).toContain("・三郷Amazon 1日");
+    expect(text).toContain("https://example.test/driver/schedule");
+    expect(text).toContain("株式会社ROOTIVE");
+  });
+
+  it("URL が無ければリンクを付けない", () => {
+    const text = dispatchLineText({ companyName: "", dateLabel: "9月23日（水）", lines, appUrl: "" });
+    expect(text).not.toContain("http");
   });
 });

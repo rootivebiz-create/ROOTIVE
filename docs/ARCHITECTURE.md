@@ -459,6 +459,48 @@ iOS は、**ホーム画面に追加した PWA からしか** Web Push を購読
 
 ---
 
+## 4-9. 配車・シフト（`lib/dispatch`・0023）
+
+ここまでのアプリは「終わったことの記録と集計」だけで、予定を扱えなかった。
+**予定と実績は分けたまま**にする（実績は日別の稼働 `work_day_entries` が正で、配車から実績は作らない。
+作ってしまうと「予定していたのに報告が無い」を検知できなくなる）。
+
+```
+必要人数                    割り当て                  ドライバー
+project_demands（曜日）      dispatch_assignments      driver_day_offs（休み希望）
+project_demand_days（特定日） ├ planned                drivers.weekly_off（定休日）
+   ↓ 特定日 > 曜日            └ confirmed → 前日の夕方に通知
+   needFor()                     ↑ confirm_dispatch
+   ↓
+buildDispatchBoard()  →  過不足（shortage）→  autoAssign() が提案（保存はしない）
+```
+
+| もの | 置き場所 | 役割 |
+|---|---|---|
+| 純関数 | `lib/dispatch/board.ts` | 週のボード・必要人数の解決・自動割り当ての提案・見込み・`summarizeOutlook` |
+| 読み取り | `lib/dispatch/queries.ts` | 配車表は 8 往復、ダッシュボードは `v_dispatch_outlook` で 2 往復 |
+| Server Action | `lib/actions/dispatch.ts` | すべて RPC 経由（`set_dispatch_bulk` / `copy_dispatch_week` / `confirm_dispatch` ほか）|
+| 画面 | `app/(app)/dispatch`・`app/driver/schedule` | 配車表・必要人数・休み希望／ドライバー本人の予定 |
+| 通知 | `lib/push/notify-dispatch.ts`・`/api/cron/dispatch` | 確定した翌日ぶんを前日 18:00（JST）に知らせる |
+
+- **自動割り当ては必ず同じ結果になる**（承認済みの休みと定休日を外す → その案件の経験が多い人 → 割り当ての少ない人 → 名前の順）。
+  提案は画面に出すだけで、保存するまで DB は変わらない
+- ダッシュボードの「これからの配車」はビュー **`v_dispatch_outlook`**（今日から 14 日ぶん・日ごとに 1 行）を
+  `summarizeOutlook` でまとめる。画面側で必要人数を組み立て直さない
+- 異常の検知は 3 つ増えて 29 ルール（人が足りない日・予定はあるのに報告が無い・休み希望が決まっていない）
+- バックアップは **version 8**（必要人数・特定日・休み希望・割り当てまで入る）
+
+### 新しいテーブルには権限を出す
+
+`0020` の末尾にある `grant ... on all tables in schema public to authenticated` は、
+**そのあとの番号で作ったテーブルには届かない**（0022 の `push_subscriptions`、0023 の 4 つが該当した）。
+`security invoker` の RPC はログイン中のユーザーの権限で動くので、テーブル権限が無いと
+RLS の手前で `permission denied` になる。`0023` の末尾で出し直し、
+`tests/sql/run.sh` が**マイグレーションの 1 回目の適用直後に**抜けが無いか確かめる
+（2 回目の適用では前の周回のテーブルにも grant が届いてしまい、気づけないため）。
+
+---
+
 ## 5. 認証フロー
 
 ```
@@ -529,6 +571,7 @@ iOS は、**ホーム画面に追加した PWA からしか** Web Push を購読
 | 書類の索引簿 CSV | `app/api/export/records.csv` + `lib/exports/records-csv.ts` | レシート・請求書・支払通知・契約書の一覧（取引年月日・取引金額・取引先で絞り込んだ結果をそのまま出す）|
 | 労務 CSV / Excel | `app/api/export/labor.csv` `.xlsx` + `lib/exports/labor-csv.ts` | 日ごと（拘束・実働・休息・連続勤務と判定）と月ごと（合計・平均・超過日数）|
 | 支払通知の突合 CSV | `app/api/export/notice-diff.csv` + `lib/exports/notice-csv.ts` | 元請の支払通知の明細と自社の売上の差（数量・単価・金額）|
+| 配車予定 CSV | `app/api/export/dispatch.csv` + `lib/exports/dispatch-csv.ts` | 期間の配車（日・曜日・ドライバー・案件・予定数量・予定売上）。既定は今日から 2 週間 |
 | Excel（.xlsx）| `app/api/export/*.xlsx` + `lib/exports/xlsx.ts` | 依存なしの自前 xlsx ライター（`zip.ts` で OOXML を包む）。金額・率・数量・日付の書式、見出しの太字と固定行、オートフィルタ、列幅の自動調整。CSV と同じ 15 種類（稼働・支払・経費・請求書・案件・ドライバー別採算・資金繰り・年次レポート・単価表・個人明細・気になること・銀行明細・車両と書類・採用と契約・日報）|
 | 全銀 総合振込データ | `app/api/export/transfer.txt` + `lib/exports/zengin.ts` | Shift_JIS・固定長 120 バイト・CRLF。ヘッダ／データ／トレーラ／エンドの 4 レコード。半角カナ変換（濁点の分解・法人格の略号）。口座情報を含むため owner/admin のみ。画面は `/payouts/transfer` |
 | 振込一覧 CSV | `app/api/export/transfer.csv` | 全銀データの目視確認用（銀行・支店・預金種目・口座番号・カナ名義・税込支払額・振込予定日）|
@@ -552,7 +595,7 @@ iOS は、**ホーム画面に追加した PWA からしか** Web Push を購読
 | 種類 | コマンド | 内容 |
 |---|---|---|
 | 単体（Vitest） | `npm test` | `lib/calc`（§2.6 の全ケース、誤差 0.01 円以内、端数処理 4 種、恒等式）、zod スキーマ、`lib/migrate` の変換と決定的 ID、`lib/voice` の解析、`lib/push` の宛先と文面。**プッシュの送信（`tests/push-send.test.ts`）は使い捨ての自己署名証明書で HTTPS のテストサーバーを立て、暗号化された本文と VAPID の署名が届くこと・410 なら購読を消すことまで確かめる**（openssl が無い環境では飛ばす） |
-| SQL 結合（psql） | `npm run test:sql` | ローカル PostgreSQL に `tests/sql/auth_stub.sql`（auth.uid() 等のスタブ）+ 全マイグレーションを適用し `tests/sql/test.sql` を実行。ビューの計算が §2.6 と一致、RLS（viewer / driver の拒否）、締めガード、招待制、復元・全削除、経費と営業利益（`v_month_pl`）、取引先と請求書（`build_invoice` / 合計の自動計算 / 状態）、ポータルの速報、代表と機密の隔離、通知の購読と設定。29 節 |
+| SQL 結合（psql） | `npm run test:sql` | ローカル PostgreSQL に `tests/sql/auth_stub.sql`（auth.uid() 等のスタブ）+ 全マイグレーションを適用し `tests/sql/test.sql` を実行。ビューの計算が §2.6 と一致、RLS（viewer / driver の拒否）、締めガード、招待制、復元・全削除、経費と営業利益（`v_month_pl`）、取引先と請求書（`build_invoice` / 合計の自動計算 / 状態）、ポータルの速報、代表と機密の隔離、通知の購読と設定、配車（必要人数・割り当て・休み希望・写しと確定・見通し）。30 節。**1 回目の適用直後にテーブル権限の抜けも確かめる** |
 | E2E（Playwright） | `npm run test:e2e` | Supabase 互換のテストサーバー（`supabase-lite`：PostgreSQL + GoTrue 相当 + PostgREST 相当の軽量実装）を自動起動し、iPhone 13 と Desktop Chrome の 2 プロジェクトで主要導線（招待ログイン → ダッシュボード → 稼働追加・複製・一括入力 → 支払明細・PDF → 設定 → 月締め・解除 → 経費と営業利益 → 取引先と請求書（PDF・入金） → 年次レポートと月次目標 → ナビとコマンドパレット・ポータルの速報 → 閲覧者／ドライバーの権限 → 移行 JSON の取り込み）をブラウザで確認。13 spec・61 シナリオ × 2 プロジェクト = **122 件**。スクリーンショットを `docs/screenshots/` に保存。詳細は [docs/E2E.md](E2E.md) |
 | 静的 | `npm run typecheck` / `npm run lint` / `npm run build` | 型・Lint・本番ビルド |
 | まとめ | `npm run check` | typecheck + lint + test + build:sql |

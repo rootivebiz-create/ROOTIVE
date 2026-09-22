@@ -94,14 +94,14 @@ describe("コマンドパレットの検索（filterCommands）", () => {
 });
 
 describe("ナビの定義", () => {
-  it("PC のサイドナビは 21 項目（代表 ＋ 入力・経営・管理・相談のまとまり ＋ ホームと設定）", () => {
-    expect(MAIN_NAV).toHaveLength(21);
+  it("PC のサイドナビは 22 項目（代表 ＋ 入力・経営・管理・相談のまとまり ＋ ホームと設定）", () => {
+    expect(MAIN_NAV).toHaveLength(22);
     expect(MAIN_NAV.map((i) => i.href)).toEqual([
-      "/executive", "/dashboard", "/entries", "/daily", "/intake", "/payouts", "/invoices", "/expenses", "/bank",
+      "/executive", "/dashboard", "/dispatch", "/entries", "/daily", "/intake", "/payouts", "/invoices", "/expenses", "/bank",
       "/cashflow", "/projects", "/finance", "/reports", "/alerts", "/fleet", "/hr", "/records", "/exports", "/ai", "/chat", "/settings",
     ]);
     expect(MAIN_NAV.map((i) => i.label)).toEqual([
-      "代表", "ホーム", "稼働", "日報・点呼", "取り込み", "支払", "請求", "経費", "入金",
+      "代表", "ホーム", "配車", "稼働", "日報・点呼", "取り込み", "支払", "請求", "経費", "入金",
       "資金繰り", "案件", "財務", "レポート", "気になること", "車両と書類", "採用と契約", "書類の検索", "出力", "AI 相談", "チャット", "設定",
     ]);
   });
@@ -139,9 +139,9 @@ describe("ナビの定義", () => {
     expect(BOTTOM_NAV.map((i) => i.label)).toEqual(["ホーム", "稼働", "支払", "請求"]);
   });
 
-  it("メニューシートには下タブに入らない 17 項目が入り、合計はサイドナビと一致する", () => {
+  it("メニューシートには下タブに入らない 18 項目が入り、合計はサイドナビと一致する", () => {
     expect(MORE_NAV.map((i) => i.href)).toEqual([
-      "/executive", "/daily", "/intake", "/expenses", "/bank", "/cashflow", "/projects", "/finance", "/reports", "/alerts",
+      "/executive", "/dispatch", "/daily", "/intake", "/expenses", "/bank", "/cashflow", "/projects", "/finance", "/reports", "/alerts",
       "/fleet", "/hr", "/records", "/exports", "/ai", "/chat", "/settings",
     ]);
     expect(BOTTOM_NAV.length + MORE_NAV.length).toBe(MAIN_NAV.length);
@@ -157,8 +157,8 @@ describe("ナビの定義", () => {
     expect(badgeText(100)).toBe("99+");
   });
 
-  it("ドライバーポータルは 3 項目で、下タブにもメニューを出さない", () => {
-    expect(DRIVER_NAV.map((i) => i.href)).toEqual(["/driver/today", "/driver", "/driver/account"]);
+  it("ドライバーポータルは 4 項目で、下タブにもメニューを出さない", () => {
+    expect(DRIVER_NAV.map((i) => i.href)).toEqual(["/driver/today", "/driver/schedule", "/driver", "/driver/account"]);
     expect(navItemsFor("driver")).toEqual(DRIVER_NAV);
     expect(bottomItemsFor("driver")).toEqual(DRIVER_NAV);
     expect(navItemsFor("staff")).toEqual(MAIN_NAV);

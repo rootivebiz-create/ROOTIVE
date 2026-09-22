@@ -55,6 +55,37 @@ for f in supabase/migrations/*.sql; do
   psql "$DB_URL" -v ON_ERROR_STOP=1 -q -f "$f"
 done
 
+# 1 回目の適用が終わった時点で「テーブル権限の出し忘れ」を確かめる。
+#   0020 のように「schema public の全テーブルへまとめて grant」する書き方は、
+#   そのあとの番号で作ったテーブルには届かない。2 回目の適用では前の周回で
+#   作られたテーブルにも届いてしまうため、ここ（1 回目の直後）でしか気づけない。
+log "テーブル権限の確認（初回適用ぶん）"
+psql "$DB_URL" -v ON_ERROR_STOP=1 -q -c "
+do \$\$
+declare missing text;
+begin
+  select string_agg(c.relname, ', ' order by c.relname) into missing
+    from pg_class c join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public' and c.relkind = 'r'
+     and c.relname <> 'integration_secrets'
+     and not (
+       has_table_privilege('authenticated', c.oid, 'select') and
+       has_table_privilege('authenticated', c.oid, 'insert') and
+       has_table_privilege('authenticated', c.oid, 'update') and
+       has_table_privilege('authenticated', c.oid, 'delete')
+     );
+  if missing is not null then
+    raise exception 'authenticated にテーブル権限が無いテーブルがあります: %（作ったマイグレーションの末尾で grant してください）', missing;
+  end if;
+  select string_agg(c.relname, ', ' order by c.relname) into missing
+    from pg_class c join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public' and c.relkind = 'r'
+     and has_table_privilege('anon', c.oid, 'select');
+  if missing is not null then
+    raise exception 'anon が読めてしまうテーブルがあります: %', missing;
+  end if;
+end \$\$;"
+
 # 本番（setup-supabase.sh）は毎回すべてのマイグレーションを順番に再適用するため、
 # 2 回目の適用でも壊れないことを確認する（create or replace view で列を減らせない等の検出）
 log "再適用（冪等の確認）"

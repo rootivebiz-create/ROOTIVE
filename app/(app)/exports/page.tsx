@@ -144,6 +144,10 @@ export default async function ExportsPage({ searchParams }: { searchParams: Prom
             <DownloadLink href={exportUrls.dailyCsv(month, "entry")}>CSV</DownloadLink>
             <DownloadLink href={exportUrls.dailyXlsx(month, "entry")}>Excel</DownloadLink>
           </ExportRow>
+          <ExportRow label="配車予定" description="これから 2 週間の配車（日・ドライバー・案件・予定数量）。紙で配ったり元請へ渡すときに使います。">
+            <DownloadLink href={exportUrls.dispatchCsv()}>CSV</DownloadLink>
+            <ExportPageLink href="/dispatch">配車へ</ExportPageLink>
+          </ExportRow>
           <ExportRow label="車両と書類" description="車検・保険・免許の期限一覧。期限切れの確認に使います。">
             <DownloadLink href={exportUrls.fleetCsv("vehicle")}>車両 CSV</DownloadLink>
             <DownloadLink href={exportUrls.fleetXlsx("vehicle")}>車両 Excel</DownloadLink>

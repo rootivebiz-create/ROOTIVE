@@ -642,8 +642,8 @@ select public.t_assert((select count(*) = 0 from public.cash_snapshots), '他社
 select public.t_assert((select count(*) = 0 from public.v_project_pl), '他社の案件損益は見えない');
 select public.test_login(:'owner_a');
 
--- バックアップ（0020 で version 7 に上がった）に含まれる
-select public.t_assert((public.export_backup()->>'version') = '7', 'バックアップは version 7');
+-- バックアップ（0023 で version 8 に上がった）に含まれる
+select public.t_assert((public.export_backup()->>'version') = '8', 'バックアップは version 8');
 select public.t_assert(jsonb_array_length(public.export_backup()->'cash_snapshots') = 1, 'バックアップに現金残高が入る');
 select public.t_assert((select count(*) from public.import_backup(public.export_backup())) >= 0, '復元（同じデータ）');
 select public.t_assert((select count(*) = 1 and max(balance) = 1500000 from public.cash_snapshots where company_id = :'company_a'), '復元後も現金残高は同じ');
@@ -1115,7 +1115,7 @@ set role authenticated;
 select public.test_login(:'owner_a');
 
 -- 書き出しに新しいテーブルが入る
-select public.t_assert((public.export_backup()->>'version') = '7', 'バックアップは version 7');
+select public.t_assert((public.export_backup()->>'version') = '8', 'バックアップは version 8');
 select public.t_assert(jsonb_array_length(public.export_backup()->'vehicles') > 0, 'バックアップに車両が入る');
 select public.t_assert(jsonb_array_length(public.export_backup()->'documents') > 0, 'バックアップに書類が入る');
 select public.t_assert(jsonb_array_length(public.export_backup()->'daily_reports') > 0, 'バックアップに日報が入る');
@@ -1432,7 +1432,7 @@ select public.t_assert((select pending_approvals = 0 from public.v_executive_sum
 
 -- ---------- バックアップ（version 6）に入る ----------
 select public.test_login(:'owner_a');
-select public.t_assert((public.export_backup()->>'version') = '7', 'バックアップは version 7');
+select public.t_assert((public.export_backup()->>'version') = '8', 'バックアップは version 8');
 select public.t_assert(jsonb_array_length(public.export_backup()->'approvals') = 2, 'バックアップに申請が入る');
 select public.t_assert(jsonb_array_length(public.export_backup()->'decisions') = 1, 'バックアップに意思決定ログが入る');
 select public.t_assert(jsonb_array_length(public.export_backup()->'officers') = 1, 'バックアップに役員が入る');
@@ -1600,8 +1600,8 @@ set role authenticated;
 select public.test_login(:'owner_a');
 select public.t_assert((select count(*) = 1 from public.alerts where company_id = :'company_a' and code = 'export_burst' and status = 'open'), '個人情報を含む出力の急増を検知する');
 
--- ---------- バックアップ（version 7） ----------
-select public.t_assert((public.export_backup()->>'version') = '7', 'バックアップは version 7');
+-- ---------- バックアップ（version 8） ----------
+select public.t_assert((public.export_backup()->>'version') = '8', 'バックアップは version 8');
 select public.t_assert(jsonb_array_length(public.export_backup()->'approval_rules') = 6, 'バックアップに決裁のルールが入る');
 select public.t_assert(jsonb_array_length(public.export_backup()->'approval_delegations') = 1, 'バックアップに決裁の委任が入る');
 select public.t_assert(jsonb_array_length(public.export_backup()->'driver_bank_accounts') = 1, 'バックアップにドライバーの口座が入る');
@@ -1686,4 +1686,150 @@ select public.t_assert((select public.export_backup() ? 'push_subscriptions') = 
 select public.test_logout();
 reset role;
 
-\echo '== すべてのアサーションが通りました（18〜29 節）'
+\echo '== 30. 配車・シフト（必要人数・割り当て・休み希望）'
+
+-- 日付は必ず未来になるように current_date から作る（テストが時間で腐らないように）
+-- ヘルパーは role を戻した状態（＝スキーマを作れる側）で用意する
+create or replace function public.t30_item(p_project text) returns uuid language sql stable as $$
+  select pi.id from public.project_items pi join public.projects p on p.id = pi.project_id
+   where p.name = p_project and pi.name = '標準' limit 1;
+$$;
+create or replace function public.t30_driver(p_name text) returns uuid language sql stable as $$
+  select id from public.drivers where name = p_name limit 1;
+$$;
+grant execute on function public.t30_item(text), public.t30_driver(text) to authenticated, service_role;
+
+set role authenticated;
+select public.test_login(:'admin_a');
+
+-- ---------- 必要人数 ----------
+select public.set_project_demand(public.t30_item('三郷Amazon'), 1::smallint, 3);
+select public.t_assert((select need = 3 from public.project_demands where project_item_id = public.t30_item('三郷Amazon') and weekday = 1), '曜日ごとの必要人数を置ける');
+select public.set_project_demand(public.t30_item('三郷Amazon'), 1::smallint, 0);
+select public.t_assert((select count(*) = 0 from public.project_demands where project_item_id = public.t30_item('三郷Amazon') and weekday = 1), '0 にすると消える');
+select public.set_project_demand(public.t30_item('三郷Amazon'), 1::smallint, 2);
+select public.set_project_demand_day(public.t30_item('三郷Amazon'), current_date + 30, 5, '繁忙期');
+select public.t_assert((select need = 5 from public.project_demand_days where project_item_id = public.t30_item('三郷Amazon') and on_date = current_date + 30), '特定の日だけ必要人数を変えられる');
+select public.set_project_demand_day(public.t30_item('三郷Amazon'), current_date + 30, null);
+select public.t_assert((select count(*) = 0 from public.project_demand_days where project_item_id = public.t30_item('三郷Amazon')), 'null で上書きをやめられる');
+
+-- ---------- 配車 ----------
+select public.t_assert(
+  (public.set_dispatch_bulk(jsonb_build_array(
+     jsonb_build_object('on_date', (current_date + 30)::text, 'driver_id', public.t30_driver('相曽慧'), 'project_item_id', public.t30_item('三郷Amazon'), 'qty_plan', 1)
+   ))->>'inserted') = '1', '配車を 1 件入れられる');
+select public.t_assert(
+  (public.set_dispatch_bulk(jsonb_build_array(
+     jsonb_build_object('on_date', (current_date + 30)::text, 'driver_id', public.t30_driver('相曽慧'), 'project_item_id', public.t30_item('三郷Amazon'), 'qty_plan', 2)
+   ))->>'updated') = '1', '同じ日・同じ人なら更新になる');
+select public.t_assert((select qty_plan = 2 from public.dispatch_assignments where on_date = current_date + 30), '予定の数量が変わる');
+
+-- 内容が変わったら「知らせ直す」ため通知済みの印が外れる
+update public.dispatch_assignments set notified_at = now() where on_date = current_date + 30;
+select public.set_dispatch_bulk(jsonb_build_array(
+  jsonb_build_object('on_date', (current_date + 30)::text, 'driver_id', public.t30_driver('相曽慧'), 'project_item_id', public.t30_item('三郷Amazon'), 'qty_plan', 3)));
+select public.t_assert((select notified_at is null from public.dispatch_assignments where on_date = current_date + 30), '数量が変わると通知の印が外れる');
+
+-- ---------- 他社のドライバーはつなげない ----------
+reset role;
+insert into public.drivers (company_id, name) values (:'company_b', 'B社ドライバー');
+create temporary table t30_other as
+  select id from public.drivers where company_id = :'company_b' and name = 'B社ドライバー';
+grant select on t30_other to authenticated;
+set role authenticated;
+select public.test_login(:'admin_a');
+select public.t_expect_error(
+  format($$select public.set_dispatch_bulk(jsonb_build_array(jsonb_build_object('on_date', '%s', 'driver_id', '%s', 'project_item_id', '%s', 'qty_plan', 1)))$$,
+         (current_date + 31)::text,
+         (select id from t30_other),
+         public.t30_item('三郷Amazon')),
+  'CROSS_COMPANY', '他社のドライバーは配車できない');
+
+-- ---------- 休み希望 ----------
+-- driver_a を相曽慧の本人アカウントにしておく（前の節で全削除しているため貼り直す）
+select public.test_login(:'owner_a');
+update public.profiles set role = 'driver', driver_id = public.t30_driver('相曽慧'), is_active = true where id = :'driver_a';
+select public.test_login(:'driver_a');
+select public.t_assert(public.request_day_off(current_date + 30, '通院') is not null, 'ドライバーは休みを申請できる');
+select public.t_assert((select status = 'requested' from public.driver_day_offs where on_date = current_date + 30), '申請中になる');
+select public.t_expect_error(format($$select public.request_day_off('%s', '過去')$$, (current_date - 1)::text), 'PAST_DATE', '過ぎた日は申請できない');
+
+select public.test_login(:'admin_a');
+select public.decide_day_off((select id from public.driver_day_offs where on_date = current_date + 30), true, 'どうぞ');
+select public.t_assert((select status = 'approved' from public.driver_day_offs where on_date = current_date + 30), '管理者が承認できる');
+
+select public.test_login(:'viewer_a');
+select public.t_expect_error(format($$select public.decide_day_off('%s', false, '')$$, (select id from public.driver_day_offs where on_date = current_date + 30)), 'FORBIDDEN', '閲覧者は休み希望を決められない');
+select public.t_expect_error(
+  format($$select public.set_dispatch_bulk(jsonb_build_array(jsonb_build_object('on_date', '%s', 'driver_id', '%s', 'project_item_id', '%s', 'qty_plan', 1)))$$,
+         (current_date + 32)::text, public.t30_driver('相曽慧'), public.t30_item('三郷Amazon')),
+  'FORBIDDEN', '閲覧者は配車できない');
+
+-- ---------- ドライバーは自分の配車だけ見える ----------
+select public.test_login(:'admin_a');
+select public.set_dispatch_bulk(jsonb_build_array(
+  jsonb_build_object('on_date', (current_date + 33)::text, 'driver_id', public.t30_driver('金島幸太'), 'project_item_id', public.t30_item('三郷Amazon'), 'qty_plan', 1)));
+select public.test_login(:'driver_a');
+select public.t_assert((select count(*) = 0 from public.dispatch_assignments where on_date = current_date + 33), '他人の配車は見えない');
+select public.t_assert((select count(*) = 1 from public.dispatch_assignments where on_date = current_date + 30), '自分の配車は見える');
+
+-- ---------- 週の写しと確定 ----------
+select public.test_login(:'admin_a');
+-- 写す先（+37）に承認済みの休みを入れておく → その日は写らないはず
+insert into public.driver_day_offs (company_id, driver_id, on_date, status)
+values (:'company_a', public.t30_driver('相曽慧'), current_date + 37, 'approved');
+select public.t_assert(public.copy_dispatch_week(current_date + 28, current_date + 35) >= 1, '1 週間ぶんを写せる');
+select public.t_assert(
+  (select count(*) = 0 from public.dispatch_assignments
+    where company_id = :'company_a' and driver_id = public.t30_driver('相曽慧') and on_date = current_date + 37),
+  '承認した休みの日には写さない');
+select public.t_assert(
+  (select count(*) = 1 from public.dispatch_assignments
+    where company_id = :'company_a' and driver_id = public.t30_driver('金島幸太') and on_date = current_date + 40),
+  '休みでない人はそのまま写る');
+select public.t_assert(public.confirm_dispatch(current_date, current_date + 60) >= 1, '予定を確定できる');
+select public.t_assert((select count(*) = 0 from public.dispatch_assignments where company_id = :'company_a' and on_date between current_date and current_date + 60 and status = 'planned'), '確定すると planned が残らない');
+
+-- ---------- これから 2 週間の見通し（ダッシュボード用のビュー） ----------
+-- 必要 2 人 / 割り当て 1 人 → 不足 1 人。予定の売上は 単価 × 数量
+select public.set_project_demand(public.t30_item('三郷Amazon'), extract(dow from current_date + 3)::smallint, 2);
+select public.set_dispatch_bulk(jsonb_build_array(
+  jsonb_build_object('on_date', (current_date + 3)::text, 'driver_id', public.t30_driver('相曽慧'), 'project_item_id', public.t30_item('三郷Amazon'), 'qty_plan', 10)));
+select public.t_assert(
+  (select need = 2 and assigned = 1 and shortage = 1 from public.v_dispatch_outlook where on_date = current_date + 3),
+  '見通しに必要・割り当て・不足が出る');
+select public.t_assert(
+  (select plan_bill = round(pi.bill_rate * 10, 2) and plan_margin = round((pi.bill_rate - pi.pay_rate) * 10, 2)
+     from public.v_dispatch_outlook o, public.project_items pi
+    where o.on_date = current_date + 3 and pi.id = public.t30_item('三郷Amazon')),
+  '見通しに予定の売上と粗利が出る');
+select public.t_assert((select count(*) = 14 from public.v_dispatch_outlook), '見通しは今日から 14 日ぶん');
+-- 後ろのテスト（写し・確定・バックアップ）に影響させないため、入れたぶんは戻す
+select public.set_dispatch_bulk(jsonb_build_array(
+  jsonb_build_object('on_date', (current_date + 3)::text, 'driver_id', public.t30_driver('相曽慧'), 'project_item_id', public.t30_item('三郷Amazon'), 'qty_plan', 0)));
+select public.set_project_demand(public.t30_item('三郷Amazon'), extract(dow from current_date + 3)::smallint, 0);
+
+-- ---------- バックアップ ----------
+select public.t_assert(jsonb_array_length(public.export_backup()->'dispatch_assignments') >= 1, 'バックアップに配車が入る');
+select public.t_assert(jsonb_array_length(public.export_backup()->'project_demands') >= 1, 'バックアップに必要人数が入る');
+create temporary table t30_backup as select public.export_backup() as data;
+delete from public.dispatch_assignments where company_id = :'company_a';
+delete from public.project_demands where company_id = :'company_a';
+-- 復元はオーナーだけ
+select public.test_login(:'owner_a');
+select public.import_backup((select data from t30_backup));
+select public.t_assert((select count(*) >= 1 from public.dispatch_assignments where company_id = :'company_a'), '復元すると配車が戻る');
+select public.t_assert((select count(*) >= 1 from public.project_demands where company_id = :'company_a'), '復元すると必要人数が戻る');
+create temporary table t30_counts as select id from public.dispatch_assignments where company_id = :'company_a';
+select public.import_backup((select data from t30_backup));
+select public.t_assert((select count(*) = (select count(*) from t30_counts) from public.dispatch_assignments where company_id = :'company_a'), '二度復元しても増えない');
+
+-- ---------- 他社からは見えない ----------
+select public.test_login(:'owner_b');
+select public.t_assert((select count(*) = 0 from public.dispatch_assignments), '他社の配車は見えない');
+select public.t_assert((select count(*) = 0 from public.project_demands), '他社の必要人数は見えない');
+
+select public.test_logout();
+reset role;
+
+\echo '== すべてのアサーションが通りました（18〜30 節）'

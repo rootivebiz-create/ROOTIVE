@@ -20,6 +20,7 @@ import {
   Download,
   FolderSearch,
   ClipboardCheck,
+  CalendarRange,
   Truck,
   UserPlus,
   FileUp,
@@ -53,10 +54,11 @@ export interface NavItem {
 /** 未読・未対応の件数（href をキーにした数。0 は出さない） */
 export type NavBadges = Record<string, number>;
 
-/** PC のサイドナビ（21 項目。group ごとに見出しを付けて表示する。「代表」は owner だけ） */
+/** PC のサイドナビ（22 項目。group ごとに見出しを付けて表示する。「代表」は owner だけ） */
 export const MAIN_NAV: NavItem[] = [
   { href: "/executive", label: "代表", icon: Crown, group: "代表", ownerOnly: true },
   { href: "/dashboard", label: "ホーム", icon: Home },
+  { href: "/dispatch", label: "配車", icon: CalendarRange, group: "入力" },
   { href: "/entries", label: "稼働", icon: ClipboardList, group: "入力" },
   { href: "/daily", label: "日報・点呼", icon: ClipboardCheck, group: "入力" },
   { href: "/intake", label: "取り込み", icon: FileUp, group: "入力" },
@@ -96,6 +98,7 @@ export const BOTTOM_TABS_MAX = 5;
 /** ドライバーポータル用（毎日の入口である「今日の報告」を先頭に置く） */
 export const DRIVER_NAV: NavItem[] = [
   { href: "/driver/today", label: "今日の報告", icon: ClipboardCheck },
+  { href: "/driver/schedule", label: "予定", icon: CalendarRange },
   { href: "/driver", label: "支払明細", icon: FileText },
   { href: "/driver/account", label: "アカウント", icon: UserCircle },
 ];

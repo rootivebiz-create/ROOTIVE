@@ -24,7 +24,16 @@ export type BankAccountType = Enums<"bank_account_type">;
 export type TaxTaskStatus = Enums<"tax_task_status">;
 export type LoanStatus = Enums<"loan_status">;
 export type NoticeStatus = Enums<"notice_status">;
+export type DispatchStatus = Enums<"dispatch_status">;
+export type DayOffStatus = Enums<"day_off_status">;
 
+export type ProjectDemand = Tables<"project_demands">;
+export type ProjectDemandDay = Tables<"project_demand_days">;
+export type DriverDayOff = Tables<"driver_day_offs">;
+export type DispatchAssignment = Tables<"dispatch_assignments">;
+export type DispatchListRow = Views<"v_dispatch_list">;
+export type DayOffListRow = Views<"v_day_off_list">;
+export type DispatchOutlookRow = Views<"v_dispatch_outlook">;
 export type Company = Tables<"companies">;
 export type Profile = Tables<"profiles">;
 export type Invitation = Tables<"invitations">;
@@ -224,6 +233,20 @@ export const ROLL_CALL_METHOD_LABELS: Record<RollCallMethod, string> = {
 
 /** 日別の稼働の状態 */
 export const DAY_ENTRY_STATUSES: DayEntryStatus[] = ["submitted", "approved", "rejected"];
+/** 配車の状態 */
+export const DISPATCH_STATUS_LABELS: Record<DispatchStatus, string> = {
+  planned: "予定",
+  confirmed: "確定",
+  cancelled: "取り消し",
+};
+
+/** 休み希望の状態 */
+export const DAY_OFF_STATUS_LABELS: Record<DayOffStatus, string> = {
+  requested: "申請中",
+  approved: "承認",
+  rejected: "見送り",
+};
+
 export const DAY_ENTRY_STATUS_LABELS: Record<DayEntryStatus, string> = {
   submitted: "承認待ち",
   approved: "承認済み",
