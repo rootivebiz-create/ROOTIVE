@@ -1636,4 +1636,54 @@ select public.t_assert((select count(*) = 6 from public.approval_rules), '自社
 select public.test_logout();
 reset role;
 
-\echo '== すべてのアサーションが通りました（18〜28 節）'
+\echo '== 29. 通知（プッシュの購読・受け取り方の設定）'
+set role authenticated;
+
+-- ---------- 受け取り方の既定 ----------
+select public.test_login(:'owner_a');
+select public.t_assert((select notify_chat = 'mention' from public.profiles where id = :'owner_a'), '既定は「自分あてだけ」');
+select public.t_assert((select notify_line from public.profiles where id = :'owner_a'), '既定で LINE にも送る');
+
+-- 本人は自分の設定を変えられる
+select public.set_notify_prefs('all', false);
+select public.t_assert((select notify_chat = 'all' and not notify_line from public.profiles where id = :'owner_a'), '自分の設定を変えられる');
+select public.t_expect_error($$select public.set_notify_prefs('everything', true)$$, 'INVALID', 'おかしな指定は拒否される');
+select public.set_notify_prefs('mention', true);
+
+-- ---------- 購読の登録 ----------
+select public.save_push_subscription('https://push.test/owner-a-1', 'p256dh-a1', 'auth-a1', 'iPhone', 'iPhone');
+select public.t_assert((select count(*) = 1 from public.push_subscriptions where profile_id = :'owner_a'), '自分の端末を登録できる');
+select public.t_assert((select company_id = :'company_a' from public.push_subscriptions where endpoint = 'https://push.test/owner-a-1'), '会社が入る');
+
+-- 同じ端末を登録し直しても増えない（入れ直し）
+select public.save_push_subscription('https://push.test/owner-a-1', 'p256dh-a1b', 'auth-a1b', 'iPhone', 'iPhone');
+select public.t_assert((select count(*) = 1 from public.push_subscriptions where profile_id = :'owner_a'), '同じ端末は入れ直しになる');
+select public.t_assert((select p256dh = 'p256dh-a1b' from public.push_subscriptions where endpoint = 'https://push.test/owner-a-1'), '鍵が新しくなる');
+
+-- 足りない情報は拒否
+select public.t_expect_error($$select public.save_push_subscription('', 'x', 'y')$$, 'INVALID', '送信先が空なら拒否される');
+
+-- ---------- 他人の端末は見えない・触れない ----------
+select public.test_login(:'admin_a');
+select public.save_push_subscription('https://push.test/admin-a-1', 'p256dh-b1', 'auth-b1', 'Android', 'Android');
+select public.t_assert((select count(*) = 1 from public.push_subscriptions), '管理者にも自分の端末しか見えない');
+select public.t_assert((select count(*) = 0 from public.push_subscriptions where profile_id = :'owner_a'), '代表の端末は見えない');
+select public.t_assert(public.delete_push_subscription('https://push.test/owner-a-1') = 0, '他人の端末は消せない');
+
+-- 自分の端末は消せる
+select public.t_assert(public.delete_push_subscription('https://push.test/admin-a-1') = 1, '自分の端末は消せる');
+select public.t_assert((select count(*) = 0 from public.push_subscriptions), '消した端末は残らない');
+
+-- ---------- サービスロール（RLS を通さない側）からは送信のために読める ----------
+select public.test_logout();
+reset role;
+select public.t_assert((select count(*) = 1 from public.push_subscriptions where company_id = :'company_a'), '送信側（サービスロール）からは読める');
+
+-- ---------- バックアップには含めない ----------
+set role authenticated;
+select public.test_login(:'owner_a');
+select public.t_assert((select public.export_backup() ? 'push_subscriptions') = false, 'バックアップに端末の購読は含めない');
+select public.test_logout();
+reset role;
+
+\echo '== すべてのアサーションが通りました（18〜29 節）'

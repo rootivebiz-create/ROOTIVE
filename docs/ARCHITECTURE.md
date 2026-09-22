@@ -23,6 +23,7 @@ ROOTIVE 利益管理システムの仕組みを、開発者・引き継ぎ担当
 │  app/api/cron/daily                   Vercel Cron（毎朝 7 時）→ 異常の検知と LINE 通知   │
 │  app/api/cron/weekly                  Vercel Cron（毎週月曜 8 時）→ 週次の経営サマリー   │
 │  app/api/version                      いま配っている版（画面が比べて更新を知らせる）      │
+│  app/api/nav-badges                   未読・未対応の件数（ベルが定期的に見に行く）        │
 │  middleware.ts                        セッション Cookie 更新・未ログインを /login へ   │
 │                                                                      │
 │  lib/calc        計算（純関数・BigInt で誤差なし）  lib/actions  Server Actions        │
@@ -32,6 +33,7 @@ ROOTIVE 利益管理システムの仕組みを、開発者・引き継ぎ担当
 │  lib/exports     CSV / xlsx / 全銀 / ZIP        lib/finance  予実・返済・期限（純関数）  │
 │  lib/kpi         経営指標の判定と助言           lib/alerts   異常の表示                 │
 │  lib/voice       声で入力（解析は純関数）         lib/line     LINE の質問への回答         │
+│  lib/push        通知（宛先と文面は純関数・送信は web-push）                                │
 │  lib/supabase    server（RLS 適用）/ admin（service_role、サーバー専用）             │
 └───────────────┬──────────────────────────────────────────────────────┘
                 │ supabase-js（anon キー + ユーザー JWT → RLS 適用）
@@ -421,6 +423,42 @@ select 側だけを閉じても write 側のポリシーで読めてしまうた
 
 ---
 
+## 4-7. 通知（`lib/push`・0022）
+
+「チャットの通知が来ない」の原因は、**通知の仕組みが無かった**こと（未読バッジだけで、
+端末にも LINE にも何も送っていなかった）。3 つの経路で届ける。
+
+```
+発言（chat_post）／承認・差戻し（approve_day_entries）
+        │  Server Action は保存まで。返事を返したあとに after() で送る
+        ▼
+  lib/push/notify-chat.ts ／ notify-daily.ts（サービスロール。company_id で必ず絞る）
+        ├─▶ 端末への通知    push_subscriptions → web-push → ブラウザの push イベント
+        │                    404 / 410 が返った購読はその場で消す
+        ├─▶ LINE            自分あて（メンション）と、承認・差戻しの結果だけ
+        └─▶ アプリ内        ベルが /api/nav-badges を 60 秒ごと・タブ復帰で見て、増えたらトースト
+```
+
+決めごと。
+
+- **誰に送るかは純関数**（`lib/push/targets.ts` の `shouldNotifyChat` / `shouldNotifyLine`）。
+  画面にも DB にも条件を書かない。テストは `tests/push-targets.test.ts`
+- **鍵がそろっているときだけ機能を出す**（`NEXT_PUBLIC_VAPID_PUBLIC_KEY` と `VAPID_PRIVATE_KEY`）。
+  未設定の環境では設定画面にその旨だけを出し、LINE とアプリ内は使える
+- **VAPID の鍵は作り直さない**。作り直すと、すでに購読しているすべての端末に届かなくなる。
+  `scripts/deploy-vercel.sh` は Vercel 側に鍵が無いときだけ作る
+- **購読は本人のものだけ**（RLS。管理者にも他人の端末は見えない）。送信はサービスロールが読む
+- **バックアップに含めない**（端末の資格情報であり、戻しても別の端末では使えない）
+- 送信の失敗で業務を止めない。`after()` の中で握りつぶし、LINE の失敗だけ `integration_logs` に残す
+- Service Worker の `push` は**必ず通知を表示する**。受け取って何も出さないと iOS が購読を止める
+
+## 4-8. iPhone で通知を受け取るための条件
+
+iOS は、**ホーム画面に追加した PWA からしか** Web Push を購読できない（Safari のタブでは不可）。
+設定画面はこれを検出して、追加の手順を先に案内する（`isIos` かつ `isStandalone()` が false のとき）。
+
+---
+
 ## 5. 認証フロー
 
 ```
@@ -513,8 +551,8 @@ select 側だけを閉じても write 側のポリシーで読めてしまうた
 
 | 種類 | コマンド | 内容 |
 |---|---|---|
-| 単体（Vitest） | `npm test` | `lib/calc`（§2.6 の全ケース、誤差 0.01 円以内、端数処理 4 種、恒等式）、zod スキーマ、`lib/migrate` の変換と決定的 ID |
-| SQL 結合（psql） | `npm run test:sql` | ローカル PostgreSQL に `tests/sql/auth_stub.sql`（auth.uid() 等のスタブ）+ 全マイグレーションを適用し `tests/sql/test.sql` を実行。ビューの計算が §2.6 と一致、RLS（viewer / driver の拒否）、締めガード、招待制、復元・全削除、経費と営業利益（`v_month_pl`）、取引先と請求書（`build_invoice` / 合計の自動計算 / 状態）、ポータルの速報。19 節 |
+| 単体（Vitest） | `npm test` | `lib/calc`（§2.6 の全ケース、誤差 0.01 円以内、端数処理 4 種、恒等式）、zod スキーマ、`lib/migrate` の変換と決定的 ID、`lib/voice` の解析、`lib/push` の宛先と文面。**プッシュの送信（`tests/push-send.test.ts`）は使い捨ての自己署名証明書で HTTPS のテストサーバーを立て、暗号化された本文と VAPID の署名が届くこと・410 なら購読を消すことまで確かめる**（openssl が無い環境では飛ばす） |
+| SQL 結合（psql） | `npm run test:sql` | ローカル PostgreSQL に `tests/sql/auth_stub.sql`（auth.uid() 等のスタブ）+ 全マイグレーションを適用し `tests/sql/test.sql` を実行。ビューの計算が §2.6 と一致、RLS（viewer / driver の拒否）、締めガード、招待制、復元・全削除、経費と営業利益（`v_month_pl`）、取引先と請求書（`build_invoice` / 合計の自動計算 / 状態）、ポータルの速報、代表と機密の隔離、通知の購読と設定。29 節 |
 | E2E（Playwright） | `npm run test:e2e` | Supabase 互換のテストサーバー（`supabase-lite`：PostgreSQL + GoTrue 相当 + PostgREST 相当の軽量実装）を自動起動し、iPhone 13 と Desktop Chrome の 2 プロジェクトで主要導線（招待ログイン → ダッシュボード → 稼働追加・複製・一括入力 → 支払明細・PDF → 設定 → 月締め・解除 → 経費と営業利益 → 取引先と請求書（PDF・入金） → 年次レポートと月次目標 → ナビとコマンドパレット・ポータルの速報 → 閲覧者／ドライバーの権限 → 移行 JSON の取り込み）をブラウザで確認。13 spec・61 シナリオ × 2 プロジェクト = **122 件**。スクリーンショットを `docs/screenshots/` に保存。詳細は [docs/E2E.md](E2E.md) |
 | 静的 | `npm run typecheck` / `npm run lint` / `npm run build` | 型・Lint・本番ビルド |
 | まとめ | `npm run check` | typecheck + lint + test + build:sql |

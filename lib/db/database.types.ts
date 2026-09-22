@@ -2714,6 +2714,8 @@ export type Database = {
           updated_at: string
           line_user_id: string
           line_linked_at: string | null
+          notify_chat: Database["public"]["Enums"]["notify_chat_mode"]
+          notify_line: boolean
         }
         Insert: {
           id: string
@@ -2727,6 +2729,8 @@ export type Database = {
           updated_at?: string
           line_user_id?: string
           line_linked_at?: string | null
+          notify_chat?: Database["public"]["Enums"]["notify_chat_mode"]
+          notify_line?: boolean
         }
         Update: {
           id?: string
@@ -2740,6 +2744,8 @@ export type Database = {
           updated_at?: string
           line_user_id?: string
           line_linked_at?: string | null
+          notify_chat?: Database["public"]["Enums"]["notify_chat_mode"]
+          notify_line?: boolean
         }
         Relationships: []
       }
@@ -2824,6 +2830,51 @@ export type Database = {
           updated_at?: string
           client_id?: string | null
           target_margin?: number | null
+        }
+        Relationships: []
+      }
+      push_subscriptions: {
+        Row: {
+          id: string
+          company_id: string
+          profile_id: string
+          endpoint: string
+          p256dh: string
+          auth: string
+          user_agent: string
+          label: string
+          failed_count: number
+          last_sent_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          profile_id: string
+          endpoint: string
+          p256dh: string
+          auth: string
+          user_agent?: string
+          label?: string
+          failed_count?: number
+          last_sent_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          profile_id?: string
+          endpoint?: string
+          p256dh?: string
+          auth?: string
+          user_agent?: string
+          label?: string
+          failed_count?: number
+          last_sent_at?: string | null
+          created_at?: string
+          updated_at?: string
         }
         Relationships: []
       }
@@ -4360,6 +4411,12 @@ export type Database = {
         }
         Returns: number
       }
+      delete_push_subscription: {
+        Args: {
+          p_endpoint: string
+        }
+        Returns: number
+      }
       detect_anomalies: {
         Args: {
           p_month: string
@@ -4664,6 +4721,16 @@ export type Database = {
         }
         Returns: number
       }
+      save_push_subscription: {
+        Args: {
+          p_endpoint: string
+          p_p256dh: string
+          p_auth: string
+          p_user_agent?: string
+          p_label?: string
+        }
+        Returns: string
+      }
       seed_initial_data: {
         Args: {
           p_with_entries?: boolean
@@ -4692,6 +4759,13 @@ export type Database = {
           p_path: string
         }
         Returns: undefined
+      }
+      set_notify_prefs: {
+        Args: {
+          p_notify_chat: string
+          p_notify_line: boolean
+        }
+        Returns: Json
       }
       spread_plan_year: {
         Args: {
@@ -4782,6 +4856,7 @@ export type Database = {
       login_event_kind: "login" | "logout" | "invite"
       month_status: "open" | "closed"
       notice_status: "received" | "checked" | "resolved"
+      notify_chat_mode: "all" | "mention" | "off"
       roll_call_method: "face" | "phone" | "video" | "app"
       rounding_mode: "none" | "floor" | "round" | "ceil"
       tax_mode: "taxable" | "exempt"

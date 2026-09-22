@@ -42,6 +42,7 @@
     "sonner": "^2.0.8",
     "tailwind-merge": "^3.7.0",
     "uuid": "^14.0.2",
+    "web-push": "^3.6.7",
     "zod": "^4.6.5"
   },
   "devDependencies": {
@@ -52,6 +53,7 @@
     "@types/pg": "^8.15.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
+    "@types/web-push": "^3.6.4",
     "eslint": "^9.39.5",
     "eslint-config-next": "15.5.25",
     "jose": "^6.0.0",

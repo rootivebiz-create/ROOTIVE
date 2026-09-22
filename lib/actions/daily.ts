@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { requireActionRole, requireAdminAction, type SessionContext } from "@/lib/auth/session";
 import { ActionError, runAction, unwrap, type ActionResult } from "@/lib/actions/result";
 import type { Database } from "@/lib/db/types";
@@ -177,11 +178,22 @@ export async function submitDayEntriesAction(
 /** 日別の稼働報告の承認・差戻し（admin+。RPC approve_day_entries） */
 export async function approveDayEntriesAction(ids: string[], approve: boolean, reason?: string): Promise<ActionResult<{ count: number }>> {
   const res = await runAction(async () => {
-    const { supabase } = await requireAdminAction();
+    const { supabase, company } = await requireAdminAction();
     const v = approveDayEntriesSchema.parse({ ids, approve, reason });
+    // 誰の・いつの報告かは、状態を変える前に控えておく（本人へ知らせるため）
+    const targetRes = await supabase.from("work_day_entries").select("driver_id, work_date").eq("company_id", company.id).in("id", v.ids);
+    const rows = (targetRes.data ?? []).map((r) => ({ driver_id: r.driver_id, work_date: r.work_date }));
+
     const { data, error } = await supabase.rpc("approve_day_entries", { p_ids: v.ids, p_approve: v.approve, p_reason: v.reason });
     if (error) throw error;
     revalidateDaily();
+
+    // 結果をドライバー本人へ（返事を返したあとに送る）
+    after(async () => {
+      const { notifyDayEntriesDecision } = await import("@/lib/push/notify-daily");
+      await notifyDayEntriesDecision({ companyId: company.id, approved: v.approve, reason: v.reason ?? "", rows }).catch(() => undefined);
+    });
+
     return { count: Number(data ?? 0), approve: v.approve };
   });
   if (!res.ok) return res;

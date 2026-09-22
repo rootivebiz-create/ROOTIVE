@@ -201,6 +201,57 @@ self.addEventListener("fetch", function (event) {
   }
 });
 
+/**
+ * 通知を受け取る（Web Push）
+ * サーバーから届いた JSON（title / body / url / tag）をそのまま出す。
+ * **必ず通知を出す**（黙って受け取るだけにすると、iOS が購読を止めてしまう）。
+ */
+self.addEventListener("push", function (event) {
+  var data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch (e) {
+    data = {};
+  }
+  var title = data.title || "ROOTIVE 利益管理";
+  var options = {
+    body: data.body || "",
+    icon: "/icons/icon-192.png",
+    badge: "/icons/icon-192.png",
+    tag: data.tag || "rootive",
+    renotify: true,
+    data: { url: data.url || "/" },
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+/** 通知を押したら、開いているタブがあればそこへ、無ければ新しく開く */
+self.addEventListener("notificationclick", function (event) {
+  event.notification.close();
+  var url = (event.notification.data && event.notification.data.url) || "/";
+  event.waitUntil(
+    self.clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then(function (list) {
+        for (var i = 0; i < list.length; i += 1) {
+          var client = list[i];
+          if (client.url.indexOf(self.location.origin) === 0) {
+            if ("navigate" in client) {
+              return client.navigate(url).then(function (c) {
+                return c && c.focus ? c.focus() : null;
+              });
+            }
+            if ("focus" in client) return client.focus();
+          }
+        }
+        return self.clients.openWindow(url);
+      })
+      .catch(function () {
+        return null;
+      }),
+  );
+});
+
 self.addEventListener("message", function (event) {
   var data = event.data || {};
   if (data.type === "SKIP_WAITING") {

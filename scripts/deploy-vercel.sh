@@ -24,6 +24,9 @@
 #   ANTHROPIC_API_KEY              任意。AI 月次分析を使う場合
 #   ANTHROPIC_MODEL                任意。AI のモデル名を変える場合
 #   CRON_SECRET                    任意。定期アクセス（/api/cron/keepalive）の認証。未設定なら自動生成
+#   NEXT_PUBLIC_VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY
+#                                  任意。端末へのプッシュ通知の鍵。未設定なら自動生成（一度作ったら作り直さない）
+#   VAPID_SUBJECT                  任意。プッシュ通知の連絡先（mailto:…）。未設定ならオーナーのメール
 #   SUPABASE_ACCESS_TOKEN + SUPABASE_PROJECT_REF
 #                                  任意。両方あれば Supabase の Site URL / Redirect URLs を自動更新
 #
@@ -240,6 +243,32 @@ if [ -n "${CRON_SECRET:-}" ]; then
   set_env CRON_SECRET "$CRON_SECRET" 1
 elif ! env_exists CRON_SECRET; then
   set_env CRON_SECRET "$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32)" 1
+fi
+
+# 端末へのプッシュ通知の鍵（VAPID）。**一度作ったら作り直さない**
+#   作り直すと、すでに購読している端末すべてに通知が届かなくなるため、
+#   Vercel 側に既にあるときは触らない（env_exists で確認する）。
+if [ -n "${NEXT_PUBLIC_VAPID_PUBLIC_KEY:-}" ] && [ -n "${VAPID_PRIVATE_KEY:-}" ]; then
+  set_env NEXT_PUBLIC_VAPID_PUBLIC_KEY "$NEXT_PUBLIC_VAPID_PUBLIC_KEY"
+  set_env VAPID_PRIVATE_KEY "$VAPID_PRIVATE_KEY" 1
+elif ! env_exists NEXT_PUBLIC_VAPID_PUBLIC_KEY || ! env_exists VAPID_PRIVATE_KEY; then
+  log "  プッシュ通知の鍵（VAPID）を新しく作ります"
+  VAPID_PAIR="$(node -e '
+    const crypto = require("crypto");
+    const b64url = (b) => b.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    const ecdh = crypto.createECDH("prime256v1");
+    ecdh.generateKeys();
+    let priv = ecdh.getPrivateKey();
+    if (priv.length < 32) priv = Buffer.concat([Buffer.alloc(32 - priv.length), priv]);
+    process.stdout.write(b64url(ecdh.getPublicKey()) + " " + b64url(priv));
+  ')"
+  set_env NEXT_PUBLIC_VAPID_PUBLIC_KEY "${VAPID_PAIR%% *}"
+  set_env VAPID_PRIVATE_KEY "${VAPID_PAIR##* }" 1
+fi
+if [ -n "${VAPID_SUBJECT:-}" ]; then
+  set_env VAPID_SUBJECT "$VAPID_SUBJECT"
+elif ! env_exists VAPID_SUBJECT && [ -n "${OWNER_EMAIL:-}" ]; then
+  set_env VAPID_SUBJECT "mailto:$OWNER_EMAIL"
 fi
 
 APP_URL_SOURCE="指定値"

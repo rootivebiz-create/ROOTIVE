@@ -197,6 +197,9 @@ Supabase 標準のメールは英語で、しかも「送信した端末でし�
    | `ANTHROPIC_API_KEY` | （任意）AI（経営分析・相談・文章の下書き）を使う場合のみ。Anthropic Console で発行した `sk-ant-…`。取り方と料金の目安は [AI_SETUP.md](AI_SETUP.md) |
    | `ANTHROPIC_MODEL` | （任意）AI のモデル名を指定したい場合のみ。未設定なら既定のモデル |
    | `CRON_SECRET` | **必須**。定期アクセス（下の補足）を第三者が呼べないようにする合言葉。**32 文字以上のランダムな英数字**（パスワード生成ツールで作る）。未設定だと `/api/cron/keepalive` が 503 を返して定期アクセスが無効になり、Supabase の一時停止を防げません。自動公開（QUICKSTART）では自動生成されます |
+   | `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | （任意）端末へのプッシュ通知を使う場合のみ。自動公開（QUICKSTART）では自動生成されます。手で作るときは `node -e 'const c=require("crypto"),e=c.createECDH("prime256v1");e.generateKeys();const b=x=>x.toString("base64").replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");let p=e.getPrivateKey();if(p.length<32)p=Buffer.concat([Buffer.alloc(32-p.length),p]);console.log(b(e.getPublicKey()),b(p))'` の**左側** |
+   | `VAPID_PRIVATE_KEY` | （任意）同じコマンドの**右側**。**この鍵は作り直さないこと**（作り直すと、すでに通知を受け取っている端末すべてに届かなくなります） |
+   | `VAPID_SUBJECT` | （任意）プッシュ通知の連絡先。`mailto:` ＋ オーナーのメールアドレス。未設定でも動きます |
 
 4. **「Deploy」** を押します。2〜4 分でビルドが終わり、「Congratulations!」の画面になります。
 5. **「Continue to Dashboard」** を押すと、**Domains** に本番 URL（`rootive-profit.vercel.app`）が表示されます。これを控えます。

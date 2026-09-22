@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link, { useLinkStatus } from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { toast } from "sonner";
 import * as Popover from "@radix-ui/react-popover";
 import {
   Home,
@@ -309,11 +310,68 @@ export function notificationRows(badges: NavBadges | undefined, role?: Role): No
   return rows.filter((r) => r.count > 0);
 }
 
-/** ヘッダーのベル（未対応の件数をまとめて出す。スマホでも押せるよう 44px 角） */
+/** 何秒おきに件数を見に行くか（タブに戻ったときにも見に行く） */
+const BADGE_POLL_MS = 60 * 1000;
+
+/**
+ * ヘッダーのベル（未対応の件数をまとめて出す。スマホでも押せるよう 44px 角）
+ *
+ * サーバーが描いた件数から始めて、そのあとは `/api/nav-badges` を定期的に見る。
+ * 画面を開いたままでも数が増え、未読のチャットが増えたらその場で知らせる。
+ */
 export function NotificationBell({ badges, role }: { badges?: NavBadges; role?: Role }) {
   const [open, setOpen] = useState(false);
   const { href } = useMonth();
-  const rows = notificationRows(badges, role);
+  const router = useRouter();
+  const [live, setLive] = useState<NavBadges | undefined>(badges);
+  const lastChat = useRef<number>(badges?.["/chat"] ?? 0);
+
+  // サーバーが描き直したら、そちらを正とする
+  useEffect(() => {
+    setLive(badges);
+    lastChat.current = badges?.["/chat"] ?? 0;
+  }, [badges]);
+
+  useEffect(() => {
+    let stopped = false;
+    const check = async () => {
+      // 見えていないタブでは問い合わせない（戻ってきたときに visibilitychange で見に行く）
+      if (document.visibilityState !== "visible") return;
+      try {
+        const res = await fetch("/api/nav-badges", { cache: "no-store" });
+        if (!res.ok || stopped) return;
+        const json = (await res.json()) as { alerts?: number; chat?: number; approvals?: number };
+        const next: NavBadges = {
+          "/alerts": Number(json.alerts ?? 0),
+          "/chat": Number(json.chat ?? 0),
+          "/executive": Number(json.approvals ?? 0),
+        };
+        setLive(next);
+        const chat = next["/chat"] ?? 0;
+        if (chat > lastChat.current) {
+          toast("新しいメッセージがあります", {
+            description: `未読 ${chat} 件`,
+            action: { label: "開く", onClick: () => router.push(href("/chat")) },
+          });
+        }
+        lastChat.current = chat;
+      } catch {
+        // 電波が無いときは黙って次の機会を待つ
+      }
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void check();
+    };
+    const id = window.setInterval(check, BADGE_POLL_MS);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      stopped = true;
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [href, router]);
+
+  const rows = notificationRows(live, role);
   const total = rows.reduce((sum, r) => sum + r.count, 0);
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>

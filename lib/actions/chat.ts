@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { requireAdminAction, requireStaffAction } from "@/lib/auth/session";
 import { ensureNoError, runAction, unwrap, type ActionResult } from "@/lib/actions/result";
 import {
@@ -30,7 +31,7 @@ function revalidateChat(channelId?: string): void {
 /** 発言する（staff。閲覧者も可）。宛先は profiles.id の配列（RPC へは uuid[] で渡す） */
 export async function postChatMessageAction(channelId: string, body: string, mentions: string[] = []): Promise<ActionResult<{ id: string }>> {
   return runAction(async () => {
-    const { supabase } = await requireStaffAction();
+    const { supabase, company, profile } = await requireStaffAction();
     const v = postChatMessageSchema.parse({ channel_id: channelId, body, mentions });
     const { data, error } = await supabase.rpc("chat_post", {
       p_channel_id: v.channel_id,
@@ -39,6 +40,19 @@ export async function postChatMessageAction(channelId: string, body: string, men
     });
     if (error) throw error;
     revalidateChat(v.channel_id);
+
+    // 通知は返事を返したあとに送る（after）。送信に失敗しても発言は保存されている
+    after(async () => {
+      const { notifyChatMessage } = await import("@/lib/push/notify-chat");
+      await notifyChatMessage({
+        companyId: company.id,
+        channelId: v.channel_id,
+        authorId: profile.id,
+        body: v.body,
+        mentions: v.mentions,
+      }).catch(() => undefined);
+    });
+
     return { id: String(data ?? "") };
   });
 }

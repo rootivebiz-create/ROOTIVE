@@ -14,6 +14,7 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
 - `lib/calc/` 純関数の計算ロジック（正）。DB ビュー `v_*` と同じ結果を返すこと
 - `lib/ai/` AI（`config.ts` 有効判定・`context.ts` データパック・`analysis.ts` 月次分析・`chat.ts` 相談・`draft.ts` 文章・`findings.ts` 応答の正規化）
 - `lib/voice/` 声で入力（`parse.ts` 純関数の解析・`speech.ts` 音声認識の包み）
+- `lib/push/` 通知（`targets.ts` 純関数の宛先と文面・`config.ts` VAPID・`send.ts` 送信・`client.ts` ブラウザ側の購読・`notify-chat.ts` / `notify-daily.ts` 実際の通知）
 - `lib/alerts/` `lib/chat/` `lib/bank/` `lib/integrations/` `lib/daily/` `lib/fleet/` `lib/intake/` `lib/hr/` `lib/executive/`（代表：読み取り `queries.ts`・信号 `cockpit.ts`・現金の残り日数 `runway.ts`・予実の分解 `variance.ts`・朝のひとこと `brief.ts`） 各機能の純関数とサーバー専用の処理
 - `lib/db/database.types.ts` supabase-js 用の型（自動生成）、`lib/db/types.ts` 型エイリアス、`lib/db/queries.ts` 共通クエリ
 - `lib/auth/session.ts` セッション・ロール確認（`requireStaff` / `requirePageRole` / `requireAdminAction` など）
@@ -22,7 +23,7 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
 - `lib/month.ts` 稼動月ユーティリティ、`lib/format.ts` 表示書式（円・%・数量）
 - `components/ui/*` UI 部品（shadcn/ui 相当）、`components/layout/*` シェル・ナビ・月セレクタ
 - `app/(app)/*` スタッフ画面（ホーム・稼働・支払・請求・経費・資金繰り・案件・レポート・ドライバー別の採算・設定）、`app/driver/*` ドライバーポータル、`app/(auth)/*` ログイン・招待、`app/api/export/*` 出力
-- `supabase/migrations/*.sql` スキーマ（0001 テーブル、0002 認証・RLS、0003 ビュー、0004 RPC、0005 ポータル・初期データ、0006 Storage・権限、0007 ドライバー別単価（bill_rate 上書き・rate_diffs・apply_master_rates）、0008 消費税・ロゴと認印・ドライバーごとの支払日、0009 経費と営業利益・取引先と請求書・月次目標、0010 資金繰り・案件別採算、0011 AI チャット・社内チャット・異常検知・外部連携、0012 運行管理と法令対応（点呼・業務記録・日別の稼働・車両・書類）、0013 取り込みと採用・契約、0014 法人の経営管理（振込先口座・決算と税務カレンダー・借入金・経営指標・契約書の保管）、0015 バックアップと復元を全テーブルへ拡張、0016 異常の検知を毎日自動で回す、0017 会社を明示して集計する RPC、0018 労務（拘束時間・休息）と元請の支払通知との突合、0019 代表（決裁・意思決定ログ・会社の台帳・中期計画・ログインの記録）、0020 代表の守り（機密の隔離・決裁のルールと委任・持ち出しの記録・計画の配分・振込口座の分離）、0021 表示を速くする（me / nav_badges））
+- `supabase/migrations/*.sql` スキーマ（0001 テーブル、0002 認証・RLS、0003 ビュー、0004 RPC、0005 ポータル・初期データ、0006 Storage・権限、0007 ドライバー別単価（bill_rate 上書き・rate_diffs・apply_master_rates）、0008 消費税・ロゴと認印・ドライバーごとの支払日、0009 経費と営業利益・取引先と請求書・月次目標、0010 資金繰り・案件別採算、0011 AI チャット・社内チャット・異常検知・外部連携、0012 運行管理と法令対応（点呼・業務記録・日別の稼働・車両・書類）、0013 取り込みと採用・契約、0014 法人の経営管理（振込先口座・決算と税務カレンダー・借入金・経営指標・契約書の保管）、0015 バックアップと復元を全テーブルへ拡張、0016 異常の検知を毎日自動で回す、0017 会社を明示して集計する RPC、0018 労務（拘束時間・休息）と元請の支払通知との突合、0019 代表（決裁・意思決定ログ・会社の台帳・中期計画・ログインの記録）、0020 代表の守り（機密の隔離・決裁のルールと委任・持ち出しの記録・計画の配分・振込口座の分離）、0021 表示を速くする（me / nav_badges）、0022 通知（端末への通知の購読・受け取り方の設定））
 - `tests/` Vitest（`*.test.ts`）、`tests/sql/`（psql）、`tests/e2e/`（Playwright ＋ `supabase-lite` テストサーバー）
 
 ## 必ず守る規約
@@ -103,6 +104,15 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
 - **いま動いている版が分かる（0021）**：`buildId()`（`VERCEL_GIT_COMMIT_SHA` の先頭 7 桁）をユーザーメニューに出し、`/api/version` と比べて
   違えば「新しい版があります」の帯を出す。「更新する」でキャッシュと Service Worker を捨てて読み直す（`updateToLatest`）。
   **Service Worker は `/sw.js?v=<版>` で登録する**（URL が変わると入れ直されるので、古いキャッシュが残らない）
+- **通知（0022）**：これまで通知はナビの未読バッジだけで、端末には何も届かなかった。3 系統で届ける。
+  - **端末への通知（Web Push）**：`push_subscriptions`（端末ごと。**本人しか読み書きできない**。バックアップに含めない）。
+    鍵は `NEXT_PUBLIC_VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY`（**そろっているときだけ機能を出す**。作り直すと既存の購読が全部無効になるので、デプロイのスクリプトは一度作った鍵を作り直さない）。
+    送信は `web-push`。404 / 410 が返った購読はその場で消す
+  - **LINE への転送**：**自分あて（メンション）のときだけ**送る（全部流すと読まれないし通数も食う）。承認・差戻しの結果はドライバー本人へ必ず送る
+  - **アプリ内**：ベルが `/api/nav-badges` を 60 秒ごと・タブ復帰で見に行き、未読が増えたらトーストで知らせる
+  - 受け取り方は `profiles.notify_chat`（`all` / `mention`（既定） / `off`）と `profiles.notify_line`。判定は純関数 `shouldNotifyChat` / `shouldNotifyLine` に集約し、画面や DB に条件を散らさない
+  - 送信は Server Action の中で待たない。**`after()`** で返事を返したあとに送り、失敗しても本来の操作（発言・承認）は成立させる
+  - Service Worker の `push` は**必ず通知を出す**（黙って受け取ると iOS が購読を止める）。iPhone は「ホーム画面に追加」した状態でしか購読できないため、画面でそう案内する
 - ロール：owner（すべて ＋ `/executive` の決裁・意思決定・会社の台帳・中期計画・守り）／admin（登録・編集・月締め・出力・代表への申請）／viewer（閲覧・CSV・チャット・AI 相談。借入・納税・現金・振込口座は既定で見えない）／driver（自分の締め済み月の明細、今日の報告（点呼・稼働）、自分の書類・車両・契約）
 
 ## supabase-js の使い方の制約（E2E 用の互換テストサーバーが対応する範囲に限定する）

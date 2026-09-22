@@ -20,6 +20,7 @@ const SETTINGS_SUBNAV: ({ href: string; label: string; keywords?: string[] } & R
   { href: "/settings/users", label: "ユーザー管理", keywords: ["user", "ゆーざー", "権限", "招待"], ownerOnly: true },
   { href: "/settings/data", label: "データ", keywords: ["data", "csv", "backup", "ばっくあっぷ", "取り込み"] },
   { href: "/settings/audit", label: "監査ログ", keywords: ["audit", "log", "かんさ", "履歴"], adminOnly: true },
+  { href: "/settings/notifications", label: "通知", keywords: ["notification", "つうち", "通知", "push", "ぷっしゅ", "line", "らいん", "お知らせ"] },
   { href: "/settings/account", label: "アカウント", keywords: ["account", "あかうんと", "ぱすわーど"] },
 ];
 

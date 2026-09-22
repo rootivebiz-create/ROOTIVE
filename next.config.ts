@@ -12,7 +12,8 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
-  serverExternalPackages: ["@react-pdf/renderer", "iconv-lite"],
+  // web-push は Node の crypto と https をそのまま使うのでバンドルしない
+  serverExternalPackages: ["@react-pdf/renderer", "iconv-lite", "web-push"],
   // PDF 明細用の日本語フォントを Vercel のサーバーレス関数に同梱する
   outputFileTracingIncludes: {
     "/api/export/statement.pdf": ["./public/fonts/**/*"],
