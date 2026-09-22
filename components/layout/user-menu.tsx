@@ -20,7 +20,7 @@ async function signOutCleanup(): Promise<void> {
   }
 }
 
-export function UserMenu({ displayName, email, role }: { displayName: string; email: string; role: Role }) {
+export function UserMenu({ displayName, email, role, build }: { displayName: string; email: string; role: Role; build?: string }) {
   const { theme, setTheme } = useTheme();
   const signOutForm = useRef<HTMLFormElement>(null);
   return (
@@ -39,6 +39,7 @@ export function UserMenu({ displayName, email, role }: { displayName: string; em
           <div className="px-2 py-1.5">
             <p className="truncate text-sm font-medium">{displayName || "（表示名なし）"}</p>
             <p className="truncate text-xs text-muted-foreground">{email}</p>
+            {build && <p className="mt-0.5 truncate text-[11px] text-muted-foreground">版 {build}</p>}
             <Badge variant="secondary" className="mt-1">
               {ROLE_LABELS[role]}
             </Badge>

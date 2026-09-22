@@ -22,6 +22,7 @@ ROOTIVE 利益管理システムの仕組みを、開発者・引き継ぎ担当
 │  app/api/cron/keepalive               Vercel Cron（毎日）→ Supabase 一時停止の防止     │
 │  app/api/cron/daily                   Vercel Cron（毎朝 7 時）→ 異常の検知と LINE 通知   │
 │  app/api/cron/weekly                  Vercel Cron（毎週月曜 8 時）→ 週次の経営サマリー   │
+│  app/api/version                      いま配っている版（画面が比べて更新を知らせる）      │
 │  middleware.ts                        セッション Cookie 更新・未ログインを /login へ   │
 │                                                                      │
 │  lib/calc        計算（純関数・BigInt で誤差なし）  lib/actions  Server Actions        │
@@ -30,6 +31,7 @@ ROOTIVE 利益管理システムの仕組みを、開発者・引き継ぎ担当
 │  lib/yayoi       弥生仕訳 CSV                 lib/migrate  試作 JSON 変換（uuid v5） │
 │  lib/exports     CSV / xlsx / 全銀 / ZIP        lib/finance  予実・返済・期限（純関数）  │
 │  lib/kpi         経営指標の判定と助言           lib/alerts   異常の表示                 │
+│  lib/voice       声で入力（解析は純関数）         lib/line     LINE の質問への回答         │
 │  lib/supabase    server（RLS 適用）/ admin（service_role、サーバー専用）             │
 └───────────────┬──────────────────────────────────────────────────────┘
                 │ supabase-js（anon キー + ユーザー JWT → RLS 適用）
@@ -374,6 +376,48 @@ select 側だけを閉じても write 側のポリシーで読めてしまうた
 | **ログアウトは CSRF 対策** | `app/auth/signout/route.ts` は POST のみで、`Origin`（無ければ `Referer`）のホストが自サイトと一致しないと 403 |
 | **リダイレクト先はサイト内のみ** | `?next=` は「`/` で始まり `//` や `\` を含まないパス」だけ許可（`safeNext` / ログイン画面）。メールリンクの `next={{ .RedirectTo }}` は `app/auth/confirm/route.ts` の `resolveNext()` が「サイト内パス、または同一ホストの絶対 URL」のみ受け付け、それ以外はトップへ |
 | **anon は何もできない** | `public` スキーマの全テーブル・関数・シーケンスから `anon` の権限を剥奪（既定権限も含む）。未ログインで API を叩いても RLS 以前に拒否される |
+
+---
+
+## 4-5. 声で稼働を入力（`lib/voice`）
+
+運転席や倉庫で、片手で数量を入れるための入口（`/entries` の「声で入力」）。
+
+```
+話す ──▶ Web Speech API（端末側で文字にする。ja-JP）
+          │  lib/voice/speech.ts：使えるかの判定・エラーの日本語化。音声データは扱わない
+          ▼
+        文字 ──▶ lib/voice/parse.ts（純関数）
+                   splitPhrases  「、」「あと」で複数行に割る
+                   extractQty    数量を 1 つ取り出す（漢数字は独立した語 or 単位が続くときだけ）
+                   matchDriver   ドライバー名・かな・敬称のゆらぎを吸収
+                   matchItem     案件名 × 内容名。かな → ローマ字で「アマゾン」＝「Amazon」
+                   ▼
+                 画面で確認・修正（ドライバー／案件／数量のプルダウンと入力）
+                   ▼
+                 quickSetEntriesAction → 案件内容ごとに RPC bulk_set_entries
+                   単価・率・端数処理は DB が現在のマスタから決める（§2-5）
+                   既にある行は数量だけ変わる（単価のスナップショットは維持）
+```
+
+守っていること。
+
+- **音声は保存も送信もしない**。アプリが受け取るのは端末が文字にした結果だけ
+- **解析は純関数**（`lib/voice/parse.ts`）。DB にも React にも依存せず、`tests/voice-parse.test.ts` で固めている
+- **保存前に必ず人が確認する**。読み取れなかった項目は空のまま出し、そろっていない行は保存しない
+- **単価をアプリ側で組み立てない**（§7）。数量だけを送り、単価は DB 側の `entry_defaults` が決める
+- **マイクが使えない端末でも同じことができる**（同じダイアログの文字入力）。E2E はこの経路で検証する
+
+## 4-6. いま動いている版（`/api/version`）
+
+端末（とくにホーム画面に追加した PWA）は古い版を握ったままになることがある。
+「更新したのに変わらない」を利用者自身が確かめて直せるようにしている。
+
+- `buildId()`（`VERCEL_GIT_COMMIT_SHA` の先頭 7 桁。ローカルは `dev`）をユーザーメニューに出す
+- 画面は 5 分おき・タブに戻るたびに `/api/version`（`no-store`）と比べ、違えば帯を出す
+- 「更新する」は `updateToLatest()`：Cache Storage を全部消し、Service Worker を解除してから再読み込み
+- Service Worker は **`/sw.js?v=<版>`** で登録する。URL が版ごとに変わるのでブラウザが必ず入れ直し、
+  `activate` で前の版のキャッシュ（`rootive-<版>-static` / `-pages`）を捨てる
 
 ---
 

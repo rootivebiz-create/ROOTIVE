@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { ThemeProvider } from "next-themes";
 import { Toaster } from "sonner";
 import { OfflineProvider } from "@/components/offline/offline-provider";
+import { buildId } from "@/lib/env";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -30,7 +31,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           {children}
           <Toaster position="top-center" richColors closeButton />
           {/* オフラインの帯・未送信の自動送信・Service Worker の登録 */}
-          <OfflineProvider />
+          <OfflineProvider build={buildId()} />
         </ThemeProvider>
       </body>
     </html>

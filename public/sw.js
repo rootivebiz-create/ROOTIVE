@@ -9,7 +9,20 @@
  * - キャッシュ名にバージョンを付け、activate で古いものを消す
  */
 
-var VERSION = "rootive-v1";
+/**
+ * 版（デプロイごとに変わる）
+ * 登録するときに `/sw.js?v=<版>` と付けてもらう。URL が変わると
+ * ブラウザは別のスクリプトとして入れ直すので、
+ * 新しい版を出したときに確実に入れ替わり、activate で古いキャッシュを捨てられる。
+ */
+var BUILD = "v1";
+try {
+  BUILD = new URL(self.location.href).searchParams.get("v") || "v1";
+} catch (e) {
+  BUILD = "v1";
+}
+
+var VERSION = "rootive-" + BUILD;
 var STATIC_CACHE = VERSION + "-static";
 var PAGE_CACHE = VERSION + "-pages";
 var KEEP = [STATIC_CACHE, PAGE_CACHE];

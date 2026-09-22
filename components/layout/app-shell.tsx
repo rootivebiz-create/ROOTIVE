@@ -5,6 +5,7 @@ import { CommandPalette, type CommandItem } from "./command-palette";
 import { MonthSelector, type MonthOption } from "./month-selector";
 import { UserMenu } from "./user-menu";
 import { RouteProgress } from "./route-progress";
+import { UpdateBanner } from "./update-banner";
 import type { Role } from "@/lib/db/types";
 
 export function AppShell({
@@ -19,6 +20,7 @@ export function AppShell({
   badges,
   showMonthSelector = true,
   homeHref = "/dashboard",
+  build,
   children,
 }: {
   companyName: string;
@@ -35,6 +37,8 @@ export function AppShell({
   badges?: NavBadges;
   showMonthSelector?: boolean;
   homeHref?: string;
+  /** いま配られている版（新しい版が出たら帯で知らせる） */
+  build: string;
   children: React.ReactNode;
 }) {
   return (
@@ -43,6 +47,8 @@ export function AppShell({
         <RouteProgress />
       </Suspense>
       <header className="sticky top-0 z-40 border-b bg-card/95 backdrop-blur no-print">
+        {/* 新しい版が出ていたら、ヘッダーの上に帯を出す（ヘッダーごと固定されるので重ならない） */}
+        <UpdateBanner build={build} />
         <div className="flex h-14 min-w-0 items-center justify-between gap-1 overflow-hidden px-3 md:gap-2 md:px-4">
           <Link href={homeHref} className="flex shrink-0 items-center gap-2 font-bold">
             <span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-sm text-primary-foreground">R</span>
@@ -64,7 +70,7 @@ export function AppShell({
                 <CommandPalette items={commandItems} />
               </Suspense>
             )}
-            <UserMenu displayName={displayName} email={email} role={role} />
+            <UserMenu displayName={displayName} email={email} role={role} build={build} />
           </div>
         </div>
       </header>

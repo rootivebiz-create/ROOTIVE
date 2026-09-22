@@ -13,6 +13,7 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
 ## ディレクトリ
 - `lib/calc/` 純関数の計算ロジック（正）。DB ビュー `v_*` と同じ結果を返すこと
 - `lib/ai/` AI（`config.ts` 有効判定・`context.ts` データパック・`analysis.ts` 月次分析・`chat.ts` 相談・`draft.ts` 文章・`findings.ts` 応答の正規化）
+- `lib/voice/` 声で入力（`parse.ts` 純関数の解析・`speech.ts` 音声認識の包み）
 - `lib/alerts/` `lib/chat/` `lib/bank/` `lib/integrations/` `lib/daily/` `lib/fleet/` `lib/intake/` `lib/hr/` `lib/executive/`（代表：読み取り `queries.ts`・信号 `cockpit.ts`・現金の残り日数 `runway.ts`・予実の分解 `variance.ts`・朝のひとこと `brief.ts`） 各機能の純関数とサーバー専用の処理
 - `lib/db/database.types.ts` supabase-js 用の型（自動生成）、`lib/db/types.ts` 型エイリアス、`lib/db/queries.ts` 共通クエリ
 - `lib/auth/session.ts` セッション・ロール確認（`requireStaff` / `requirePageRole` / `requireAdminAction` など）
@@ -93,6 +94,15 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
 - **LINE で数字を聞ける（0021）**：連携済みのスタッフが公式アカウントに送った文を `lib/line/ask.ts`（純関数。判定と文面）と
   `lib/line/answer.ts`（読み取りと権限）が処理する。**Webhook はサービスロールで動く＝ RLS が効かない**ので、
   すべてのクエリを `company_id` で絞り、ロールと `confidential_scope` の判定をコードで行う。ドライバーには会社の数字を返さない
+- **声で稼働を入力（0021）**：`/entries` の「声で入力」。`lib/voice/parse.ts`（**純関数**。言葉 → ドライバー × 案件内容 × 数量）と
+  `lib/voice/speech.ts`（Web Speech API の包み。`ja-JP`・逐次結果）。**音声そのものは保存も送信もしない**（文字になった結果だけを扱う）。
+  マイクが使えない端末では同じダイアログの文字入力で同じことができる（E2E もこの経路で確かめる）。
+  かなはローマ字に直して比べるので「アマゾン」と話しても「Amazon」に当たる。漢数字は**独立した言葉か単位が続くときだけ**数量として読む（「三郷」の「三」を数量にしない）。
+  保存は Server Action `quickSetEntriesAction` → 案件内容ごとに既存の RPC `bulk_set_entries`（単価・率・端数処理は DB が現在のマスタから決める。既存行は数量だけ変わる）。
+  入口は稼働入力の「声で入力」と ⌘K の「声で稼働を入力」（`/entries?voice=1`）
+- **いま動いている版が分かる（0021）**：`buildId()`（`VERCEL_GIT_COMMIT_SHA` の先頭 7 桁）をユーザーメニューに出し、`/api/version` と比べて
+  違えば「新しい版があります」の帯を出す。「更新する」でキャッシュと Service Worker を捨てて読み直す（`updateToLatest`）。
+  **Service Worker は `/sw.js?v=<版>` で登録する**（URL が変わると入れ直されるので、古いキャッシュが残らない）
 - ロール：owner（すべて ＋ `/executive` の決裁・意思決定・会社の台帳・中期計画・守り）／admin（登録・編集・月締め・出力・代表への申請）／viewer（閲覧・CSV・チャット・AI 相談。借入・納税・現金・振込口座は既定で見えない）／driver（自分の締め済み月の明細、今日の報告（点呼・稼働）、自分の書類・車両・契約）
 
 ## supabase-js の使い方の制約（E2E 用の互換テストサーバーが対応する範囲に限定する）

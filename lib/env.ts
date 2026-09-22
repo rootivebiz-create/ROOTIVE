@@ -18,3 +18,15 @@ export function appUrl(): string {
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
   return `http://localhost:${process.env.PORT ?? 3000}`;
 }
+
+/**
+ * いま動いている版（ビルド）を表す文字列。
+ *
+ * Vercel が入れるコミットの SHA を使う。ローカルでは "dev"。
+ * ブラウザが古い版を握っていないかを、アプリの中から確かめられるようにするためのもの。
+ */
+export function buildId(): string {
+  const sha = process.env.VERCEL_GIT_COMMIT_SHA ?? "";
+  if (sha) return sha.slice(0, 7);
+  return process.env.NODE_ENV === "production" ? "prod" : "dev";
+}

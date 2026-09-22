@@ -45,6 +45,7 @@ export default async function EntriesPage({ searchParams }: { searchParams: Prom
       allMasters={allMasters}
       initialDriver={str(sp.driver)}
       initialQuery={str(sp.q)}
+      initialVoice={str(sp.voice) === "1"}
     />
   );
 }

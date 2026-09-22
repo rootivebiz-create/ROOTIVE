@@ -46,3 +46,22 @@ export interface BulkSetEntriesResult {
   updated: number;
   deleted: number;
 }
+
+/**
+ * まとめて数量だけ入れる（声で入力・その場入力）
+ * 単価・率・端数処理は DB 側（entry_defaults）が現在のマスタから決める。
+ * 既存の行があれば数量だけを更新し、単価のスナップショットは変えない。
+ */
+export const quickRowSchema = z.object({
+  driver_id: uuidSchema,
+  project_item_id: uuidSchema,
+  qty: qtySchema,
+});
+
+export const quickSetEntriesSchema = z.object({
+  month: monthSchema,
+  rows: z.array(quickRowSchema).min(1, "保存する行がありません").max(200, "行数が多すぎます"),
+});
+
+export type QuickRowInput = z.input<typeof quickRowSchema>;
+export type QuickSetEntriesInput = z.input<typeof quickSetEntriesSchema>;

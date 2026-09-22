@@ -1,4 +1,5 @@
 import { AppShell } from "@/components/layout/app-shell";
+import { buildId } from "@/lib/env";
 import type { CommandItem } from "@/components/layout/command-palette";
 import { requireStaff } from "@/lib/auth/session";
 import { loadMonthList, loadNavBadges } from "@/lib/db/queries";
@@ -81,6 +82,19 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const commandItems: CommandItem[] = [
     ...visibleForRole(MAIN_PAGES, role).map((p) => ({ id: `page:${p.href}`, group: "page" as const, label: p.label, href: p.href, keywords: p.keywords, hint: "画面" })),
+    // どの画面からでも声で入力を始められるようにする（編集できる人だけ）
+    ...(role === "owner" || role === "admin"
+      ? [
+          {
+            id: "page:/entries?voice=1",
+            group: "page" as const,
+            label: "声で稼働を入力",
+            href: "/entries?voice=1",
+            keywords: ["こえ", "音声", "マイク", "しゃべる", "voice", "稼働"],
+            hint: "入力",
+          },
+        ]
+      : []),
     ...settingsItems.map((s) => ({
       id: `page:${s.href}`,
       group: "page" as const,
@@ -110,6 +124,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <AppShell
+      build={buildId()}
       companyName={company.name}
       displayName={profile.display_name}
       email={profile.email}

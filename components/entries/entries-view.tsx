@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Plus, Copy, Grid3x3, Lock, Pencil, Trash2, Search } from "lucide-react";
+import { Plus, Copy, Grid3x3, Lock, Mic, Pencil, Trash2, Search } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +21,7 @@ import { formatMonthJa, prevMonth } from "@/lib/month";
 import { cn } from "@/lib/utils";
 import { copyPreviousMonthAction, deleteEntryAction } from "@/lib/actions/entries";
 import { EntryDialog } from "./entry-dialog";
+import { VoiceEntryDialog } from "./voice-entry-dialog";
 import { RateDiffBanner } from "./rate-diff-banner";
 import { filterRows, isLossRow, isQtyEmpty, projectDisplayName, unitSuffix, type EntryRow } from "./helpers";
 
@@ -37,6 +38,8 @@ export interface EntriesViewProps {
   allMasters: Masters | null;
   initialDriver?: string;
   initialQuery?: string;
+  /** ⌘K の「声で稼働を入力」から来たとき（?voice=1）は開いた状態で始める */
+  initialVoice?: boolean;
 }
 
 interface DialogState {
@@ -62,7 +65,7 @@ function RowBadges({ row }: { row: EntryRow }) {
   );
 }
 
-export function EntriesView({ month, rows, diffs, editable, closed, masters, allMasters, initialDriver = "", initialQuery = "" }: EntriesViewProps) {
+export function EntriesView({ month, rows, diffs, editable, closed, masters, allMasters, initialDriver = "", initialQuery = "", initialVoice = false }: EntriesViewProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [driverFilter, setDriverFilter] = useState(initialDriver);
@@ -70,6 +73,7 @@ export function EntriesView({ month, rows, diffs, editable, closed, masters, all
   const [dialog, setDialog] = useState<DialogState>({ open: false, mode: "create", entry: null });
   const [deleteTarget, setDeleteTarget] = useState<EntryRow | null>(null);
   const [copyOpen, setCopyOpen] = useState(false);
+  const [voiceOpen, setVoiceOpen] = useState(initialVoice && editable && masters != null);
 
   // 絞り込み・検索を URL（?driver= / ?q=）へ反映（サーバー再描画はしない）
   useEffect(() => {
@@ -78,6 +82,7 @@ export function EntriesView({ month, rows, diffs, editable, closed, masters, all
     else sp.delete("driver");
     if (query) sp.set("q", query);
     else sp.delete("q");
+    sp.delete("voice"); // 一度開いたら URL からは外す（再読み込みで勝手に開かない）
     const qs = sp.toString();
     const url = `${window.location.pathname}${qs ? `?${qs}` : ""}`;
     if (url !== `${window.location.pathname}${window.location.search}`) window.history.replaceState(null, "", url);
@@ -159,6 +164,11 @@ export function EntriesView({ month, rows, diffs, editable, closed, masters, all
                 <Button onClick={openCreate}>
                   <Plus /> 稼働を追加
                 </Button>
+                {masters && (
+                  <Button variant="outline" onClick={() => setVoiceOpen(true)}>
+                    <Mic /> 声で入力
+                  </Button>
+                )}
                 <Button variant="outline" onClick={() => setCopyOpen(true)}>
                   <Copy /> 前月から複製
                 </Button>
@@ -204,6 +214,11 @@ export function EntriesView({ month, rows, diffs, editable, closed, masters, all
               <Button onClick={openCreate}>
                 <Plus /> 稼働を追加
               </Button>
+              {masters && (
+                <Button variant="outline" onClick={() => setVoiceOpen(true)}>
+                  <Mic /> 声で入力
+                </Button>
+              )}
               <Button variant="outline" onClick={() => setCopyOpen(true)}>
                 <Copy /> 前月から複製
               </Button>
@@ -420,6 +435,11 @@ export function EntriesView({ month, rows, diffs, editable, closed, masters, all
           allMasters={allMasters}
           entry={dialog.entry}
         />
+      )}
+
+      {/* 声で入力（マイクが使えない端末では文字入力で同じことができる） */}
+      {editable && masters && (
+        <VoiceEntryDialog open={voiceOpen} onOpenChange={setVoiceOpen} month={month} masters={masters} rows={rows} />
       )}
 
       {/* 削除確認 */}

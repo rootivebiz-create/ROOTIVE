@@ -4,7 +4,16 @@ import { revalidatePath } from "next/cache";
 import { requireAdminAction, type SessionContext } from "@/lib/auth/session";
 import { ActionError, ensureNoError, runAction, unwrap, type ActionResult } from "@/lib/actions/result";
 import { monthSchema, uuidSchema } from "@/lib/schemas/common";
-import { bulkSetEntriesSchema, entryInputSchema, type BulkRowInput, type BulkSetEntriesResult, type EntryInput, type EntryValues } from "@/lib/schemas/entries";
+import {
+  bulkSetEntriesSchema,
+  entryInputSchema,
+  quickSetEntriesSchema,
+  type BulkRowInput,
+  type BulkSetEntriesResult,
+  type EntryInput,
+  type EntryValues,
+  type QuickRowInput,
+} from "@/lib/schemas/entries";
 import { monthToDate, formatMonthJa, prevMonth } from "@/lib/month";
 
 /** 稼働行の変更が影響する画面 */
@@ -132,4 +141,55 @@ export async function bulkSetEntriesAction(month: string, projectItemId: string,
   if (!res.ok) return res;
   const { inserted, updated, deleted } = res.data;
   return { ok: true, data: res.data, message: `保存しました（追加 ${inserted} 件／更新 ${updated} 件／削除 ${deleted} 件）` };
+}
+
+/**
+ * まとめて数量だけ保存する（声で入力・その場入力）
+ *
+ * 案件内容ごとに既存の `bulk_set_entries` を呼ぶだけで、単価・率・端数処理は
+ * DB 側が現在のマスタから決める（§7。アプリ側で単価を組み立てない）。
+ * 既存の行があれば数量だけが変わり、単価のスナップショットはそのまま残る。
+ */
+export async function quickSetEntriesAction(month: string, rows: QuickRowInput[]): Promise<ActionResult<BulkSetEntriesResult>> {
+  const res = await runAction(async () => {
+    const ctx = await requireAdminAction();
+    const v = quickSetEntriesSchema.parse({ month, rows });
+    if (v.rows.some((r) => !(r.qty > 0))) {
+      throw new ActionError("数量は 0 より大きい値を入力してください。", { qty: ["数量は 0 より大きい値を入力してください"] });
+    }
+
+    // ドライバー・案件内容が自社のものか（それぞれ 1 往復でまとめて確認する）
+    const driverIds = [...new Set(v.rows.map((r) => r.driver_id))];
+    const itemIds = [...new Set(v.rows.map((r) => r.project_item_id))];
+    const [driversRes, itemsRes] = await Promise.all([
+      ctx.supabase.from("drivers").select("id").eq("company_id", ctx.company.id).in("id", driverIds),
+      ctx.supabase.from("project_items").select("id").eq("company_id", ctx.company.id).in("id", itemIds),
+    ]);
+    ensureNoError(driversRes);
+    ensureNoError(itemsRes);
+    const knownDrivers = new Set((driversRes.data ?? []).map((d) => d.id));
+    const knownItems = new Set((itemsRes.data ?? []).map((i) => i.id));
+    if (driverIds.some((id) => !knownDrivers.has(id))) throw new ActionError("ドライバーが見つかりません。", { driver_id: ["ドライバーを選択してください"] });
+    if (itemIds.some((id) => !knownItems.has(id))) throw new ActionError("案件内容が見つかりません。", { project_item_id: ["案件を選択してください"] });
+
+    const total: BulkSetEntriesResult = { inserted: 0, updated: 0, deleted: 0 };
+    for (const itemId of itemIds) {
+      const group = v.rows.filter((r) => r.project_item_id === itemId).map((r) => ({ driver_id: r.driver_id, qty: r.qty }));
+      const { data, error } = await ctx.supabase.rpc("bulk_set_entries", {
+        p_month: monthToDate(v.month),
+        p_project_item_id: itemId,
+        p_rows: group,
+      });
+      if (error) throw error;
+      const obj = (data ?? {}) as Record<string, unknown>;
+      total.inserted += Number(obj.inserted ?? 0);
+      total.updated += Number(obj.updated ?? 0);
+      total.deleted += Number(obj.deleted ?? 0);
+    }
+    revalidateEntries();
+    return total;
+  });
+  if (!res.ok) return res;
+  const { inserted, updated } = res.data;
+  return { ok: true, data: res.data, message: `保存しました（追加 ${inserted} 件／更新 ${updated} 件）` };
 }
