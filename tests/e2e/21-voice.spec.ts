@@ -37,8 +37,10 @@ test.describe("声で稼働を入力", () => {
     // 「アマゾン」と話しても、英字で登録された「三郷Amazon」に当たる
     await dialog.getByLabel("聞き取った内容").fill("吉田 三郷アマゾン 15、相曽 三郷アマゾン 22");
     await expect(dialog.getByText("読み取り中")).toBeVisible();
-    await expect(dialog.getByText("吉田雅一")).toBeVisible();
-    await expect(dialog.getByText("相曽慧")).toBeVisible();
+    // 読み取り結果の行（言い方の見本にも名前が出るので、一覧の行に絞って確かめる）
+    const preview = dialog.getByRole("listitem");
+    await expect(preview.filter({ hasText: "吉田雅一" })).toHaveCount(1);
+    await expect(preview.filter({ hasText: "相曽慧" })).toHaveCount(1);
     if (isMobile) await saveScreenshot(page, "voice-entry-mobile.png", { fullPage: false });
 
     await dialog.getByRole("button", { name: "内容を確認する" }).click();

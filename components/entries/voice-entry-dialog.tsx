@@ -46,7 +46,14 @@ interface DraftRow {
   source: string;
 }
 
-const EXAMPLES = ["相曽さん 三郷アマゾン 10件", "安藤 川崎ヤマト 5、黒岩 三郷アマゾン 8"];
+/** 言い方の見本を、実際に登録されているドライバー・案件から作る */
+function buildExamples(drivers: { name: string }[], items: { label: string }[]): string[] {
+  const d1 = drivers[0]?.name ?? "ドライバー名";
+  const d2 = drivers[1]?.name ?? d1;
+  const i1 = items[0]?.label ?? "案件名";
+  const i2 = items[1]?.label ?? i1;
+  return [`${d1}さん ${i1} 10件`, `${d1} ${i1} 10、${d2} ${i2} 5`];
+}
 
 export function VoiceEntryDialog({ open, onOpenChange, month, masters, rows, onSaved }: VoiceEntryDialogProps) {
   const router = useRouter();
@@ -86,6 +93,7 @@ export function VoiceEntryDialog({ open, onOpenChange, month, masters, rows, onS
   );
 
   const items = useMemo(() => itemOptions(masters), [masters]);
+  const examples = useMemo(() => buildExamples(masters.drivers, items), [masters.drivers, items]);
 
   /** いま聞き取れている内容（話している最中の下書き） */
   const preview = useMemo(() => parseVoiceEntries(`${text} ${interim}`.trim(), voiceMasters), [text, interim, voiceMasters]);
@@ -193,7 +201,7 @@ export function VoiceEntryDialog({ open, onOpenChange, month, masters, rows, onS
         <DialogHeader>
           <DialogTitle>声で稼働を入力</DialogTitle>
           <DialogDescription>
-            {formatMonthJa(month)}。「相曽さん 三郷アマゾン 10件」のように話すと、ドライバー・案件・数量に分けて下書きにします。保存する前に必ず確認できます。
+            {formatMonthJa(month)}。「{examples[0]}」のように話すと、ドライバー・案件・数量に分けて下書きにします。保存する前に必ず確認できます。
           </DialogDescription>
         </DialogHeader>
 
@@ -228,9 +236,9 @@ export function VoiceEntryDialog({ open, onOpenChange, month, masters, rows, onS
                   setInterim("");
                 }}
                 rows={3}
-                placeholder={EXAMPLES[0]}
+                placeholder={examples[0]}
               />
-              <p className="text-xs text-muted-foreground">例：{EXAMPLES.join(" ／ ")}</p>
+              <p className="text-xs text-muted-foreground">例：{examples.join(" ／ ")}</p>
             </div>
 
             {preview.entries.length > 0 && (
