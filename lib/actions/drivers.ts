@@ -64,6 +64,15 @@ export async function saveDriverAction(input: DriverFormInput): Promise<ActionRe
       // 支払日は両方揃って個別、片方でも空なら会社設定に従う
       payout_month_offset: parsed.payout_month_offset != null && parsed.payout_day != null ? parsed.payout_month_offset : null,
       payout_day: parsed.payout_month_offset != null && parsed.payout_day != null ? parsed.payout_day : null,
+      // 運転者台帳（0024）。免許証の番号と有効期限は「車両と書類」で持つので、ここには入れない
+      roster_no: parsed.roster_no,
+      birth_date: parsed.birth_date,
+      address: parsed.address,
+      hired_on: parsed.hired_on,
+      appointed_on: parsed.appointed_on,
+      retired_on: parsed.retired_on,
+      license_kinds: parsed.license_kinds,
+      license_conditions: parsed.license_conditions,
     };
 
     let driverId: string;

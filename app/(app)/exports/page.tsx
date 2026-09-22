@@ -144,6 +144,21 @@ export default async function ExportsPage({ searchParams }: { searchParams: Prom
             <DownloadLink href={exportUrls.dailyCsv(month, "entry")}>CSV</DownloadLink>
             <DownloadLink href={exportUrls.dailyXlsx(month, "entry")}>Excel</DownloadLink>
           </ExportRow>
+          <ExportRow label="監査一式" description="運転者台帳・運転日報と点呼・指導・事故・適性診断・車両と書類・拘束時間を 1 つの ZIP に。監査で「記録を出してください」と言われたときはこれ 1 つで足ります。">
+            <DownloadLink href={exportUrls.auditPackZip()} primary>
+              ZIP
+            </DownloadLink>
+            <ExportPageLink href="/compliance">法令対応へ</ExportPageLink>
+          </ExportRow>
+          <ExportRow label="運転者台帳" description="監査の様式に合わせた台帳。PDF は 1 人 1 ページ、CSV は一覧です。">
+            <DownloadLink href={exportUrls.rosterPdf(true)}>PDF</DownloadLink>
+            <DownloadLink href={exportUrls.complianceCsv("roster")}>CSV</DownloadLink>
+          </ExportRow>
+          <ExportRow label="指導・事故・適性診断" description="指導と監督の記録、事故と違反の記録、適性診断の受診記録。">
+            <DownloadLink href={exportUrls.complianceCsv("instruction")}>指導 CSV</DownloadLink>
+            <DownloadLink href={exportUrls.complianceCsv("incident")}>事故 CSV</DownloadLink>
+            <DownloadLink href={exportUrls.complianceCsv("aptitude")}>適性診断 CSV</DownloadLink>
+          </ExportRow>
           <ExportRow label="配車予定" description="これから 2 週間の配車（日・ドライバー・案件・予定数量）。紙で配ったり元請へ渡すときに使います。">
             <DownloadLink href={exportUrls.dispatchCsv()}>CSV</DownloadLink>
             <ExportPageLink href="/dispatch">配車へ</ExportPageLink>

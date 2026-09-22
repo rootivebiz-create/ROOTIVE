@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { GraduationCap, Pencil, Plus, ShieldAlert, TriangleAlert, Trash2, UserCheck } from "lucide-react";
+import { GraduationCap, Pencil, Plus, ShieldAlert, Stethoscope, TriangleAlert, Trash2, UserCheck } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -13,20 +13,23 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Empty } from "@/components/ui/empty";
 import { Money } from "@/components/ui/money";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { INCIDENT_KIND_LABELS, INSTRUCTION_KIND_LABELS, type DriverInstruction, type Incident, type SafetyManager } from "@/lib/db/types";
+import { APTITUDE_KIND_LABELS, INCIDENT_KIND_LABELS, INSTRUCTION_KIND_LABELS, type AptitudeKind, type AptitudeTest, type DriverInstruction, type Incident, type SafetyManager } from "@/lib/db/types";
 import { qty } from "@/lib/format";
-import { deleteIncidentAction, deleteInstructionAction, deleteSafetyManagerAction } from "@/lib/actions/fleet";
+import { deleteAptitudeAction, deleteIncidentAction, deleteInstructionAction, deleteSafetyManagerAction } from "@/lib/actions/fleet";
 import { formatDate, formatDateTime, missingInitialInstruction, nextTrainingDue, TRAINING_INTERVAL_YEARS } from "@/lib/fleet/helpers";
-import type { InstructionKind } from "@/lib/schemas/fleet";
+import type { AptitudeKindInput, InstructionKind } from "@/lib/schemas/fleet";
 import { ExpiryBadge } from "./expiry-badge";
 import { SafetyManagerDialog } from "./safety-manager-dialog";
 import { InstructionDialog } from "./instruction-dialog";
+import { AptitudeDialog } from "./aptitude-dialog";
 import { IncidentDialog } from "./incident-dialog";
 import { nameOf, type ChoiceOption } from "./choices";
 
 export interface SafetyViewProps {
   managers: SafetyManager[];
   instructions: DriverInstruction[];
+  /** 適性診断の受診記録（0024） */
+  aptitudes: AptitudeTest[];
   incidents: Incident[];
   /** 全ドライバー（停止中も含む。名前の解決にも使う） */
   drivers: ChoiceOption[];
@@ -41,6 +44,7 @@ export interface SafetyViewProps {
 type DeleteTarget =
   | { kind: "manager"; id: string; name: string }
   | { kind: "instruction"; id: string; name: string }
+  | { kind: "aptitude"; id: string; name: string }
   | { kind: "incident"; id: string; name: string };
 
 interface ManagerDialogState {
@@ -55,6 +59,13 @@ interface InstructionDialogState {
   defaultDriverId: string;
   defaultKind: InstructionKind;
 }
+interface AptitudeDialogState {
+  open: boolean;
+  mode: "create" | "edit";
+  test: AptitudeTest | null;
+  defaultDriverId: string;
+  defaultKind: AptitudeKindInput;
+}
 interface IncidentDialogState {
   open: boolean;
   mode: "create" | "edit";
@@ -62,7 +73,7 @@ interface IncidentDialogState {
 }
 
 /** 安全管理（/settings/safety）。安全管理者・指導監督・事故の 3 つ */
-export function SafetyView({ managers, instructions, incidents, drivers, vehicles, today, editable }: SafetyViewProps) {
+export function SafetyView({ managers, instructions, aptitudes, incidents, drivers, vehicles, today, editable }: SafetyViewProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [managerDialog, setManagerDialog] = useState<ManagerDialogState>({ open: false, mode: "create", manager: null });
@@ -72,6 +83,13 @@ export function SafetyView({ managers, instructions, incidents, drivers, vehicle
     instruction: null,
     defaultDriverId: "",
     defaultKind: "regular",
+  });
+  const [aptitudeDialog, setAptitudeDialog] = useState<AptitudeDialogState>({
+    open: false,
+    mode: "create",
+    test: null,
+    defaultDriverId: "",
+    defaultKind: "general",
   });
   const [incidentDialog, setIncidentDialog] = useState<IncidentDialogState>({ open: false, mode: "create", incident: null });
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
@@ -90,7 +108,9 @@ export function SafetyView({ managers, instructions, incidents, drivers, vehicle
           ? await deleteSafetyManagerAction(target.id)
           : target.kind === "instruction"
             ? await deleteInstructionAction(target.id)
-            : await deleteIncidentAction(target.id);
+            : target.kind === "aptitude"
+              ? await deleteAptitudeAction(target.id)
+              : await deleteIncidentAction(target.id);
       if (!res.ok) {
         toast.error(res.error);
         return;
@@ -398,6 +418,86 @@ export function SafetyView({ managers, instructions, incidents, drivers, vehicle
         )}
       </section>
 
+      {/* 3. 適性診断（0024） */}
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h2 className="flex items-center gap-2 text-lg font-semibold">
+              <Stethoscope className="h-5 w-5 text-muted-foreground" />
+              適性診断
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              初任診断は運転者に選任したとき、適齢診断は 65 歳以上で 3 年ごとに受けます。記録は運転者台帳に載ります。
+            </p>
+          </div>
+          {editable && (
+            <Button onClick={() => setAptitudeDialog({ open: true, mode: "create", test: null, defaultDriverId: "", defaultKind: "general" })}>
+              <Plus /> 適性診断を記録
+            </Button>
+          )}
+        </div>
+
+        {aptitudes.length === 0 ? (
+          <Empty
+            title="まだ適性診断の記録がありません"
+            description={editable ? "受診したら記録してください。運転者台帳と監査一式に載ります。" : "登録された記録はありません。"}
+          />
+        ) : (
+          <Card className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>ドライバー</TableHead>
+                  <TableHead>種類</TableHead>
+                  <TableHead>受診日</TableHead>
+                  <TableHead>実施機関</TableHead>
+                  <TableHead>結果</TableHead>
+                  {editable && <TableHead className="w-24" />}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {aptitudes.map((a) => (
+                  <TableRow key={a.id}>
+                    <TableCell className="whitespace-nowrap font-medium">{driverName(a.driver_id)}</TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      <Badge variant={a.kind === "initial" ? "default" : "secondary"}>{APTITUDE_KIND_LABELS[a.kind as AptitudeKind] ?? a.kind}</Badge>
+                    </TableCell>
+                    <TableCell className="num whitespace-nowrap">{formatDate(a.taken_on)}</TableCell>
+                    <TableCell className="whitespace-nowrap">{a.institution || "—"}</TableCell>
+                    <TableCell className="whitespace-nowrap">{a.result || "—"}</TableCell>
+                    {editable && (
+                      <TableCell>
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label="編集"
+                            onClick={() => setAptitudeDialog({ open: true, mode: "edit", test: a, defaultDriverId: "", defaultKind: "general" })}
+                          >
+                            <Pencil />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label="削除"
+                            className="text-destructive"
+                            onClick={() =>
+                              setDeleteTarget({ kind: "aptitude", id: a.id, name: `${driverName(a.driver_id)}（${formatDate(a.taken_on)}）の適性診断` })
+                            }
+                          >
+                            <Trash2 />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Card>
+        )}
+      </section>
+
       {/* 3. 事故・違反・ヒヤリハット */}
       <section className="space-y-3">
         <div className="flex flex-wrap items-start justify-between gap-2">
@@ -558,7 +658,18 @@ export function SafetyView({ managers, instructions, incidents, drivers, vehicle
             defaultKind={instructionDialog.defaultKind}
             today={today}
           />
-          <IncidentDialog
+          <AptitudeDialog
+        open={aptitudeDialog.open}
+        onOpenChange={(open) => setAptitudeDialog((d) => ({ ...d, open }))}
+        mode={aptitudeDialog.mode}
+        drivers={drivers}
+        test={aptitudeDialog.test}
+        defaultDriverId={aptitudeDialog.defaultDriverId}
+        defaultKind={aptitudeDialog.defaultKind}
+        today={today}
+      />
+
+      <IncidentDialog
             open={incidentDialog.open}
             onOpenChange={(open) => setIncidentDialog((d) => ({ ...d, open }))}
             mode={incidentDialog.mode}
@@ -575,7 +686,13 @@ export function SafetyView({ managers, instructions, incidents, drivers, vehicle
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {deleteTarget?.kind === "manager" ? "安全管理者を削除" : deleteTarget?.kind === "instruction" ? "指導・監督の記録を削除" : "事故の記録を削除"}
+              {deleteTarget?.kind === "manager"
+                ? "安全管理者を削除"
+                : deleteTarget?.kind === "instruction"
+                  ? "指導・監督の記録を削除"
+                  : deleteTarget?.kind === "aptitude"
+                    ? "適性診断の記録を削除"
+                    : "事故の記録を削除"}
             </DialogTitle>
             <DialogDescription>
               {deleteTarget && (

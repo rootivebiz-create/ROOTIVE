@@ -5,11 +5,13 @@ import { requireAdminAction, type SessionContext } from "@/lib/auth/session";
 import { ActionError, ensureNoError, runAction, unwrap, type ActionResult } from "@/lib/actions/result";
 import { uuidSchema } from "@/lib/schemas/common";
 import {
+  aptitudeInputSchema,
   documentInputSchema,
   incidentInputSchema,
   instructionInputSchema,
   safetyManagerInputSchema,
   vehicleInputSchema,
+  type AptitudeFormInput,
   type DocumentFormInput,
   type IncidentFormInput,
   type InstructionFormInput,
@@ -318,6 +320,49 @@ export async function saveInstructionAction(input: InstructionFormInput): Promis
     revalidateSafety();
     return { id: saved.id };
   }, "指導・監督の記録を保存しました");
+}
+
+/** 適性診断の記録の追加・更新（admin+）。初任・適齢・特定・一般の受診を残す */
+export async function saveAptitudeAction(input: AptitudeFormInput): Promise<ActionResult<{ id: string }>> {
+  return runAction(async () => {
+    const ctx = await requireAdminAction();
+    const { supabase, company, user } = ctx;
+    const v = aptitudeInputSchema.parse(input);
+    await assertRefs(ctx, { driverIds: [v.driver_id] });
+
+    const row = {
+      driver_id: v.driver_id,
+      kind: v.kind,
+      taken_on: v.taken_on,
+      institution: v.institution,
+      result: v.result,
+      memo: v.memo,
+    };
+
+    const saved = v.id
+      ? unwrap<{ id: string }>(
+          await supabase.from("aptitude_tests").update(row).eq("id", v.id).eq("company_id", company.id).select("id").maybeSingle(),
+          "対象の記録が見つかりません（既に削除された可能性があります）。",
+        )
+      : unwrap<{ id: string }>(await supabase.from("aptitude_tests").insert({ ...row, company_id: company.id, created_by: user.id }).select("id").single());
+
+    revalidateSafety();
+    return { id: saved.id };
+  }, "適性診断の記録を保存しました");
+}
+
+/** 適性診断の記録の削除（admin+） */
+export async function deleteAptitudeAction(id: string): Promise<ActionResult<{ id: string }>> {
+  return runAction(async () => {
+    const { supabase, company } = await requireAdminAction();
+    const testId = uuidSchema.parse(id);
+    const row = unwrap<{ id: string }>(
+      await supabase.from("aptitude_tests").delete().eq("id", testId).eq("company_id", company.id).select("id").maybeSingle(),
+      "対象の記録が見つかりません（既に削除された可能性があります）。",
+    );
+    revalidateSafety();
+    return { id: row.id };
+  }, "適性診断の記録を削除しました");
 }
 
 /** 指導・監督の記録の削除（admin+） */

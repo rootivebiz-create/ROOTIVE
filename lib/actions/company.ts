@@ -7,8 +7,10 @@ import {
   companyInputSchema,
   laborSettingsSchema,
   laborSettingsToColumns,
+  retentionSettingsSchema,
   type CompanyFormInput,
   type LaborSettingsFormInput,
+  type RetentionSettingsFormInput,
 } from "@/lib/schemas/company";
 import type { Json } from "@/lib/db/database.types";
 
@@ -76,4 +78,23 @@ export async function updateLaborSettingsAction(input: LaborSettingsFormInput): 
     revalidatePath("/daily");
     return null;
   }, "労務の基準を保存しました。");
+}
+
+/**
+ * 法定帳票の保存期間と診断の間隔（0024）。会社設定なので **オーナーのみ**（DB の RLS が拒否する）。
+ * 期間を延ばしても記録は消えない（保存期間は「いつまで持つ必要があるか」を示すだけ）。
+ */
+export async function updateRetentionSettingsAction(input: RetentionSettingsFormInput): Promise<ActionResult<null>> {
+  return runAction(async () => {
+    const { supabase, company } = await requireAdminAction();
+    const parsed = retentionSettingsSchema.parse(input);
+
+    const res = await supabase.from("companies").update(parsed).eq("id", company.id).select("id");
+    ensureNoError(res);
+    if ((res.data ?? []).length === 0) throw new Error("保存期間を更新できませんでした（会社設定はオーナーのみ変更できます）。");
+
+    revalidatePath("/settings/safety");
+    revalidatePath("/compliance");
+    return null;
+  }, "保存期間を保存しました。");
 }

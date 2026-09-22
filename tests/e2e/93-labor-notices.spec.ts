@@ -80,7 +80,7 @@ test.describe("労務（拘束時間・休息・連続勤務）", () => {
     await loginViaMagicLink(page, E2E.users.owner.email, "/settings/safety");
     await expect(page.getByText("労務の基準").first()).toBeVisible();
     await page.getByLabel("1 日の拘束時間の目安").fill("15");
-    await page.getByRole("button", { name: /保存/ }).last().click();
+    await page.getByRole("button", { name: "労務の基準を保存" }).click();
     await expect(toast(page, /保存しました/)).toBeVisible();
     expect(adminSql(`select labor_duty_limit_minutes from public.companies where id = '${companyId}';`)).toMatch(/900/);
     // 戻す

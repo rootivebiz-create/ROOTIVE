@@ -642,8 +642,8 @@ select public.t_assert((select count(*) = 0 from public.cash_snapshots), '他社
 select public.t_assert((select count(*) = 0 from public.v_project_pl), '他社の案件損益は見えない');
 select public.test_login(:'owner_a');
 
--- バックアップ（0023 で version 8 に上がった）に含まれる
-select public.t_assert((public.export_backup()->>'version') = '8', 'バックアップは version 8');
+-- バックアップ（0024 で version 9 に上がった）に含まれる
+select public.t_assert((public.export_backup()->>'version') = '9', 'バックアップは version 9');
 select public.t_assert(jsonb_array_length(public.export_backup()->'cash_snapshots') = 1, 'バックアップに現金残高が入る');
 select public.t_assert((select count(*) from public.import_backup(public.export_backup())) >= 0, '復元（同じデータ）');
 select public.t_assert((select count(*) = 1 and max(balance) = 1500000 from public.cash_snapshots where company_id = :'company_a'), '復元後も現金残高は同じ');
@@ -1115,7 +1115,7 @@ set role authenticated;
 select public.test_login(:'owner_a');
 
 -- 書き出しに新しいテーブルが入る
-select public.t_assert((public.export_backup()->>'version') = '8', 'バックアップは version 8');
+select public.t_assert((public.export_backup()->>'version') = '9', 'バックアップは version 9');
 select public.t_assert(jsonb_array_length(public.export_backup()->'vehicles') > 0, 'バックアップに車両が入る');
 select public.t_assert(jsonb_array_length(public.export_backup()->'documents') > 0, 'バックアップに書類が入る');
 select public.t_assert(jsonb_array_length(public.export_backup()->'daily_reports') > 0, 'バックアップに日報が入る');
@@ -1432,7 +1432,7 @@ select public.t_assert((select pending_approvals = 0 from public.v_executive_sum
 
 -- ---------- バックアップ（version 6）に入る ----------
 select public.test_login(:'owner_a');
-select public.t_assert((public.export_backup()->>'version') = '8', 'バックアップは version 8');
+select public.t_assert((public.export_backup()->>'version') = '9', 'バックアップは version 9');
 select public.t_assert(jsonb_array_length(public.export_backup()->'approvals') = 2, 'バックアップに申請が入る');
 select public.t_assert(jsonb_array_length(public.export_backup()->'decisions') = 1, 'バックアップに意思決定ログが入る');
 select public.t_assert(jsonb_array_length(public.export_backup()->'officers') = 1, 'バックアップに役員が入る');
@@ -1600,8 +1600,8 @@ set role authenticated;
 select public.test_login(:'owner_a');
 select public.t_assert((select count(*) = 1 from public.alerts where company_id = :'company_a' and code = 'export_burst' and status = 'open'), '個人情報を含む出力の急増を検知する');
 
--- ---------- バックアップ（version 8） ----------
-select public.t_assert((public.export_backup()->>'version') = '8', 'バックアップは version 8');
+-- ---------- バックアップ（version 9） ----------
+select public.t_assert((public.export_backup()->>'version') = '9', 'バックアップは version 9');
 select public.t_assert(jsonb_array_length(public.export_backup()->'approval_rules') = 6, 'バックアップに決裁のルールが入る');
 select public.t_assert(jsonb_array_length(public.export_backup()->'approval_delegations') = 1, 'バックアップに決裁の委任が入る');
 select public.t_assert(jsonb_array_length(public.export_backup()->'driver_bank_accounts') = 1, 'バックアップにドライバーの口座が入る');
@@ -1832,4 +1832,152 @@ select public.t_assert((select count(*) = 0 from public.project_demands), '他�
 select public.test_logout();
 reset role;
 
-\echo '== すべてのアサーションが通りました（18〜30 節）'
+-- =============================================================================
+-- 31. 法定帳票と監査対応（0024）
+--   運転者台帳の項目・適性診断・保存期間・監査で足りないもの
+-- =============================================================================
+\echo '-- 31. 法定帳票と監査対応（0024）'
+
+set role authenticated;
+select public.test_login(:'admin_a');
+
+-- ---------- 運転者台帳 ----------
+update public.drivers
+   set birth_date = current_date - interval '40 year',
+       address = '埼玉県三郷市1-2-3',
+       hired_on = current_date - interval '2 year',
+       appointed_on = current_date - interval '2 year',
+       license_kinds = '普通',
+       roster_no = 'R-001'
+ where id = public.t30_driver('相曽慧');
+
+select public.t_assert(
+  (select birth_date is not null and address <> '' from public.v_driver_roster where driver_id = public.t30_driver('相曽慧')),
+  '運転者台帳に生年月日と住所が出る');
+select public.t_assert(
+  (select age = 40 from public.v_driver_roster where driver_id = public.t30_driver('相曽慧')),
+  '年齢が生年月日から出る');
+select public.t_assert(
+  (select keep_until is null from public.v_driver_roster where driver_id = public.t30_driver('相曽慧')),
+  '在籍中は保存期限が出ない');
+
+-- 免許証を登録すると台帳に出る
+insert into public.documents (company_id, kind, driver_id, label, number, issued_on, expires_on)
+values (:'company_a', 'license', public.t30_driver('相曽慧'), '運転免許証', '123456789012', current_date - interval '1 year', current_date + interval '2 year');
+select public.t_assert(
+  (select license_no = '123456789012' from public.v_driver_roster where driver_id = public.t30_driver('相曽慧')),
+  '免許証の番号が台帳に出る（documents から引く）');
+
+-- ---------- 適性診断 ----------
+insert into public.aptitude_tests (driver_id, kind, taken_on, institution, result)
+values (public.t30_driver('相曽慧'), 'initial', current_date - interval '2 year', '適性診断センター', '良');
+select public.t_assert(
+  (select company_id = :'company_a' from public.aptitude_tests where driver_id = public.t30_driver('相曽慧')),
+  '適性診断は会社 ID がトリガーで入る');
+select public.t_assert(
+  (select aptitude_initial_on is not null from public.v_driver_roster where driver_id = public.t30_driver('相曽慧')),
+  '初任診断が台帳に出る');
+
+-- 他社のドライバーにはつなげない
+--   company_id を自社にして他社のドライバーを指すと、トリガー（t24_guard_same_company）が止める。
+--   company_id を空にした場合は、その前に RLS が止める（どちらでも作れない）
+select public.t_expect_error(
+  format('insert into public.aptitude_tests (company_id, driver_id, kind, taken_on) values (%L, %L, ''general'', current_date)',
+         :'company_a', (select id from t30_other)),
+  'CROSS_COMPANY', '他社のドライバーの適性診断は作れない');
+select public.t_expect_error(
+  format('insert into public.aptitude_tests (driver_id, kind, taken_on) values (%L, ''general'', current_date)', (select id from t30_other)),
+  'row-level security', '会社 ID を空にしても RLS が止める');
+
+-- ---------- 監査で足りないもの ----------
+-- 相曽慧は台帳がそろっているので roster_incomplete に出ない
+select public.t_assert(
+  (select count(*) = 0 from public.v_compliance_gaps
+    where driver_id = public.t30_driver('相曽慧') and kind = 'roster_incomplete'),
+  '台帳がそろっていれば記入漏れに出ない');
+-- 何も入れていないドライバーは記入漏れに出る
+select public.t_assert(
+  (select count(*) >= 1 from public.v_compliance_gaps
+    where driver_id = public.t30_driver('金島幸太') and kind = 'roster_incomplete'),
+  '台帳が空なら記入漏れに出る');
+-- 初任の指導が無いので出る（選任から 1 か月以上）
+-- 前の節で入れた指導と健康診断が残っていると判定が変わるため、ここで消してから確かめる
+delete from public.driver_instructions where driver_id = public.t30_driver('相曽慧');
+delete from public.documents where driver_id = public.t30_driver('相曽慧') and kind = 'health_check';
+select public.t_assert(
+  (select count(*) = 1 from public.v_compliance_gaps
+    where driver_id = public.t30_driver('相曽慧') and kind = 'initial_instruction_missing'),
+  '初任の指導が無いと出る');
+insert into public.driver_instructions (company_id, driver_id, kind, instructed_on, hours, topics)
+values (:'company_a', public.t30_driver('相曽慧'), 'initial', current_date - interval '1 month', 15, '初任教育');
+select public.t_assert(
+  (select count(*) = 0 from public.v_compliance_gaps
+    where driver_id = public.t30_driver('相曽慧') and kind = 'initial_instruction_missing'),
+  '初任の指導を入れると消える');
+-- 初任診断は入れてあるので出ない
+select public.t_assert(
+  (select count(*) = 0 from public.v_compliance_gaps
+    where driver_id = public.t30_driver('相曽慧') and kind = 'initial_aptitude_missing'),
+  '初任診断があれば出ない');
+-- 健康診断が無いので出る
+select public.t_assert(
+  (select count(*) = 1 from public.v_compliance_gaps
+    where driver_id = public.t30_driver('相曽慧') and kind = 'health_check_overdue'),
+  '健康診断が無いと出る');
+
+-- ---------- 保存期間 ----------
+select public.t_assert((select count(*) = 5 from public.v_record_retention), '保存期間は 5 種類');
+select public.t_assert(
+  (select years = 1 from public.v_record_retention where kind = 'daily_report'),
+  '運転日報の保存は 1 年（会社設定）');
+-- 会社設定を変えられるのはオーナーだけ（0002 の companies_update）
+select public.test_login(:'owner_a');
+update public.companies set retention_daily_years = 2 where id = :'company_a';
+select public.t_assert(
+  (select years = 2 from public.v_record_retention where kind = 'daily_report'),
+  '会社ごとに保存期間を延ばせる');
+update public.companies set retention_daily_years = 1 where id = :'company_a';
+select public.test_login(:'admin_a');
+select public.t_assert(
+  (select record_count >= 1 from public.v_record_retention where kind = 'instruction'),
+  '指導の件数が出る');
+
+-- 退職すると台帳の保存期限が出る
+update public.drivers set retired_on = current_date - interval '1 day' where id = public.t30_driver('相曽慧');
+select public.t_assert(
+  (select keep_until = (current_date - interval '1 day' + interval '3 year')::date
+     from public.v_driver_roster where driver_id = public.t30_driver('相曽慧')),
+  '退職すると 3 年後が保存期限になる');
+select public.t_assert(
+  (select count(*) = 0 from public.v_compliance_gaps where driver_id = public.t30_driver('相曽慧')),
+  '退職した人は監査の不足に出ない');
+update public.drivers set retired_on = null where id = public.t30_driver('相曽慧');
+
+-- ---------- 閲覧者は書けない ----------
+select public.test_login(:'viewer_a');
+select public.t_expect_error(
+  format('insert into public.aptitude_tests (driver_id, kind, taken_on) values (%L, ''general'', current_date)', public.t30_driver('相曽慧')),
+  null, '閲覧者は適性診断を登録できない');
+
+-- ---------- バックアップ（version 9） ----------
+select public.test_login(:'admin_a');
+select public.t_assert((public.export_backup()->>'version') = '9', 'バックアップは version 9');
+select public.t_assert(jsonb_array_length(public.export_backup()->'aptitude_tests') >= 1, 'バックアップに適性診断が入る');
+create temporary table t31_backup as select public.export_backup() as data;
+delete from public.aptitude_tests where company_id = :'company_a';
+update public.drivers set weekly_off = '{}', birth_date = null, address = '' where id = public.t30_driver('相曽慧');
+select public.test_login(:'owner_a');
+select public.import_backup((select data from t31_backup));
+select public.t_assert((select count(*) >= 1 from public.aptitude_tests where company_id = :'company_a'), '復元すると適性診断が戻る');
+select public.t_assert(
+  (select birth_date is not null and address <> '' from public.drivers where id = public.t30_driver('相曽慧')),
+  '復元すると台帳の項目が戻る');
+
+-- ---------- 他社からは見えない ----------
+select public.test_login(:'owner_b');
+select public.t_assert((select count(*) = 0 from public.aptitude_tests), '他社の適性診断は見えない');
+
+select public.test_logout();
+reset role;
+
+\echo '== すべてのアサーションが通りました（18〜31 節）'

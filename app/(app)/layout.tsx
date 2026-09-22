@@ -56,6 +56,7 @@ const MAIN_PAGES: ({ href: string; label: string; keywords: string[] } & RoleVis
   { href: "/reports", label: "レポート", keywords: ["report", "れぽーと", "年次", "分析"] },
   { href: "/alerts", label: "気になること", keywords: ["alert", "あらーと", "異常", "警告", "けんさ", "注意"] },
   { href: "/fleet", label: "車両と書類", keywords: ["fleet", "vehicle", "しゃりょう", "車検", "保険", "免許", "期限", "しょるい"] },
+  { href: "/compliance", label: "法令対応（監査）", keywords: ["compliance", "audit", "ほうれい", "法令", "かんさ", "監査", "台帳", "運転者台帳", "てんこ", "保存"] },
   { href: "/hr", label: "採用と契約", keywords: ["hr", "さいよう", "応募", "面談", "けいやく", "契約"] },
   { href: "/ai", label: "AI 相談", keywords: ["ai", "えーあい", "そうだん", "分析", "改善", "claude", "ちゃっと"] },
   { href: "/ai?tab=weekly", label: "週次サマリー", keywords: ["weekly", "しゅうじ", "週次", "先週", "サマリー", "line"] },

@@ -236,6 +236,36 @@ export const instructionInputSchema = z.object({
 export type InstructionValues = z.output<typeof instructionInputSchema>;
 
 // ---------------------------------------------------------------------------
+// 適性診断（0024）
+// ---------------------------------------------------------------------------
+
+export const APTITUDE_KINDS = ["initial", "age", "specific", "general"] as const;
+export type AptitudeKindInput = (typeof APTITUDE_KINDS)[number];
+
+export interface AptitudeFormInput {
+  id: string | null;
+  driver_id: string;
+  kind: AptitudeKindInput;
+  /** "YYYY-MM-DD" */
+  taken_on: string;
+  institution: string;
+  result: string;
+  memo: string;
+}
+
+export const aptitudeInputSchema = z.object({
+  id: optionalIdSchema,
+  driver_id: uuidSchema,
+  kind: z.enum(APTITUDE_KINDS, { error: "種類を選択してください" }),
+  taken_on: requiredDateSchema,
+  institution: text(100),
+  result: text(200),
+  memo: memoSchema,
+});
+
+export type AptitudeValues = z.output<typeof aptitudeInputSchema>;
+
+// ---------------------------------------------------------------------------
 // 事故・違反・ヒヤリハット
 // ---------------------------------------------------------------------------
 

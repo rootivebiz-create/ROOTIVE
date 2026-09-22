@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { memoSchema, moneySchema, nameSchema, percentToRateSchema, roundingModeSchema, signedMoneySchema, uuidSchema } from "./common";
+import { optionalDateSchema } from "./expenses";
 import { parseNumberInput } from "@/lib/calc/parse";
 import { TAX_MODES, type RoundingMode, type TaxMode } from "@/lib/calc/types";
 import { BANK_ACCOUNT_TYPES, canSeeConfidential, toConfidentialScope, type BankAccountType, type Role } from "@/lib/db/types";
@@ -36,6 +37,15 @@ export interface DriverFormInput {
    * 口座を見られない・書けない権限のときは送らない（undefined）＝保存時も触らない。
    */
   bank_account?: DriverBankFormInput | null;
+  /** 運転者台帳（0024）。日付は "YYYY-MM-DD" か ""（未入力） */
+  roster_no: string;
+  birth_date: string | null;
+  address: string;
+  hired_on: string | null;
+  appointed_on: string | null;
+  retired_on: string | null;
+  license_kinds: string;
+  license_conditions: string;
   /** 案件内容ごとのドライバー別単価。受注・支払の両方が空欄なら標準（override 行を削除） */
   overrides: DriverOverrideFormInput[];
   /** 固定控除。id が null なら新規。送られてこなかった既存 id は削除 */
@@ -265,6 +275,15 @@ export const driverInputSchema = z.object({
     .refine((s) => s === "" || /^T?\d{13}$/.test(s.replace(/[-\s]/g, "")), "適格請求書登録番号は T ＋ 13 桁の数字で入力してください"),
   payout_month_offset: optionalIntSchema(0, 3, "振込予定日（月）"),
   payout_day: optionalIntSchema(0, 31, "振込予定日（日）"),
+  // 運転者台帳（0024）。空欄は保存できる（監査の不足として画面が知らせる）
+  roster_no: z.string().trim().max(30, "30 文字以内で入力してください"),
+  birth_date: optionalDateSchema,
+  address: z.string().trim().max(200, "200 文字以内で入力してください"),
+  hired_on: optionalDateSchema,
+  appointed_on: optionalDateSchema,
+  retired_on: optionalDateSchema,
+  license_kinds: z.string().trim().max(100, "100 文字以内で入力してください"),
+  license_conditions: z.string().trim().max(100, "100 文字以内で入力してください"),
   // 送られてこなければ（権限が無い／欄を出していない）口座は触らない
   bank_account: driverBankAccountSchema.nullish(),
   overrides: z.array(driverOverrideSchema).max(500, "個別単価が多すぎます"),

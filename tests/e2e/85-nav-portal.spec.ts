@@ -23,7 +23,7 @@ test.describe("ナビとコマンドパレット", () => {
     await setMonthClosed(MONTH, false);
   });
 
-  test("PC は 22 項目のサイドナビ（代表は owner のみ）、スマホは 5 タブ（メニューに残りが入る）", async ({ page }, testInfo) => {
+  test("PC は 23 項目のサイドナビ（代表は owner のみ）、スマホは 5 タブ（メニューに残りが入る）", async ({ page }, testInfo) => {
     await loginViaMagicLink(page, E2E.users.owner.email, `/dashboard?m=${MONTH}`);
     const nav = page.getByRole("navigation", { name: "メインナビゲーション" });
 
@@ -40,7 +40,7 @@ test.describe("ナビとコマンドパレット", () => {
     } else {
       for (const label of [
         "代表", "ホーム", "配車", "稼働", "日報・点呼", "取り込み", "支払", "請求", "経費", "入金",
-        "資金繰り", "案件", "財務", "レポート", "気になること", "車両と書類", "採用と契約", "書類の検索", "出力", "AI 相談", "チャット", "設定",
+        "資金繰り", "案件", "財務", "レポート", "気になること", "車両と書類", "法令対応", "採用と契約", "書類の検索", "出力", "AI 相談", "チャット", "設定",
       ]) {
         await expect(nav.getByRole("link", { name: label, exact: true })).toBeVisible();
       }

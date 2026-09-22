@@ -94,15 +94,15 @@ describe("コマンドパレットの検索（filterCommands）", () => {
 });
 
 describe("ナビの定義", () => {
-  it("PC のサイドナビは 22 項目（代表 ＋ 入力・経営・管理・相談のまとまり ＋ ホームと設定）", () => {
-    expect(MAIN_NAV).toHaveLength(22);
+  it("PC のサイドナビは 23 項目（代表 ＋ 入力・経営・管理・相談のまとまり ＋ ホームと設定）", () => {
+    expect(MAIN_NAV).toHaveLength(23);
     expect(MAIN_NAV.map((i) => i.href)).toEqual([
       "/executive", "/dashboard", "/dispatch", "/entries", "/daily", "/intake", "/payouts", "/invoices", "/expenses", "/bank",
-      "/cashflow", "/projects", "/finance", "/reports", "/alerts", "/fleet", "/hr", "/records", "/exports", "/ai", "/chat", "/settings",
+      "/cashflow", "/projects", "/finance", "/reports", "/alerts", "/fleet", "/compliance", "/hr", "/records", "/exports", "/ai", "/chat", "/settings",
     ]);
     expect(MAIN_NAV.map((i) => i.label)).toEqual([
       "代表", "ホーム", "配車", "稼働", "日報・点呼", "取り込み", "支払", "請求", "経費", "入金",
-      "資金繰り", "案件", "財務", "レポート", "気になること", "車両と書類", "採用と契約", "書類の検索", "出力", "AI 相談", "チャット", "設定",
+      "資金繰り", "案件", "財務", "レポート", "気になること", "車両と書類", "法令対応", "採用と契約", "書類の検索", "出力", "AI 相談", "チャット", "設定",
     ]);
   });
 
@@ -139,10 +139,10 @@ describe("ナビの定義", () => {
     expect(BOTTOM_NAV.map((i) => i.label)).toEqual(["ホーム", "稼働", "支払", "請求"]);
   });
 
-  it("メニューシートには下タブに入らない 18 項目が入り、合計はサイドナビと一致する", () => {
+  it("メニューシートには下タブに入らない 19 項目が入り、合計はサイドナビと一致する", () => {
     expect(MORE_NAV.map((i) => i.href)).toEqual([
       "/executive", "/dispatch", "/daily", "/intake", "/expenses", "/bank", "/cashflow", "/projects", "/finance", "/reports", "/alerts",
-      "/fleet", "/hr", "/records", "/exports", "/ai", "/chat", "/settings",
+      "/fleet", "/compliance", "/hr", "/records", "/exports", "/ai", "/chat", "/settings",
     ]);
     expect(BOTTOM_NAV.length + MORE_NAV.length).toBe(MAIN_NAV.length);
     expect(MORE_NAV.some((m) => BOTTOM_NAV.some((b) => b.href === m.href))).toBe(false);

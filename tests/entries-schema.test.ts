@@ -242,6 +242,13 @@ describe("helpers", () => {
       labor_rest_min_minutes: 540,
       labor_month_duty_minutes: 17040,
       labor_max_consecutive_days: 13,
+      retention_daily_years: 1,
+      retention_instruction_years: 3,
+      retention_incident_years: 3,
+      retention_roster_years: 3,
+      aptitude_age_from: 65,
+      aptitude_age_years: 3,
+      health_check_months: 12,
       logo_path: null,
       seal_path: null,
       confidential_scope: { loans: "admin", cash: "admin", bank_account: "admin" },
@@ -249,8 +256,8 @@ describe("helpers", () => {
       updated_at: "",
     },
     drivers: [
-      { id: DRIVER, company_id: COMPANY, name: "相曽慧", kana: "", is_active: true, royalty_rate: null, mgmt_fee: 15000, rounding_mode: null, phone: "", email: "", bank_info: "", memo: "", sort_order: 1, tax_mode: "taxable", invoice_reg_no: "", payout_month_offset: null, payout_day: null, line_user_id: "", line_linked_at: null, weekly_off: [], created_at: "", updated_at: "" },
-      { id: DRIVER2, company_id: COMPANY, name: "吉田雅一", kana: "", is_active: false, royalty_rate: 0.125, mgmt_fee: 15000, rounding_mode: "round", phone: "", email: "", bank_info: "", memo: "", sort_order: 2, tax_mode: "taxable", invoice_reg_no: "", payout_month_offset: null, payout_day: null, line_user_id: "", line_linked_at: null, weekly_off: [], created_at: "", updated_at: "" },
+      { id: DRIVER, company_id: COMPANY, name: "相曽慧", kana: "", is_active: true, royalty_rate: null, mgmt_fee: 15000, rounding_mode: null, phone: "", email: "", bank_info: "", memo: "", sort_order: 1, tax_mode: "taxable", invoice_reg_no: "", payout_month_offset: null, payout_day: null, line_user_id: "", line_linked_at: null, weekly_off: [], roster_no: "", birth_date: null, address: "", hired_on: null, appointed_on: null, retired_on: null, license_kinds: "", license_conditions: "", created_at: "", updated_at: "" },
+      { id: DRIVER2, company_id: COMPANY, name: "吉田雅一", kana: "", is_active: false, royalty_rate: 0.125, mgmt_fee: 15000, rounding_mode: "round", phone: "", email: "", bank_info: "", memo: "", sort_order: 2, tax_mode: "taxable", invoice_reg_no: "", payout_month_offset: null, payout_day: null, line_user_id: "", line_linked_at: null, weekly_off: [], roster_no: "", birth_date: null, address: "", hired_on: null, appointed_on: null, retired_on: null, license_kinds: "", license_conditions: "", created_at: "", updated_at: "" },
     ],
     projects: [
       {

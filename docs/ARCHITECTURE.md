@@ -501,6 +501,40 @@ RLS の手前で `permission denied` になる。`0023` の末尾で出し直し
 
 ---
 
+## 4-10. 法定帳票と監査（`lib/compliance`・0024）
+
+0012 で点呼・業務記録・車両・書類までは取れるようになったが、**監査で「出してください」と言われる帳票**が
+そろっていなかった。`/compliance` の 1 画面と `audit-pack.zip` の 1 ファイルで答えられるようにする。
+
+```
+運転者台帳                        記録
+drivers（台帳の項目）             driver_instructions  指導・監督
+  ＋ documents(kind='license')    aptitude_tests       適性診断（0024 で新設）
+  ＋ documents(kind='health_check') incidents          事故・違反
+        ↓                          daily_reports       運転日報・点呼
+   v_driver_roster  ←────────────┘
+        ↓
+   v_compliance_gaps（足りないもの）   v_record_retention（いつまで保存するか）
+        ↓                                   ↓
+                     /compliance · audit-pack.zip
+```
+
+| もの | 置き場所 | 役割 |
+|---|---|---|
+| 純関数 | `lib/compliance/helpers.ts` | 不足の並べ替え・種類ごとのまとめ・台帳の記入率 |
+| 読み取り | `lib/compliance/queries.ts` | 画面は 3 往復、台帳 PDF は 4 往復 |
+| 画面 | `app/(app)/compliance` | 足りないもの・運転者台帳・保存期間の 3 タブ ＋ 一式の出力 |
+| 帳票 | `lib/exports/compliance-csv.ts`・`lib/pdf/roster.tsx`・`lib/exports/audit-pack.ts` | CSV・PDF（1 人 1 ページ）・ZIP の中身 |
+
+- **免許証と健康診断は `documents` が正**。台帳は `v_driver_roster` が引いてくるだけで、二重に持たない
+- 保存期間は `companies.retention_*`（会社ごとに延ばせる）。**期限が過ぎた記録は自動で消さない**。
+  `v_record_retention.expired_count` は「消してよい候補の件数」を示すだけ
+- 不足の判定はすべて DB のビュー（`v_compliance_gaps`）に置く。画面側で条件を書かない。
+  **期限切れの書類と点呼の漏れは 0012 の異常検知（`alerts`）が拾う**ので、このビューには入れない（同じことを 2 か所に出さない）
+- 適齢診断の年齢と間隔、健康診断の間隔も会社設定（`aptitude_age_from` / `aptitude_age_years` / `health_check_months`）
+
+---
+
 ## 5. 認証フロー
 
 ```
@@ -572,6 +606,9 @@ RLS の手前で `permission denied` になる。`0023` の末尾で出し直し
 | 労務 CSV / Excel | `app/api/export/labor.csv` `.xlsx` + `lib/exports/labor-csv.ts` | 日ごと（拘束・実働・休息・連続勤務と判定）と月ごと（合計・平均・超過日数）|
 | 支払通知の突合 CSV | `app/api/export/notice-diff.csv` + `lib/exports/notice-csv.ts` | 元請の支払通知の明細と自社の売上の差（数量・単価・金額）|
 | 配車予定 CSV | `app/api/export/dispatch.csv` + `lib/exports/dispatch-csv.ts` | 期間の配車（日・曜日・ドライバー・案件・予定数量・予定売上）。既定は今日から 2 週間 |
+| 法定帳票 CSV | `app/api/export/compliance.csv` + `lib/exports/compliance-csv.ts` | 運転者台帳・指導・事故・適性診断（`?kind=`）|
+| 運転者台帳 PDF | `app/api/export/roster.pdf` + `lib/pdf/roster.tsx` | 監査の様式に合わせた台帳（1 人 1 ページ）|
+| 監査一式 ZIP | `app/api/export/audit-pack.zip` + `lib/exports/audit-pack.ts` | 台帳・日報・指導・事故・診断・車両・労務を 1 つに（README つき）|
 | Excel（.xlsx）| `app/api/export/*.xlsx` + `lib/exports/xlsx.ts` | 依存なしの自前 xlsx ライター（`zip.ts` で OOXML を包む）。金額・率・数量・日付の書式、見出しの太字と固定行、オートフィルタ、列幅の自動調整。CSV と同じ 15 種類（稼働・支払・経費・請求書・案件・ドライバー別採算・資金繰り・年次レポート・単価表・個人明細・気になること・銀行明細・車両と書類・採用と契約・日報）|
 | 全銀 総合振込データ | `app/api/export/transfer.txt` + `lib/exports/zengin.ts` | Shift_JIS・固定長 120 バイト・CRLF。ヘッダ／データ／トレーラ／エンドの 4 レコード。半角カナ変換（濁点の分解・法人格の略号）。口座情報を含むため owner/admin のみ。画面は `/payouts/transfer` |
 | 振込一覧 CSV | `app/api/export/transfer.csv` | 全銀データの目視確認用（銀行・支店・預金種目・口座番号・カナ名義・税込支払額・振込予定日）|
@@ -595,7 +632,7 @@ RLS の手前で `permission denied` になる。`0023` の末尾で出し直し
 | 種類 | コマンド | 内容 |
 |---|---|---|
 | 単体（Vitest） | `npm test` | `lib/calc`（§2.6 の全ケース、誤差 0.01 円以内、端数処理 4 種、恒等式）、zod スキーマ、`lib/migrate` の変換と決定的 ID、`lib/voice` の解析、`lib/push` の宛先と文面。**プッシュの送信（`tests/push-send.test.ts`）は使い捨ての自己署名証明書で HTTPS のテストサーバーを立て、暗号化された本文と VAPID の署名が届くこと・410 なら購読を消すことまで確かめる**（openssl が無い環境では飛ばす） |
-| SQL 結合（psql） | `npm run test:sql` | ローカル PostgreSQL に `tests/sql/auth_stub.sql`（auth.uid() 等のスタブ）+ 全マイグレーションを適用し `tests/sql/test.sql` を実行。ビューの計算が §2.6 と一致、RLS（viewer / driver の拒否）、締めガード、招待制、復元・全削除、経費と営業利益（`v_month_pl`）、取引先と請求書（`build_invoice` / 合計の自動計算 / 状態）、ポータルの速報、代表と機密の隔離、通知の購読と設定、配車（必要人数・割り当て・休み希望・写しと確定・見通し）。30 節。**1 回目の適用直後にテーブル権限の抜けも確かめる** |
+| SQL 結合（psql） | `npm run test:sql` | ローカル PostgreSQL に `tests/sql/auth_stub.sql`（auth.uid() 等のスタブ）+ 全マイグレーションを適用し `tests/sql/test.sql` を実行。ビューの計算が §2.6 と一致、RLS（viewer / driver の拒否）、締めガード、招待制、復元・全削除、経費と営業利益（`v_month_pl`）、取引先と請求書（`build_invoice` / 合計の自動計算 / 状態）、ポータルの速報、代表と機密の隔離、通知の購読と設定、配車（必要人数・割り当て・休み希望・写しと確定・見通し）、法定帳票（運転者台帳・適性診断・保存期間・監査で足りないもの）。31 節。**1 回目の適用直後にテーブル権限の抜けも確かめる** |
 | E2E（Playwright） | `npm run test:e2e` | Supabase 互換のテストサーバー（`supabase-lite`：PostgreSQL + GoTrue 相当 + PostgREST 相当の軽量実装）を自動起動し、iPhone 13 と Desktop Chrome の 2 プロジェクトで主要導線（招待ログイン → ダッシュボード → 稼働追加・複製・一括入力 → 支払明細・PDF → 設定 → 月締め・解除 → 経費と営業利益 → 取引先と請求書（PDF・入金） → 年次レポートと月次目標 → ナビとコマンドパレット・ポータルの速報 → 閲覧者／ドライバーの権限 → 移行 JSON の取り込み）をブラウザで確認。13 spec・61 シナリオ × 2 プロジェクト = **122 件**。スクリーンショットを `docs/screenshots/` に保存。詳細は [docs/E2E.md](E2E.md) |
 | 静的 | `npm run typecheck` / `npm run lint` / `npm run build` | 型・Lint・本番ビルド |
 | まとめ | `npm run check` | typecheck + lint + test + build:sql |

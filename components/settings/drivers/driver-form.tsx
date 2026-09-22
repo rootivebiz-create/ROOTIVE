@@ -96,6 +96,15 @@ interface FormState {
   account_type: BankAccountType | "";
   account_number: string;
   account_holder_kana: string;
+  /** 運転者台帳（0024） */
+  roster_no: string;
+  birth_date: string;
+  address: string;
+  hired_on: string;
+  appointed_on: string;
+  retired_on: string;
+  license_kinds: string;
+  license_conditions: string;
 }
 
 /** 振込予定日の「日」の選択肢（0 = 末日） */
@@ -161,6 +170,14 @@ export function DriverForm({ canEdit, canSeeBank, bankAccount, defaults, driver,
     account_type: bankAccount?.account_type ?? "",
     account_number: bankAccount?.account_number ?? "",
     account_holder_kana: bankAccount?.account_holder_kana ?? "",
+    roster_no: driver?.roster_no ?? "",
+    birth_date: driver?.birth_date ?? "",
+    address: driver?.address ?? "",
+    hired_on: driver?.hired_on ?? "",
+    appointed_on: driver?.appointed_on ?? "",
+    retired_on: driver?.retired_on ?? "",
+    license_kinds: driver?.license_kinds ?? "",
+    license_conditions: driver?.license_conditions ?? "",
   }));
   const set = (patch: Partial<FormState>) => setF((prev) => ({ ...prev, ...patch }));
 
@@ -221,6 +238,14 @@ export function DriverForm({ canEdit, canSeeBank, bankAccount, defaults, driver,
       invoice_reg_no: f.invoice_reg_no,
       payout_month_offset: f.followPayout ? null : f.payout_month_offset,
       payout_day: f.followPayout ? null : f.payout_day,
+      roster_no: f.roster_no,
+      birth_date: f.birth_date,
+      address: f.address,
+      hired_on: f.hired_on,
+      appointed_on: f.appointed_on,
+      retired_on: f.retired_on,
+      license_kinds: f.license_kinds,
+      license_conditions: f.license_conditions,
       // 口座を見られない権限では送らない（送ると Server Action が拒否する）
       bank_account: canSeeBank
         ? {
@@ -457,6 +482,98 @@ export function DriverForm({ canEdit, canSeeBank, bankAccount, defaults, driver,
               例: {formatMonthJa(month)}分 → <span className="num font-medium text-foreground">{payoutPreview ? formatDateJa(payoutPreview) : "—"}</span>
               （その月に無い日付は末日になります）
             </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 運転者台帳（0024）。監査で求められる項目。免許証の番号と有効期限は「車両と書類」で持つ */}
+      <Card>
+        <CardHeader>
+          <CardTitle>運転者台帳</CardTitle>
+          <CardDescription>
+            監査で提出する運転者台帳の項目です。空欄のままでも保存できます（足りないものは 法令対応 の画面に出ます）。
+            免許証の番号と有効期限は 車両と書類 → 書類 に登録したものを使います。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="driver-roster-no">作成番号（任意）</Label>
+              <Input
+                id="driver-roster-no"
+                value={f.roster_no}
+                onChange={(e) => set({ roster_no: e.target.value })}
+                disabled={disabled}
+                maxLength={30}
+                placeholder="例: R-001"
+                autoComplete="off"
+              />
+              <FieldError messages={errors.roster_no} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="driver-birth">生年月日</Label>
+              <Input id="driver-birth" type="date" value={f.birth_date} onChange={(e) => set({ birth_date: e.target.value })} disabled={disabled} />
+              <FieldError messages={errors.birth_date} />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="driver-address">住所</Label>
+            <Input
+              id="driver-address"
+              value={f.address}
+              onChange={(e) => set({ address: e.target.value })}
+              disabled={disabled}
+              maxLength={200}
+              autoComplete="off"
+            />
+            <FieldError messages={errors.address} />
+          </div>
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="driver-hired">雇入れ年月日</Label>
+              <Input id="driver-hired" type="date" value={f.hired_on} onChange={(e) => set({ hired_on: e.target.value })} disabled={disabled} />
+              <FieldError messages={errors.hired_on} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="driver-appointed">選任年月日</Label>
+              <Input id="driver-appointed" type="date" value={f.appointed_on} onChange={(e) => set({ appointed_on: e.target.value })} disabled={disabled} />
+              <p className="text-xs text-muted-foreground">初任の指導・初任診断の起点です。</p>
+              <FieldError messages={errors.appointed_on} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="driver-retired">退職年月日</Label>
+              <Input id="driver-retired" type="date" value={f.retired_on} onChange={(e) => set({ retired_on: e.target.value })} disabled={disabled} />
+              <p className="text-xs text-muted-foreground">入れると台帳の保存期限が決まります。</p>
+              <FieldError messages={errors.retired_on} />
+            </div>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="driver-license-kinds">免許の種類</Label>
+              <Input
+                id="driver-license-kinds"
+                value={f.license_kinds}
+                onChange={(e) => set({ license_kinds: e.target.value })}
+                disabled={disabled}
+                maxLength={100}
+                placeholder="例: 普通"
+                autoComplete="off"
+              />
+              <FieldError messages={errors.license_kinds} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="driver-license-conditions">免許の条件</Label>
+              <Input
+                id="driver-license-conditions"
+                value={f.license_conditions}
+                onChange={(e) => set({ license_conditions: e.target.value })}
+                disabled={disabled}
+                maxLength={100}
+                placeholder="例: 眼鏡等"
+                autoComplete="off"
+              />
+              <FieldError messages={errors.license_conditions} />
+            </div>
           </div>
         </CardContent>
       </Card>

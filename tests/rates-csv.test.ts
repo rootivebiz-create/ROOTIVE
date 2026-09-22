@@ -17,7 +17,7 @@ const I_KASHIWA_STD = "30000000-0000-4000-8000-000000000004";
 const I_STOPPED = "30000000-0000-4000-8000-000000000005";
 
 function driver(id: string, name: string, sort_order: number, is_active = true): Driver {
-  return { id, company_id: COMPANY, name, kana: "", is_active, royalty_rate: null, mgmt_fee: 15000, rounding_mode: null, phone: "", email: "", bank_info: "", memo: "", sort_order, tax_mode: "taxable", invoice_reg_no: "", payout_month_offset: null, payout_day: null, line_user_id: "", line_linked_at: null, weekly_off: [], created_at: "", updated_at: "" };
+  return { id, company_id: COMPANY, name, kana: "", is_active, royalty_rate: null, mgmt_fee: 15000, rounding_mode: null, phone: "", email: "", bank_info: "", memo: "", sort_order, tax_mode: "taxable", invoice_reg_no: "", payout_month_offset: null, payout_day: null, line_user_id: "", line_linked_at: null, weekly_off: [], roster_no: "", birth_date: null, address: "", hired_on: null, appointed_on: null, retired_on: null, license_kinds: "", license_conditions: "", created_at: "", updated_at: "" };
 }
 
 function item(id: string, project_id: string, name: string, unit: "day" | "piece", bill_rate: number, pay_rate: number, sort_order: number, is_active = true): ProjectItem {
@@ -66,6 +66,13 @@ const masters: Masters = {
     labor_rest_min_minutes: 540,
     labor_month_duty_minutes: 17040,
     labor_max_consecutive_days: 13,
+    retention_daily_years: 1,
+    retention_instruction_years: 3,
+    retention_incident_years: 3,
+    retention_roster_years: 3,
+    aptitude_age_from: 65,
+    aptitude_age_years: 3,
+    health_check_months: 12,
     logo_path: null,
     seal_path: null,
     confidential_scope: { loans: "admin", cash: "admin", bank_account: "admin" },

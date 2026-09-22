@@ -34,6 +34,33 @@ export type DispatchAssignment = Tables<"dispatch_assignments">;
 export type DispatchListRow = Views<"v_dispatch_list">;
 export type DayOffListRow = Views<"v_day_off_list">;
 export type DispatchOutlookRow = Views<"v_dispatch_outlook">;
+
+/** 0024 法定帳票 */
+export type AptitudeTest = Tables<"aptitude_tests">;
+export type AptitudeKind = Enums<"aptitude_kind">;
+export type DriverRosterRow = Views<"v_driver_roster">;
+export type RecordRetentionRow = Views<"v_record_retention">;
+export type ComplianceGapRow = Views<"v_compliance_gaps">;
+
+/** 適性診断の種類 */
+export const APTITUDE_KIND_LABELS: Record<AptitudeKind, string> = {
+  initial: "初任診断",
+  age: "適齢診断",
+  specific: "特定診断",
+  general: "一般診断",
+};
+
+
+/** 監査で足りないもの（v_compliance_gaps.kind） */
+export const COMPLIANCE_GAP_LABELS: Record<string, string> = {
+  roster_incomplete: "運転者台帳の記入漏れ",
+  license_missing: "運転免許証の記録なし",
+  initial_instruction_missing: "初任の指導なし",
+  initial_aptitude_missing: "初任診断なし",
+  instruction_overdue: "指導が 1 年以上なし",
+  health_check_overdue: "健康診断が期限切れ",
+  age_aptitude_missing: "適齢診断なし",
+};
 export type Company = Tables<"companies">;
 export type Profile = Tables<"profiles">;
 export type Invitation = Tables<"invitations">;

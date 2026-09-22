@@ -33,6 +33,7 @@ import type {
   DayEntryStatus,
   DayStatusRow,
   SafetyManager,
+  AptitudeTest,
   DriverInstruction,
   Incident,
   DriverDayItem,
@@ -463,6 +464,15 @@ export async function loadDriverInstructions(supabase: ServerSupabase, companyId
   let q = supabase.from("driver_instructions").select("*").eq("company_id", companyId);
   if (opts.driverId) q = q.eq("driver_id", opts.driverId);
   const { data, error } = await q.order("instructed_on", { ascending: false }).limit(opts.limit ?? 100);
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** 適性診断の受診記録（新しい順。0024） */
+export async function loadAptitudeTests(supabase: ServerSupabase, companyId: string, opts: { driverId?: string; limit?: number } = {}): Promise<AptitudeTest[]> {
+  let q = supabase.from("aptitude_tests").select("*").eq("company_id", companyId);
+  if (opts.driverId) q = q.eq("driver_id", opts.driverId);
+  const { data, error } = await q.order("taken_on", { ascending: false }).limit(opts.limit ?? 100);
   if (error) throw error;
   return data ?? [];
 }

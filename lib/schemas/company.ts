@@ -258,3 +258,71 @@ export function laborSettingsToForm(c: Partial<LaborStandards> | null | undefine
 
 /** 「既定に戻す」で入れるフォームの値（改善基準告示に合わせた既定） */
 export const DEFAULT_LABOR_SETTINGS_FORM: LaborSettingsFormInput = laborSettingsToForm(DEFAULT_LABOR_STANDARDS);
+
+// ---------------------------------------------------------------------------
+// 法定帳票の保存期間と診断の間隔（0024）
+// ---------------------------------------------------------------------------
+
+/** companies の保存期間まわりの列 */
+export interface RetentionSettings {
+  retention_daily_years: number;
+  retention_instruction_years: number;
+  retention_incident_years: number;
+  retention_roster_years: number;
+  aptitude_age_from: number;
+  aptitude_age_years: number;
+  health_check_months: number;
+}
+
+/** 既定（法令の目安。0024 のマイグレーションの default と同じ） */
+export const DEFAULT_RETENTION_SETTINGS: RetentionSettings = {
+  retention_daily_years: 1,
+  retention_instruction_years: 3,
+  retention_incident_years: 3,
+  retention_roster_years: 3,
+  aptitude_age_from: 65,
+  aptitude_age_years: 3,
+  health_check_months: 12,
+};
+
+export type RetentionSettingsFormInput = Record<keyof RetentionSettings, string>;
+
+function intField(label: string, min: number, max: number) {
+  return z.preprocess(
+    (v) => (typeof v === "string" ? parseNumberInput(v) : v),
+    z
+      .number({ error: `${label}を入力してください` })
+      .int(`${label}は整数で入力してください`)
+      .min(min, `${label}は ${min} 以上で入力してください`)
+      .max(max, `${label}は ${max} 以下で入力してください`),
+  );
+}
+
+export const retentionSettingsSchema = z.object({
+  retention_daily_years: intField("運転日報の保存年数", 1, 20),
+  retention_instruction_years: intField("指導の記録の保存年数", 1, 20),
+  retention_incident_years: intField("事故の記録の保存年数", 1, 20),
+  retention_roster_years: intField("運転者台帳の保存年数", 1, 20),
+  aptitude_age_from: intField("適齢診断の対象年齢", 40, 100),
+  aptitude_age_years: intField("適齢診断の間隔", 1, 10),
+  health_check_months: intField("健康診断の間隔（か月）", 1, 60),
+});
+
+export type RetentionSettingsParsed = z.output<typeof retentionSettingsSchema>;
+
+/** 保存済みの値をフォーム初期値へ。未設定の項目は既定値を使う */
+export function retentionSettingsToForm(c: Partial<RetentionSettings> | null | undefined): RetentionSettingsFormInput {
+  const v = { ...DEFAULT_RETENTION_SETTINGS, ...(c ?? {}) };
+  return {
+    retention_daily_years: String(v.retention_daily_years),
+    retention_instruction_years: String(v.retention_instruction_years),
+    retention_incident_years: String(v.retention_incident_years),
+    retention_roster_years: String(v.retention_roster_years),
+    aptitude_age_from: String(v.aptitude_age_from),
+    aptitude_age_years: String(v.aptitude_age_years),
+    health_check_months: String(v.health_check_months),
+  };
+}
+
+/** 「既定に戻す」で入れるフォームの値 */
+export const DEFAULT_RETENTION_SETTINGS_FORM: RetentionSettingsFormInput = retentionSettingsToForm(DEFAULT_RETENTION_SETTINGS);

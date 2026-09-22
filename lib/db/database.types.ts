@@ -523,6 +523,51 @@ export type Database = {
         }
         Relationships: []
       }
+      aptitude_tests: {
+        Row: {
+          id: string
+          company_id: string
+          driver_id: string
+          kind: Database["public"]["Enums"]["aptitude_kind"]
+          taken_on: string
+          institution: string
+          result: string
+          memo: string
+          file_path: string
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          driver_id: string
+          kind?: Database["public"]["Enums"]["aptitude_kind"]
+          taken_on: string
+          institution?: string
+          result?: string
+          memo?: string
+          file_path?: string
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          driver_id?: string
+          kind?: Database["public"]["Enums"]["aptitude_kind"]
+          taken_on?: string
+          institution?: string
+          result?: string
+          memo?: string
+          file_path?: string
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       audit_logs: {
         Row: {
           id: string
@@ -891,6 +936,13 @@ export type Database = {
           labor_month_duty_minutes: number
           labor_max_consecutive_days: number
           confidential_scope: Json
+          retention_daily_years: number
+          retention_instruction_years: number
+          retention_incident_years: number
+          retention_roster_years: number
+          aptitude_age_from: number
+          aptitude_age_years: number
+          health_check_months: number
         }
         Insert: {
           id?: string
@@ -929,6 +981,13 @@ export type Database = {
           labor_month_duty_minutes?: number
           labor_max_consecutive_days?: number
           confidential_scope?: Json
+          retention_daily_years?: number
+          retention_instruction_years?: number
+          retention_incident_years?: number
+          retention_roster_years?: number
+          aptitude_age_from?: number
+          aptitude_age_years?: number
+          health_check_months?: number
         }
         Update: {
           id?: string
@@ -967,6 +1026,13 @@ export type Database = {
           labor_month_duty_minutes?: number
           labor_max_consecutive_days?: number
           confidential_scope?: Json
+          retention_daily_years?: number
+          retention_instruction_years?: number
+          retention_incident_years?: number
+          retention_roster_years?: number
+          aptitude_age_from?: number
+          aptitude_age_years?: number
+          health_check_months?: number
         }
         Relationships: []
       }
@@ -1624,6 +1690,14 @@ export type Database = {
           line_user_id: string
           line_linked_at: string | null
           weekly_off: number[]
+          roster_no: string
+          birth_date: string | null
+          address: string
+          hired_on: string | null
+          appointed_on: string | null
+          retired_on: string | null
+          license_kinds: string
+          license_conditions: string
         }
         Insert: {
           id?: string
@@ -1648,6 +1722,14 @@ export type Database = {
           line_user_id?: string
           line_linked_at?: string | null
           weekly_off?: number[]
+          roster_no?: string
+          birth_date?: string | null
+          address?: string
+          hired_on?: string | null
+          appointed_on?: string | null
+          retired_on?: string | null
+          license_kinds?: string
+          license_conditions?: string
         }
         Update: {
           id?: string
@@ -1672,6 +1754,14 @@ export type Database = {
           line_user_id?: string
           line_linked_at?: string | null
           weekly_off?: number[]
+          roster_no?: string
+          birth_date?: string | null
+          address?: string
+          hired_on?: string | null
+          appointed_on?: string | null
+          retired_on?: string | null
+          license_kinds?: string
+          license_conditions?: string
         }
         Relationships: []
       }
@@ -3498,6 +3588,23 @@ export type Database = {
         }
         Relationships: []
       }
+      v_aptitude_list: {
+        Row: {
+          id: string | null
+          company_id: string | null
+          driver_id: string | null
+          driver_name: string | null
+          driver_sort_order: number | null
+          kind: Database["public"]["Enums"]["aptitude_kind"] | null
+          taken_on: string | null
+          institution: string | null
+          result: string | null
+          memo: string | null
+          file_path: string | null
+          created_at: string | null
+        }
+        Relationships: []
+      }
       v_bank_transaction_list: {
         Row: {
           id: string | null
@@ -3569,6 +3676,19 @@ export type Database = {
           entry_count: number | null
           qty_total: number | null
           bill: number | null
+        }
+        Relationships: []
+      }
+      v_compliance_gaps: {
+        Row: {
+          company_id: string | null
+          driver_id: string | null
+          driver_name: string | null
+          kind: string | null
+          severity: string | null
+          title: string | null
+          detail: string | null
+          on_date: string | null
         }
         Relationships: []
       }
@@ -3767,6 +3887,23 @@ export type Database = {
         }
         Relationships: []
       }
+      v_driver_instruction_list: {
+        Row: {
+          id: string | null
+          company_id: string | null
+          driver_id: string | null
+          driver_name: string | null
+          driver_sort_order: number | null
+          kind: string | null
+          instructed_on: string | null
+          hours: number | null
+          topics: string | null
+          instructor: string | null
+          memo: string | null
+          created_at: string | null
+        }
+        Relationships: []
+      }
       v_driver_month_labor: {
         Row: {
           company_id: string | null
@@ -3826,6 +3963,39 @@ export type Database = {
           tax_base: number | null
           tax: number | null
           payout_incl: number | null
+        }
+        Relationships: []
+      }
+      v_driver_roster: {
+        Row: {
+          driver_id: string | null
+          company_id: string | null
+          roster_no: string | null
+          name: string | null
+          kana: string | null
+          birth_date: string | null
+          age: number | null
+          address: string | null
+          phone: string | null
+          hired_on: string | null
+          appointed_on: string | null
+          retired_on: string | null
+          is_active: boolean | null
+          sort_order: number | null
+          license_kinds: string | null
+          license_conditions: string | null
+          license_no: string | null
+          license_issued_on: string | null
+          license_expires_on: string | null
+          health_check_on: string | null
+          instruction_last_on: string | null
+          instruction_count: number | null
+          aptitude_last_on: string | null
+          aptitude_initial_on: string | null
+          aptitude_age_on: string | null
+          accident_count: number | null
+          violation_count: number | null
+          keep_until: string | null
         }
         Relationships: []
       }
@@ -3948,6 +4118,27 @@ export type Database = {
           client_name: string | null
           project_name: string | null
           run_count: number | null
+        }
+        Relationships: []
+      }
+      v_incident_list: {
+        Row: {
+          id: string | null
+          company_id: string | null
+          driver_id: string | null
+          driver_name: string | null
+          vehicle_id: string | null
+          vehicle_plate: string | null
+          occurred_at: string | null
+          kind: Database["public"]["Enums"]["incident_kind"] | null
+          place: string | null
+          description: string | null
+          cause: string | null
+          prevention: string | null
+          reported: boolean | null
+          cost: number | null
+          memo: string | null
+          created_at: string | null
         }
         Relationships: []
       }
@@ -4266,6 +4457,19 @@ export type Database = {
           royalty: number | null
           entry_profit: number | null
           profit_rate: number | null
+        }
+        Relationships: []
+      }
+      v_record_retention: {
+        Row: {
+          company_id: string | null
+          kind: string | null
+          label: string | null
+          years: number | null
+          basis: string | null
+          record_count: number | null
+          oldest_on: string | null
+          expired_count: number | null
         }
         Relationships: []
       }
@@ -5120,6 +5324,7 @@ export type Database = {
       applicant_stage: "applied" | "contacted" | "interview" | "docs" | "contract" | "started" | "declined" | "rejected"
       approval_kind: "expense" | "rate_change" | "project" | "contract" | "loan" | "month_reopen" | "payout" | "purchase" | "hire" | "other"
       approval_status: "pending" | "approved" | "rejected" | "withdrawn"
+      aptitude_kind: "initial" | "age" | "specific" | "general"
       bank_account_type: "ordinary" | "checking" | "savings"
       bank_txn_status: "unmatched" | "matched" | "ignored"
       contract_status: "draft" | "active" | "ended"

@@ -165,7 +165,7 @@ export function LaborStandardsCard({ initial, editable }: LaborStandardsCardProp
                 <RotateCcw />
                 既定に戻す
               </Button>
-              <Button type="submit" disabled={pending} aria-busy={pending}>
+              <Button aria-label="労務の基準を保存" type="submit" disabled={pending} aria-busy={pending}>
                 <Save />
                 {pending ? "保存中…" : "保存"}
               </Button>

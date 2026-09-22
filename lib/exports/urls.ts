@@ -106,4 +106,24 @@ export const exportUrls = {
   /** 配車予定 CSV（期間。未指定なら今日から 2 週間） */
   dispatchCsv: (from?: string, to?: string) =>
     from && to ? `/api/export/dispatch.csv?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}` : "/api/export/dispatch.csv",
+
+  // ---------------------------------------------------------------------------
+  // 法定帳票と監査（0024）
+  // ---------------------------------------------------------------------------
+  /** 法定帳票 CSV（kind=roster|instruction|incident|aptitude。期間は任意） */
+  complianceCsv: (kind: "roster" | "instruction" | "incident" | "aptitude", from?: string, to?: string) =>
+    `/api/export/compliance.csv?kind=${encodeURIComponent(kind)}${from && to ? `&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}` : ""}`,
+  /** 運転者台帳 PDF（1 人 1 ページ。all=1 で退職した人も） */
+  rosterPdf: (includeRetired = false) => `/api/export/roster.pdf${includeRetired ? "?all=1" : ""}`,
+  /** 監査一式 ZIP（期間。parts で入れるものを選ぶ） */
+  auditPackZip: (from?: string, to?: string, parts?: string[]) => {
+    const q = new URLSearchParams();
+    if (from && to) {
+      q.set("from", from);
+      q.set("to", to);
+    }
+    if (parts && parts.length > 0) q.set("parts", parts.join(","));
+    const s = q.toString();
+    return `/api/export/audit-pack.zip${s ? `?${s}` : ""}`;
+  },
 };

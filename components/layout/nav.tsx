@@ -21,6 +21,7 @@ import {
   FolderSearch,
   ClipboardCheck,
   CalendarRange,
+  ShieldCheck,
   Truck,
   UserPlus,
   FileUp,
@@ -54,7 +55,7 @@ export interface NavItem {
 /** 未読・未対応の件数（href をキーにした数。0 は出さない） */
 export type NavBadges = Record<string, number>;
 
-/** PC のサイドナビ（22 項目。group ごとに見出しを付けて表示する。「代表」は owner だけ） */
+/** PC のサイドナビ（23 項目。group ごとに見出しを付けて表示する。「代表」は owner だけ） */
 export const MAIN_NAV: NavItem[] = [
   { href: "/executive", label: "代表", icon: Crown, group: "代表", ownerOnly: true },
   { href: "/dashboard", label: "ホーム", icon: Home },
@@ -72,6 +73,7 @@ export const MAIN_NAV: NavItem[] = [
   { href: "/reports", label: "レポート", icon: BarChart3, group: "経営" },
   { href: "/alerts", label: "気になること", icon: TriangleAlert, group: "経営" },
   { href: "/fleet", label: "車両と書類", icon: Truck, group: "管理" },
+  { href: "/compliance", label: "法令対応", icon: ShieldCheck, group: "管理" },
   { href: "/hr", label: "採用と契約", icon: UserPlus, group: "管理" },
   { href: "/records", label: "書類の検索", icon: FolderSearch, group: "管理" },
   { href: "/exports", label: "出力", icon: Download, group: "管理" },
