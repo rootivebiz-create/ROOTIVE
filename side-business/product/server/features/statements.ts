@@ -1,11 +1,14 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
-import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import type { Db } from "~/db/client";
 import * as s from "~/db/schema";
 import { UserError } from "~/server/action";
 import { audit } from "~/server/audit";
+import { latestTermsByDriver } from "~/server/features/terms-content";
+import { companyCopy, type CompanyCopy } from "~/server/features/statements/company-copy";
 import { describeChanges } from "~/server/features/statements/diff";
+import { buildVersionHistory, type VersionHistoryItem } from "~/server/features/statements/history";
 import { deemedDaysOf, countStatuses, statementStatus, type StatementStatus, type StatusCounts } from "~/server/features/statements/status";
 import { cleanBody, groupThreads, type Thread } from "~/server/features/statements/threads";
 import {
@@ -80,7 +83,7 @@ async function loadDriverMessages(db: Db, tenantId: string, ids: string[]): Prom
     .where(and(eq(s.statementMessages.tenantId, tenantId), inArray(s.statementMessages.statementId, ids), eq(s.statementMessages.author, "driver")));
 }
 
-function statusOf(st: StatementRow, confs: ConfRow[], msgs: MsgRow[], now: Date, deemedDays: number): StatementStatus {
+function statusOf(st: StatementRow, confs: ConfRow[], msgs: MsgRow[], now: Date, deemedDays: number, deemedClause: boolean): StatementStatus {
   return statementStatus(
     {
       version: st.version,
@@ -89,10 +92,22 @@ function statusOf(st: StatementRow, confs: ConfRow[], msgs: MsgRow[], now: Date,
       updatedAt: st.updatedAt,
       confirmations: confs.filter((c) => c.statementId === st.id),
       driverMessages: msgs.filter((m) => m.statementId === st.id),
+      deemedClause,
     },
     now,
     deemedDays,
   );
+}
+
+/**
+ * ドライバーごとの「いちばん新しい取引条件の記録に、みなし確認の条項があるか」（会社で絞る）。
+ * 記録の無い人は入らない（＝条項なし）。ホームなど、状態を数えるほかの画面からも使う
+ */
+export async function deemedClauseMap(db: Db, tenantId: string, driverIds: string[]): Promise<Map<string, boolean>> {
+  const ids = [...new Set(driverIds)];
+  if (ids.length === 0) return new Map();
+  const latest = await latestTermsByDriver(db, tenantId, ids);
+  return new Map([...latest.entries()].map(([driverId, r]) => [driverId, r.deemedClause]));
 }
 
 // ---------------------------------------------------------------- 一覧
@@ -147,15 +162,16 @@ export async function listMonthStatements(db: Db, tenantId: string, month: strin
     .from(s.statements)
     .where(and(eq(s.statements.tenantId, tenantId), eq(s.statements.month, month)));
   const ids = rows.map((r) => r.id);
-  const [confs, msgs, order] = await Promise.all([
+  const [confs, msgs, order, clauses] = await Promise.all([
     loadConfirmations(db, tenantId, ids),
     loadDriverMessages(db, tenantId, ids),
     sortKeys(db, tenantId, rows.map((r) => r.driverId)),
+    deemedClauseMap(db, tenantId, rows.map((r) => r.driverId)),
   ]);
 
   const items: StatementListItem[] = rows.map((r) => {
     const d = readSnapshot(r);
-    const status = statusOf(r, confs, msgs, now, deemedDays);
+    const status = statusOf(r, confs, msgs, now, deemedDays, clauses.get(r.driverId) === true);
     return {
       id: r.id,
       driverId: r.driverId,
@@ -237,13 +253,50 @@ export async function changesSince(
 
 /** その人の取引条件の記録（いちばん新しい版）に「みなし確認」の条項があるか。記録が無ければ null */
 export async function deemedClauseOf(db: Db, tenantId: string, driverId: string): Promise<{ version: number; issuedOn: string; deemedClause: boolean } | null> {
-  const rows = await db
-    .select({ version: s.termsRecords.version, issuedOn: s.termsRecords.issuedOn, deemedClause: s.termsRecords.deemedClause })
-    .from(s.termsRecords)
-    .where(and(eq(s.termsRecords.tenantId, tenantId), eq(s.termsRecords.driverId, driverId)))
-    .orderBy(desc(s.termsRecords.version))
-    .limit(1);
-  return rows[0] ?? null;
+  if (!isUuid(driverId)) return null;
+  const r = (await latestTermsByDriver(db, tenantId, [driverId])).get(driverId);
+  return r ? { version: r.version, issuedOn: r.issuedOn, deemedClause: r.deemedClause } : null;
+}
+
+// ---------------------------------------------------------------- 版の履歴
+
+/**
+ * 明細の版の履歴（会社で絞る）。どの版も statement_versions の写しから作り、となりの版の違いと、
+ * どの版をいつ確認したかを並べる。今の版の写しが無い古いデータは、明細そのものの写しで補う。
+ */
+export async function loadVersionHistory(db: Db, tenantId: string, st: StatementRow): Promise<VersionHistoryItem[]> {
+  const [versions, confs] = await Promise.all([
+    db
+      .select()
+      .from(s.statementVersions)
+      .where(and(eq(s.statementVersions.tenantId, tenantId), eq(s.statementVersions.statementId, st.id)))
+      .orderBy(asc(s.statementVersions.version)),
+    loadConfirmations(db, tenantId, [st.id]),
+  ]);
+  const userIds = [...new Set(versions.map((v) => v.createdBy).filter((v): v is string => !!v))];
+  const users = userIds.length
+    ? await db
+        .select({ id: s.users.id, name: s.users.name })
+        .from(s.users)
+        .where(and(eq(s.users.tenantId, tenantId), inArray(s.users.id, userIds)))
+    : [];
+  const nameOf = new Map(users.map((u) => [u.id, u.name]));
+  const inputs = versions.map((v) => ({
+    version: v.version,
+    hash: v.hash,
+    createdAt: v.createdAt,
+    total: v.total,
+    createdByName: v.createdBy ? nameOf.get(v.createdBy) ?? null : null,
+    view: toDriverView(readSnapshot(v), v),
+  }));
+  if (!inputs.some((v) => v.version === st.version)) {
+    inputs.push({ version: st.version, hash: st.hash, createdAt: st.updatedAt, total: st.total, createdByName: null, view: toDriverView(readSnapshot(st), st) });
+  }
+  return buildVersionHistory(
+    inputs,
+    confs.map((c) => ({ version: c.version, hash: c.hash, createdAt: c.createdAt, totalAtConfirm: c.totalAtConfirm })),
+    st.version,
+  );
 }
 
 // ---------------------------------------------------------------- 1 件の中身
@@ -266,6 +319,12 @@ export type StatementDetail = {
   changes: VersionChanges | null;
   /** 取引条件の記録の「みなし確認」の条項（記録が無ければ null） */
   terms: { version: number; issuedOn: string; deemedClause: boolean } | null;
+  /** 版の履歴（新しい版が先頭） */
+  history: VersionHistoryItem[];
+  /** 会社の控え（売上・利益・経過措置の負担。ドライバーには見せない） */
+  company: CompanyCopy;
+  /** 会社の消費税の計算方法（いまの設定。general＝原則課税） */
+  taxMethod: string;
 };
 
 /** 端末の目安（UA の全文は出さない） */
@@ -307,9 +366,10 @@ export async function getStatementDetail(db: Db, tenantId: string, id: string, n
     : [];
   const staffName = new Map(staff.map((u) => [u.id, u.name]));
   const driverMsgs = messages.filter((m) => m.author === "driver");
-  const status = statusOf(st, confs, driverMsgs.map((m) => ({ ...m, statementId: st.id })), now, deemedDays);
+  const terms = await deemedClauseOf(db, tenantId, st.driverId);
+  const status = statusOf(st, confs, driverMsgs.map((m) => ({ ...m, statementId: st.id })), now, deemedDays, terms?.deemedClause === true);
   const driver = driverRows[0];
-  const [changes, terms] = await Promise.all([changesSince(db, tenantId, st, view, status.lastConfirmedVersion), deemedClauseOf(db, tenantId, st.driverId)]);
+  const [changes, history] = await Promise.all([changesSince(db, tenantId, st, view, status.lastConfirmedVersion), loadVersionHistory(db, tenantId, st)]);
 
   return {
     statement: st,
@@ -338,6 +398,9 @@ export async function getStatementDetail(db: Db, tenantId: string, id: string, n
     deemedDays,
     changes,
     terms,
+    history,
+    company: companyCopy(readSnapshot(st)),
+    taxMethod: tenant.taxMethod,
   };
 }
 

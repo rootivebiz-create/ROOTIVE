@@ -697,9 +697,26 @@ export type CreateTransferInput = {
   scope: "all" | "remaining";
   /** 前に作った振込データを使っていないことを確かめたか（all で前のデータがあるとき必須） */
   replaceConfirmed?: boolean;
+  /** 前回の振込から口座が変わった人を、ご本人に確かめたか（変わった人がいるとき必須） */
+  bankChangesConfirmed?: boolean;
 };
 
-export type CreatedBatch = typeof s.transferBatches.$inferSelect & { excluded: ExcludedRow[] };
+export type CreatedBatch = typeof s.transferBatches.$inferSelect & {
+  excluded: ExcludedRow[];
+  /** 前回から口座が変わった人の数（確かめたうえで作った） */
+  bankChanged?: number;
+  /** 振込指定日が、明細に書いた支払日より何日あとか（0 なら間に合う日） */
+  lateDays?: number;
+};
+
+/** a から b まで何日あとか（b が後なら正） */
+export function daysAfter(a: string, b: string): number {
+  const toUtc = (v: string) => {
+    const [y, m, d] = v.split("-").map(Number);
+    return Date.UTC(y, m - 1, d);
+  };
+  return Math.round((toUtc(b) - toUtc(a)) / 86_400_000);
+}
 
 /**
  * 振込データを 1 件作って記録する。
@@ -773,6 +790,15 @@ async function createTransferBatchLocked(
     );
   }
 
+  // 前回の振込から口座が変わった人は、確かめた印が無いと作らない（口座の書き換えによる誤送金を防ぐ）
+  const bankReview = await reviewBankChanges(db, tenantId, rows);
+  if (bankReview.changed.length && !input.bankChangesConfirmed) {
+    const list = bankReview.changed.map((c) => `・${c.driverName}（${c.fields.join("・")}）`).join("\n");
+    throw new UserError(
+      `前回の振込から口座が変わった人が ${bankReview.changed.length}人います。口座が正しいか、ご本人に電話などで確かめてから、「口座が変わった人を確かめました」に印を付けて作ってください。\n${list}`,
+    );
+  }
+
   const total = rows.reduce((a, r) => a + r.amount, 0);
   // 同じ名前のファイルがあれば _2・_3 を付ける
   const baseName = transferFileName(month, date);
@@ -808,11 +834,14 @@ async function createTransferBatchLocked(
       total,
       fileName,
       scope: input.scope,
-      lines: rows.map((r) => ({ statementId: r.statementId, driverId: r.driverId, amount: r.amount, version: r.version })),
+      // 口座は目印だけを残す（番号そのものは残さない。次の振込で「口座が変わった人」を見つけるのに使う）
+      lines: rows.map((r) => ({ statementId: r.statementId, driverId: r.driverId, amount: r.amount, version: r.version, bank: bankStamp(tenantId, r.bank) })),
       excluded: plan.excluded.map((e) => ({ driverId: e.driverId, reason: e.reason, amount: e.amount })),
+      bankChanged: bankReview.changed.map((c) => ({ driverId: c.driverId, fields: c.fields })),
+      firstTime: bankReview.firstTime.map((f) => f.driverId),
     },
   });
-  return { ...batch, excluded: plan.excluded };
+  return { ...batch, excluded: plan.excluded, bankChanged: bankReview.changed.length, lateDays: Math.max(0, daysAfter(plan.promisedPayDate, date)) };
 }
 
 // ---------------------------------------------------------------- ファイル
@@ -882,6 +911,16 @@ async function loadBatchLines(db: Db, tenantId: string, batch: StoredBatch): Pro
     });
   }
   if (problems.length) throw new UserError(`口座の情報に直すところがあります。ドライバーの設定で直してください。\n${problems.join("\n")}`);
+  // 作ったあとに口座が変わった人がいれば出さない（ファイルは今の口座で作るため、確かめていない口座に振り込まないように）
+  const stamps = await batchStamps(db, tenantId, batch.id);
+  if (stamps) {
+    const moved = lines.filter((l) => stamps.has(l.row.driverId) && stamps.get(l.row.driverId)!.fp !== bankFingerprint(tenantId, l.row.bank));
+    if (moved.length) {
+      throw new UserError(
+        `この振込データを作ったあとに、口座が変わった人がいます（${moved.map((l) => l.row.driverName).join("、")}）。確かめていない口座に振り込まないよう、この振込データは取り消して作り直してください（作り直すときに、口座が変わった人を確かめる欄が出ます）。`,
+      );
+    }
+  }
   // 並びはドライバーの番号順（銀行の画面で見比べやすいように）
   lines.sort((a, b) => (a.row.driverCode ?? "").localeCompare(b.row.driverCode ?? "", "ja") || a.row.driverName.localeCompare(b.row.driverName, "ja"));
   return lines;
@@ -907,8 +946,6 @@ export async function buildTransferFile(db: Db, tenantId: string, batchId: strin
   return { fileName: batch.fileName, bytes: zenginBytes(records), records, batch };
 }
 
-const ACCOUNT_TYPE_LABEL: Record<AccountType, string> = { ordinary: "普通", checking: "当座" };
-
 /** 全銀の取り込みが無い銀行向けの一覧（CSV）。手で入れるときに見る */
 export async function buildTransferCsv(
   db: Db,
@@ -926,7 +963,7 @@ export async function buildTransferCsv(
       row.bank.bankNameKana,
       row.bank.branchCode,
       row.bank.branchNameKana,
-      ACCOUNT_TYPE_LABEL[row.bank.accountType],
+      ACCOUNT_TYPE_JA[row.bank.accountType],
       row.bank.accountNumber,
       row.holderHalf,
       row.amount,
