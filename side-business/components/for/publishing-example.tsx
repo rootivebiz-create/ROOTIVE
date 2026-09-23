@@ -121,6 +121,7 @@ function SampleCard({ c }: { c: Computed }) {
   const { sample, result, burdens } = c;
   const terms = sample.input.paymentTerms;
   const late = result.warnings.some((w) => w.code === "over_60_days" || w.code === "due_from_invoice_receipt");
+  const over60 = result.warnings.some((w) => w.code === "over_60_days");
   const single = result.lines.length === 1 ? result.lines[0] : null;
   const withholdingDetail = [
     ...result.withholdingGroups.map((g) => g.formulaText),
@@ -185,7 +186,11 @@ function SampleCard({ c }: { c: Computed }) {
         {terms && (
           <li>
             納品{jpDate(terms.receivedOn)}・支払{jpDate(terms.payOn)}（納品の日を1日目として{dayNumber(terms.receivedOn, terms.payOn)}日目）の前提。
-            {late ? "" : "フリーランス法の60日の期限の中です。"}
+            {over60
+              ? "1回ごとに支払期日を決めている場合の判定です。月末締め・翌月末払いのように月ごとに締める決まりなら、60日は「2か月以内」として運用されます。"
+              : late
+                ? ""
+                : "フリーランス法の60日の期限の中です。"}
           </li>
         )}
         {result.withholdingDue && <li>源泉税の納付：{jpDate(result.withholdingDue)}まで（支払った月の翌月10日。土日祝日なら翌営業日）</li>}
@@ -216,7 +221,7 @@ export function PublishingExample() {
         計算の例：{PUBLISHING.sampleCompany}の{first ? monthLabel(first.input.serviceDate) : ""}
       </h3>
       <p className="mt-2 text-sm">
-        会社・人・金額はすべて架空です。無料の計算の道具と同じ仕組みで計算しています。どの例も、個人の方への支払で、請求書に報酬と消費税（相当額）が分けて書いてある前提です。
+        会社・人・金額はすべて架空です。無料の計算の道具と同じ仕組みで計算しています。どの例も、個人の方への支払で、請求書に報酬と消費税（相当額）が分けて書いてある前提です。撮影料の例は、雑誌に載せる写真の撮影の前提です。
       </p>
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         {COMPUTED.map((c) => (

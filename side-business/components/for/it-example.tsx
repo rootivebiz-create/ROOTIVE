@@ -3,14 +3,29 @@
  * 数字はここに書かない（見本の入力から毎回計算する）。サーバーで描くだけで、状態は持たない。
  */
 import { Card, Money, TableWrap } from "@/components/ui";
-import { calcModel, calcSettlement, SETTLEMENT_MODE_LABELS, type SettlementInput, type SettlementResult } from "@/lib/engine/payModels";
-import { getPreset, withServiceDate, type PresetSample } from "@/lib/engine/presets";
-import { buildPayout, type PayoutLine, type PayoutResult } from "@/lib/engine/statement";
+import {
+  calcModel,
+  calcSettlement,
+  SETTLEMENT_MODE_LABELS,
+  type SettlementInput,
+  type SettlementResult,
+} from "@/lib/engine/payModels";
+import {
+  getPreset,
+  withServiceDate,
+  type PresetSample,
+} from "@/lib/engine/presets";
+import {
+  buildPayout,
+  type PayoutLine,
+  type PayoutResult,
+} from "@/lib/engine/statement";
 import { en, num } from "@/lib/engine/types";
 import { BASE_RULE_LABELS } from "@/lib/engine/withholding";
 import { pct } from "@/lib/payroll/money";
 
-const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
+const cx = (...c: (string | false | null | undefined)[]) =>
+  c.filter(Boolean).join(" ");
 
 export const IT = getPreset("it");
 
@@ -71,12 +86,21 @@ const WITHHOLDING_SAMPLES = pick(["it-takahashi", "it-yamamoto"]);
  * 免税の方の見本で、経過措置の前後に発注する側が負担する消費税（本文で使う）。
  * 見本に免税の方がいなければ null。
  */
-export function itBurdenCompare(): { name: string; burdens: { label: string; rate: number; burden: number }[] } | null {
-  const exempt = [...SETTLEMENT_SAMPLES, ...WITHHOLDING_SAMPLES].find((c) => c.burdens.length > 0);
+export function itBurdenCompare(): {
+  name: string;
+  burdens: { label: string; rate: number; burden: number }[];
+} | null {
+  const exempt = [...SETTLEMENT_SAMPLES, ...WITHHOLDING_SAMPLES].find(
+    (c) => c.burdens.length > 0,
+  );
   if (!exempt) return null;
   return {
     name: exempt.result.payee.name,
-    burdens: exempt.burdens.map((b) => ({ label: monthLabel(b.date), rate: b.rate, burden: b.burden })),
+    burdens: exempt.burdens.map((b) => ({
+      label: monthLabel(b.date),
+      rate: b.rate,
+      burden: b.burden,
+    })),
   };
 }
 
@@ -84,19 +108,37 @@ export function itBurdenCompare(): { name: string; burdens: { label: string; rat
 export function itDisclosureExample(): { name: string; text: string } | null {
   for (const c of SETTLEMENT_SAMPLES) {
     const line = c.sample.input.lines.find((l) => l.model === "settlement");
-    if (line) return { name: c.result.payee.name, text: calcModel(line).formulaText.trim() };
+    if (line)
+      return {
+        name: c.result.payee.name,
+        text: calcModel(line).formulaText.trim(),
+      };
   }
   return null;
 }
 
-function Row({ label, detail, value, strong }: { label: string; detail?: string; value: number; strong?: boolean }) {
+function Row({
+  label,
+  detail,
+  value,
+  strong,
+}: {
+  label: string;
+  detail?: string;
+  value: number;
+  strong?: boolean;
+}) {
   return (
     <li className={cx("py-2", strong && "font-bold")}>
       <div className="flex items-baseline justify-between gap-3">
         <span>{label}</span>
         <Money value={value} className={strong ? "text-lg" : undefined} />
       </div>
-      {detail && <p className="mt-0.5 text-xs font-normal text-muted-foreground [overflow-wrap:anywhere]">{detail}</p>}
+      {detail && (
+        <p className="mt-0.5 text-xs font-normal text-muted-foreground [overflow-wrap:anywhere]">
+          {detail}
+        </p>
+      )}
     </li>
   );
 }
@@ -106,7 +148,10 @@ function Warnings({ result }: { result: PayoutResult }) {
   return (
     <ul className="mt-3 space-y-1 text-sm">
       {result.warnings.map((w, i) => (
-        <li key={`${w.code}-${i}`} className="rounded-lg border border-warning p-3">
+        <li
+          key={`${w.code}-${i}`}
+          className="rounded-lg border border-warning p-3"
+        >
           <span className="font-bold text-warning">注意：</span>
           {w.message}
         </li>
@@ -132,7 +177,11 @@ function PayoutRows({
         <Row
           key={`${l.label}-${i}`}
           label={l.label}
-          detail={l.model === "settlement" && settlementNote ? `${l.detail}。${settlementNote}` : l.detail}
+          detail={
+            l.model === "settlement" && settlementNote
+              ? `${l.detail}。${settlementNote}`
+              : l.detail
+          }
           value={l.amount}
         />
       ))}
@@ -148,14 +197,22 @@ function PayoutRows({
         }
         value={result.tax}
       />
-      <Row label="源泉徴収" detail={withholdingDetail} value={-result.withholding} />
-      {result.deductionsTotal > 0 && <Row label="控除" value={-result.deductionsTotal} />}
+      <Row
+        label="源泉徴収"
+        detail={withholdingDetail}
+        value={-result.withholding}
+      />
+      {result.deductionsTotal > 0 && (
+        <Row label="控除" value={-result.deductionsTotal} />
+      )}
       <Row label="振込額" value={result.payout} strong />
     </ul>
   );
 }
 
-const hoursFormat = new Intl.NumberFormat("ja-JP", { maximumFractionDigits: 2 });
+const hoursFormat = new Intl.NumberFormat("ja-JP", {
+  maximumFractionDigits: 2,
+});
 
 /** 日割りした精算幅（日割りの無い見本は null） */
 function proratedRangeText(lines: PayoutLine[]): string | null {
@@ -163,7 +220,8 @@ function proratedRangeText(lines: PayoutLine[]): string | null {
   if (!input?.proration) return null;
   const { lower, upper } = calcSettlement(input).settlement;
   if (lower === null || upper === null) return null;
-  const h = (x: number) => `${Number.isInteger(Math.round(x * 1e6) / 1e4) ? "" : "約"}${hoursFormat.format(x)}`;
+  const h = (x: number) =>
+    `${Number.isInteger(Math.round(x * 1e6) / 1e4) ? "" : "約"}${hoursFormat.format(x)}`;
   return `精算幅も同じ割合で ${h(lower)}〜${h(upper)}時間に縮めて比べる`;
 }
 
@@ -176,20 +234,32 @@ function SettlementCard({ c }: { c: Computed }) {
       <h4 className="font-bold leading-snug">{sample.title}</h4>
       <p className="mt-1 text-sm text-muted-foreground">{sample.point}</p>
 
-      <p className="mt-3 text-xs font-bold text-muted-foreground">技術者への支払</p>
+      <p className="mt-3 text-xs font-bold text-muted-foreground">
+        技術者への支払
+      </p>
       <PayoutRows
         result={result}
         settlementNote={prorated}
         withholdingDetail={
-          result.withholding === 0 ? "システム開発の報酬は、源泉徴収の対象に挙げられていないため、しない" : undefined
+          result.withholding === 0
+            ? "システム開発の報酬は、源泉徴収の対象に挙げられていないため、しない"
+            : undefined
         }
       />
 
       {bill !== null && margin !== null && (
         <>
-          <p className="mt-4 text-xs font-bold text-muted-foreground">会社の側（税抜）</p>
+          <p className="mt-4 text-xs font-bold text-muted-foreground">
+            会社の側（税抜）
+          </p>
           <ul className="divide-y divide-border text-sm">
-            <Row label="元請への請求" detail={sample.billLines?.map((l) => calcModel(l).detail).join("、")} value={bill} />
+            <Row
+              label="元請への請求"
+              detail={sample.billLines
+                ?.map((l) => calcModel(l).detail)
+                .join("、")}
+              value={bill}
+            />
             <Row label="技術者への報酬" value={-result.subtotal} />
             <Row label="粗利" value={margin} strong />
           </ul>
@@ -198,7 +268,9 @@ function SettlementCard({ c }: { c: Computed }) {
 
       {burdens.length > 0 && (
         <>
-          <p className="mt-4 text-xs font-bold text-muted-foreground">発注する側が控除できない消費税（原則課税の会社の場合）</p>
+          <p className="mt-4 text-xs font-bold text-muted-foreground">
+            発注する側が控除できない消費税（原則課税の会社の場合）
+          </p>
           <ul className="divide-y divide-border text-sm">
             {burdens.map((b) => (
               <Row
@@ -219,13 +291,18 @@ function SettlementCard({ c }: { c: Computed }) {
 
 function WithholdingCard({ c }: { c: Computed }) {
   const { sample, result } = c;
-  const formulas = result.withholdingGroups.map((g) => g.formulaText).join("、");
-  const basis = result.tax > 0 ? `元は${BASE_RULE_LABELS[result.withholdingRule]}。` : "";
+  const formulas = result.withholdingGroups
+    .map((g) => g.formulaText)
+    .join("、");
+  const basis =
+    result.tax > 0 ? `元は${BASE_RULE_LABELS[result.withholdingRule]}。` : "";
   return (
     <Card>
       <h4 className="font-bold leading-snug">{sample.title}</h4>
       <p className="mt-1 text-sm text-muted-foreground">{sample.point}</p>
-      <p className="mt-3 text-xs font-bold text-muted-foreground">デザイナーへの支払</p>
+      <p className="mt-3 text-xs font-bold text-muted-foreground">
+        デザイナーへの支払
+      </p>
       <PayoutRows result={result} withholdingDetail={`${basis}${formulas}`} />
       <Warnings result={result} />
     </Card>
@@ -255,13 +332,16 @@ export function ItSettlementExamples() {
 
 function adjustmentText(r: SettlementResult): string {
   const s = r.settlement;
-  if (s.adjustment > 0) return `＋${en(s.adjustment)}（超過単価 ${en(s.excessUnitPrice ?? 0)}）`;
-  if (s.adjustment < 0) return `−${en(-s.adjustment)}（控除単価 ${en(s.shortUnitPrice ?? 0)}）`;
+  if (s.adjustment > 0)
+    return `＋${en(s.adjustment)}（超過単価 ${en(s.excessUnitPrice ?? 0)}）`;
+  if (s.adjustment < 0)
+    return `−${en(-s.adjustment)}（控除単価 ${en(s.shortUnitPrice ?? 0)}）`;
   return "精算なし（幅の中）";
 }
 
 function rangeText(input: SettlementInput): string {
-  if (input.lower === undefined || input.upper === undefined) return SETTLEMENT_MODE_LABELS[input.mode];
+  if (input.lower === undefined || input.upper === undefined)
+    return SETTLEMENT_MODE_LABELS[input.mode];
   return `${num(input.lower)}〜${num(input.upper)}時間（${SETTLEMENT_MODE_LABELS[input.mode]}）`;
 }
 
@@ -281,20 +361,33 @@ export function ItMismatchExample() {
 
   // 請求側も支払側と同じ精算幅だったら（比べるためだけの計算）
   const sameRangeLines: PayoutLine[] = billLines.map((l) =>
-    l.model === "settlement" ? { ...l, input: { ...l.input, lower: payInput.lower, upper: payInput.upper } } : l,
+    l.model === "settlement"
+      ? {
+          ...l,
+          input: { ...l.input, lower: payInput.lower, upper: payInput.upper },
+        }
+      : l,
   );
   const billSame = linesTotal(sameRangeLines);
   const marginSame = billSame - result.subtotal;
 
   const rows: { label: string; bill: string; pay: string }[] = [
-    { label: "月額", bill: en(billInput.monthly ?? 0), pay: en(payInput.monthly ?? 0) },
+    {
+      label: "月額",
+      bill: en(billInput.monthly ?? 0),
+      pay: en(payInput.monthly ?? 0),
+    },
     { label: "精算幅", bill: rangeText(billInput), pay: rangeText(payInput) },
     {
       label: "実働",
       bill: `${num(billSettlement.settlement.countedHours)}時間`,
       pay: `${num(pay.settlement.countedHours)}時間`,
     },
-    { label: "精算", bill: adjustmentText(billSettlement), pay: adjustmentText(pay) },
+    {
+      label: "精算",
+      bill: adjustmentText(billSettlement),
+      pay: adjustmentText(pay),
+    },
     { label: "税抜の額", bill: en(bill), pay: en(result.subtotal) },
   ];
 
@@ -311,13 +404,22 @@ export function ItMismatchExample() {
             <table className="w-full min-w-[20rem] border-collapse text-sm">
               <thead>
                 <tr>
-                  <th scope="col" className="border border-border bg-muted px-2 py-2 text-left">
+                  <th
+                    scope="col"
+                    className="border border-border bg-muted px-2 py-2 text-left"
+                  >
                     <span className="sr-only">項目</span>
                   </th>
-                  <th scope="col" className="border border-border bg-muted px-2 py-2 text-left">
+                  <th
+                    scope="col"
+                    className="border border-border bg-muted px-2 py-2 text-left"
+                  >
                     元請への請求
                   </th>
-                  <th scope="col" className="border border-border bg-muted px-2 py-2 text-left">
+                  <th
+                    scope="col"
+                    className="border border-border bg-muted px-2 py-2 text-left"
+                  >
                     技術者への支払
                   </th>
                 </tr>
@@ -325,11 +427,18 @@ export function ItMismatchExample() {
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.label}>
-                    <th scope="row" className="whitespace-nowrap border border-border px-2 py-2 text-left font-bold">
+                    <th
+                      scope="row"
+                      className="whitespace-nowrap border border-border px-2 py-2 text-left font-bold"
+                    >
                       {r.label}
                     </th>
-                    <td className="num border border-border px-2 py-2">{r.bill}</td>
-                    <td className="num border border-border px-2 py-2">{r.pay}</td>
+                    <td className="num border border-border px-2 py-2">
+                      {r.bill}
+                    </td>
+                    <td className="num border border-border px-2 py-2">
+                      {r.pay}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -362,7 +471,8 @@ export function ItWithholdingExamples() {
         計算の例：デザイン料の源泉徴収
       </h3>
       <p className="mt-2 text-sm">
-        {IT.sampleCompany}が、個人のデザイナーに払う例です（人・金額は架空）。請求書で消費税を分けて書いてある前提です。
+        {IT.sampleCompany}
+        が、個人のデザイナーに払う例です（人・金額は架空）。請求書で消費税を分けて書いてある前提です。
       </p>
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         {WITHHOLDING_SAMPLES.map((c) => (

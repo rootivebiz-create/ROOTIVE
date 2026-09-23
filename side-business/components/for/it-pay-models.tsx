@@ -4,25 +4,50 @@
  */
 import { Card } from "@/components/ui";
 import { calcSettlement, type SettlementInput } from "@/lib/engine/payModels";
-import { buildPayout, type Payee, type PayoutLine } from "@/lib/engine/statement";
+import {
+  buildPayout,
+  type Payee,
+  type PayoutLine,
+} from "@/lib/engine/statement";
 import { en } from "@/lib/engine/types";
 import { IT } from "./it-example";
 
 /** 例の支払先（架空・インボイス登録済みの個人。消費税は請求書で分けて書く） */
-const PAYEE: Payee = { name: "例（架空）", invoiceRegistered: true, isCorporation: false, paysTaxOnTop: true };
+const PAYEE: Payee = {
+  name: "例（架空）",
+  invoiceRegistered: true,
+  isCorporation: false,
+  paysTaxOnTop: true,
+};
 
 /** 精算幅の例（上下割と中間割で同じ条件を比べる） */
-const RANGE_BASE = { monthly: 600_000, lower: 140, upper: 180, timeUnitMinutes: 15, unitPriceStep: 10 } as const;
+const RANGE_BASE = {
+  monthly: 600_000,
+  lower: 140,
+  upper: 180,
+  timeUnitMinutes: 15,
+  unitPriceStep: 10,
+} as const;
 const RANGE_OVER_HOURS = 186.5;
 
 function settlementExample(input: SettlementInput) {
   const r = calcSettlement(input);
-  return { amount: r.amount, detail: r.detail, excess: r.settlement.excessUnitPrice, short: r.settlement.shortUnitPrice };
+  return {
+    amount: r.amount,
+    detail: r.detail,
+    excess: r.settlement.excessUnitPrice,
+    short: r.settlement.shortUnitPrice,
+  };
 }
 
 /** 1人・1回の支払を計算して、源泉の式と一緒に返す */
 function payoutExample(lines: PayoutLine[]) {
-  const r = buildPayout({ payee: PAYEE, lines, serviceDate: IT.serviceDate, orderSideTaxMethod: IT.orderSideTaxMethod });
+  const r = buildPayout({
+    payee: PAYEE,
+    lines,
+    serviceDate: IT.serviceDate,
+    orderSideTaxMethod: IT.orderSideTaxMethod,
+  });
   return {
     subtotal: r.subtotal,
     withholding: r.withholding,
@@ -39,9 +64,21 @@ type Model = {
 };
 
 function buildModels(): Model[] {
-  const updown = settlementExample({ mode: "updown", ...RANGE_BASE, actualHours: RANGE_OVER_HOURS });
-  const middle = settlementExample({ mode: "middle", ...RANGE_BASE, actualHours: RANGE_OVER_HOURS });
-  const fixed = settlementExample({ mode: "fixed", monthly: 900_000, actualHours: 160 });
+  const updown = settlementExample({
+    mode: "updown",
+    ...RANGE_BASE,
+    actualHours: RANGE_OVER_HOURS,
+  });
+  const middle = settlementExample({
+    mode: "middle",
+    ...RANGE_BASE,
+    actualHours: RANGE_OVER_HOURS,
+  });
+  const fixed = settlementExample({
+    mode: "fixed",
+    monthly: 900_000,
+    actualHours: 160,
+  });
   const prorated = settlementExample({
     mode: "fixed",
     monthly: 900_000,
@@ -49,13 +86,33 @@ function buildModels(): Model[] {
     proration: { workedDays: 10, businessDays: 21 },
   });
   const hourlyHours = 120.4;
-  const hourly = settlementExample({ mode: "hourly", hourlyRate: 4_500, actualHours: hourlyHours, timeUnitMinutes: 15 });
+  const hourly = settlementExample({
+    mode: "hourly",
+    hourlyRate: 4_500,
+    actualHours: hourlyHours,
+    timeUnitMinutes: 15,
+  });
   const deliverable = payoutExample([
-    { label: "LP デザイン", model: "fixed", input: { amount: 200_000, text: "一式" }, withholding: "ko1" },
-    { label: "コーディング", model: "fixed", input: { amount: 150_000, text: "一式" }, withholding: "none" },
+    {
+      label: "LP デザイン",
+      model: "fixed",
+      input: { amount: 200_000, text: "一式" },
+      withholding: "ko1",
+    },
+    {
+      label: "コーディング",
+      model: "fixed",
+      input: { amount: 150_000, text: "一式" },
+      withholding: "none",
+    },
   ]);
   const lecture = payoutExample([
-    { label: "社内研修の講師", model: "unit", input: { qty: 2, rate: 40_000, unitLabel: "回" }, withholding: "ko1" },
+    {
+      label: "社内研修の講師",
+      model: "unit",
+      input: { qty: 2, rate: 40_000, unitLabel: "回" },
+      withholding: "ko1",
+    },
   ]);
   const rangeText = `月額 ${en(RANGE_BASE.monthly)}・精算幅 ${RANGE_BASE.lower}〜${RANGE_BASE.upper}時間・実働 ${RANGE_OVER_HOURS}時間なら`;
 
@@ -82,13 +139,19 @@ function buildModels(): Model[] {
       name: "月額固定（精算なし）",
       how: "実働の時間にかかわらず月額。月の途中で入る・抜けるときだけ営業日で日割り",
       where: "PM・コンサル・リードなど",
-      example: [`例：月額 ${en(fixed.amount)}（実働が何時間でも同じ）`, `→ 月の途中から10営業日だけなら ${prorated.detail}`],
+      example: [
+        `例：月額 ${en(fixed.amount)}（実働が何時間でも同じ）`,
+        `→ 月の途中から10営業日だけなら ${prorated.detail}`,
+      ],
     },
     {
       name: "時間単価",
       how: "時間単価 × 実働（15分・30分単位などで丸める）",
       where: "副業・短時間の稼働など",
-      example: [`例：実働 ${hourlyHours}時間を15分単位で切り捨てて`, `→ ${hourly.detail}`],
+      example: [
+        `例：実働 ${hourlyHours}時間を15分単位で切り捨てて`,
+        `→ ${hourly.detail}`,
+      ],
     },
     {
       name: "成果物（デザイン料・制作一式）",

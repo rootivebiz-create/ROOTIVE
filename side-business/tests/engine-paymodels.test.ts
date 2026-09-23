@@ -366,3 +366,198 @@ describe("明細（buildPayout）の順序と注意", () => {
     expect(r.warnings.map((w) => w.code)).toContain("negative_payout");
   });
 });
+
+describe("境目の追加（レビューで足した）", () => {
+  const range = { mode: "updown" as const, lower: 140, upper: 180, timeUnitMinutes: 15 as const, unitPriceStep: 10 as const };
+
+  it("精算幅：丸めたあとで上限ちょうど（180.2h → 180h）なら精算なし", () => {
+    const r = calcSettlement({ ...range, monthly: 700_000, actualHours: 180.2 });
+    expect(r.settlement.countedHours).toBe(180);
+    expect(r.amount).toBe(700_000);
+  });
+
+  it("精算幅：139.99h は15分単位で139.75h → 0.25h × 4,280 = 1,070 を控除", () => {
+    const r = calcSettlement({ ...range, monthly: 600_000, actualHours: 139.99 });
+    expect(r.settlement.countedHours).toBe(139.75);
+    expect(r.settlement.adjustment).toBe(-1_070);
+    expect(r.amount).toBe(598_930);
+  });
+
+  it("日割りで縮めた上限（102.857h）を少し超えた分だけ精算（103h → 3,610 × 0.142857h = 515）", () => {
+    const r = calcSettlement({ ...range, monthly: 650_000, actualHours: 103, proration: { workedDays: 12, businessDays: 21 } });
+    expect(r.settlement.excessUnitPrice).toBe(3_610);
+    expect(r.settlement.adjustment).toBe(515);
+    expect(r.amount).toBe(371_428 + 515);
+  });
+
+  it("日割りの営業日がおかしければ注意し、日割りしない", () => {
+    const r = calcSettlement({ ...range, monthly: 650_000, actualHours: 160, proration: { workedDays: 25, businessDays: 21 } });
+    expect(r.warnings.map((w) => w.code)).toEqual(["invalid_input"]);
+    expect(r.amount).toBe(650_000);
+  });
+
+  it("時間単価：60分単位なら端数の時間を切り捨て", () => {
+    expect(calcSettlement({ mode: "hourly", hourlyRate: 3_500, actualHours: 100.9, timeUnitMinutes: 60 }).amount).toBe(350_000);
+  });
+
+  it("売上 × 率：税込 110,001 を税抜に直すと 100,000（1円未満切り捨て）", () => {
+    const input = { categories: [{ label: "技術", sales: 110_001, rate: 0.5 }], salesInputIncludesTax: true, rateAppliesTo: "excl" as const };
+    expect(salesForRate(110_001, input)).toBe(100_000);
+    expect(calcCommission(input).amount).toBe(50_000);
+  });
+
+  it("全額スライド：800,000 は50%、800,001 は60%", () => {
+    const tiers = [
+      { upTo: 500_000, rate: 0.4 },
+      { upTo: 800_000, rate: 0.5 },
+      { upTo: null, rate: 0.6 },
+    ];
+    expect(calcTiered({ sales: 800_000, tiers, mode: "slide" }).amount).toBe(400_000);
+    expect(calcTiered({ sales: 800_001, tiers, mode: "slide" }).amount).toBe(480_000);
+    expect(calcTiered({ sales: 800_001, tiers, mode: "progressive" }).amount).toBe(350_000);
+  });
+
+  it("最低保証：歩合と保証が同じなら歩合を採用。注意はいつも出す", () => {
+    const r = calcGuarantee({ commission: { categories: [{ label: "技術", sales: 256_000, rate: 0.5 }] }, dailyGuarantee: 8_000, days: 16 });
+    expect(r.amount).toBe(128_000);
+    expect(r.detail).toContain("歩合を採用");
+    expect(r.warnings.map((w) => w.code)).toEqual(["labor_risk_guarantee"]);
+  });
+
+  it("しきい値：基準ちょうどは加算なし", () => {
+    expect(calcThreshold({ counts: [10, 10], base: 10, unitPrice: 300 }).amount).toBe(0);
+    expect(calcThreshold({ counts: [11, 9], base: 10, unitPrice: 300 }).amount).toBe(300);
+  });
+
+  it("面貸し：精算がマイナスなら注意", () => {
+    const r = calcChairRental({ salesCollected: 100_000, rent: { mode: "fixed", amount: 120_000 } });
+    expect(r.amount).toBe(-20_000);
+    expect(r.warnings.map((w) => w.code)).toEqual(["invalid_input"]);
+  });
+});
+
+describe("明細の追加（レビューで足した）", () => {
+  const payee = { name: "テスト（架空）", invoiceRegistered: true, isCorporation: false, paysTaxOnTop: true };
+  const base: PayoutInput = {
+    payee,
+    lines: [{ label: "原稿料", model: "fixed", input: { amount: 100_000 }, withholding: "ko1" }],
+    serviceDate: "2026-10-31",
+    orderSideTaxMethod: "general",
+  };
+
+  it("契約で決めた差し引き（contractFee）の行も源泉の元を減らさない", () => {
+    const r = buildPayout({
+      ...base,
+      lines: [
+        ...base.lines,
+        { label: "材料費", model: "contractFee", input: { mode: "fixed", amount: 10_000, agreedInWriting: true }, withholding: "ko1" },
+      ],
+    });
+    expect(r.subtotal).toBe(90_000);
+    expect(r.tax).toBe(9_000);
+    expect(r.withholdingBase).toBe(100_000);
+    expect(r.withholding).toBe(10_210);
+    expect(r.payout).toBe(90_000 + 9_000 - 10_210);
+    expect(r.lines[1].withholding).toBe("none");
+    expect(r.notes.join("")).toContain("源泉の元から引きません");
+    expect(r.warnings).toEqual([]);
+  });
+
+  it("控除（相殺）は罰金でも源泉の元を減らさない", () => {
+    const r = buildPayout({ ...base, deductions: [{ label: "罰金", amount: 3_000, agreedInWriting: false, kind: "penalty" }] });
+    expect(r.withholdingBase).toBe(100_000);
+    expect(r.withholding).toBe(10_210);
+    expect(r.payout).toBe(100_000 + 10_000 - 10_210 - 3_000);
+  });
+
+  it("一緒に払う交通費で1回の支払が100万円を超えると、超えた部分は20.42%", () => {
+    const r = buildPayout({
+      ...base,
+      lines: [{ label: "撮影料", model: "fixed", input: { amount: 1_000_000 }, withholding: "ko1" }],
+      reimbursements: [{ label: "交通費", amount: 10_000, paidWithFee: true }],
+    });
+    expect(r.withholdingBase).toBe(1_010_000);
+    expect(r.withholding).toBe(102_100 + 2_042);
+  });
+
+  it("源泉の無い行だけなら、一緒に払う交通費も源泉の元に入らない", () => {
+    const r = buildPayout({
+      ...base,
+      lines: [{ label: "配送", model: "fixed", input: { amount: 300_000 } }],
+      reimbursements: [{ label: "高速代", amount: 2_000, paidWithFee: true }],
+    });
+    expect(r.withholdingGroups).toEqual([]);
+    expect(r.withholding).toBe(0);
+    expect(r.payout).toBe(300_000 + 30_000 + 2_000);
+  });
+
+  it("面貸しの行に区分を付けても、消費税・源泉には入れない", () => {
+    const r = buildPayout({
+      ...base,
+      lines: [{ label: "面貸し", model: "chairRental", input: { salesCollected: 100_000, rent: { mode: "rate", rate: 0.4 } }, withholding: "ko1" }],
+    });
+    expect([r.subtotal, r.tax, r.withholding, r.settlementsTotal, r.payout]).toEqual([0, 0, 0, 60_000, 60_000]);
+  });
+
+  it("区分ごとに割り当てた消費税の合計は、実際の消費税を超えない（四捨五入のとき）", () => {
+    const r = buildPayout({
+      ...base,
+      lines: [
+        { label: "a", model: "fixed", input: { amount: 15 }, withholding: "ko1" },
+        { label: "b", model: "fixed", input: { amount: 15 }, withholding: "ko2_shigyo" },
+      ],
+      taxRounding: "round",
+      taxShownSeparately: false,
+    });
+    expect(r.tax).toBe(3);
+    expect(r.withholdingGroups.reduce((a, g) => a + g.taxIncluded, 0)).toBe(3);
+  });
+
+  it("消費税を上乗せしないときの源泉の元は「支払う報酬の額」（税抜と書かない）", () => {
+    const r = buildPayout({ ...base, payee: { ...payee, invoiceRegistered: false, paysTaxOnTop: false } });
+    expect(r.withholdingRule).toBe("no_tax_added");
+    expect(r.withholdingBase).toBe(100_000);
+    expect(r.explanation.join("")).not.toContain("税抜の額（請求書等");
+  });
+
+  it("登録済みの方に消費税を上乗せしないと注意（caution）", () => {
+    const r = buildPayout({ ...base, payee: { ...payee, paysTaxOnTop: false } });
+    expect(r.warnings.map((w) => [w.code, w.level])).toEqual([["tax_not_added", "caution"]]);
+  });
+
+  it("免税の方が消費税相当額を上乗せしても、分けて書いていなければ税込が元", () => {
+    const r = buildPayout({ ...base, payee: { ...payee, invoiceRegistered: false }, taxShownSeparately: false });
+    expect(r.withholdingRule).toBe("incl_tax");
+    expect(r.withholdingBase).toBe(110_000);
+    expect(r.withholding).toBe(11_231);
+  });
+
+  it("マイナスの控除・立替は注意し、計算に入れない", () => {
+    const r = buildPayout({
+      ...base,
+      deductions: [{ label: "調整", amount: -5_000, agreedInWriting: true }],
+      reimbursements: [{ label: "交通費", amount: -1_000, paidWithFee: true }],
+    });
+    expect(r.warnings.map((w) => w.code)).toEqual(["invalid_input", "invalid_input"]);
+    expect(r.deductionsTotal).toBe(0);
+    expect(r.reimbursementsPaid).toBe(0);
+    expect(r.payout).toBe(100_000 + 10_000 - 10_210);
+  });
+
+  it("支払期日：月単位の締め（10/31締め）は12/30まで。12/31は60日超え", () => {
+    const ok = buildPayout({ ...base, paymentTerms: { receivedOn: "2026-10-31", payOn: "2026-12-30", monthlyClosing: true } });
+    expect(ok.warnings).toEqual([]);
+    const over = buildPayout({ ...base, paymentTerms: { receivedOn: "2026-10-31", payOn: "2026-12-31", monthlyClosing: true } });
+    expect(over.warnings.map((w) => w.code)).toEqual(["over_60_days"]);
+  });
+
+  it("免税の方への負担は役務の提供を受けた日で決まる（支払日ではない）", () => {
+    const exempt = { ...payee, invoiceRegistered: false, paysTaxOnTop: true };
+    const sept = buildPayout({ ...base, payee: exempt, serviceDate: "2026-09-30", paymentTerms: { receivedOn: "2026-09-30", payOn: "2026-10-30" } });
+    expect(sept.deductibleRate).toBe(0.8);
+    expect(sept.invoiceBurden).toBe(2_000); // 110,000 × 10/110 × 20%
+    const oct = buildPayout({ ...base, payee: exempt, serviceDate: "2026-10-01" });
+    expect(oct.deductibleRate).toBe(0.7);
+    expect(oct.invoiceBurden).toBe(3_000);
+  });
+});

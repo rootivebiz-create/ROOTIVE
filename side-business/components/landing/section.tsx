@@ -7,18 +7,11 @@ export const cx = (...c: (string | false | null | undefined)[]) => c.filter(Bool
 type Variant = NonNullable<Parameters<typeof buttonClass>[0]>;
 
 /**
- * globals.css の `a { color: var(--link) }` はレイヤーの外にあり、Tailwind の文字色（レイヤーの中）より強い。
- * リンクをボタンの見た目にするときは、文字色だけ !important で上書きする。
+ * リンクをボタンの見た目にするクラス。globals.css の `a { color: var(--link) }` は `@layer base` の中にあり、
+ * Tailwind の文字色で上書きできるので、buttonClass をそのまま使う（業種別のページもここから読む）。
  */
-const LINK_TEXT: Record<Variant, string> = {
-  primary: "text-primary-foreground!",
-  accent: "text-accent-foreground!",
-  secondary: "text-foreground!",
-  ghost: "text-foreground!",
-};
-
 export function ctaClass(variant: Variant, className?: string) {
-  return buttonClass(variant, cx(LINK_TEXT[variant], className));
+  return buttonClass(variant, className);
 }
 
 const yenFormat = new Intl.NumberFormat("ja-JP");
@@ -38,6 +31,17 @@ export function compactYen(value: number): string {
 export function rangeYen(min: number, max: number): string {
   if (min === max) return compactYen(min);
   return `${compactYen(min).replace(/円$/, "")}〜${compactYen(max)}`;
+}
+
+/** インボイスの登録番号。数字だけで入っていたら頭に T を付ける（T1234567890123） */
+export function regNoText(value: string): string {
+  const v = value.replace(/\s+/g, "");
+  return /^\d{13}$/.test(v) ? `T${v}` : v;
+}
+
+/** 別のタブで開くリンクに添える、読み上げ用のひとこと */
+export function NewTabNote() {
+  return <span className="sr-only">（新しいタブで開きます）</span>;
 }
 
 /** 区切り（見出し ＋ ひとこと ＋ 中身） */

@@ -201,3 +201,41 @@ describe("スクール・講師", () => {
     expect(r.lines[0].withholdingNeedsReview).toBe(true);
   });
 });
+
+describe("見本の数字の形（レビューで足した）", () => {
+  it("どの見本も金額はすべて整数の円。説明に「四捨五入」「全業種」は出ない", () => {
+    for (const preset of PRESETS) {
+      for (const s of preset.samples) {
+        for (const date of [s.input.serviceDate, ...preset.compareServiceDates]) {
+          const r = buildPayout(withServiceDate(s.input, date));
+          for (const v of [r.subtotal, r.tax, r.withholdingBase, r.withholding, r.deductionsTotal, r.payout, r.invoiceBurden, r.settlementsTotal]) {
+            expect(Number.isInteger(v)).toBe(true);
+          }
+          for (const g of r.withholdingGroups) expect(g.tax).toBe(g.tax | 0);
+          const text = [...r.explanation, ...r.warnings.map((w) => w.message), ...r.notes].join("");
+          expect(text).not.toContain("四捨五入");
+          expect(text).not.toContain("全業種");
+        }
+      }
+    }
+  });
+
+  it("注意の文は労働者性を判定しない・免税の方への支払を下げるよう勧めない", () => {
+    for (const preset of PRESETS) {
+      for (const s of preset.samples) {
+        const r = buildPayout(s.input);
+        for (const w of r.warnings) {
+          expect(w.message).not.toMatch(/適法です|違法です|労働者にあたります|偽装請負です/);
+          if (w.code === "exempt_no_tax_equivalent") expect(w.message).toContain("問題になりえます");
+          if (w.code.startsWith("labor_risk")) expect(w.message).toContain("判断は専門家へ");
+        }
+      }
+    }
+  });
+
+  it("源泉の元の決め方：上乗せの無い見本は「支払う報酬の額」、分けて書いた見本は税抜", () => {
+    expect(run("school", "school-a").withholdingRule).toBe("no_tax_added");
+    expect(run("school", "school-b").withholdingRule).toBe("excl_tax_separated");
+    expect(run("publishing", "publishing-b").withholdingRule).toBe("excl_tax_separated");
+  });
+});
