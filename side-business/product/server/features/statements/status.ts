@@ -109,7 +109,8 @@ export function statementStatus(input: StatusInput, now: Date, deemedAfterDays: 
   const viewedCurrent = !!input.viewedAt && input.viewedAt.getTime() >= input.updatedAt.getTime();
 
   // みなし確認の 3 つの条件（① 日数 ② 質問なし ③ 取引条件の条項）
-  const daysSinceSent = sentAt && sentCurrent ? Math.floor((now.getTime() - sentAt.getTime()) / DAY_MS) : null;
+  // 時計のわずかなずれで送った日時が「今」より後でも、マイナスの日数にしない
+  const daysSinceSent = sentAt && sentCurrent ? Math.max(0, Math.floor((now.getTime() - sentAt.getTime()) / DAY_MS)) : null;
   // 送ったあとに連絡があれば、解決していても みなさない（注記の「ご連絡がない場合は」に当たらないため。確認を押してもらう）
   const contacted = openQuestions > 0 || (!!sentAt && input.driverMessages.some((m) => m.createdAt.getTime() >= sentAt.getTime()));
   const deemedCheck: DeemedCheck = {

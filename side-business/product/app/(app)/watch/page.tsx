@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Card, buttonClass } from "@/components/ui";
+import { jpDate, jpMonth } from "@/lib/format";
 import { EmptyState, Notice, PageHeader } from "~/components/page";
 import { IssueCard, SEVERITY_LABEL } from "~/components/watch/issue-card";
 import { getDb } from "~/db/client";
@@ -103,7 +104,10 @@ export default async function WatchPage({ searchParams }: { searchParams: Promis
                 <h2 id={`watch-${sev}`} className={`text-lg font-bold ${sev === "red" ? "text-danger" : ""}`}>
                   {closed && sev === "red" ? "赤：記録から見えること" : SECTION[sev].heading}（{groups[sev].length} 件）
                 </h2>
-                <p className="text-sm text-muted-foreground">{closed ? (SECTION[sev].closedLead ?? SECTION[sev].lead) : SECTION[sev].lead}</p>
+                <p className="text-sm text-muted-foreground">
+                  {closed ? (SECTION[sev].closedLead ?? SECTION[sev].lead) : SECTION[sev].lead}
+                  {groups[sev].length > 1 && "同じ重さの中は、影響額の大きい順です。"}
+                </p>
               </div>
               <ul className="space-y-3">
                 {groups[sev].map((i) => {
@@ -191,6 +195,7 @@ function RulesHelp() {
       <div className="space-y-3 border-t border-border p-4 text-sm">
         <p className="text-muted-foreground">
           {WATCH_RULES_AS_OF}時点の法令・公的な資料をもとにしています。記録にあること（日付・金額・名前・設定）だけを見て、「〜のおそれがあります」「確認をおすすめします」までをお知らせします。
+          影響額は、その指摘に関わる今月の金額（支払額・差し引いた額・下がった分など）です。出せないものは「—」にしています。同じお金が複数の指摘に数えられることがあるので、足し合わせないでください。
         </p>
         <ul className="space-y-2">
           {RULES.map((r) => (
@@ -200,6 +205,10 @@ function RulesHelp() {
                 <span className="ml-2 text-xs font-normal text-muted-foreground">{r.doc.severities.map((x) => SEVERITY_LABEL[x]).join("・")}</span>
               </p>
               <p className="mt-1">{r.doc.what}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {jpMonth(r.doc.asOf)}時点の情報
+                {r.doc.effectiveFrom && `・${jpDate(r.doc.effectiveFrom)}以降の月で確かめます`}
+              </p>
               {r.doc.basis && (
                 <p className="mt-1 text-xs text-muted-foreground">
                   根拠：{r.doc.basis}

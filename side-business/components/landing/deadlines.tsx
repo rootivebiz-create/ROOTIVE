@@ -85,7 +85,7 @@ export function Deadlines() {
             </ul>
           </div>
           <p className="text-sm text-muted-foreground">
-            この負担が出るのは、消費税を原則課税で計算している会社です。簡易課税や2割特例の会社には出ません。
+            この負担が出るのは、消費税を原則課税で計算している会社です。簡易課税や2割特例の会社には出ません。製品では、見張り番と利益の画面でこの負担を円で出します。
           </p>
           <Link href="/tools/invoice-cost" className="inline-flex min-h-11 items-center gap-1 font-bold">
             御社の負担を計算する（無料）
@@ -107,6 +107,9 @@ export function Deadlines() {
             フリーランス法（2024年11月1日施行）では、従業員を使っていない個人の業務委託ドライバーなどに仕事を頼むとき、単価や支払期日などの取引条件を、すぐに書面かメールなどで示す必要があります。
           </p>
           <p>支払期日は、役務の提供を受けた日から60日以内の、できるだけ短い期間で決めます。</p>
+          <p className="text-sm text-muted-foreground">
+            製品の見張り番は、明示した記録があるか・支払期日の書き方と60日を、締める前に記録から確かめます（判定はしません）。
+          </p>
         </DeadlineCard>
 
         <DeadlineCard
@@ -123,12 +126,12 @@ export function Deadlines() {
           </p>
           <p>あわせて、業務記録は1年、事故の記録は3年の保存が求められています。</p>
           <p className="text-sm text-muted-foreground">
-            記録の仕組みはオプションで作れます。選任や届出そのものは、御社で行っていただくものです。
+            点呼などの記録は、製品の標準には入っていません。ご相談のうえ、オプションで御社向けに作ります。選任や届出そのものは、御社で行っていただくものです。
           </p>
         </DeadlineCard>
       </ol>
       <NextStep alt={{ href: "/tools/torihiki-joken", label: "取引条件の明示書を作ってみる（無料）" }}>
-        期限に向けて、支払明細や取引条件の出し方を整えたいときは、ご相談ください。
+        期限に向けて、支払明細や取引条件の記録を整えたいときは、ご相談ください。
       </NextStep>
     </Section>
   );

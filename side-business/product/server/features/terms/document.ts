@@ -22,6 +22,7 @@ export const TERMS_SOURCES = {
   flGuide: "https://www.jftc.go.jp/file/fl_jftcmhlwguidelines.pdf",
   flKankoku: "https://www.jftc.go.jp/FL/FLkankoku/index.html",
   ntaQa: "https://www.nta.go.jp/taxes/shiraberu/zeimokubetsu/shohi/keigenzeiritsu/pdf/qa/113-3.pdf",
+  toritekiLeaflet: "https://www.jftc.go.jp/file/toriteki_leaflet.pdf",
 } as const;
 
 /** 控除：消費税の扱い（台帳の控除のルールから写す。古い写しには無い） */

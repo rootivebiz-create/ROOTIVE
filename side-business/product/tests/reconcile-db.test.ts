@@ -495,8 +495,9 @@ describe("元請の支払通知との突合（デモの A物流・2026年10月�
     await setItemStatus(db, tenantId, userId, { itemId: takuhai.id, status: "resolved", note: "11月分に 430個分を上乗せ", recoveredAmount: 81700 });
     // 夜間便：理由つきで了承（取り戻せた額は持たない）
     await setItemStatus(db, tenantId, userId, { itemId: yakan.id, status: "accepted", note: "単価は11月から見直しと合意", recoveredAmount: 10000 });
-    // 待機料（多い可能性）は取り戻す額を持たない
-    await setItemStatus(db, tenantId, userId, { itemId: taiki.id, status: "resolved", note: null, recoveredAmount: 3000 });
+    // 待機料（多い可能性）は取り戻す額を持たない。「解決」には説明のメモが要る
+    await expect(setItemStatus(db, tenantId, userId, { itemId: taiki.id, status: "resolved", note: null, recoveredAmount: 3000 })).rejects.toThrow("メモ");
+    await setItemStatus(db, tenantId, userId, { itemId: taiki.id, status: "resolved", note: "請求どおりの待機料と確認", recoveredAmount: 3000 });
     let after = await items(db, tenantId, noticeId);
     const t = after.find((r) => r.id === takuhai.id)!;
     expect(t).toMatchObject({ status: "resolved", recoveredAmount: 81700, note: "11月分に 430個分を上乗せ" });

@@ -21,6 +21,7 @@ const lineKeySchema = z
 
 function refresh(id?: string) {
   revalidatePath("/statements");
+  revalidatePath("/statements/inbox");
   if (id) revalidatePath(`/statements/${id}`);
   revalidatePath("/");
 }

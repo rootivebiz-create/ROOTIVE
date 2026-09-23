@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { Button, Field } from "@/components/ui";
+import { Button, Field, NumberInput } from "@/components/ui";
 import { yenText } from "@/lib/format";
 import { closeMonthAction, reopenMonthAction, type CloseState, type ReopenState } from "~/app/(app)/close/actions";
 
@@ -14,9 +14,24 @@ function ErrorBox({ error }: { error?: string }) {
   );
 }
 
+/** 締めにかかった時間（任意）。導入の前と後で比べるのに使う */
+function MinutesField({ defaultValue, error }: { defaultValue?: number | null; error?: string }) {
+  return (
+    <Field
+      label="この月の締めにかかった時間（分・任意）"
+      hint={error ?? "取り込みから締めるまで、だいたい何分かかりましたか。導入の前と後で比べるのに使います。空のままでもかまいません。"}
+    >
+      <NumberInput name="minutesSpent" defaultValue={defaultValue ?? ""} inputMode="numeric" placeholder="例：90" className="max-w-40" />
+    </Field>
+  );
+}
+
+type RedIssue = { key: string; title: string; subjectLabel?: string | null };
+
 /**
  * 「締める」：押すと、締めたら何が起きるかを見せてから確定する（2 段階）。
  * 止める理由があるときは押せない（サーバーでも同じ確認をする）。
+ * 見張り番の赤（未確認）だけが残っているときは、オーナーだけが理由を書いて締められる。
  */
 export function CloseMonthForm({
   month,
@@ -26,6 +41,11 @@ export function CloseMonthForm({
   changes,
   transferBatches,
   blockers,
+  isOwner = false,
+  overridable = false,
+  redIssues = [],
+  overrideMin = 10,
+  minutesDefault = null,
 }: {
   month: string;
   monthLabel: string;
@@ -36,11 +56,23 @@ export function CloseMonthForm({
   /** この月にすでに作った振込データの数 */
   transferBatches: number;
   blockers: string[];
+  /** 締める人がオーナーか */
+  isOwner?: boolean;
+  /** 止めている理由が見張り番の赤（未確認）だけか */
+  overridable?: boolean;
+  /** 残っている赤い指摘（オーナーが理由を書くときに見せる） */
+  redIssues?: RedIssue[];
+  overrideMin?: number;
+  /** 前に締めたときに入れた分数（締め直すときの初期値） */
+  minutesDefault?: number | null;
 }) {
   const [state, action, pending] = useActionState<CloseState, FormData>(closeMonthAction, undefined);
   const [asking, setAsking] = useState(false);
+  const [reason, setReason] = useState("");
+  const ownerOverride = blockers.length > 0 && overridable && isOwner;
+  const fe = state && !state.ok ? state.fieldErrors ?? {} : {};
 
-  if (blockers.length) {
+  if (blockers.length && !ownerOverride) {
     return (
       <div className="space-y-3">
         <p className="font-bold">まだ締められません</p>
@@ -49,6 +81,11 @@ export function CloseMonthForm({
             <li key={b}>{b}</li>
           ))}
         </ul>
+        {overridable && (
+          <p className="text-sm text-muted-foreground">
+            直せない事情があるときは、オーナーが理由を書いて締めることもできます（理由は操作の記録に残ります）。オーナーに相談してください。
+          </p>
+        )}
         <Button disabled className="w-full sm:w-auto">
           {monthLabel}を締める
         </Button>
@@ -59,14 +96,23 @@ export function CloseMonthForm({
   if (!asking) {
     return (
       <div className="space-y-3">
+        {ownerOverride && (
+          <div className="space-y-2 rounded-lg border border-danger/40 bg-danger/10 p-3 text-sm">
+            <p className="font-bold text-danger">見張り番の赤い指摘が {redIssues.length} 件残っています</p>
+            <p>
+              ふだんは、直すか、内容を確かめて「確認済み」にしてから締めます。直せない事情があるときは、オーナーだけが理由を書いて、このまま締められます（理由と指摘は操作の記録に残ります）。
+            </p>
+          </div>
+        )}
         <ErrorBox error={state && !state.ok ? state.error : undefined} />
         <Button onClick={() => setAsking(true)} className="w-full sm:w-auto">
-          {monthLabel}を締める…
+          {ownerOverride ? `赤い指摘が残ったまま${monthLabel}を締める…` : `${monthLabel}を締める…`}
         </Button>
       </div>
     );
   }
 
+  const short = ownerOverride && reason.trim().length < overrideMin;
   return (
     <form action={action} className="space-y-3 rounded-lg border-2 border-foreground p-4">
       <input type="hidden" name="month" value={month} />
@@ -85,10 +131,42 @@ export function CloseMonthForm({
         <li>実際に振り込んだ日の記録と、ドライバーの「確認しました」は、締めたあとでも残せます。</li>
         <li>締めを外せるのはオーナーだけです（理由を操作の記録に残します）。</li>
       </ul>
+
+      {ownerOverride && (
+        <div className="space-y-2">
+          <p className="text-sm font-bold text-danger">残っている赤い指摘</p>
+          <ul className="list-disc space-y-1 pl-5 text-sm text-danger">
+            {redIssues.map((i) => (
+              <li key={i.key}>
+                {i.title}
+                {i.subjectLabel ? `（${i.subjectLabel}）` : ""}
+              </li>
+            ))}
+          </ul>
+          <Field
+            label={`赤い指摘が残ったまま締める理由（${overrideMin} 文字以上・操作の記録に残ります）`}
+            hint={fe.overrideReason ?? `いま ${reason.trim().length} 文字`}
+          >
+            <textarea
+              name="overrideReason"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={3}
+              maxLength={500}
+              required
+              placeholder="例：取引条件の書面は 11/10 に渡す予定。支払日に間に合わせるため先に締める"
+              className="block w-full rounded-lg border border-border bg-card p-3 text-base text-foreground focus:border-foreground"
+            />
+          </Field>
+        </div>
+      )}
+
+      <MinutesField defaultValue={minutesDefault} error={fe.minutesSpent} />
+
       <ErrorBox error={state && !state.ok ? state.error : undefined} />
       <div className="flex flex-wrap gap-2">
-        <Button type="submit" disabled={pending}>
-          {pending ? "締めています…" : "締める"}
+        <Button type="submit" disabled={pending || short}>
+          {pending ? "締めています…" : ownerOverride ? "理由を残して締める" : "締める"}
         </Button>
         <Button variant="secondary" onClick={() => setAsking(false)} disabled={pending}>
           やめる

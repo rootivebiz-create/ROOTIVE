@@ -8,6 +8,7 @@ import { getDb } from "~/db/client";
 import * as s from "~/db/schema";
 import { requirePageUser, roleAtLeast } from "~/server/auth";
 import { listMonthStatements, sumItems, type StatementListItem } from "~/server/features/statements";
+import { unresolvedQuestionCount } from "~/server/features/statements/inbox";
 import { FILTERS, countsSentence, matchesFilter, parseFilter } from "~/server/features/statements/status";
 import { monthFromParam, monthLabelJa, monthParam } from "~/server/month";
 import { isMonthClosed } from "~/server/repo";
@@ -23,11 +24,12 @@ export default async function StatementsPage({ searchParams }: { searchParams: P
   const m = monthParam(month);
   const filter = parseFilter(sp.f);
   const db = await getDb();
-  const [closed, list, status, drivers] = await Promise.all([
+  const [closed, list, status, drivers, questions] = await Promise.all([
     isMonthClosed(db, user.tenantId, month),
     listMonthStatements(db, user.tenantId, month),
     statementsStatus(db, user.tenantId, month),
     db.select({ id: s.drivers.id, name: s.drivers.name }).from(s.drivers).where(eq(s.drivers.tenantId, user.tenantId)),
+    unresolvedQuestionCount(db, user.tenantId),
   ]);
   const canEdit = roleAtLeast(user.role, "staff");
   const nameOf = new Map([...drivers.map((d) => [d.id, d.name] as const), ...list.items.map((i) => [i.driverId, i.name] as const)]);
@@ -52,6 +54,8 @@ export default async function StatementsPage({ searchParams }: { searchParams: P
   const hasStatements = list.items.length > 0;
   // 送っていない人・送ったあとで中身が変わった人（1 人ずつ開いて送る。明細の画面に「次に送る人へ」がある）
   const toSend = list.items.filter((i) => i.status.key === "unsent" || i.status.needsResend);
+  // 日数と質問の条件はそろったのに、取引条件に条項が無いので未確認のままの人
+  const blocked = list.items.filter((i) => i.status.deemedBlockedByClause);
 
   return (
     <div>
@@ -61,16 +65,21 @@ export default async function StatementsPage({ searchParams }: { searchParams: P
         basePath="/statements"
         description="明細を作って、ドライバーにリンクを送ります。ドライバーはスマホで開き「確認しました」を押します。質問も明細の行から届きます。"
         actions={
-          hasStatements ? (
-            <>
-              <a href={`/api/statements/pdf?m=${m}`} className={buttonClass("secondary")}>
-                全員分の PDF
-              </a>
-              <a href={`/api/statements/confirmations?m=${m}`} className={buttonClass("secondary")}>
-                確認の記録（CSV）
-              </a>
-            </>
-          ) : undefined
+          <>
+            <Link href="/statements/inbox" className={buttonClass(questions > 0 ? "accent" : "secondary")}>
+              {questions > 0 ? `質問の一覧（未解決 ${questions}件）` : "質問の一覧"}
+            </Link>
+            {hasStatements && (
+              <>
+                <a href={`/api/statements/pdf?m=${m}`} className={buttonClass("secondary")}>
+                  全員分の PDF
+                </a>
+                <a href={`/api/statements/confirmations?m=${m}`} className={buttonClass("secondary")}>
+                  確認の記録（CSV）
+                </a>
+              </>
+            )}
+          </>
         }
       />
 
@@ -136,8 +145,14 @@ export default async function StatementsPage({ searchParams }: { searchParams: P
                   </Link>
                 )}
               </div>
+              {blocked.length > 0 && (
+                <p className="mt-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm">
+                  送ってから {list.deemedDays}日たち質問も無いものの、取引条件にみなし確認の条項が無いため、未確認のままの人がいます（{blocked.length}人：
+                  {blocked.map((b) => b.name).join("、")}）。条項は<Link href="/terms">取引条件の明示</Link>で入れられます。
+                </p>
+              )}
               <p className="text-xs text-muted-foreground">
-                「みなし確認」は、送ってから {list.deemedDays}日たっても質問が無い明細です。明細の注記（連絡が無ければ確認とみなす）に沿った状態の表示で、扱いは会社と税理士でお決めください（
+                「みなし確認」は、送ってから {list.deemedDays}日たっても質問が無く、取引条件にその条項がある明細です。明細の注記（連絡が無ければ確認とみなす）に沿った状態の表示で、扱いは会社と税理士でお決めください（
                 <a href="https://www.nta.go.jp/taxes/shiraberu/zeimokubetsu/shohi/keigenzeiritsu/pdf/qa/113-3.pdf" target="_blank" rel="noopener noreferrer">
                   国税庁 インボイス Q&A 問86
                 </a>

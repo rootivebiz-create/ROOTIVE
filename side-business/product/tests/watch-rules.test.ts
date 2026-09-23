@@ -14,6 +14,8 @@ import {
   paidLate,
   payDeadlineFor,
   paymentWording,
+  REGISTRATION_CHECK_DAYS,
+  TORITEKI_EMPLOYEES,
   qtyJump,
   rateChangedWithoutRecord,
   rateDown,
@@ -42,6 +44,27 @@ const SEP = "2026-09-01";
 const FORBIDDEN = /(?<!取)適法|違反です|違反はありません|問題ありません|法令に完全対応|大丈夫|必ず合う|ミスゼロ|完全自動|補助金|単価を下げ|引き下げ|偽装請負|労働者に当た/;
 
 const TENANT = { closingDay: 0, payMonthOffset: 1, payDay: 25, taxMethod: "general", settings: {} };
+
+/** 最初に作ったルール（この中の記録で全部出ることを確かめる） */
+const FIRST_WAVE_CODES = [
+  "terms_missing",
+  "sixty_days",
+  "paid_late",
+  "fee_deducted",
+  "deduction_no_agreement",
+  "negative_total",
+  "payment_wording",
+  "rate_changed_without_record",
+  "rate_down",
+  "contract_end",
+  "no_bank",
+  "qty_jump",
+  "statements_stale",
+  "invoice_number",
+  "invoice_burden",
+  "toriteki",
+  "work_missing",
+];
 
 function driver(id: string, name: string, over: Partial<WatchDriver> = {}): WatchDriver {
   return {
@@ -295,24 +318,36 @@ describe("差し引き", () => {
 
 describe("取適法の目安", () => {
   const withSettings = (settings: WatchContext["tenant"]["settings"]) => toriteki(ctx({ tenant: { ...TENANT, settings } }));
-  it("資本金 1,000 万円・従業員 100 人ちょうど → 出ない。101 人 → 可能性。どちらか空 → 入れる案内", () => {
-    expect(withSettings({ capitalYen: 10_000_000, employees: 100 })).toHaveLength(0);
-    expect(withSettings({ capitalYen: 10_000_000, employees: 101 })[0].title).toBe("取適法の対象になる可能性があります");
-    expect(withSettings({ capitalYen: 10_000_001, employees: 3 })[0].detail).toContain("資本金 10,000,001円");
+  it("運送の委託の目安：資本金 1,000 万円・従業員 300 人ちょうど → 出ない。301 人 → 可能性。どちらか空 → 入れる案内", () => {
+    expect(TORITEKI_EMPLOYEES).toBe(300);
+    expect(withSettings({ capitalYen: 10_000_000, employees: 300 })).toHaveLength(0);
+    expect(withSettings({ capitalYen: 10_000_000, employees: 101 })).toHaveLength(0);
+    expect(withSettings({ capitalYen: 10_000_000, employees: 301 })[0].title).toBe("取適法の対象になる可能性があります");
+    const [cap] = withSettings({ capitalYen: 10_000_001, employees: 3 });
+    expect(cap.detail).toContain("資本金 10,000,001円");
+    // 目安であること・区分ごとに基準が違うこと・専門家への確認を必ず書く
+    expect(cap.detail).toContain("目安です。区分ごとに基準が違います。弁護士などにご確認ください");
+    expect(cap.impact).toEqual({ yen: null, label: "金額で出す指摘ではありません" });
     expect(withSettings({ capitalYen: 5_000_000 })[0].title).toBe("取適法の対象かどうかの目安を出せます");
   });
 });
 
 describe("インボイス", () => {
-  it("登録ありで番号が無い → 黄。確かめた日が 90 日以内 → 出ない、91 日前 → お知らせ", () => {
+  it("登録ありで番号が無い → 黄（影響額はその人の税額）。確かめた日が 180 日以内 → 出ない、181 日前 → お知らせ", () => {
+    expect(REGISTRATION_CHECK_DAYS).toBe(180);
     const noNumber = driver("d1", "青木 翔太", { registrationNo: null });
     const d = drafts(OCT, [noNumber], [["d1", "p1", 10]]);
-    expect(invoiceNumber(ctx({ drivers: [noNumber], drafts: d }))[0].title).toBe("登録番号が入っていません");
-    const fresh = driver("d1", "青木 翔太", { registrationCheckedOn: "2026-08-02" });
+    const [missing] = invoiceNumber(ctx({ drivers: [noNumber], drafts: d }));
+    expect(missing.title).toBe("登録番号が入っていません");
+    // 10 個 × 150 円 = 1,500 円の 10% = 150 円
+    expect(missing.impact).toEqual({ yen: 150, label: "青木 翔太さんの2026年10月分の消費税額" });
+    // 今日 2026-10-31 の 180 日前は 2026-05-04
+    const fresh = driver("d1", "青木 翔太", { registrationCheckedOn: "2026-05-04" });
     expect(invoiceNumber(ctx({ drivers: [fresh], drafts: d }))).toHaveLength(0);
-    const old = driver("d1", "青木 翔太", { registrationCheckedOn: "2026-08-01" });
+    const old = driver("d1", "青木 翔太", { registrationCheckedOn: "2026-05-03" });
     const [info] = invoiceNumber(ctx({ drivers: [old], drafts: d }));
     expect(info).toMatchObject({ severity: "info", sourceUrl: SOURCES.invoiceRegistry });
+    expect(info.detail).toContain("180日より前です");
   });
 
   it("経過措置の負担：原則課税でない会社・登録のある人だけ → 出ない。2031年10月からは次の段階を書かない", () => {
@@ -468,7 +503,14 @@ describe("まとめ・並べ方・文面", () => {
     });
     const issues = evaluateRules(c);
     const codes = new Set(issues.map((i) => i.code));
-    for (const r of RULES) expect(codes, r.doc.code).toContain(r.doc.code);
+    // 最初からあるルールは、この 1 つの記録で全部出る（あとから足したルールは watch-rules-extra.test.ts で確かめる）
+    for (const code of FIRST_WAVE_CODES) expect(codes, code).toContain(code);
+    expect(RULES.map((r) => r.doc.code)).toEqual(expect.arrayContaining(FIRST_WAVE_CODES));
+    // どの指摘にも影響額（出せなければ null）と時点が付く
+    for (const i of issues) {
+      expect(i.impact, i.code).toBeDefined();
+      expect(i.asOf, i.code).toBe("2026年9月");
+    }
     const allowed = new Set<string>(Object.values(SOURCES));
     for (const i of issues) {
       expect(`${i.title}${i.detail}${i.basis ?? ""}`, i.code).not.toMatch(FORBIDDEN);

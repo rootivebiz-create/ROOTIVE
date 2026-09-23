@@ -58,6 +58,11 @@ export function waitingDays(status: string, askedAt: Date | string | null | unde
   return Math.max(0, Math.floor((now.getTime() - t.getTime()) / 86400000));
 }
 
+/** 「返事待ち n日」の印の色：14 日を過ぎたら黄色（それまでは灰色で、日数だけ見せる） */
+export function waitingTone(days: number): "yellow" | "gray" {
+  return days >= WAIT_ALERT_DAYS ? "yellow" : "gray";
+}
+
 /** 追加の料金らしい名前（待機料・再配達・積込・取卸・高速代・燃料サーチャージ など） */
 export const CHARGE_RE = /待機|再配達|再配|積込|積み込|取卸|取り卸|荷卸|荷降|高速|燃料|サーチャージ|付帯/;
 

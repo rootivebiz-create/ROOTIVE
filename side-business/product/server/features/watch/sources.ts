@@ -76,6 +76,8 @@ export const FIX = {
   drivers: "/settings/drivers",
   /** そのドライバーの設定（取引条件の日付・口座・登録番号・終了日） */
   driver: (driverId: string) => `/settings/drivers/${encodeURIComponent(driverId)}`,
+  /** 取引条件の記録の一覧 */
+  termsList: "/terms",
   /** そのドライバーの取引条件の記録（明示書） */
   terms: (driverId: string) => `/terms/${encodeURIComponent(driverId)}`,
   /** 1 人の明細（質問への返事もここ） */

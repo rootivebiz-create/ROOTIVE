@@ -155,14 +155,24 @@ describe("送った記録", () => {
     await markStatementSent(db, tenantId, st.id, null, "sms", again);
     item = (await listMonthStatements(db, tenantId, DEMO_MONTH)).items.find((i) => i.id === st.id)!;
     expect(item.status.needsResend).toBe(false);
-    // 送ってから 7 日、連絡が無ければ「みなし確認」
-    const later = (await listMonthStatements(db, tenantId, DEMO_MONTH, new Date(again.getTime() + 7 * DAY))).items.find((i) => i.id === st.id)!;
-    expect(later.status).toMatchObject({ key: "deemed", label: "みなし確認（7日経過）" });
+    // 送ってから 7 日、連絡が無くても、取引条件にみなし確認の条項が無ければ未確認のまま
+    const at7 = new Date(again.getTime() + 7 * DAY);
+    let later = (await listMonthStatements(db, tenantId, DEMO_MONTH, at7)).items.find((i) => i.id === st.id)!;
+    expect(later.status).toMatchObject({ key: "sent", deemedBlockedByClause: true });
+    // 条項の入った取引条件の記録があれば「みなし確認」
+    await db.insert(s.termsRecords).values({ tenantId, driverId: driver.id, version: 1, issuedOn: "2026-09-01", content: {}, deemedClause: true });
+    later = (await listMonthStatements(db, tenantId, DEMO_MONTH, at7)).items.find((i) => i.id === st.id)!;
+    expect(later.status).toMatchObject({ key: "deemed", label: "みなし確認（7日経過）", deemedBlockedByClause: false });
+    // 新しい版の取引条件で条項を外すと、また未確認に戻る（いちばん新しい記録を見る）
+    await db.insert(s.termsRecords).values({ tenantId, driverId: driver.id, version: 2, issuedOn: "2026-10-01", content: {}, deemedClause: false });
+    later = (await listMonthStatements(db, tenantId, DEMO_MONTH, at7)).items.find((i) => i.id === st.id)!;
+    expect(later.status.key).toBe("sent");
   });
 
   it("みなし確認までの日数は会社の設定から", async () => {
     await db.update(s.tenants).set({ settings: { deemedConfirmDays: 3 } }).where(eq(s.tenants.id, tenantId));
-    const { st } = await statementOf("D02");
+    const { st, driver } = await statementOf("D02");
+    await db.insert(s.termsRecords).values({ tenantId, driverId: driver.id, version: 1, issuedOn: "2026-09-01", content: {}, deemedClause: true });
     const sent = new Date();
     await markStatementSent(db, tenantId, st.id, null, "mail", sent);
     const list = await listMonthStatements(db, tenantId, DEMO_MONTH, new Date(sent.getTime() + 3 * DAY));

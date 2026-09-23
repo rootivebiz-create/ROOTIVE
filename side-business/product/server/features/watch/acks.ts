@@ -5,6 +5,7 @@ import * as s from "~/db/schema";
 import { UserError } from "~/server/action";
 import { audit } from "~/server/audit";
 import { ackKey, runWatch, type WatchOptions } from "~/server/features/watch";
+import type { WatchIssueEx } from "~/server/features/watch/types";
 import type { WatchIssue } from "~/server/features/watch-types";
 import { shiftMonth } from "~/server/month";
 import { getTenant, isMonthClosed } from "~/server/repo";
@@ -54,7 +55,7 @@ export async function ackWatchIssue(db: Db, tenantId: string, input: AckInput, u
   assertMonth(input.month);
   await getTenant(db, tenantId);
   await assertCanChange(db, tenantId, input.month, input.code);
-  const issues = await runWatch(db, tenantId, input.month, options);
+  const issues: WatchIssueEx[] = await runWatch(db, tenantId, input.month, options);
   const issue = issues.find((i) => i.code === input.code && i.subjectId === input.subjectId);
   if (!issue) throw new UserError("この指摘は、いまは出ていません。画面を開き直してください（直したあとなら、確認済みにする必要はありません）。");
   const note = input.note.trim();
@@ -86,6 +87,10 @@ export async function ackWatchIssue(db: Db, tenantId: string, input: AckInput, u
       note,
       previousNote: issue.ackNote ?? null,
       issueDetail: issue.detail,
+      // いくらの指摘を確認したか（影響額。出せないものは null）と、ルールの時点
+      impactYen: issue.impact?.yen ?? null,
+      impactLabel: issue.impact?.label ?? null,
+      ruleAsOf: issue.asOf ?? null,
     },
   });
   return { ...issue, acked: true, ackNote: note, blocksClose: false };

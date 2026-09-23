@@ -4,6 +4,8 @@ import { jpDate } from "@/lib/format";
 import { TableWrap } from "@/components/ui";
 import { AskButton, GeneralAskForm } from "~/components/portal/ask-form";
 import { ConfirmForm } from "~/components/portal/confirm-form";
+import { MonthCompare } from "~/components/portal/month-compare";
+import { OtherStatements } from "~/components/portal/other-statements";
 import { ViewPing } from "~/components/portal/view-ping";
 import { StatementView } from "~/components/statements/statement-view";
 import { getDb } from "~/db/client";
@@ -48,7 +50,7 @@ export default async function DriverStatementPage({ params }: { params: Promise<
             </span>
             {data.changes.length > 0 && (
               <span className="mt-2 block text-sm font-normal text-foreground">
-                <span className="block font-bold">変わったところ</span>
+                <span className="block font-bold">前に確認した内容からの変更</span>
                 <span className="mt-1 block space-y-1">
                   {data.changes.map((c, i) => (
                     <span key={i} className="block break-words">
@@ -87,6 +89,12 @@ export default async function DriverStatementPage({ params }: { params: Promise<
           lineAction={(t) => <AskButton token={token} lineKey={t.key} label={t.label} count={threadCount.get(t.key) ?? 0} disabled={staffPreview} />}
         />
       </div>
+
+      {data.compare && (
+        <div className="mt-4">
+          <MonthCompare compare={data.compare} />
+        </div>
+      )}
 
       <section id="confirm" className="mt-6 scroll-mt-4">
         <h2 className="mb-2 text-lg font-bold">確認</h2>
@@ -163,6 +171,12 @@ export default async function DriverStatementPage({ params }: { params: Promise<
           </div>
         )}
       </section>
+
+      {data.others.length > 0 && (
+        <div className="mt-8">
+          <OtherStatements items={data.others} />
+        </div>
+      )}
 
       <footer className="mt-10 space-y-1 border-t border-border pt-4 text-xs text-muted-foreground">
         <p>このページは {data.companyName} からあなたに届いた明細です。リンクをほかの人に送らないでください。</p>

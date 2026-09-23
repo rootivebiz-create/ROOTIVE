@@ -13,6 +13,8 @@ import {
   readNumber,
   ROUNDING_CHOICES,
   TAX_METHODS,
+  toritekiOver,
+  toritekiThresholdText,
   wordingWarnings,
 } from "~/server/features/settings/format";
 import { Callout, Check, Choice, F, ResultLine, Section, SubmitRow, useFormAction, type FormAction } from "./form-kit";
@@ -90,7 +92,9 @@ export function CompanyForm({ action, initial, canEdit, today, month, periodWord
   const noteMismatch = noteDays !== undefined && Number(noteDays) !== dayCount;
   const capNum = readNumber(capital);
   const empNum = readNumber(employees);
-  const torOver = (capNum !== null && capNum > toriteki.capitalYen) || (empNum !== null && empNum > toriteki.employees);
+  // 見張り番と同じ数・同じ比べ方（数は見張り番の決まりから受け取る）
+  const torOver = toritekiOver(toriteki, capNum, empNum);
+  const torText = toritekiThresholdText(toriteki);
 
   return (
     <form onSubmit={onSubmit} className="space-y-5">
@@ -244,7 +248,8 @@ export function CompanyForm({ action, initial, canEdit, today, month, periodWord
           title="会社の規模（取適法の目安）"
           description={
             <>
-              取適法の対象かどうかの目安に使います（見張り番）。 <SourceLink href={sources.toritekiOverview}>取適法の概要</SourceLink>
+              取適法の対象かどうかの目安に使います。運送の委託では、委託する会社が「{torText}」で、相手が個人か、それより小さい会社のときが目安です（見張り番も同じ目安でお知らせします）。{" "}
+              <SourceLink href={sources.toritekiOverview}>取適法の概要</SourceLink>
             </>
           }
         >
@@ -259,7 +264,7 @@ export function CompanyForm({ action, initial, canEdit, today, month, periodWord
           {capNum !== null && !Number.isNaN(capNum) && <p className="text-sm text-muted-foreground">資本金 {yenText(capNum)}</p>}
           {torOver && (
             <Callout tone="yellow">
-              資本金 {yenText(toriteki.capitalYen)} または 従業員 {toriteki.employees}人 を超えています。取適法の対象になる可能性があります（取引の内容と相手の規模で決まります）。弁護士等へのご確認をおすすめします。
+              入れた数が目安（{torText}）に当たります。取適法の対象になる可能性があります（区分ごとに基準が違い、取引の内容と相手の規模で決まります）。弁護士等へのご確認をおすすめします。
             </Callout>
           )}
         </Section>

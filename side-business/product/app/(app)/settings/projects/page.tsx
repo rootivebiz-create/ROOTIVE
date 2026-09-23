@@ -6,7 +6,7 @@ import { Expand, FilterChips, SearchBox } from "~/components/settings/list-bits"
 import { ProjectForm } from "~/components/settings/project-form";
 import { getDb } from "~/db/client";
 import { requirePageUser, roleAtLeast } from "~/server/auth";
-import { listClients } from "~/server/features/settings/clients";
+import { clientPickerOptions, listClients } from "~/server/features/settings/clients";
 import { marginOf, rateText } from "~/server/features/settings/format";
 import { listProjects, usedProjectIds, type ProjectFilter } from "~/server/features/settings/projects";
 import { createProjectAction, deleteProjectAction, setProjectActiveAction, updateProjectAction } from "./actions";
@@ -32,7 +32,9 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   const clientIds = new Set(clients.map((c) => c.id));
   const clientFilter = sp.client === "none" || (sp.client && clientIds.has(sp.client)) ? sp.client : undefined;
   const rows = await listProjects(db, user.tenantId, { q, status, clientId: clientFilter });
-  const clientOptions = clients.map((c) => ({ id: c.id, name: c.name }));
+  // 案件の元請を選ぶところには、取引をやめた（無効の）元請を出さない
+  const clientOptions = clientPickerOptions(clients);
+  const inactiveClients = new Set(clients.filter((c) => !c.active).map((c) => c.id));
   const loss = all.filter((p) => p.active && p.payRate > p.billRate).length;
 
   return (
@@ -45,9 +47,10 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
       {canEdit && (
         <Card>
           <Expand summary="案件を追加" open={all.length === 0}>
-            {clients.length === 0 && (
+            {clientOptions.length === 0 && (
               <p className="text-sm text-muted-foreground">
-                先に <Link href="/settings/clients">元請</Link> を足しておくと、案件と元請を結びつけられます（元請なしでも登録できます）。
+                {clients.length === 0 ? "先に " : "取引している元請がありません（取引をやめた元請は選べません）。"}
+                <Link href="/settings/clients">元請</Link> を足しておくと、案件と元請を結びつけられます（元請なしでも登録できます）。
               </p>
             )}
             <ProjectForm action={createProjectAction} clients={clientOptions} submitLabel="追加する" />
@@ -69,7 +72,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
                 <option value="none">（元請なし）</option>
                 {clients.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.name}
+                    {c.active ? c.name : `${c.name}（取引をやめた元請）`}
                   </option>
                 ))}
               </Select>
@@ -117,6 +120,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
                       </dl>
                       <div className="flex flex-wrap gap-1">
                         {!p.active && <Badge>使わない</Badge>}
+                        {p.clientId && inactiveClients.has(p.clientId) && <Badge>取引をやめた元請</Badge>}
                         {m.loss && <Badge tone="red">支払 ＞ 受注</Badge>}
                         {p.billRate === 0 && <Badge tone="yellow">受注単価なし</Badge>}
                         {p.overrides > 0 && (
@@ -130,7 +134,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
                         <Expand summary="直す・使わない・消す">
                           <ProjectForm
                             action={updateProjectAction}
-                            clients={clientOptions}
+                            clients={clientPickerOptions(clients, p.clientId)}
                             submitLabel="保存"
                             overrides={p.overrides}
                             initial={{

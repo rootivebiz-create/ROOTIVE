@@ -285,8 +285,12 @@ function isStamp(v: unknown): v is BankStamp {
 
 type StampedLine = { driverId: string; bank?: BankStamp };
 
-/** 振込データを作った記録（取り消したものを除く）。新しい順 */
-type CreatedRecord = { batchId: string; month: string; fileName: string; at: Date; lines: StampedLine[] };
+/**
+ * 振込データを作った記録。新しい順。
+ * 取り消した振込データも「そのとき振り込むつもりだった口座」として比べる相手に入れる
+ * （作ったあとに口座が変わり、取り消して作り直したときにも「変わった人」として出すため）。
+ */
+type CreatedRecord = { batchId: string; month: string; fileName: string; at: Date; deleted: boolean; lines: StampedLine[] };
 
 async function createdTransferRecords(db: Db, tenantId: string): Promise<CreatedRecord[]> {
   const rows = await db
@@ -297,7 +301,7 @@ async function createdTransferRecords(db: Db, tenantId: string): Promise<Created
   const deleted = new Set(rows.filter((r) => r.action === "transfer.delete").map((r) => r.entityId));
   const out: CreatedRecord[] = [];
   for (const r of rows) {
-    if (r.action !== "transfer.create" || !r.entityId || deleted.has(r.entityId)) continue;
+    if (r.action !== "transfer.create" || !r.entityId) continue;
     const d = r.detail ?? {};
     const lines = Array.isArray(d.lines) ? (d.lines as unknown[]) : [];
     out.push({
@@ -305,6 +309,7 @@ async function createdTransferRecords(db: Db, tenantId: string): Promise<Created
       month: typeof d.month === "string" ? d.month : "",
       fileName: typeof d.fileName === "string" ? d.fileName : "",
       at: r.createdAt,
+      deleted: deleted.has(r.entityId),
       lines: lines
         .filter((l): l is Record<string, unknown> => !!l && typeof l === "object" && typeof (l as Record<string, unknown>).driverId === "string")
         .map((l) => ({ driverId: l.driverId as string, bank: isStamp(l.bank) ? l.bank : undefined })),
@@ -319,8 +324,8 @@ export type BankChange = {
   driverId: string;
   driverName: string;
   driverCode: string | null;
-  /** 前回の振込（この人が入っていた、いちばん新しい振込データ） */
-  previous: { batchId: string; fileName: string; month: string; at: Date; masked: string };
+  /** 前回の振込（この人が入っていた、いちばん新しい振込データ。取り消したものも含む） */
+  previous: { batchId: string; fileName: string; month: string; at: Date; deleted: boolean; masked: string };
   /** 今の口座（番号は下 3 桁だけ） */
   currentMasked: string;
   /** どこが変わったか（銀行・支店・預金の種類・口座番号・口座名義） */
@@ -367,7 +372,7 @@ export async function reviewBankChanges(db: Db, tenantId: string, targets: Revie
     if (before.fp === now.fp) continue;
     const change: BankChange = {
       ...who,
-      previous: { batchId: last.batchId, fileName: last.fileName, month: last.month, at: last.at, masked: maskedBank(before) },
+      previous: { batchId: last.batchId, fileName: last.fileName, month: last.month, at: last.at, deleted: last.deleted, masked: maskedBank(before) },
       currentMasked: maskedBank(now),
       fields: stampDiff(before, now),
       edits: [],

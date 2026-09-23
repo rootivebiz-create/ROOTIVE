@@ -65,9 +65,9 @@ export default function TruckingPage() {
         <li>フリーランス法で、頼んだらすぐに条件を示し、従業員を使っている会社などは受け取った日から60日以内に払う決まりです。</li>
       </ul>
       <p className="mt-3 text-sm text-muted-foreground">
-        しめ日ラボは、もともと軽貨物・運送の支払のために作ったサービスです。
-        <Link href="/" className="inline-flex min-h-11 items-center px-1">
-          運送会社向けのご案内を見る
+        しめ日ラボの製品は、軽貨物・運送会社の月末の締め（Excel の取り込み・支払明細とドライバーの確認・振込データ・元請の支払通知との突き合わせ）のために作りました。
+        <Link href="/product" className="inline-flex min-h-11 items-center px-1">
+          製品のご紹介を見る
         </Link>
       </p>
       <div className="mt-2 flex flex-col gap-2 sm:flex-row">
@@ -80,7 +80,7 @@ export default function TruckingPage() {
       </div>
       <p className="mt-1 text-sm">
         <Link href="/demo" className="inline-flex min-h-11 items-center">
-          支払明細・振込データ（全銀形式）ができるまでをデモで見る
+          支払明細・振込データ（全銀形式）の計算をデモで試す（ブラウザだけ）
         </Link>
       </p>
       <p className="mt-2 text-xs text-muted-foreground">{AS_OF}時点の制度にもとづきます。例の会社・人はすべて架空です。</p>
@@ -229,7 +229,7 @@ export default function TruckingPage() {
       <Card className="mt-10 border-2 border-foreground">
         <h2 className="text-lg font-bold leading-snug">この例を、御社の数字で試してみませんか</h2>
         <p className="mt-2 text-sm">
-          単価・数量・差し引くものを入れると、報酬・消費税・振込額と、免税のドライバーの分の負担がその場で分かります。入れた数字は送信しません。毎月の支払明細・振込データ・案件ごとの利益を、御社のやり方のまま自動にしたいときはご相談ください。
+          単価・数量・差し引くものを入れると、報酬・消費税・振込額と、免税のドライバーの分の負担がその場で分かります。入れた数字は送信しません。毎月の締め（今の Excel の取り込み・支払明細とドライバーの確認・振込データ・元請の支払通知との突き合わせ）を、御社のやり方のまま任せたいときはご相談ください。
         </p>
         <div className="mt-4 flex flex-col gap-2 sm:flex-row">
           <Link href={PAYOUT_TOOL} className={ctaClass("accent", "w-full sm:w-auto")}>

@@ -15,3 +15,5 @@ next-env.d.ts
 private/
 *.xlsx
 *.xls
+# 製品のデモの「見本で試す」のファイル（架空のデータ）は Git に入れる（無いとデモの取り込みの見本が開けない）
+!product/public/samples/*.xlsx

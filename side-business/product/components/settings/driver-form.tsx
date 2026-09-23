@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Input, Select } from "@/components/ui";
 import { WITHHOLDING_CATEGORIES, WITHHOLDING_CATEGORY_ORDER, type WithholdingCategory } from "@/lib/engine/withholding";
 import { daysBetweenDates } from "~/server/features/settings/format";
@@ -15,12 +15,15 @@ export function DriverForm({
   submitLabel,
   today,
   sources,
+  termsSlot,
 }: {
   action: FormAction;
   initial: DriverInitial;
   submitLabel: string;
   today: string;
   sources: { invoiceRegistry: string; flLaw: string; mhlwFl: string };
+  /** 取引条件の明示書（最新の版・明示した日・明示書の画面へのリンク）。登録済みの人だけ */
+  termsSlot?: ReactNode;
 }) {
   const { state, pending, onSubmit, fe } = useFormAction(action);
   const [registered, setRegistered] = useState(initial.invoiceRegistered);
@@ -143,8 +146,13 @@ export function DriverForm({
       </Section>
 
       <Section title="取引の記録（フリーランス法）">
+        {termsSlot}
         <div className="grid gap-3 sm:grid-cols-2">
-          <F label="取引条件を明示した日" error={fe.termsIssuedOn} hint="業務の内容・報酬の額・支払期日などを書面やメールで渡した日">
+          <F
+            label="取引条件を明示した日"
+            error={fe.termsIssuedOn}
+            hint={initial.id ? "業務の内容・報酬の額・支払期日などを書面やメールで渡した日。しめ日ラボで明示書を作ると、その日が入ります" : "業務の内容・報酬の額・支払期日などを書面やメールで渡した日。登録したあと、しめ日ラボで明示書も作れます"}
+          >
             <Input type="date" name="termsIssuedOn" defaultValue={initial.termsIssuedOn} />
           </F>
           <F label="委託を始めた日" error={fe.startedOn}>

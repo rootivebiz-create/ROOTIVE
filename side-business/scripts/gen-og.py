@@ -20,10 +20,11 @@ d.text((140 - (box[2] - box[0]) / 2 - box[0], 140 - (box[3] - box[1]) / 2 - box[
 d.text((230, 108), "しめ日ラボ", font=ImageFont.truetype(bold, 56), fill=WHITE)
 
 f_main = ImageFont.truetype(bold, 64)
-d.text((80, 270), "業務委託ドライバーの月末の締めを、", font=f_main, fill=WHITE)
-d.text((80, 355), "御社のルールのまま自動に。", font=f_main, fill=YELLOW)
+# SITE.tagline（site.config.ts）と同じ中身。変えたらここも直して作り直す
+d.text((80, 270), "月末の締めを、今のExcelのまま。", font=f_main, fill=WHITE)
+d.text((80, 355), "元請の支払通知とのズレも円で。", font=f_main, fill=YELLOW)
 
 f_sub = ImageFont.truetype(regular, 32)
-d.text((80, 480), "支払明細・振込データ・案件ごとの利益を、御社のアカウントに作ります", font=f_sub, fill=GREY)
+d.text((80, 480), "軽貨物・運送会社向け｜支払明細・ドライバーの確認・振込データ", font=f_sub, fill=GREY)
 
 img.save("public/og.png", optimize=True)

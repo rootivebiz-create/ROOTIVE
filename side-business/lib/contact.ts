@@ -6,7 +6,7 @@ import { z } from "zod";
 import { SITE } from "@/site.config";
 
 export const DRIVER_OPTIONS = ["〜5人", "6〜15人", "16〜30人", "31〜50人", "51人〜"] as const;
-export const TOPIC_OPTIONS = ["支払明細", "利益の見える化", "振込データ", "点呼・業務記録", "請求書", "その他"] as const;
+export const TOPIC_OPTIONS = ["元請の支払通知との突合", "支払明細", "振込データ", "利益の見える化", "点呼・業務記録", "その他"] as const;
 
 export const LIMITS = {
   company: 100,

@@ -3,11 +3,12 @@
  * - 支払日の言い方と 60 日の目安は @/lib/tools/torihiki-joken を使う（日付の数え方を自前で持たない）
  * - 控除の例の金額は roundYen（独自の丸めを書かない）
  */
-import { yenText } from "@/lib/format";
+import { groupDigits, manYen, yenText } from "@/lib/format";
 import { num, percent } from "@/lib/engine/types";
 import { pct, roundYen } from "@/lib/payroll/money";
 import type { Rounding } from "@/lib/payroll/types";
 import { TAX_RATE } from "~/server/calc/statement";
+import { TAX_METHODS as ONBOARDING_TAX_METHODS, type TaxMethod } from "~/server/features/onboarding/company";
 import {
   latestSafePayRule,
   paymentDeadlineCheck,
@@ -56,23 +57,11 @@ export function rateToPercent(rate: number): number {
 
 // ---------------------------------------------------------------- 言葉
 
-export const TAX_METHODS = [
-  {
-    id: "general",
-    label: "原則課税",
-    help: "売上の消費税から、仕入れ（委託料など）の消費税を引いて納める方法。免税の方への支払で控除できない消費税（経過措置の負担）を計算します。",
-  },
-  {
-    id: "simplified",
-    label: "簡易課税",
-    help: "売上の消費税から、業種ごとの割合で納める額を出す方法。経過措置の負担は計算しません。",
-  },
-  {
-    id: "exempt",
-    label: "免税（消費税を納めていない）",
-    help: "会社が消費税を納めていない場合。経過措置の負担は計算しません。",
-  },
-] as const;
+/**
+ * 会社の消費税の計算方法。最初の設定の案内（server/features/onboarding/company.ts）と同じ 3 つ・同じ名前・同じ説明を使う
+ * （どちらで保存しても、同じ意味の言葉で出るように。言葉はあちらが正）。
+ */
+export const TAX_METHODS: readonly { id: TaxMethod; label: string; help: string }[] = ONBOARDING_TAX_METHODS.map((t) => ({ id: t.value, label: t.label, help: t.hint }));
 
 export const ROUNDING_CHOICES: { id: Rounding; label: string }[] = [
   { id: "floor", label: "切り捨て（1円未満を捨てる）" },
@@ -283,4 +272,28 @@ export function daysBetweenDates(a: string, b: string): number {
 /** 日本の今日（YYYY-MM-DD） */
 export function todayJst(now = new Date()): string {
   return new Date(now.getTime() + 9 * 3600_000).toISOString().slice(0, 10);
+}
+
+/** 日時を日本時間で：2026年10月5日 09:05 */
+export function jstDateTimeText(value: Date): string {
+  const j = new Date(value.getTime() + 9 * 3600_000);
+  const hh = String(j.getUTCHours()).padStart(2, "0");
+  const mm = String(j.getUTCMinutes()).padStart(2, "0");
+  return `${j.getUTCFullYear()}年${j.getUTCMonth() + 1}月${j.getUTCDate()}日 ${hh}:${mm}`;
+}
+
+// ---------------------------------------------------------------- 取適法の目安
+
+/**
+ * 取適法の目安の文（見張り番と同じ数から作る。数を画面に直書きしない）：
+ * 「資本金 1,000万円 超、または常時使用する従業員 300人 超」
+ */
+export function toritekiThresholdText(t: { capitalYen: number; employees: number }): string {
+  return `資本金 ${manYen(t.capitalYen)} 超、または常時使用する従業員 ${groupDigits(t.employees)}人 超`;
+}
+
+/** 入れた資本金・従業員の数が、目安を超えているか（見張り番と同じ比べ方：どちらかが「超える」） */
+export function toritekiOver(t: { capitalYen: number; employees: number }, capitalYen: number | null, employees: number | null): boolean {
+  const ok = (n: number | null): n is number => n !== null && Number.isFinite(n);
+  return (ok(capitalYen) && capitalYen > t.capitalYen) || (ok(employees) && employees > t.employees);
 }

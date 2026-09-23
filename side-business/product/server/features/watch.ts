@@ -4,9 +4,11 @@ import type { Db } from "~/db/client";
 import * as s from "~/db/schema";
 import { loadWatchContext, todayJst } from "~/server/features/watch/context";
 import { evaluateRules } from "~/server/features/watch/rules";
+import type { WatchIssueEx } from "~/server/features/watch/types";
 import type { WatchIssue } from "~/server/features/watch-types";
 
 export type { WatchIssue } from "~/server/features/watch-types";
+export type { WatchImpact, WatchIssueEx } from "~/server/features/watch/types";
 
 export type WatchOptions = {
   /** 今日（日本時間の YYYY-MM-DD）。テストで日付を決めるときに渡す */
@@ -19,7 +21,8 @@ export function ackKey(code: string, subjectId: string): string {
 }
 
 export type WatchMonth = {
-  issues: WatchIssue[];
+  /** 指摘（影響額 impact と、ルールの時点 asOf つき） */
+  issues: WatchIssueEx[];
   closed: boolean;
   /** この月に明細の対象になる人（稼働か調整がある人）の数 */
   drivers: number;
@@ -48,6 +51,7 @@ export async function watchMonth(db: Db, tenantId: string, month: string, option
  * 締め前の見張り番。その会社・その月の記録を見て、指摘の一覧を返す（重い順：赤 → 黄 → お知らせ）。
  * 確認済み（watch_acks）の印とメモを付け、確認済みの赤は締めを止めない。
  * 締めた月も同じように読める（見るだけ）。
+ * 返す指摘には、共通の形（WatchIssue）に加えて影響額（impact）とルールの時点（asOf）が付いている（WatchIssueEx）。
  * （この関数の形は変えない。締め・ホーム・利益の画面がここを呼ぶ）
  */
 export async function runWatch(db: Db, tenantId: string, month: string, options: WatchOptions = {}): Promise<WatchIssue[]> {

@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { comparisonChoices } from "@/components/kit/content";
 import { makerCopy } from "@/components/kit/maker";
 import { confidentialityFaq, landingFaq } from "@/components/landing/faq";
 import { trialOffer } from "@/lib/plans";
@@ -89,15 +88,6 @@ describe("trialOffer（提案書の次の一歩）", () => {
   it("お試しが無ければ null", () => {
     const packs: Plan[] = PLANS.filter((p) => p.monthlyYen > 0);
     expect(trialOffer(packs)).toBeNull();
-  });
-});
-
-describe("比較表", () => {
-  it("出典の無い kintone の金額は書かない", () => {
-    const nocode = comparisonChoices().find((c) => c.name.includes("kintone"));
-    expect(nocode?.name).toContain("ノーコードの業務アプリ（kintone など）");
-    expect(nocode?.values.monthly).toContain("利用料＋作り込みの外注費");
-    for (const v of Object.values(nocode?.values ?? {})) expect(v).not.toMatch(/\d/);
   });
 });
 

@@ -92,7 +92,7 @@ export default async function StatementDetailPage({ params }: { params: Promise<
               </li>
             ))}
           </ul>
-          {detail.changes.fromConfirmed && <p className="mt-2 text-xs text-muted-foreground">ドライバーのページにも、同じ内容を「変わったところ」として出しています。</p>}
+          {detail.changes.fromConfirmed && <p className="mt-2 text-xs text-muted-foreground">ドライバーのページにも、同じ内容を「前に確認した内容からの変更」として出しています。</p>}
         </Card>
       )}
 
@@ -149,6 +149,9 @@ export default async function StatementDetailPage({ params }: { params: Promise<
               やりとり
               {openQuestions > 0 && <span className="ml-2 text-sm text-danger">未解決 {openQuestions}</span>}
             </h2>
+            <Link href="/statements/inbox" className="inline-flex min-h-11 items-center text-sm">
+              ほかの人の質問も見る（質問の一覧）
+            </Link>
             <div className="mt-2">
               <ThreadPanel statementId={st.id} threads={detail.threads} canEdit={canEdit} />
             </div>

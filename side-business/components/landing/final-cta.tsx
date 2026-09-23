@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { cx } from "@/lib/cx";
+import { PRODUCT } from "@/site.config";
 import { NewTabNote } from "./section";
 
 const BASE =
@@ -7,7 +8,16 @@ const BASE =
 const SOLID = cx(BASE, "bg-accent text-accent-foreground hover:opacity-90");
 const OUTLINE = cx(BASE, "border border-white/40 text-white hover:bg-white/10");
 
-export function FinalCta({ bookingUrl, lineUrl }: { bookingUrl: string | null; lineUrl: string | null }) {
+export function FinalCta({
+  bookingUrl,
+  lineUrl,
+  demoUrl = PRODUCT.demoUrl,
+}: {
+  bookingUrl: string | null;
+  lineUrl: string | null;
+  /** 製品のデモの入口（無ければボタンを出さない） */
+  demoUrl?: string | null;
+}) {
   // 予約のページがあれば、それをいちばん目立たせる。無ければ相談フォーム
   const primary = bookingUrl ? "booking" : "form";
   return (
@@ -20,7 +30,7 @@ export function FinalCta({ bookingUrl, lineUrl }: { bookingUrl: string | null; l
         まずは30分、今の締め方を聞かせてください
       </h2>
       <p className="mt-3 max-w-2xl leading-relaxed text-white/85">
-        オンラインで30分。今のExcelや明細の形をうかがい、御社のやり方のまま仕組みにできるかをお伝えします。無理にすすめることはしません。
+        オンラインで30分。今のExcelや元請の支払通知の形をうかがい、御社のやり方のまま製品に乗せられるか、お試しで何が分かるかをお伝えします。無理にすすめることはしません。
       </p>
       <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
         {bookingUrl && (
@@ -38,6 +48,12 @@ export function FinalCta({ bookingUrl, lineUrl }: { bookingUrl: string | null; l
         <Link href="/contact" className={primary === "form" ? SOLID : OUTLINE}>
           相談フォームから送る
         </Link>
+        {demoUrl && (
+          <a href={demoUrl} target="_blank" rel="noopener" className={OUTLINE}>
+            製品のデモを触る
+            <NewTabNote />
+          </a>
+        )}
         <Link href="/tools/invoice-cost" className={OUTLINE}>
           70%の負担を計算する（無料）
         </Link>

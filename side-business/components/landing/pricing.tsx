@@ -35,7 +35,7 @@ function PlanCard({ plan }: { plan: Plan }) {
       <dl className="mt-3">
         <PriceRow label={oneOff ? "費用（1回）" : "初期費用"} value={yenText(plan.initialYen)} sub="税抜" />
         <PriceRow label="月額" value={oneOff ? "なし" : yenText(plan.monthlyYen)} sub={oneOff ? undefined : "税抜"} />
-        <PriceRow label="期間の目安" value={plan.weeks} plain />
+        <PriceRow label={oneOff ? "期間の目安" : "立ち上げの目安"} value={plan.weeks} plain />
       </dl>
       <ul className="mt-4 flex-1 space-y-2 text-sm leading-relaxed">
         {plan.includes.map((item) => (
@@ -51,6 +51,8 @@ function PlanCard({ plan }: { plan: Plan }) {
 }
 
 export function Pricing({ invoiceRegNo }: { invoiceRegNo: string | null }) {
+  /** 突き合わせを毎月使えるパック（名前は PLANS から） */
+  const reconcilePack = PLANS.find((p) => p.id === "profit");
   return (
     <Section
       id="ryokin"
@@ -58,7 +60,10 @@ export function Pricing({ invoiceRegNo }: { invoiceRegNo: string | null }) {
       lead={
         <ul className="space-y-1">
           <li>月額は、ドライバーは何人でも同じです。</li>
-          <li>サーバー代はお客様が直接お支払いください（見積で目安をお示しします）。</li>
+          <li>製品を置く御社の Vercel と Postgres の費用は、御社から各社へ直接お支払いください（見積で目安をお示しします）。</li>
+          {reconcilePack && (
+            <li>元請の支払通知との突き合わせを毎月使えるのは、{reconcilePack.name}です。お試しでは、先月分を1回突き合わせます。</li>
+          )}
           {invoiceRegNo && <li className="num">インボイス登録番号 {regNoText(invoiceRegNo)}</li>}
         </ul>
       }
@@ -106,7 +111,7 @@ export function Pricing({ invoiceRegNo }: { invoiceRegNo: string | null }) {
         </section>
       </div>
 
-      <NextStep alt={{ href: "/demo", label: "先にデモを触る" }}>
+      <NextStep alt={{ href: "/product", label: "先に製品の中身を見る" }}>
         御社の見積は、30分の相談で今の締め方をうかがってからお送りします。
       </NextStep>
     </Section>

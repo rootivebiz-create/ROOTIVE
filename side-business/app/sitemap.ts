@@ -4,6 +4,7 @@ import { SITE } from "@/site.config";
 
 const STATIC_ROUTES = [
   "/",
+  "/product",
   "/demo",
   "/tools",
   "/tools/invoice-cost",

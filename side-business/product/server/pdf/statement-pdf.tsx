@@ -57,11 +57,22 @@ const st = StyleSheet.create({
   sumRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 3, borderBottomWidth: 0.6, borderBottomColor: LINE },
   sumTotal: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 5, borderTopWidth: 1.2, borderTopColor: INK, marginTop: 2 },
   note: { marginTop: 12, borderWidth: 1, borderColor: LINE, borderRadius: 4, padding: 8, fontSize: 8.5 },
-  footer: { position: "absolute", bottom: 20, left: 36, right: 36, flexDirection: "row", justifyContent: "space-between", fontSize: 7.5, color: MUTED },
+  footer: { position: "absolute", bottom: 20, left: 36, right: 36, flexDirection: "row", justifyContent: "space-between", fontSize: 7.5, color: MUTED, lineHeight: 1.3 },
+  footerText: { fontSize: 7.5, lineHeight: 1.3 },
+  // 左の文（会社・名前・月・版）が長くても、ページ番号とくっつかないように間をあけ、左の文だけを折り返す
+  footerLeft: { flex: 1, paddingRight: 12 },
+  // ページ番号の場所は先に幅を決めておく（番号は描くときに入るので、決めておかないと左の文が右端まで広がる）
+  footerPage: { width: 48, alignItems: "flex-end" },
 });
 
 function money(v: number): string {
   return en(v);
+}
+
+/** 「2 / 3」。View の render の型には totalPages が無いが、描くときには Text と同じく渡される */
+function pageLabel(props: { pageNumber: number }): string {
+  const { pageNumber, totalPages } = props as { pageNumber: number; totalPages?: number };
+  return totalPages ? `${pageNumber} / ${totalPages}` : String(pageNumber);
 }
 
 function StatementPages({ source, generatedAt }: { source: PdfSource; generatedAt: Date }) {
@@ -150,7 +161,7 @@ function StatementPages({ source, generatedAt }: { source: PdfSource; generatedA
             税率ごとの合計：{tb.rateLabel} {money(tb.base)}
           </Text>
           <Text>
-            {tb.taxLabel} {money(tb.tax)}
+            {tb.taxLabel}（{v.taxRatePercent}%） {money(tb.tax)}
           </Text>
         </View>
       ) : (
@@ -227,10 +238,12 @@ function StatementPages({ source, generatedAt }: { source: PdfSource; generatedA
       </View>
 
       <View style={st.footer} fixed>
-        <Text>
+        <Text style={[st.footerText, st.footerLeft]}>
           {v.company.name}　{v.driver.name} 様　{jpMonthLabel(v.month)}分　版 {v.version}
         </Text>
-        <Text render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} />
+        {/* ページ番号：文字の要素に render を付けると、描き直すたびに行の高さが文字の大きさで掛け算されて、
+            ページの外へ押し出される（react-pdf の動き）。外側の枠で render し、毎回新しい文字の要素を返す */}
+        <View style={st.footerPage} render={(props) => <Text style={st.footerText}>{pageLabel(props)}</Text>} />
       </View>
     </Page>
   );

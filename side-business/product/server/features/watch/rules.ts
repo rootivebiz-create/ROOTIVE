@@ -7,7 +7,7 @@
  * - 60 日の数え方は @/lib/tools/torihiki-joken、経過措置の割合は @/lib/payroll/tax を使う（日付の計算を自前で持たない）。
  * - 金額は明細（StatementDraft）の値をそのまま使う。独自の丸めを書かない。
  */
-import { jpDate, jpMonth, yenText } from "@/lib/format";
+import { groupDigits, jpDate, jpMonth, yenText } from "@/lib/format";
 import { pct, roundYen } from "@/lib/payroll/money";
 import { monthEnd, nonDeductibleTax, TRANSITIONAL_STEPS } from "@/lib/payroll/tax";
 import { validateTransfers, type Requester } from "@/lib/payroll/zengin";
@@ -28,7 +28,7 @@ import type { Rounding } from "@/lib/payroll/types";
 import { payDateFor, type StatementDraft } from "~/server/calc/statement";
 import { BASIS, EFFECTIVE, FIX, SOURCES, WATCH_RULES_AS_OF_MONTH } from "~/server/features/watch/sources";
 import type { TermsChange, TermsContent, TermsDeduction } from "~/server/features/terms-content";
-import type { IssueDraft, WatchContext, WatchDriver, WatchImpact, WatchSeverity, WatchSubcontract, WatchTerms } from "~/server/features/watch/types";
+import type { IssueDraft, WatchContext, WatchDriver, WatchImpact, WatchSeverity, WatchSubcontract } from "~/server/features/watch/types";
 
 // ---------------------------------------------------------------- 小さな部品
 
@@ -55,10 +55,17 @@ export const QTY_JUMP_RATIO = 0.5;
  */
 export const TORITEKI_CAPITAL_YEN = 10_000_000;
 export const TORITEKI_EMPLOYEES = 300;
+/** 「資本金1,000万円超、または常時使用する従業員300人超」 */
+export const TORITEKI_THRESHOLD_TEXT = `資本金${groupDigits(TORITEKI_CAPITAL_YEN / 10_000)}万円超、または常時使用する従業員${groupDigits(TORITEKI_EMPLOYEES)}人超`;
 /** 経過措置の次の段が、この月数のうちに始まるならお知らせする */
 export const TRANSITIONAL_NEXT_MONTHS = 6;
-/** 再委託の特例：元委託の支払期日から数える日数 */
+/** 再委託の特例：元委託の支払期日から起算して数える日数（初日を 1 日目に数える。60 日の数え方と同じ） */
 export const SUBCONTRACT_DAYS = 30;
+
+/** 再委託の特例の期限：元委託の支払期日を 1 日目として 30 日目 */
+export function subcontractLimit(originalPayDate: string): string {
+  return addDays(originalPayDate, SUBCONTRACT_DAYS - 1);
+}
 
 const EPS = 1e-9;
 
@@ -219,6 +226,19 @@ export function rateChangedWithoutRecord(ctx: WatchContext): IssueDraft[] {
     });
   }
   return out;
+}
+
+/**
+ * 取引条件の記録（terms_records.content）を、比べられる形か確かめて読む。
+ * 古い形・空（{}）など、単価・控除・支払期日がそろっていなければ null（比べない）
+ */
+export function readTermsContent(value: unknown): TermsContent | null {
+  if (!value || typeof value !== "object") return null;
+  const c = value as Partial<TermsContent>;
+  if (!Array.isArray(c.services) || !Array.isArray(c.deductions) || !c.payment || typeof c.payment.text !== "string") return null;
+  const services = c.services.filter((x) => x && typeof x.projectId === "string" && typeof x.payRate === "number");
+  const deductions = c.deductions.filter((x) => x && typeof x.ruleId === "string" && typeof x.how === "string");
+  return { ...(c as TermsContent), services, deductions, feeBearer: c.feeBearer === "driver" ? "driver" : "company" };
 }
 
 /** 取引条件の違い 1 つを、短い文に（「「宅配」の単価 150円/個 → 155円/個」） */
@@ -454,7 +474,7 @@ export function sixtyDays(ctx: WatchContext): IssueDraft[] {
       subject.push(d);
       continue;
     }
-    const limit = addDays(orig, SUBCONTRACT_DAYS);
+    const limit = subcontractLimit(orig);
     if (dl.payDateActual <= limit) covered.push({ name: d.driver.name, orig, limit });
     else {
       overSpecial.push({ name: d.driver.name, orig, limit });
@@ -490,7 +510,7 @@ export function sixtyDays(ctx: WatchContext): IssueDraft[] {
           `60日（2か月）で数えると期限（${jpDate(dl.status === "ng" ? dl.limitFromEnd : dl.limitFromStart)}）を超えますが、` +
           note +
           "特例で数えてよいのは、再委託であることと元委託の相手・支払期日を取引条件で明示している場合です。記録の中身の確認をおすすめします。",
-        fixHref: FIX.drivers,
+        fixHref: covered.length === 1 ? FIX.terms(payees[0].driverId) : FIX.termsList,
         impact: impactOf(null, "特例の中で払う見込みです"),
       },
     ];
@@ -839,6 +859,189 @@ export function rateDown(ctx: WatchContext): IssueDraft[] {
   return out;
 }
 
+/** 控除の式の強さ（明細の how から読む）：定額は額、率は割合、数量あたりは 1 あたりの円 */
+export type DeductionMeasure = { kind: "fixed" | "percent" | "per_unit"; value: number };
+
+export function deductionMeasure(x: { amount: number; how: string }): DeductionMeasure {
+  const percent = /×\s*([\d.,]+)%\s*$/.exec(x.how);
+  if (percent) return { kind: "percent", value: Number(percent[1].replace(/,/g, "")) / 100 };
+  const unit = /^数量.*×\s*([\d.,]+)円\s*$/.exec(x.how);
+  if (unit) return { kind: "per_unit", value: Number(unit[1].replace(/,/g, "")) };
+  return { kind: "fixed", value: x.amount };
+}
+
+const sameName = (a: string, b: string) => a.normalize("NFKC").replace(/\s/g, "") === b.normalize("NFKC").replace(/\s/g, "");
+
+/** 前の月の明細と比べて、新しく加わった控除・増えた控除（振込手数料は fee_deducted が出す） */
+export function dedNewOrUp(ctx: WatchContext): IssueDraft[] {
+  const out: IssueDraft[] = [];
+  const prev = new Map(ctx.prevDrafts.map((d) => [d.driverId, d]));
+  const rules = byId(ctx.rules);
+  const prevLabel = `${jpMonth(addMonths(ctx.month, -1))}分`;
+  for (const d of ctx.drafts) {
+    const p = prev.get(d.driverId);
+    if (!p) continue;
+    const qty = d.lines.reduce((a, l) => a + l.qty, 0);
+    for (const x of d.deductions) {
+      if (FEE_WORDS.test(x.name)) continue;
+      const rule = rules.get(x.ruleId);
+      const px = p.deductions.find((y) => y.ruleId === x.ruleId) ?? p.deductions.find((y) => sameName(y.name, x.name));
+      let increase: number;
+      let what: string;
+      if (!px) {
+        // 前の月に稼働が無く、稼働した月だけ引く控除なら、前の月に無いのは当たり前（新しいとは言えない）
+        if (!p.hasWork && d.hasWork && rule?.onlyWhenWorked !== false) continue;
+        increase = x.amount;
+        what = `控除「${x.name}」（${x.how}・${yenText(x.amount)}）は、前の月（${prevLabel}）の明細にはありませんでした。`;
+      } else {
+        const a = deductionMeasure(px);
+        const b = deductionMeasure(x);
+        if (a.kind !== b.kind) {
+          increase = x.amount - px.amount;
+          what = `控除「${x.name}」の決め方が、前の月（${prevLabel}）の「${px.how}」（${yenText(px.amount)}）から「${x.how}」（${yenText(x.amount)}）に変わっています。`;
+        } else if (!(b.value > a.value + EPS)) {
+          continue;
+        } else if (b.kind === "percent") {
+          increase = x.amount - roundYen(d.subtotal * a.value, rounding(ctx));
+          what = `控除「${x.name}」の率が、前の月（${prevLabel}）の ${pct(a.value)} から ${pct(b.value)} に上がっています（${monthOf(ctx)}の委託料で ${yenText(increase)} 増えます）。`;
+        } else if (b.kind === "per_unit") {
+          increase = x.amount - roundYen(qty * a.value, rounding(ctx));
+          what = `控除「${x.name}」の1あたりの額が、前の月（${prevLabel}）の ${rateText(a.value)} から ${rateText(b.value)} に上がっています（${monthOf(ctx)}の数量で ${yenText(increase)} 増えます）。`;
+        } else {
+          increase = x.amount - px.amount;
+          what = `控除「${x.name}」の額が、前の月（${prevLabel}）の ${yenText(px.amount)} から ${yenText(x.amount)} に増えています。`;
+        }
+        if (!(increase > 0)) continue;
+      }
+      out.push({
+        code: "ded_new_or_up",
+        severity: "yellow",
+        subjectId: `${d.driverId}:${x.ruleId}`,
+        subjectLabel: `${d.driver.name}・${x.name}`,
+        title: px ? "前の月より控除が増えています" : "前の月には無かった控除が加わっています",
+        detail:
+          what +
+          "控除を新しく加える・増やすときは、取引条件で明示して、ドライバーと合意した記録を残しておくことをおすすめします。合意の無い差し引きは、報酬の減額にあたるおそれがあります。" +
+          (rule?.agreedOn ? `控除のルールに記録してある合意の日：${jpDate(rule.agreedOn)}。` : "控除のルールに、合意した日の記録がありません。"),
+        basis: BASIS.reduction,
+        sourceUrl: SOURCES.flGuidelines,
+        fixHref: FIX.rules(monthQuery(ctx), rule?.driverId ?? null),
+        impact: impactOf(increase, px ? "増えた額（税抜）" : "加わった控除の額（税抜）"),
+      });
+    }
+  }
+  return out;
+}
+
+/** 決まった言い方（違約金・ペナルティの差し引き） */
+export const PENALTY_SENTENCE =
+  "違約金・ペナルティとして報酬から差し引くと、ドライバーに原因が無い分まで引いている場合などに、報酬の減額にあたるおそれがあります。どんな出来事で、なぜその額なのか、取引条件にどう書いてあるかの記録を確認してください。";
+
+export function dedPenalty(ctx: WatchContext): IssueDraft[] {
+  const out: IssueDraft[] = [];
+  const rules = byId(ctx.rules);
+  const base = { code: "ded_penalty", severity: "yellow" as const, title: "違約金・ペナルティの名目で差し引いています", basis: BASIS.penalty, sourceUrl: SOURCES.flGuidelines };
+  for (const [ruleId, a] of appliedDeductions(ctx.drafts)) {
+    if (!PENALTY_WORDS.test(a.name)) continue;
+    out.push({
+      ...base,
+      subjectId: ruleId,
+      subjectLabel: a.items.length === 1 ? `${a.name}（${a.items[0].name}）` : `${a.name}（${a.items.length}人）`,
+      detail: `控除「${a.name}」を報酬から差し引いています（${monthOf(ctx)} ${peopleText(a.items)}）。${PENALTY_SENTENCE}`,
+      fixHref: FIX.rules(monthQuery(ctx), rules.get(ruleId)?.driverId ?? null),
+      impact: impactOf(sumAmounts(a.items), `差し引いた額の合計（税抜・${a.items.length}人）`),
+    });
+  }
+  for (const a of ctx.adjustments) {
+    if (a.amount >= 0 || !PENALTY_WORDS.test(a.label)) continue;
+    const name = driverName(ctx, a.driverId);
+    out.push({
+      ...base,
+      subjectId: `adj:${a.id}`,
+      subjectLabel: `${name}・${a.label}`,
+      detail: `調整「${a.label}」で ${yenText(-a.amount)} を${name}さんの報酬から差し引いています。${PENALTY_SENTENCE}`,
+      fixHref: FIX.adjustment(monthQuery(ctx), a.id),
+      impact: impactOf(-a.amount, "差し引いた額"),
+    });
+  }
+  return out;
+}
+
+/** 決まった言い方（登録の無い方だけ単価が下がった） */
+export const EXEMPT_CUT_SENTENCE = "登録の無い方だけ単価が下がっています。取引の条件を協議した記録を確認してください。";
+
+/**
+ * 同じ案件で、インボイスの登録が無い方だけ前の月より単価が下がり、登録のある方は下がっていない。
+ * （登録のある方がその案件にいない・登録のある方も下がっているときは出さない。rate_down が人ごとに出す）
+ */
+export function exemptOnlyCut(ctx: WatchContext): IssueDraft[] {
+  const out: IssueDraft[] = [];
+  const prev = new Map(ctx.prevDrafts.map((d) => [d.driverId, d]));
+  type Cut = { driverId: string; name: string; from: number; to: number; effect: number };
+  const groups = new Map<string, { name: string; cuts: Cut[]; registeredCut: number; registeredKept: string[] }>();
+  for (const d of ctx.drafts) {
+    const p = prev.get(d.driverId);
+    if (!p) continue;
+    for (const line of d.lines) {
+      const pl = p.lines.find((l) => l.projectId === line.projectId);
+      if (!pl) continue;
+      const g = groups.get(line.projectId) ?? { name: line.project, cuts: [], registeredCut: 0, registeredKept: [] };
+      groups.set(line.projectId, g);
+      const down = line.rate < pl.rate - EPS;
+      if (d.driver.invoiceRegistered) {
+        if (down) g.registeredCut++;
+        else g.registeredKept.push(d.driver.name);
+      } else if (down) {
+        g.cuts.push({ driverId: d.driverId, name: d.driver.name, from: pl.rate, to: line.rate, effect: roundYen((pl.rate - line.rate) * line.qty, "round") });
+      }
+    }
+  }
+  for (const [projectId, g] of groups) {
+    if (!g.cuts.length || g.registeredCut > 0 || !g.registeredKept.length) continue;
+    const effect = g.cuts.reduce((a, c) => a + c.effect, 0);
+    out.push({
+      code: "exempt_only_cut",
+      severity: "red",
+      subjectId: projectId,
+      subjectLabel: `${g.name}（登録の無い方 ${g.cuts.length}人）`,
+      title: "登録の無い方だけ単価が下がっています",
+      detail:
+        EXEMPT_CUT_SENTENCE +
+        `「${g.name}」で、インボイスの登録が無い ${g.cuts.map((c) => `${c.name}さん（${rateText(c.from)} → ${rateText(c.to)}）`).join("、")}の単価が前の月より下がっていて、` +
+        `登録のある ${g.registeredKept.length}人（${nameList(g.registeredKept)}）は下がっていません（${monthOf(ctx)}の数量で約 ${yenText(effect)}）。` +
+        "登録が無いことを理由にした取引条件の見直しについて、公正取引委員会などが Q&A で考え方を示しています。話し合った経緯と合意の記録を確かめてください。",
+      basis: BASIS.exemptCut,
+      sourceUrl: SOURCES.exemptQa,
+      fixHref: FIX.rates(g.cuts[0].driverId, projectId),
+      impact: impactOf(effect, "下がった分（単価の差 × 今月の数量）"),
+    });
+  }
+  return out;
+}
+
+/** 稼働が無い月に控除だけを引いている（車両リースなど） */
+export function dedWithoutWork(ctx: WatchContext): IssueDraft[] {
+  return ctx.drafts
+    .filter((d) => !d.hasWork && d.deductions.length > 0)
+    .map((d) => {
+      const amount = d.deductionTotal + d.deductionTax;
+      const names = d.deductions.map((x) => `「${x.name}」${yenText(x.amount)}`).join("・");
+      return {
+        code: "ded_without_work",
+        severity: "yellow" as const,
+        subjectId: d.driverId,
+        subjectLabel: d.driver.name,
+        title: "稼働の無い月に控除を差し引いています",
+        detail:
+          `${d.driver.name}さんは${monthOf(ctx)}の稼働がありませんが、控除（${names}）を差し引いています` +
+          `${d.deductionTax ? `（消費税を含めて ${yenText(amount)}）` : ""}。振込額は ${signedYen(d.total)}です。` +
+          "稼働が無い月にも差し引くことを取引条件に書いて合意しているか、確認をおすすめします。稼働の入れ忘れなら、稼働を取り込んでください。",
+        fixHref: FIX.rules(monthQuery(ctx), d.driverId),
+        impact: impactOf(amount, d.deductionTax ? "差し引く額（消費税を含む）" : "差し引く額"),
+      };
+    });
+}
+
 // ---------------------------------------------------------------- 8. 取適法の目安
 
 export function toriteki(ctx: WatchContext): IssueDraft[] {
@@ -854,6 +1057,7 @@ export function toriteki(ctx: WatchContext): IssueDraft[] {
     basis: BASIS.toriteki,
     sourceUrl: SOURCES.toritekiOverview,
     fixHref: FIX.company(monthQuery(ctx)),
+    impact: impactOf(null, "金額で出す指摘ではありません"),
   };
   const over = (capitalYen !== null && capitalYen > TORITEKI_CAPITAL_YEN) || (employees !== null && employees > TORITEKI_EMPLOYEES);
   if (over) {
@@ -865,8 +1069,9 @@ export function toriteki(ctx: WatchContext): IssueDraft[] {
         ...base,
         title: "取適法の対象になる可能性があります",
         detail:
-          `会社の設定では ${facts}です。取適法の対象になる可能性があります。支払期日・手形の禁止・書面の保存などを弁護士等にご確認ください。` +
-          "（目安です。対象になるかは、取引の内容と、相手の資本金・従業員の数で決まり、取引の区分ごとに基準が違います）",
+          `会社の設定では ${facts}です。運送の委託の目安（${TORITEKI_THRESHOLD_TEXT}。相手が個人か、それより小さい会社のとき）に当たるため、取適法の対象になる可能性があります。` +
+          "対象になると、支払期日・手形などでの支払の禁止・書面の保存などのルールがかかります。" +
+          "目安です。区分ごとに基準が違います。弁護士などにご確認ください。",
       },
     ];
   }
@@ -911,12 +1116,14 @@ export function invoiceNumber(ctx: WatchContext): IssueDraft[] {
         basis: BASIS.invoiceNumber,
         sourceUrl: SOURCES.purchaseStatement,
         fixHref: FIX.driver(drv.id),
+        impact: impactOf(d.tax, `${drv.name}さんの${monthOf(ctx)}の消費税額`),
       });
       continue;
     }
     const checked = drv.registrationCheckedOn;
     if (!checked || daysBetween(checked, ctx.today) > REGISTRATION_CHECK_DAYS) stale.push(drv);
   }
+  const taxOf = new Map(ctx.drafts.map((d) => [d.driverId, d.tax]));
   if (stale.length) {
     out.push({
       code: "invoice_number",
@@ -930,6 +1137,10 @@ export function invoiceNumber(ctx: WatchContext): IssueDraft[] {
       basis: BASIS.invoiceRegistry,
       sourceUrl: SOURCES.invoiceRegistry,
       fixHref: stale.length === 1 ? FIX.driver(stale[0].id) : FIX.drivers,
+      impact: impactOf(
+        stale.reduce((a, d) => a + (taxOf.get(d.id) ?? 0), 0),
+        `${stale.length}人の${monthOf(ctx)}の消費税額の合計`,
+      ),
     });
   }
   return out;
@@ -958,6 +1169,66 @@ export function invoiceBurden(ctx: WatchContext): IssueDraft[] {
         "会社の消費税の計算で生じる見込みで、明細の振込額は変わりません。",
       basis: BASIS.transitional,
       sourceUrl: SOURCES.invoiceTransitional,
+      impact: impactOf(total, `会社が控除できない消費税の見込み（${monthOf(ctx)}）`),
+    },
+  ];
+}
+
+/**
+ * 締めの期間が経過措置の段の境目をまたぎ、登録の無い方の稼働に日付が無い（期間の末日の割合で数えている）。
+ * 影響額は「期間の初日の割合で数えた場合との差」の上限（期間の全部を初日の割合で数えたとき）
+ */
+export function transitionalSpan(ctx: WatchContext): IssueDraft[] {
+  const hit = ctx.drafts.filter((d) => d.undatedAcrossStep && !d.driver.invoiceRegistered && d.invoiceBurden > 0);
+  if (!hit.length) return [];
+  const { from, to } = hit[0].period;
+  const diff = hit.reduce((a, d) => a + Math.max(0, nonDeductibleTax(d.subtotal + d.tax, d.period.to) - nonDeductibleTax(d.subtotal + d.tax, d.period.from)), 0);
+  const step = TRANSITIONAL_STEPS.find((s) => s.from > from && s.from <= to);
+  return [
+    {
+      code: "transitional_span",
+      severity: "yellow",
+      subjectId: "transitional_span",
+      subjectLabel: `インボイスの登録が無い方 ${hit.length}人`,
+      title: "締めの期間が経過措置の境目をまたいでいて、日付の無い稼働があります",
+      detail:
+        `${monthOf(ctx)}の締めの期間（${jpDate(from)}〜${jpDate(to)}）の途中${step ? `の${jpDate(step.from)}` : ""}で、登録の無い方への支払で控除できる割合が変わります。` +
+        `${nameList(hit.map((d) => d.driver.name))}（${hit.length}人）の稼働に日付の無い行があるため、その行は期間の末日（${jpDate(to)}）の割合で数えています。` +
+        `期間の初日（${jpDate(from)}）の割合で数えた場合との差は、多くて ${yenText(diff)}です。` +
+        "稼働に日付を入れる（Excel に日付の列があれば、日付つきで取り込み直す）と、日ごとの割合で分けて数えます。明細の振込額は変わりません。",
+      basis: BASIS.transitional,
+      sourceUrl: SOURCES.invoiceTransitional,
+      fixHref: FIX.work(monthQuery(ctx)),
+      impact: impactOf(diff, "期間の初日の割合で数えた場合との差（多くて）"),
+    },
+  ];
+}
+
+/** 経過措置の次の段が 6 か月以内に始まる：同じ支払額なら月の負担がいくら増えるかの見込み */
+export function transitionalNext(ctx: WatchContext): IssueDraft[] {
+  const exempt = ctx.drafts.filter((d) => !d.driver.invoiceRegistered && d.invoiceBurden > 0);
+  if (!exempt.length) return [];
+  const judgedOn = monthEnd(ctx.month.slice(0, 7));
+  const next = TRANSITIONAL_STEPS.find((s) => s.from > judgedOn);
+  if (!next || next.from > addMonths(judgedOn, TRANSITIONAL_NEXT_MONTHS)) return [];
+  const now = exempt.reduce((a, d) => a + d.invoiceBurden, 0);
+  const later = exempt.reduce((a, d) => a + nonDeductibleTax(d.subtotal + d.tax, next.from), 0);
+  const increase = later - now;
+  if (!(increase > 0)) return [];
+  return [
+    {
+      code: "transitional_next",
+      severity: "info",
+      subjectId: "transitional_next",
+      subjectLabel: `インボイスの登録が無い方 ${exempt.length}人`,
+      title: `${jpMonth(next.from)}から、経過措置の控除できる割合が変わります`,
+      detail:
+        `${jpDate(next.from)}から、インボイスの登録が無い方への支払で控除できる割合が ${pct(exempt[0].deductibleRate)} から ${pct(next.rate)} になります。` +
+        `${monthOf(ctx)}と同じ支払額なら、会社が控除できない消費税は月 ${yenText(now)} から ${yenText(later)} になる見込みです（${yenText(increase)} 増えます）。` +
+        "会社の消費税の計算で生じる見込みで、ドライバーへの支払額は変わりません。資金繰りの見込みに入れておくと安心です。",
+      basis: BASIS.transitional,
+      sourceUrl: SOURCES.invoiceTransitional,
+      impact: impactOf(increase, "次の段での月の負担増（見込み）"),
     },
   ];
 }
@@ -995,6 +1266,7 @@ export function contractEnd(ctx: WatchContext): IssueDraft[] {
       basis: BASIS.endNotice,
       sourceUrl: SOURCES.mhlwFl,
       fixHref: FIX.driver(drv.id),
+      impact: impactOf(null, "金額で出す指摘ではありません"),
     });
   }
   return out;
@@ -1039,6 +1311,7 @@ export function noBank(ctx: WatchContext): IssueDraft[] {
         `振込額は ${yenText(d.total)}ですが、${empty ? "口座が登録されていません" : `口座の情報に直すところがあります（${problems.join("・")}）`}。` +
         "このままでは全銀の振込データに入りません。ドライバーの設定で口座を入れてください。",
       fixHref: FIX.driver(drv.id),
+      impact: impactOf(d.total, "振込額"),
     });
   }
   return out;
@@ -1070,6 +1343,7 @@ export function negativeTotal(ctx: WatchContext): IssueDraft[] {
         `${monthOf(ctx)}の振込額が ${signedYen(d.total)}です（${totalBreakdown(d)}）。` +
         "このままでは振り込めません。控除と調整の中身と金額を確かめてください。",
       fixHref: FIX.work(monthQuery(ctx)),
+      impact: impactOf(-d.total, "マイナスの額"),
     }));
 }
 
@@ -1106,6 +1380,7 @@ export function qtyJump(ctx: WatchContext): IssueDraft[] {
         `数量の合計が前月の ${before.toLocaleString("ja-JP")} から ${cur.toLocaleString("ja-JP")} になっています（${sign}${Math.round(Math.abs(ratio) * 100)}%）。` +
         `${changes.join("、")}。取り込みの漏れ・重なり、名前の取り違えが無いか確かめてください。`,
       fixHref: FIX.work(monthQuery(ctx)),
+      impact: impactOf(Math.abs(d.subtotal - p.subtotal), "委託料（税抜）の前月との差"),
     });
   }
   return out;
@@ -1116,7 +1391,14 @@ export function statementsStale(ctx: WatchContext): IssueDraft[] {
   if (ctx.closed || !st || st.upToDate) return [];
   const changed = st.missing + st.stale + st.orphan;
   if (changed === 0) return [];
-  const base = { code: "statements_stale", severity: "yellow" as const, subjectId: "statements", subjectLabel: "支払明細", fixHref: FIX.statements(monthQuery(ctx)) };
+  const base = {
+    code: "statements_stale",
+    severity: "yellow" as const,
+    subjectId: "statements",
+    subjectLabel: "支払明細",
+    fixHref: FIX.statements(monthQuery(ctx)),
+    impact: impactOf(null, "金額で出す指摘ではありません"),
+  };
   if (st.saved === 0) {
     return [
       {
@@ -1141,6 +1423,7 @@ export function workMissing(ctx: WatchContext): IssueDraft[] {
   // まだ誰の稼働も入っていない月は、人ごとには出さない（画面の「稼働がまだありません」の案内で足りる）
   if (worked.size === 0) return [];
   const prevWorked = new Set(ctx.prevDrafts.filter((d) => d.hasWork).map((d) => d.driverId));
+  const prevTotal = new Map(ctx.prevDrafts.map((d) => [d.driverId, d.total]));
   const out: IssueDraft[] = [];
   for (const drv of ctx.drivers) {
     if (!drv.active || !prevWorked.has(drv.id) || worked.has(drv.id)) continue;
@@ -1154,6 +1437,102 @@ export function workMissing(ctx: WatchContext): IssueDraft[] {
       title: "前月は稼働があった方に、この月の稼働がありません",
       detail: `${drv.name}さんは前月に稼働がありましたが、${jpMonth(ctx.month)}の稼働がまだ入っていません。取り込みの漏れや名前の取り違えが無いか確かめてください。`,
       fixHref: FIX.work(monthQuery(ctx)),
+      impact: impactOf(prevTotal.get(drv.id) ?? null, "前月の支払額（参考）"),
+    });
+  }
+  return out;
+}
+
+/** 同じ人・同じ案件・同じ日付の稼働が 2 行以上ある（二重の取り込みのおそれ）。人ごとにまとめる */
+export function duplicateRows(ctx: WatchContext): IssueDraft[] {
+  const groups = new Map<string, { driverId: string; projectId: string; date: string; qtys: number[] }>();
+  for (const r of ctx.workRows ?? []) {
+    if (!r.workDate || !(r.qty > 0)) continue;
+    const key = `${r.driverId}\u0000${r.projectId}\u0000${r.workDate}`;
+    const g = groups.get(key) ?? { driverId: r.driverId, projectId: r.projectId, date: r.workDate, qtys: [] };
+    g.qtys.push(r.qty);
+    groups.set(key, g);
+  }
+  const drafts = new Map(ctx.drafts.map((d) => [d.driverId, d]));
+  const byDriver = new Map<string, { date: string; project: string; unit: string; qtys: number[]; extra: number }[]>();
+  for (const g of groups.values()) {
+    if (g.qtys.length < 2) continue;
+    const line = drafts.get(g.driverId)?.lines.find((l) => l.projectId === g.projectId);
+    if (!line) continue;
+    // 重なっている分：いちばん多い行を残して、残りの行の数量 × 単価
+    const extraQty = g.qtys.reduce((a, q) => a + q, 0) - Math.max(...g.qtys);
+    const list = byDriver.get(g.driverId) ?? [];
+    list.push({ date: g.date, project: line.project, unit: line.unit, qtys: g.qtys, extra: roundYen(line.rate * extraQty, rounding(ctx)) });
+    byDriver.set(g.driverId, list);
+  }
+  const out: IssueDraft[] = [];
+  for (const [driverId, list] of byDriver) {
+    list.sort((a, b) => a.date.localeCompare(b.date) || a.project.localeCompare(b.project, "ja"));
+    const extra = list.reduce((a, x) => a + x.extra, 0);
+    const shown = list
+      .slice(0, 5)
+      .map((x) => `${jpDate(x.date)} ${x.project} ${x.qtys.length}行（${x.qtys.map((q) => qtyText(q, x.unit)).join("・")}）`)
+      .join("、");
+    const name = driverName(ctx, driverId, drafts.get(driverId)?.driver.name);
+    out.push({
+      code: "duplicate_rows",
+      severity: "red",
+      subjectId: driverId,
+      subjectLabel: name,
+      title: "同じ日・同じ案件の稼働が重なっています",
+      detail:
+        `${name}さんの稼働に、同じ日付・同じ案件の行が2つ以上あります：${shown}${list.length > 5 ? ` ほか ${list.length - 5}件` : ""}。` +
+        `重なっている分の支払は ${yenText(extra)}です。同じ Excel を二重に取り込んでいないか確かめてください。別々の仕事なら、そのことを「確認済み」のメモに残してください。`,
+      fixHref: FIX.work(monthQuery(ctx)),
+      impact: impactOf(extra, "重なっている分の支払"),
+    });
+  }
+  return out;
+}
+
+/** 保存した明細の写しから、質問の行（lineKey）の名前と金額を引く（全体の質問・見つからない行は金額なし） */
+export function questionLine(draft: StatementDraft | null, lineKey: string | null): { label: string; amount: number | null } {
+  if (!lineKey) return { label: "明細全体", amount: null };
+  if (!draft) return { label: "明細の行", amount: null };
+  const line = draft.lines.find((l) => l.projectId === lineKey);
+  if (line) return { label: line.project, amount: line.amount };
+  const ded = draft.deductions.find((x) => x.ruleId === lineKey);
+  if (ded) return { label: `控除「${ded.name}」`, amount: ded.amount };
+  const adj = /^adj:(\d+)$/.exec(lineKey);
+  const a = adj ? draft.adjustments[Number(adj[1])] : undefined;
+  if (a) return { label: `調整「${a.label}」`, amount: Math.abs(a.amount) };
+  return { label: "前の版の行", amount: null };
+}
+
+/** この月の明細に、まだ解決にしていないドライバーの質問がある（人ごとにまとめる） */
+export function openQuestions(ctx: WatchContext): IssueDraft[] {
+  const byDriver = new Map<string, { statementId: string; items: NonNullable<WatchContext["questions"]> }>();
+  for (const q of ctx.questions ?? []) {
+    const g = byDriver.get(q.driverId) ?? { statementId: q.statementId, items: [] };
+    g.items.push(q);
+    byDriver.set(q.driverId, g);
+  }
+  const out: IssueDraft[] = [];
+  for (const [driverId, g] of byDriver) {
+    // 同じ行への質問は 1 行として数える（金額を二重に足さない）
+    const lines = new Map<string, { label: string; amount: number | null }>();
+    for (const q of g.items) lines.set(q.lineKey ?? "", q.line);
+    const amounts = [...lines.values()].filter((l) => l.amount !== null);
+    const first = g.items.map((q) => q.askedOn).sort()[0];
+    const name = driverName(ctx, driverId);
+    const days = first ? daysBetween(first, ctx.today) : 0;
+    out.push({
+      code: "open_questions",
+      severity: "yellow",
+      subjectId: driverId,
+      subjectLabel: name,
+      title: "明細への質問に、まだ答えていません",
+      detail:
+        `${name}さんから${monthOf(ctx)}の明細への質問が ${g.items.length}件あり、まだ「解決」にしていません（${[...lines.values()].map((l) => l.label).join("・")}）。` +
+        (first ? `いちばん古い質問は${jpDate(first)}${days > 0 ? `（${days}日前）` : ""}です。` : "") +
+        "答えてから締めると、あとで明細を作り直す手間が減ります。答え終わったら、明細の画面で「解決」にしてください。",
+      fixHref: FIX.statement(g.statementId),
+      impact: impactOf(amounts.length ? amounts.reduce((a, l) => a + (l.amount ?? 0), 0) : null, amounts.length ? "質問の行の金額" : "明細全体への質問のため出せません"),
     });
   }
   return out;
@@ -1161,48 +1540,92 @@ export function workMissing(ctx: WatchContext): IssueDraft[] {
 
 // ---------------------------------------------------------------- 一覧
 
-export type RuleDoc = { code: string; severities: WatchSeverity[]; label: string; what: string; basis?: string; sourceUrl?: string };
+export type RuleDoc = {
+  code: string;
+  severities: WatchSeverity[];
+  label: string;
+  what: string;
+  basis?: string;
+  sourceUrl?: string;
+  /** ルールのもとにした情報の時点（YYYY-MM）。画面に「2026年9月時点の情報」と出す */
+  asOf: string;
+  /** もとにした法律・制度が始まった日（これより前の月には当てない） */
+  effectiveFrom?: string;
+};
 
 type RuleFn = (ctx: WatchContext) => IssueDraft[];
 
-/** 並び順（重さが同じなら、この順に出す）と、画面の「見張り番が確かめていること」 */
+const AS_OF = WATCH_RULES_AS_OF_MONTH;
+const FL = EFFECTIVE.freelance;
+
+/** 並び順（重さと影響額が同じなら、この順に出す）と、画面の「見張り番が確かめていること」 */
 export const RULES: { fn: RuleFn; doc: RuleDoc }[] = [
-  { fn: termsMissing, doc: { code: "terms_missing", severities: ["red", "yellow"], label: "取引条件の明示", what: "稼働や差し引きがある人に、取引条件を明示した日の記録があるか。明示が仕事を始めたあとになっていないか", basis: BASIS.terms, sourceUrl: SOURCES.flQa } },
-  { fn: sixtyDays, doc: { code: "sixty_days", severities: ["red", "yellow"], label: "60日（2か月）の期限", what: "締め日・支払日の設定で、支払日が仕事の日から60日（2か月）を超えないか", basis: BASIS.payDate, sourceUrl: SOURCES.flGuidelines } },
-  { fn: paidLate, doc: { code: "paid_late", severities: ["red", "yellow"], label: "支払の遅れ", what: "振り込んだ日が明細の支払期日より後になっていないか。支払期日を過ぎても振り込んだ日の記録が無い人はいないか", basis: BASIS.payDate, sourceUrl: SOURCES.flQa } },
-  { fn: feeDeducted, doc: { code: "fee_deducted", severities: ["red"], label: "振込手数料の差し引き", what: "振込手数料をドライバーの負担にしていないか（設定・控除・調整）", basis: BASIS.fee, sourceUrl: SOURCES.toritekiLeaflet } },
-  { fn: deductionNoAgreement, doc: { code: "deduction_no_agreement", severities: ["red", "yellow"], label: "控除・差し引きの合意", what: "差し引いている控除に、書面での合意と合意した日の記録があるか。事故・破損などの負担に根拠があるか", basis: BASIS.reduction, sourceUrl: SOURCES.flGuidelines } },
-  { fn: negativeTotal, doc: { code: "negative_total", severities: ["red"], label: "振込額がマイナス", what: "控除が委託料を上回って、振込額がマイナスになっていないか" } },
-  { fn: paymentWording, doc: { code: "payment_wording", severities: ["yellow", "info"], label: "支払期日の書き方", what: "取引条件の支払期日を「まで」「以内」や、請求書・検収から数える書き方にしていないか", basis: BASIS.payDate, sourceUrl: SOURCES.flQa } },
-  { fn: rateChangedWithoutRecord, doc: { code: "rate_changed_without_record", severities: ["yellow"], label: "単価を変えた記録", what: "取引条件を明示したあとに変えた単価に、合意した日の記録があるか", basis: BASIS.terms, sourceUrl: SOURCES.flQa } },
-  { fn: rateDown, doc: { code: "rate_down", severities: ["yellow"], label: "単価の変化", what: "前月より単価が下がっている行（協議した記録の確認のため）", basis: BASIS.rateDown, sourceUrl: SOURCES.flGuidelines } },
-  { fn: contractEnd, doc: { code: "contract_end", severities: ["yellow"], label: "終了の予告", what: "6か月以上続いた委託を終えるとき、30日前までに予告した記録があるか", basis: BASIS.endNotice, sourceUrl: SOURCES.mhlwFl } },
-  { fn: noBank, doc: { code: "no_bank", severities: ["yellow"], label: "振込先の口座", what: "振込額がある人の口座がそろっていて、全銀の振込データに入るか" } },
-  { fn: qtyJump, doc: { code: "qty_jump", severities: ["yellow"], label: "数量の急な変化", what: `前月より数量の合計が ±${Math.round(QTY_JUMP_RATIO * 100)}% 以上変わった人はいないか（取り込みの漏れ・重なり）` } },
-  { fn: statementsStale, doc: { code: "statements_stale", severities: ["yellow"], label: "明細が最新か", what: "保存した明細が、今の稼働・設定と同じか" } },
-  { fn: invoiceNumber, doc: { code: "invoice_number", severities: ["yellow", "info"], label: "登録番号", what: `登録番号の形（T＋13桁）と、公表サイトで確かめた日（${REGISTRATION_CHECK_DAYS}日以内）`, basis: BASIS.invoiceNumber, sourceUrl: SOURCES.invoiceRegistry } },
-  { fn: invoiceBurden, doc: { code: "invoice_burden", severities: ["info"], label: "経過措置の負担", what: "インボイスの登録が無い方への支払で、会社が控除できない消費税の見込みと、次の段階", basis: BASIS.transitional, sourceUrl: SOURCES.invoiceTransitional } },
-  { fn: toriteki, doc: { code: "toriteki", severities: ["info"], label: "取適法の目安", what: "資本金・従業員の数から、取適法の対象になる可能性があるかの目安", basis: BASIS.toriteki, sourceUrl: SOURCES.toritekiOverview } },
-  { fn: workMissing, doc: { code: "work_missing", severities: ["info"], label: "稼働の入れ忘れ", what: "前月に稼働があった人に、その月の稼働が入っているか" } },
+  { fn: termsMissing, doc: { code: "terms_missing", severities: ["red", "yellow"], label: "取引条件の明示", what: "稼働や差し引きがある人に、取引条件を明示した日の記録（取引条件の記録・ドライバーの設定）があるか。明示が仕事を始めたあとになっていないか", basis: BASIS.terms, sourceUrl: SOURCES.flQa, asOf: AS_OF, effectiveFrom: FL } },
+  { fn: sixtyDays, doc: { code: "sixty_days", severities: ["red", "yellow", "info"], label: "60日（2か月）の期限", what: `締め日・支払日の設定で、支払日が仕事の日から60日（2か月）を超えないか。再委託の3項目の記録がある人は、元委託の支払期日から${SUBCONTRACT_DAYS}日で数える`, basis: BASIS.payDate, sourceUrl: SOURCES.flGuidelines, asOf: AS_OF, effectiveFrom: FL } },
+  { fn: paidLate, doc: { code: "paid_late", severities: ["red", "yellow"], label: "支払の遅れ", what: "振り込んだ日が明細の支払期日より後になっていないか。支払期日を過ぎても振り込んだ日の記録が無い人はいないか", basis: BASIS.payDate, sourceUrl: SOURCES.flQa, asOf: AS_OF, effectiveFrom: FL } },
+  { fn: latePaymentPrev, doc: { code: "late_payment_prev", severities: ["red"], label: "前の月の支払の遅れ", what: "前の月の振込が、その月の明細の支払期日より後になっていないか", basis: BASIS.payDate, sourceUrl: SOURCES.flQa, asOf: AS_OF, effectiveFrom: FL } },
+  { fn: feeDeducted, doc: { code: "fee_deducted", severities: ["red"], label: "振込手数料の差し引き", what: "振込手数料をドライバーの負担にしていないか（設定・控除・調整）", basis: BASIS.fee, sourceUrl: SOURCES.toritekiLeaflet, asOf: AS_OF, effectiveFrom: FL } },
+  { fn: deductionNoAgreement, doc: { code: "deduction_no_agreement", severities: ["red", "yellow"], label: "控除・差し引きの合意", what: "差し引いている控除に、書面での合意と合意した日の記録があるか。事故・破損などの負担に根拠があるか", basis: BASIS.reduction, sourceUrl: SOURCES.flGuidelines, asOf: AS_OF, effectiveFrom: FL } },
+  { fn: exemptOnlyCut, doc: { code: "exempt_only_cut", severities: ["red"], label: "登録の無い方だけの単価の変化", what: "同じ案件で、インボイスの登録が無い方だけ前の月より単価が下がっていないか", basis: BASIS.exemptCut, sourceUrl: SOURCES.exemptQa, asOf: AS_OF, effectiveFrom: EFFECTIVE.invoice } },
+  { fn: duplicateRows, doc: { code: "duplicate_rows", severities: ["red"], label: "稼働の重なり", what: "同じ人・同じ案件・同じ日付の稼働が2行以上ないか（二重の取り込み）", asOf: AS_OF } },
+  { fn: negativeTotal, doc: { code: "negative_total", severities: ["red"], label: "振込額がマイナス", what: "控除が委託料を上回って、振込額がマイナスになっていないか", asOf: AS_OF } },
+  { fn: paymentWording, doc: { code: "payment_wording", severities: ["yellow", "info"], label: "支払期日の書き方", what: "取引条件の支払期日を「まで」「以内」や、請求書・検収から数える書き方にしていないか", basis: BASIS.payDate, sourceUrl: SOURCES.flQa, asOf: AS_OF, effectiveFrom: FL } },
+  { fn: rateChangedWithoutRecord, doc: { code: "rate_changed_without_record", severities: ["yellow"], label: "単価を変えた記録", what: "取引条件を明示したあとに変えた単価に、合意した日の記録があるか", basis: BASIS.terms, sourceUrl: SOURCES.flQa, asOf: AS_OF, effectiveFrom: FL } },
+  { fn: termsOutdated, doc: { code: "terms_outdated", severities: ["yellow"], label: "取引条件の記録が古い", what: "取引条件を明示した記録のあとで、単価・控除・支払期日・振込手数料の負担が変わっていないか", basis: BASIS.terms, sourceUrl: SOURCES.flQa, asOf: AS_OF, effectiveFrom: FL } },
+  { fn: dedNewOrUp, doc: { code: "ded_new_or_up", severities: ["yellow"], label: "控除の追加・増額", what: "前の月の明細と比べて、新しく加わった控除・増えた控除はないか", basis: BASIS.reduction, sourceUrl: SOURCES.flGuidelines, asOf: AS_OF, effectiveFrom: FL } },
+  { fn: dedPenalty, doc: { code: "ded_penalty", severities: ["yellow"], label: "違約金・ペナルティ", what: "違約金・ペナルティ・罰金の名目の控除や調整はないか", basis: BASIS.penalty, sourceUrl: SOURCES.flGuidelines, asOf: AS_OF, effectiveFrom: FL } },
+  { fn: dedWithoutWork, doc: { code: "ded_without_work", severities: ["yellow"], label: "稼働の無い月の控除", what: "稼働が無い月に、控除（車両リースなど）だけを差し引いていないか", asOf: AS_OF } },
+  { fn: rateDown, doc: { code: "rate_down", severities: ["yellow"], label: "単価の変化", what: "前月より単価が下がっている行（協議した記録の確認のため）", basis: BASIS.rateDown, sourceUrl: SOURCES.flGuidelines, asOf: AS_OF, effectiveFrom: FL } },
+  { fn: contractEnd, doc: { code: "contract_end", severities: ["yellow"], label: "終了の予告", what: "6か月以上続いた委託を終えるとき、30日前までに予告した記録があるか", basis: BASIS.endNotice, sourceUrl: SOURCES.mhlwFl, asOf: AS_OF, effectiveFrom: FL } },
+  { fn: openQuestions, doc: { code: "open_questions", severities: ["yellow"], label: "明細への質問", what: "ドライバーからの明細への質問が、答えないまま残っていないか", asOf: AS_OF } },
+  { fn: noBank, doc: { code: "no_bank", severities: ["yellow"], label: "振込先の口座", what: "振込額がある人の口座がそろっていて、全銀の振込データに入るか", asOf: AS_OF } },
+  { fn: qtyJump, doc: { code: "qty_jump", severities: ["yellow"], label: "数量の急な変化", what: `前月より数量の合計が ±${Math.round(QTY_JUMP_RATIO * 100)}% 以上変わった人はいないか（取り込みの漏れ・重なり）`, asOf: AS_OF } },
+  { fn: statementsStale, doc: { code: "statements_stale", severities: ["yellow"], label: "明細が最新か", what: "保存した明細が、今の稼働・設定と同じか", asOf: AS_OF } },
+  { fn: transitionalSpan, doc: { code: "transitional_span", severities: ["yellow"], label: "経過措置の境目", what: "締めの期間が経過措置の境目をまたぐとき、登録の無い方の稼働に日付があるか", basis: BASIS.transitional, sourceUrl: SOURCES.invoiceTransitional, asOf: AS_OF, effectiveFrom: EFFECTIVE.invoice } },
+  { fn: invoiceNumber, doc: { code: "invoice_number", severities: ["yellow", "info"], label: "登録番号", what: `登録番号の形（T＋13桁）と、公表サイトで確かめた日（${REGISTRATION_CHECK_DAYS}日以内）`, basis: BASIS.invoiceNumber, sourceUrl: SOURCES.invoiceRegistry, asOf: AS_OF, effectiveFrom: EFFECTIVE.invoice } },
+  { fn: invoiceBurden, doc: { code: "invoice_burden", severities: ["info"], label: "経過措置の負担", what: "インボイスの登録が無い方への支払で、会社が控除できない消費税の見込みと、次の段階", basis: BASIS.transitional, sourceUrl: SOURCES.invoiceTransitional, asOf: AS_OF, effectiveFrom: EFFECTIVE.invoice } },
+  { fn: transitionalNext, doc: { code: "transitional_next", severities: ["info"], label: "経過措置の次の段", what: `経過措置の次の段が${TRANSITIONAL_NEXT_MONTHS}か月以内に始まるとき、同じ支払額での月の負担増の見込み`, basis: BASIS.transitional, sourceUrl: SOURCES.invoiceTransitional, asOf: AS_OF, effectiveFrom: EFFECTIVE.invoice } },
+  { fn: toriteki, doc: { code: "toriteki", severities: ["info"], label: "取適法の目安", what: `資本金・従業員の数から、取適法の対象になる可能性があるかの目安（運送の委託：${TORITEKI_THRESHOLD_TEXT}）`, basis: BASIS.toriteki, sourceUrl: SOURCES.toritekiOverview, asOf: AS_OF, effectiveFrom: EFFECTIVE.toriteki } },
+  { fn: workMissing, doc: { code: "work_missing", severities: ["info"], label: "稼働の入れ忘れ", what: "前月に稼働があった人に、その月の稼働が入っているか", asOf: AS_OF } },
 ];
 
 const SEVERITY_RANK: Record<WatchSeverity, number> = { red: 0, yellow: 1, info: 2 };
 const CODE_RANK = new Map(RULES.map((r, i) => [r.doc.code, i]));
+const NO_IMPACT = "金額で出す指摘ではありません";
 
-/** 重い順 → ルールの順 → 対象の名前の順 */
-export function sortIssues<T extends { severity: WatchSeverity; code: string; subjectLabel: string }>(issues: T[]): T[] {
+/** 影響額の大きい順（出せないものは後ろ） */
+function byImpact(a: { impact?: WatchImpact | null }, b: { impact?: WatchImpact | null }): number {
+  const x = a.impact?.yen ?? null;
+  const y = b.impact?.yen ?? null;
+  if (x === null && y === null) return 0;
+  if (x === null) return 1;
+  if (y === null) return -1;
+  return y - x;
+}
+
+/** 重い順 → 影響額の大きい順 → ルールの順 → 対象の名前の順 */
+export function sortIssues<T extends { severity: WatchSeverity; code: string; subjectLabel: string; impact?: WatchImpact | null }>(issues: T[]): T[] {
   return [...issues].sort(
     (a, b) =>
       SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] ||
+      byImpact(a, b) ||
       (CODE_RANK.get(a.code) ?? 99) - (CODE_RANK.get(b.code) ?? 99) ||
       a.subjectLabel.localeCompare(b.subjectLabel, "ja"),
   );
 }
 
-/** すべてのルールを当てて、重い順に並べる（確認済みの印は付けない） */
+/**
+ * すべてのルールを当てて、重い順に並べる（確認済みの印は付けない）。
+ * どの指摘にも影響額（出せないものは null）と、ルールの時点を付ける。法律が始まる前の月には、その法律のルールを当てない
+ */
 export function evaluateRules(ctx: WatchContext): IssueDraft[] {
   const out: IssueDraft[] = [];
-  for (const r of RULES) out.push(...r.fn(ctx));
+  const end = monthEnd(ctx.month.slice(0, 7));
+  for (const r of RULES) {
+    if (r.doc.effectiveFrom && end < r.doc.effectiveFrom) continue;
+    const asOf = jpMonth(r.doc.asOf);
+    for (const i of r.fn(ctx)) out.push({ ...i, asOf: i.asOf ?? asOf, impact: i.impact ?? impactOf(null, NO_IMPACT) });
+  }
   // 同じ種類・同じ対象は 1 つに（重い方を残す）
   const seen = new Map<string, IssueDraft>();
   for (const i of sortIssues(out)) {

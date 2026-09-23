@@ -1,9 +1,12 @@
 import "server-only";
-import { and, eq, gt, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import type { Db } from "~/db/client";
 import * as s from "~/db/schema";
+import type { Rounding } from "@/lib/payroll/types";
 import { buildStatementDrafts, type StatementDraft } from "~/server/calc/statement";
-import type { WatchContext, WatchDriver } from "~/server/features/watch/types";
+import { buildTermsContent, compareTermsContent, latestTermsByDriver, type TermsContent } from "~/server/features/terms-content";
+import { questionLine, readTermsContent } from "~/server/features/watch/rules";
+import type { WatchBatch, WatchContext, WatchDriver, WatchQuestion, WatchStatement, WatchTerms } from "~/server/features/watch/types";
 import { shiftMonth } from "~/server/month";
 import { getTenant, isMonthClosed, loadBuildInput } from "~/server/repo";
 import { readSnapshot, statementsStatus } from "~/server/statements-core";
@@ -51,11 +54,71 @@ function normalizeDraft(d: StatementDraft): StatementDraft {
   };
 }
 
+/** 名前の一覧が社内の番号の順になるように（D01, D02, …） */
+function byCode(drafts: StatementDraft[]): StatementDraft[] {
+  return drafts.sort((a, b) => (a.driver.code ?? "").localeCompare(b.driver.code ?? "", "ja") || a.driver.name.localeCompare(b.driver.name, "ja"));
+}
+
 /** その月の明細：締めた月で写しがあれば写し、それ以外は今の稼働から作る */
 async function draftsOf(db: Db, tenantId: string, month: string, closed: boolean, saved: SavedRow[]): Promise<StatementDraft[]> {
-  const drafts = closed && saved.length ? saved.map((r) => normalizeDraft(readSnapshot(r))) : buildStatementDrafts(await loadBuildInput(db, tenantId, month));
-  // 名前の一覧が社内の番号の順になるように（D01, D02, …）
-  return drafts.sort((a, b) => (a.driver.code ?? "").localeCompare(b.driver.code ?? "", "ja") || a.driver.name.localeCompare(b.driver.name, "ja"));
+  return byCode(closed && saved.length ? saved.map((r) => normalizeDraft(readSnapshot(r))) : buildStatementDrafts(await loadBuildInput(db, tenantId, month)));
+}
+
+/**
+ * 前の月の明細（比べるもと）：保存した写しがある人は写し（ドライバーに見せた中身）、無い人は今の稼働から作った見込み。
+ * 締めた月で写しがあれば、写しだけ
+ */
+async function prevDraftsOf(db: Db, tenantId: string, month: string, closed: boolean, saved: SavedRow[]): Promise<StatementDraft[]> {
+  if (closed && saved.length) return draftsOf(db, tenantId, month, closed, saved);
+  const savedBy = new Map(saved.map((r) => [r.driverId, normalizeDraft(readSnapshot(r))]));
+  const computed = buildStatementDrafts(await loadBuildInput(db, tenantId, month));
+  const merged = computed.map((d) => savedBy.get(d.driverId) ?? d);
+  const seen = new Set(merged.map((d) => d.driverId));
+  for (const [driverId, d] of savedBy) if (!seen.has(driverId)) merged.push(d);
+  return byCode(merged);
+}
+
+/** 保存した明細の支払日と振込額 */
+function statementRowsOf(saved: SavedRow[]): WatchStatement[] {
+  return saved.map((r) => ({ id: r.id, driverId: r.driverId, total: r.total, payDate: readSnapshot(r).payDate }));
+}
+
+/** 振込データ（入っている明細は、その会社・その月のものだけに絞る） */
+function batchRowsOf(rows: (typeof s.transferBatches.$inferSelect)[], saved: SavedRow[]): WatchBatch[] {
+  const ids = new Set(saved.map((r) => r.id));
+  return rows.map((b) => ({ id: b.id, fileName: b.fileName, transferDate: b.transferDate, executedOn: b.executedOn, statementIds: b.statementIds.filter((id) => ids.has(id)) }));
+}
+
+/**
+ * その人たちのいちばん新しい取引条件の記録と、今の台帳から作った中身との違い。
+ * 比べる案件は、記録にある案件（新しく担当した案件は「変わった」に数えない）
+ */
+async function termsOf(db: Db, tenantId: string, month: string, driverIds: string[], compare: boolean): Promise<WatchTerms[]> {
+  if (!driverIds.length) return [];
+  const latest = await latestTermsByDriver(db, tenantId, driverIds);
+  return Promise.all(
+    [...latest].map(async ([driverId, r]): Promise<WatchTerms> => {
+      const recorded = readTermsContent(r.content);
+      let current: TermsContent | null = null;
+      if (recorded && compare) {
+        try {
+          current = await buildTermsContent(db, tenantId, driverId, { projectIds: recorded.services.map((x) => x.projectId), month, deemed: r.deemedClause });
+        } catch (error) {
+          // 比べられないときは「古い」と言わない（見張り番は止めない）
+          console.error("watch terms compare failed", error instanceof Error ? error.message : error);
+        }
+      }
+      return {
+        driverId,
+        version: r.version,
+        issuedOn: r.issuedOn,
+        recorded,
+        current,
+        changes: recorded && current ? compareTermsContent(recorded, current) : [],
+        subcontract: r.subcontract ?? null,
+      };
+    }),
+  );
 }
 
 async function savedStatements(db: Db, tenantId: string, month: string): Promise<SavedRow[]> {
@@ -74,9 +137,10 @@ export async function loadWatchContext(db: Db, tenantId: string, month: string, 
     savedStatements(db, tenantId, month),
     savedStatements(db, tenantId, prevMonth),
   ]);
-  const [drafts, prevDrafts, drivers, terms, firstWork, rules, overrides, adjustments, batches, status] = await Promise.all([
+  const statementIds = saved.map((r) => r.id);
+  const [drafts, prevDrafts, drivers, terms, firstWork, rules, overrides, adjustments, batches, status, workRows, messages, prevBatches] = await Promise.all([
     draftsOf(db, tenantId, month, closed, saved),
-    draftsOf(db, tenantId, prevMonth, prevClosed, prevSaved),
+    prevDraftsOf(db, tenantId, prevMonth, prevClosed, prevSaved),
     db.select().from(s.drivers).where(eq(s.drivers.tenantId, tenantId)),
     db
       .select({
@@ -108,7 +172,32 @@ export async function loadWatchContext(db: Db, tenantId: string, month: string, 
       .from(s.transferBatches)
       .where(and(eq(s.transferBatches.tenantId, tenantId), eq(s.transferBatches.month, month))),
     closed ? Promise.resolve(null) : statementsStatus(db, tenantId, month),
+    // 日付のある稼働の行（同じ日・同じ案件の重なりを見る）
+    db
+      .select({ driverId: s.workEntries.driverId, projectId: s.workEntries.projectId, workDate: s.workEntries.workDate, qty: s.workEntries.qty })
+      .from(s.workEntries)
+      .where(and(eq(s.workEntries.tenantId, tenantId), eq(s.workEntries.month, month), isNotNull(s.workEntries.workDate), gt(s.workEntries.qty, 0))),
+    // この月の明細への、まだ解決にしていないドライバーの質問
+    statementIds.length
+      ? db
+          .select({ statementId: s.statementMessages.statementId, lineKey: s.statementMessages.lineKey, createdAt: s.statementMessages.createdAt })
+          .from(s.statementMessages)
+          .where(
+            and(
+              eq(s.statementMessages.tenantId, tenantId),
+              eq(s.statementMessages.author, "driver"),
+              isNull(s.statementMessages.resolvedAt),
+              inArray(s.statementMessages.statementId, statementIds),
+            ),
+          )
+      : Promise.resolve([]),
+    db
+      .select()
+      .from(s.transferBatches)
+      .where(and(eq(s.transferBatches.tenantId, tenantId), eq(s.transferBatches.month, prevMonth))),
   ]);
+  // 取引条件の記録（この月に明細がある人だけ）。今の台帳と比べるのは、まだ締めていない月だけ（締めた月は見るだけ）
+  const termsRows = await termsOf(db, tenantId, month, drafts.map((d) => d.driverId), !closed);
 
   const termsBy = new Map(terms.map((t) => [t.driverId, t]));
   // ドライバーごとの最初に稼働した月（とその月のいちばん早い日付）
@@ -122,14 +211,12 @@ export async function loadWatchContext(db: Db, tenantId: string, month: string, 
   const earliest = (...v: (string | null | undefined)[]) => v.filter((x): x is string => !!x).sort()[0] ?? null;
   const latest = (...v: (string | null | undefined)[]) => v.filter((x): x is string => !!x).sort().at(-1) ?? null;
 
-  // 保存した明細の支払日（写しの payDate）
-  const statementRows = saved.map((r) => {
-    const snap = readSnapshot(r);
-    return { id: r.id, driverId: r.driverId, total: r.total, payDate: snap.payDate };
+  const savedBy = new Map(saved.map((r) => [r.id, r]));
+  const questions: WatchQuestion[] = messages.flatMap((q) => {
+    const st = savedBy.get(q.statementId);
+    if (!st) return [];
+    return [{ statementId: st.id, driverId: st.driverId, lineKey: q.lineKey, askedOn: dateOf(q.createdAt), line: questionLine(normalizeDraft(readSnapshot(st)), q.lineKey) }];
   });
-
-  // 振込データに入っている明細が、この会社のものか（念のため id で絞る）
-  const statementIds = new Set(saved.map((r) => r.id));
 
   return {
     month,
@@ -141,6 +228,7 @@ export async function loadWatchContext(db: Db, tenantId: string, month: string, 
       payDay: tenant.payDay,
       taxMethod: tenant.taxMethod,
       settings: tenant.settings ?? {},
+      amountRounding: tenant.amountRounding as Rounding,
     },
     drafts,
     prevDrafts,
@@ -180,6 +268,7 @@ export async function loadWatchContext(db: Db, tenantId: string, month: string, 
       agreedOn: r.agreedOn,
       basis: r.basis,
       active: r.active,
+      onlyWhenWorked: r.onlyWhenWorked,
     })),
     overrides: overrides.map((o) => ({
       id: o.id,
@@ -197,17 +286,16 @@ export async function loadWatchContext(db: Db, tenantId: string, month: string, 
       agreedInWriting: a.agreedInWriting,
       basis: a.basis,
     })),
-    statements: statementRows,
-    batches: batches.map((b) => ({
-      id: b.id,
-      fileName: b.fileName,
-      transferDate: b.transferDate,
-      executedOn: b.executedOn,
-      statementIds: b.statementIds.filter((id) => statementIds.has(id)),
-    })),
+    statements: statementRowsOf(saved),
+    batches: batchRowsOf(batches, saved),
     statementsStatus: status
       ? { saved: status.saved, missing: status.missing.length, stale: status.stale.length, orphan: status.orphan.length, upToDate: status.upToDate }
       : null,
+    workRows: workRows.filter((w): w is typeof w & { workDate: string } => w.workDate !== null),
+    questions,
+    prevStatements: statementRowsOf(prevSaved),
+    prevBatches: batchRowsOf(prevBatches, prevSaved),
+    terms: termsRows,
   };
 }
 

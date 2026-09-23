@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { Card, buttonClass } from "@/components/ui";
+import { Card, Money, buttonClass } from "@/components/ui";
 import { Badge } from "~/components/page";
 import { AckForm, UnackForm } from "~/components/watch/ack-forms";
-import type { WatchIssue } from "~/server/features/watch-types";
 import { fixLink } from "~/server/features/watch/sources";
+import type { WatchImpact, WatchIssueEx } from "~/server/features/watch/types";
 
 export const SEVERITY_LABEL = { red: "赤", yellow: "黄", info: "お知らせ" } as const;
 const SEVERITY_TONE = { red: "red", yellow: "yellow", info: "gray" } as const;
@@ -19,10 +19,29 @@ function monthJa(month: string): string {
 
 export type AckView = { note: string | null; byName: string | null; at: Date };
 
+/** 影響額：「¥357,555（遠藤 大輔さんの2026年10月分の支払額）」。出せないものは「—」と理由 */
+export function ImpactLine({ impact }: { impact?: WatchImpact | null }) {
+  const label = impact?.label ?? "金額で出す指摘ではありません";
+  return (
+    <p className="mt-2 flex flex-wrap items-baseline gap-x-2 text-sm">
+      <span className="text-xs font-bold text-muted-foreground">影響額</span>
+      {impact && impact.yen !== null ? (
+        <Money value={impact.yen} className="text-base font-bold" />
+      ) : (
+        <span className="font-bold" aria-label="金額なし">
+          —
+        </span>
+      )}
+      <span className="min-w-0 break-words text-xs text-muted-foreground">（{label}）</span>
+    </p>
+  );
+}
+
 /**
- * 見張り番の指摘 1 件：見出し・対象・記録から分かること・根拠と出典・直す画面・確認済みの印。
- * 確認済みにする／外すのは事務・オーナーで、まだ締めていない月（振込の遅れは締めたあとも）。
+ * 見張り番の指摘 1 件：見出し・影響額・対象・記録から分かること・根拠と出典と時点・直す画面・確認済みの印。
+ * 確認済みにする／外すのは事務・オーナーで、まだ締めていない月（振込の遅れ・質問は締めたあとも）。
  * 直す画面へのリンクは、直せない人（閲覧の人・会社の設定を変えられない事務・締めた月）には「見る」と出す。
+ * 確認済みの指摘は消さずに、灰色の 1 行にたたむ（開くと中身とメモ。確認したあとで中身が変わったものはたたまない）。
  */
 export function IssueCard({
   issue,
@@ -35,7 +54,7 @@ export function IssueCard({
   changedSinceAck = false,
   previous,
 }: {
-  issue: WatchIssue;
+  issue: WatchIssueEx;
   month: string;
   role: "owner" | "staff" | "viewer";
   closed: boolean;
@@ -49,80 +68,108 @@ export function IssueCard({
   const k = { month, code: issue.code, subjectId: issue.subjectId };
   const red = issue.severity === "red";
   const fix = issue.fixHref ? fixLink(issue.fixHref, { role, closed }) : null;
-  return (
-    <li>
-      <Card className={issue.acked ? "opacity-90" : CARD_BORDER[issue.severity]}>
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge tone={SEVERITY_TONE[issue.severity]}>{SEVERITY_LABEL[issue.severity]}</Badge>
-          {issue.acked && <Badge tone="green">確認済み</Badge>}
-          {issue.subjectLabel && <span className="min-w-0 break-words text-sm text-muted-foreground">{issue.subjectLabel}</span>}
+  const body = (
+    <>
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge tone={SEVERITY_TONE[issue.severity]}>{SEVERITY_LABEL[issue.severity]}</Badge>
+        {issue.acked && <Badge tone="green">確認済み</Badge>}
+        {issue.subjectLabel && <span className="min-w-0 break-words text-sm text-muted-foreground">{issue.subjectLabel}</span>}
+      </div>
+      <h3 className={`mt-2 font-bold ${red && !issue.acked ? "text-danger" : ""}`}>{issue.title}</h3>
+      <ImpactLine impact={issue.impact} />
+      <p className="mt-1 break-words text-sm">{issue.detail}</p>
+
+      {issue.basis ? (
+        <p className="mt-2 text-xs text-muted-foreground">
+          根拠：{issue.basis}
+          {issue.asOf && <span className="ml-1">（{issue.asOf}時点の情報）</span>}
+          {issue.sourceUrl && (
+            <a href={issue.sourceUrl} target="_blank" rel="noopener noreferrer" className="ml-2 inline-flex min-h-11 items-center align-middle sm:min-h-0">
+              出典<span className="sr-only">（新しいタブで開きます）</span> ↗
+            </a>
+          )}
+        </p>
+      ) : (
+        issue.asOf && <p className="mt-2 text-xs text-muted-foreground">記録の数字から見ています（{issue.asOf}時点のルール）</p>
+      )}
+
+      {issue.acked && (
+        <div className="mt-3 rounded-lg border border-success/40 bg-success/10 p-3 text-sm">
+          <p className="font-bold text-success">確認済み</p>
+          <p className="mt-1 whitespace-pre-line break-words">{issue.ackNote || "（メモなし）"}</p>
+          {ack && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              {ack.byName ? `${ack.byName}さん・` : ""}
+              {jst.format(ack.at)}
+            </p>
+          )}
+          {changedSinceAck && (
+            <p className="mt-2 rounded-md border border-warning/40 bg-warning/10 p-2 text-xs font-bold text-warning">
+              確認済みにしたあとで、この指摘の中身（数字・日付・人）が変わりました。もう一度確かめて、メモを書き直してください。
+            </p>
+          )}
         </div>
-        <h3 className={`mt-2 font-bold ${red && !issue.acked ? "text-danger" : ""}`}>{issue.title}</h3>
-        <p className="mt-1 break-words text-sm">{issue.detail}</p>
+      )}
+      {!issue.acked && previous && (
+        <p className="mt-3 rounded-lg border border-border bg-muted p-3 text-xs">
+          {monthJa(previous.month)}にも同じ指摘を確認済みにしています：{previous.note ? `「${previous.note}」` : "（メモなし）"}
+        </p>
+      )}
 
-        {issue.basis && (
-          <p className="mt-2 text-xs text-muted-foreground">
-            根拠：{issue.basis}
-            {issue.sourceUrl && (
-              <a href={issue.sourceUrl} target="_blank" rel="noopener noreferrer" className="ml-2 inline-flex min-h-11 items-center align-middle sm:min-h-0">
-                出典<span className="sr-only">（新しいタブで開きます）</span> ↗
-              </a>
-            )}
-          </p>
-        )}
-
-        {issue.acked && (
-          <div className="mt-3 rounded-lg border border-success/40 bg-success/10 p-3 text-sm">
-            <p className="font-bold text-success">確認済み</p>
-            <p className="mt-1 whitespace-pre-line break-words">{issue.ackNote || "（メモなし）"}</p>
-            {ack && (
-              <p className="mt-1 text-xs text-muted-foreground">
-                {ack.byName ? `${ack.byName}さん・` : ""}
-                {jst.format(ack.at)}
-              </p>
-            )}
-            {changedSinceAck && (
-              <p className="mt-2 rounded-md border border-warning/40 bg-warning/10 p-2 text-xs font-bold text-warning">
-                確認済みにしたあとで、この指摘の中身（数字・日付・人）が変わりました。もう一度確かめて、メモを書き直してください。
-              </p>
-            )}
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-start">
+        {fix && (
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
+            <Link href={fix.href} className={buttonClass(fix.canFix && !issue.acked ? "primary" : "secondary", "w-full sm:w-auto")}>
+              {fix.text}
+            </Link>
+            {fix.note && <p className="text-xs text-muted-foreground sm:max-w-xs">{fix.note}</p>}
           </div>
         )}
-        {!issue.acked && previous && (
-          <p className="mt-3 rounded-lg border border-border bg-muted p-3 text-xs">
-            {monthJa(previous.month)}にも同じ指摘を確認済みにしています：{previous.note ? `「${previous.note}」` : "（メモなし）"}
-          </p>
+        {canAck && !issue.acked && (
+          <div className="w-full sm:min-w-72 sm:flex-1">
+            <AckForm k={k} minLength={ackMinLength} red={red} draftNote={previous?.note} />
+          </div>
         )}
-
-        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-start">
-          {fix && (
-            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
-              <Link href={fix.href} className={buttonClass(fix.canFix && !issue.acked ? "primary" : "secondary", "w-full sm:w-auto")}>
-                {fix.text}
-              </Link>
-              {fix.note && <p className="text-xs text-muted-foreground sm:max-w-xs">{fix.note}</p>}
-            </div>
-          )}
-          {canAck && !issue.acked && (
-            <div className="w-full sm:min-w-72 sm:flex-1">
-              <AckForm k={k} minLength={ackMinLength} red={red} draftNote={previous?.note} />
-            </div>
-          )}
-          {canAck && issue.acked && changedSinceAck && (
-            <div className="w-full sm:min-w-72 sm:flex-1">
-              <AckForm
-                k={k}
-                minLength={ackMinLength}
-                red={red}
-                draftNote={issue.ackNote}
-                label="確かめ直してメモを書き直す"
-                draftHint="いまのメモを下書きに入れています。変わった中身を確かめてから保存してください。"
-              />
-            </div>
-          )}
-          {canAck && issue.acked && <UnackForm k={k} red={red} />}
-        </div>
-      </Card>
+        {canAck && issue.acked && changedSinceAck && (
+          <div className="w-full sm:min-w-72 sm:flex-1">
+            <AckForm
+              k={k}
+              minLength={ackMinLength}
+              red={red}
+              draftNote={issue.ackNote}
+              label="確かめ直してメモを書き直す"
+              draftHint="いまのメモを下書きに入れています。変わった中身を確かめてから保存してください。"
+            />
+          </div>
+        )}
+        {canAck && issue.acked && <UnackForm k={k} red={red} />}
+      </div>
+    </>
+  );
+  if (issue.acked && !changedSinceAck) {
+    const yen = issue.impact?.yen ?? null;
+    return (
+      <li>
+        <details className="group rounded-card border border-border bg-muted">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm text-muted-foreground [&::-webkit-details-marker]:hidden">
+            <Badge tone="green">確認済み</Badge>
+            <span className="min-w-0 flex-1 truncate">
+              {SEVERITY_LABEL[issue.severity]}・{issue.title}
+              {issue.subjectLabel ? `（${issue.subjectLabel}）` : ""}
+            </span>
+            {yen !== null && <Money value={yen} className="shrink-0 text-xs" />}
+            <span aria-hidden className="shrink-0 group-open:rotate-180">
+              ▾
+            </span>
+          </summary>
+          <div className="rounded-b-card border-t border-border bg-card p-4">{body}</div>
+        </details>
+      </li>
+    );
+  }
+  return (
+    <li>
+      <Card className={issue.acked ? "opacity-90" : CARD_BORDER[issue.severity]}>{body}</Card>
     </li>
   );
 }

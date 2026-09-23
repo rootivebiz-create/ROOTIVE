@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { JsonLd, faqPageLd } from "@/components/json-ld";
 import { BusinessInfo } from "@/components/landing/business-info";
-import { Comparison } from "@/components/landing/comparison";
 import { Deadlines } from "@/components/landing/deadlines";
+import { Enough } from "@/components/landing/enough";
 import { Faq, landingFaq } from "@/components/landing/faq";
 import { Features } from "@/components/landing/features";
 import { FinalCta } from "@/components/landing/final-cta";
@@ -42,7 +42,8 @@ function businessLd(info: Info) {
     url,
     description: SITE.description,
     areaServed: { "@type": "Country", name: "日本" },
-    serviceType: "業務委託ドライバーの支払明細・振込データ・利益の集計の仕組みづくり",
+    serviceType:
+      "軽貨物・運送会社向けの月末の締めの仕組み（Excelの取り込み・支払明細とドライバーの確認・振込データ・元請の支払通知との突き合わせ）の立ち上げと保守",
     ...(info.ownerName ? { founder: { "@type": "Person", name: info.ownerName } } : {}),
     ...(info.address ? { address: info.address } : {}),
     ...(info.phone ? { telephone: info.phone } : {}),
@@ -95,9 +96,9 @@ export default function HomePage() {
       <Pains />
       <Deadlines />
       <Features />
+      <Enough />
       <Maker />
       <Pricing invoiceRegNo={info.invoiceRegNo} />
-      <Comparison />
       <Trust />
       <Flow />
       <Faq items={faq} />

@@ -19,7 +19,7 @@ import {
   type TermsDocument,
   type TermsSubcontract,
 } from "~/server/features/terms/document";
-import { todayJst } from "~/server/features/terms/links";
+import { jpDateTimeJst, todayJst } from "~/server/features/terms/links";
 import { isUuid, termsBulkSchema, termsChannelSchema, termsVersionSchema, type TermsBulkInput, type TermsChannel, type TermsVersionInput } from "~/server/features/terms/schema";
 import { termsStatusOf, type TermsStatusKey } from "~/server/features/terms/status";
 import { shiftMonth } from "~/server/month";
@@ -335,6 +335,8 @@ export type TermsVersionView = {
   changesFromPrev: string[] | null;
   isLatest: boolean;
   status: TermsStatusKey;
+  /** リンクの署名に使う値（画面には出さない。会社の画面でリンクを作るときだけ使う） */
+  linkNonce: string;
 };
 
 export type TermsProjectChoice = { id: string; name: string; client: string | null; unit: string; payRate: number; active: boolean; recent: boolean };
@@ -430,6 +432,7 @@ export async function loadTermsDriver(db: Db, tenantId: string, driverId: string
         : null,
       isLatest: i === 0,
       status: termsStatusOf(r),
+      linkNonce: r.linkNonce,
     };
   });
   const latest = versions[0] ?? null;
@@ -818,19 +821,102 @@ export async function recreateTermsLink(db: Db, tenantId: string, actor: TermsAc
 
 // ---------------------------------------------------------------- PDF（会社の画面から）
 
-/** 明示書 1 通の中身（会社で絞る）。見つからなければ null */
-export async function termsDocumentFor(db: Db, tenantId: string, recordId: string): Promise<TermsDocument | null> {
+/** PDF に入れる「受け取りました」の記録の文 */
+export function termsReceivedText(rec: { receivedAt: Date | null; version: number }): string {
+  return rec.receivedAt
+    ? `受託者の受け取り：${jpDateTimeJst(rec.receivedAt)}（版 ${rec.version}。リンクの「受け取りました」で記録）`
+    : "受託者の受け取り：この版の記録はまだありません";
+}
+
+/** 明示書 1 通の中身と受け取りの記録（会社で絞る）。見つからなければ null */
+export async function termsPdfSource(db: Db, tenantId: string, recordId: string): Promise<{ doc: TermsDocument; receivedText: string } | null> {
   const rec = await getTermsRecord(db, tenantId, recordId);
   if (!rec) return null;
   const [tenant, driver] = await Promise.all([getTenant(db, tenantId), driverOf(db, tenantId, rec.driverId)]);
   if (!driver) return null;
-  return toTermsDocument(rec, { name: tenant.name, registrationNo: tenant.registrationNo }, { name: driver.name, code: driver.code });
+  return {
+    doc: toTermsDocument(rec, { name: tenant.name, registrationNo: tenant.registrationNo }, { name: driver.name, code: driver.code }),
+    receivedText: termsReceivedText(rec),
+  };
 }
 
 export function termsPdfFileName(doc: Pick<TermsDocument, "driver" | "version">): string {
   return `取引条件の明示書_${doc.driver.name}_版${doc.version}.pdf`;
 }
 
+
+// ---------------------------------------------------------------- 監査用の出力（全員分の PDF・全部の版の CSV）
+
+/** 有効なドライバーの、最新の版の明示書（全員分の PDF 用。名前の順） */
+export async function latestTermsPdfSources(db: Db, tenantId: string): Promise<{ doc: TermsDocument; receivedText: string }[]> {
+  const [tenant, drivers, latest] = await Promise.all([
+    getTenant(db, tenantId),
+    db
+      .select({ id: s.drivers.id, name: s.drivers.name, code: s.drivers.code })
+      .from(s.drivers)
+      .where(and(eq(s.drivers.tenantId, tenantId), eq(s.drivers.active, true)))
+      .orderBy(asc(s.drivers.code), asc(s.drivers.name)),
+    latestTermsByDriver(db, tenantId),
+  ]);
+  const company = { name: tenant.name, registrationNo: tenant.registrationNo };
+  return drivers.flatMap((d) => {
+    const rec = latest.get(d.id);
+    return rec ? [{ doc: toTermsDocument(rec, company, { name: d.name, code: d.code }), receivedText: termsReceivedText(rec) }] : [];
+  });
+}
+
+export const TERMS_CSV_HEADER = [
+  "ドライバーの番号",
+  "ドライバー",
+  "版",
+  "最新の版か",
+  "明示した日",
+  "作った日時",
+  "送付",
+  "受け取り",
+  "みなし確認の条項",
+  "再委託",
+  "明示した書面",
+  "案件の数",
+  "控除の数",
+  "目印（中身のハッシュ）",
+];
+
+/** 取引条件の記録の全部の版（ドライバー・版の順）。無効にしたドライバーの記録も出す（消さない記録なので） */
+export async function termsRecordRows(db: Db, tenantId: string): Promise<(string | number)[][]> {
+  const [records, drivers] = await Promise.all([
+    db.select().from(s.termsRecords).where(eq(s.termsRecords.tenantId, tenantId)).orderBy(asc(s.termsRecords.driverId), asc(s.termsRecords.version)),
+    db.select({ id: s.drivers.id, name: s.drivers.name, code: s.drivers.code }).from(s.drivers).where(eq(s.drivers.tenantId, tenantId)),
+  ]);
+  const who = new Map(drivers.map((d) => [d.id, d]));
+  const last = new Map<string, number>();
+  for (const r of records) last.set(r.driverId, Math.max(last.get(r.driverId) ?? 0, r.version));
+  return records
+    .map((r) => ({ r, d: who.get(r.driverId) }))
+    .sort((a, b) => (a.d?.code ?? "").localeCompare(b.d?.code ?? "", "ja") || (a.d?.name ?? "").localeCompare(b.d?.name ?? "", "ja") || a.r.version - b.r.version)
+    .map(({ r, d }) => {
+      const c = readTermsContent(r.content);
+      const sub = readSubcontract(r.subcontract);
+      return [
+        d?.code ?? "",
+        d?.name ?? "",
+        r.version,
+        r.version === last.get(r.driverId) ? "最新" : "",
+        r.issuedOn,
+        jpDateTimeJst(r.createdAt),
+        r.sentAt ? jpDateTimeJst(r.sentAt) : "",
+        r.receivedAt ? jpDateTimeJst(r.receivedAt) : "",
+        r.deemedClause ? "あり" : "なし",
+        sub?.isSubcontract ? `元委託者：${sub.originalClient}／元委託の支払期日：${sub.originalPayDate}` : "",
+        r.documentName ?? "",
+        c ? c.services.length : "",
+        c ? c.deductions.length : "",
+        termsHash(r),
+      ];
+    });
+}
+
+// ほかの機能から使いやすいように、中身の形と状態の型もここから出す
 export { changeText, readTermsContent } from "~/server/features/terms/document";
 export type { TermsDocument, StoredTermsContent } from "~/server/features/terms/document";
 export type { TermsChannel } from "~/server/features/terms/schema";

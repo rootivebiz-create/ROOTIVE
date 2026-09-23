@@ -26,9 +26,13 @@ import {
 } from "~/server/features/reconcile/columns";
 import { compareNotice, itemKey, sumDiffs, type CmpLine, type CompareItem, type CompareResult, type LineRole } from "~/server/features/reconcile/compare";
 import { receivingFacts, type ReceivingFact } from "~/server/features/reconcile/facts";
-import { isChargeName, isUnsettled, lineKey, type ItemKind, type ItemStatus } from "~/server/features/reconcile/labels";
+import { isChargeName, isUnsettled, lineKey, WAIT_ALERT_DAYS, waitingDays, type ItemKind, type ItemStatus } from "~/server/features/reconcile/labels";
+import type { LetterItem } from "~/server/features/reconcile/letter";
+import { selectPeriodWork, type ComparePeriod, type PeriodWork } from "~/server/features/reconcile/period";
+import { periodOf } from "~/server/calc/statement";
 
 export { lineKey };
+export type { ComparePeriod };
 
 /**
  * 元請の支払通知との突合（取り込み・突き合わせ・問い合わせの状態・レポート）。
@@ -254,7 +258,8 @@ type NoticeContext = {
   /** billRate は、締めた月なら締めたときの単価に置き換えてある */
   projects: ProjectRef[];
   drivers: DriverRef[];
-  work: { projectId: string; driverId: string; qty: number }[];
+  /** その月と前後の月の稼働（元請の締めの期間で比べるときに、日付で拾い直す） */
+  work: PeriodWork[];
   lines: (typeof s.paymentNoticeLines.$inferSelect)[];
   profile: ProfileRow | null;
   /** 締めた月の写しの単価を使った案件の数（0 なら今の単価） */
@@ -269,9 +274,9 @@ async function loadContext(db: Db, tenantId: string, noticeId: string): Promise<
     db.select().from(s.projects).where(eq(s.projects.tenantId, tenantId)).orderBy(asc(s.projects.name)),
     db.select().from(s.drivers).where(eq(s.drivers.tenantId, tenantId)).orderBy(asc(s.drivers.name)),
     db
-      .select({ projectId: s.workEntries.projectId, driverId: s.workEntries.driverId, qty: s.workEntries.qty })
+      .select({ month: s.workEntries.month, projectId: s.workEntries.projectId, driverId: s.workEntries.driverId, qty: s.workEntries.qty, workDate: s.workEntries.workDate })
       .from(s.workEntries)
-      .where(and(eq(s.workEntries.tenantId, tenantId), eq(s.workEntries.month, notice.month))),
+      .where(and(eq(s.workEntries.tenantId, tenantId), inArray(s.workEntries.month, [shiftMonth(notice.month, -1), notice.month, shiftMonth(notice.month, 1)]))),
     db
       .select()
       .from(s.paymentNoticeLines)
@@ -331,15 +336,31 @@ function toCmpLine(l: ResolvedLine): CmpLine {
   return { id: l.id, rawProject: l.rawProject, rawDriver: l.rawDriver, projectId: l.projectId, driverId: l.driverId, qty: l.qty, unitPrice: l.unitPrice, amount: l.amount, role: l.role };
 }
 
-function compareFromContext(ctx: NoticeContext, resolved: ResolvedLine[]): CompareResult {
-  return compareNotice({
+/** 突き合わせる案件（その元請の案件 ＋ 通知の行が当たった案件）。締めの期間で比べるとき、この案件の稼働に日付があるかを見る */
+function scopeProjectIds(clientId: string | null, projects: { id: string; clientId: string | null }[], lines: { role: LineRole; projectId: string | null }[]): Set<string> {
+  const ids = new Set(projects.filter((p) => clientId !== null && p.clientId === clientId).map((p) => p.id));
+  for (const l of lines) if (l.role === "project" && l.projectId) ids.add(l.projectId);
+  return ids;
+}
+
+/** 突き合わせ（元請の締め日が当社と違い、稼働に日付があれば、元請の締めの期間の稼働で比べる） */
+function compareWithPeriod(ctx: NoticeContext, resolved: ResolvedLine[]): { result: CompareResult; period: ComparePeriod } {
+  const { work, period } = selectPeriodWork({
+    month: ctx.notice.month,
+    tenantClosingDay: ctx.tenant.closingDay,
+    clientClosingDay: ctx.client ? ctx.client.closingDay : null,
+    projectIds: scopeProjectIds(ctx.notice.clientId, ctx.projects, resolved),
+    work: ctx.work,
+  });
+  const result = compareNotice({
     clientId: ctx.notice.clientId,
     projects: ctx.projects.map((p) => ({ id: p.id, name: p.name, clientId: p.clientId, unit: p.unit, billRate: p.billRate })),
     drivers: ctx.drivers.map((d) => ({ id: d.id, name: d.name })),
-    work: ctx.work,
+    work,
     lines: resolved.map(toCmpLine),
     rounding: ctx.tenant.amountRounding as Rounding,
   });
+  return { result, period };
 }
 
 /** 行を案件・ドライバーに当て直し（覚えた当て方 → 名前の照合）、変わった行だけ保存する（当て先ごとにまとめて書く） */
@@ -405,7 +426,7 @@ export async function runReconcile(db: Db, tenantId: string, noticeId: string, u
   const ctx = await loadContext(db, tenantId, noticeId);
   const { changed: matchedLines, resolved } = await autoMatch(db, tenantId, ctx);
   if (ctx.lines.length === 0) return { skipped: true, items: 0, created: 0, updated: 0, removed: 0, reopened: 0, settledByRerun: 0, matchedLines };
-  const result = compareFromContext(ctx, resolved);
+  const { result, period } = compareWithPeriod(ctx, resolved);
   const out: RunResult = { skipped: false, items: result.items.length, created: 0, updated: 0, removed: 0, reopened: 0, settledByRerun: 0, matchedLines };
 
   await db.transaction(async (tx) => {
@@ -485,7 +506,14 @@ export async function runReconcile(db: Db, tenantId: string, noticeId: string, u
       });
     }
   });
-  await audit(db, { tenantId, userId, action: "reconcile.run", entity: "payment_notice", entityId: noticeId, detail: { ...out, ourTotal: result.ourTotal, theirTotal: result.theirTotal } });
+  await audit(db, {
+    tenantId,
+    userId,
+    action: "reconcile.run",
+    entity: "payment_notice",
+    entityId: noticeId,
+    detail: { ...out, ourTotal: result.ourTotal, theirTotal: result.theirTotal, period: { mode: period.mode, from: period.from, to: period.to, fallback: period.fallback } },
+  });
   return out;
 }
 
@@ -515,6 +543,12 @@ function pickSheet(sheets: { name: string; rows: string[][] }[], profile: Profil
   return tries.find((t) => !t.problem) ?? tries.sort((a, b) => b.sheet.rows.length - a.sheet.rows.length)[0];
 }
 
+/** 元請の締めの期間（締め日が月末なら null。お支払通知の日付が期間の外かを見るのに使う） */
+function clientPeriod(client: { closingDay: number } | null, month: string): { from: string; to: string } | null {
+  if (!client || client.closingDay === 0 || client.closingDay >= 31) return null;
+  return periodOf(month, client.closingDay);
+}
+
 function assertMonth(month: string): void {
   if (!/^\d{4}-(0[1-9]|1[0-2])-01$/.test(month)) throw new UserError("月の形が正しくありません");
 }
@@ -523,6 +557,9 @@ function assertMonth(month: string): void {
 export async function importNotice(db: Db, tenantId: string, userId: string | null, input: ImportNoticeInput): Promise<ImportNoticeResult> {
   assertMonth(input.month);
   const client = await getClient(db, tenantId, input.clientId);
+  if (!client.active) {
+    throw new UserError(`${client.name}は「取引をやめた元請」になっています。お支払通知を上げるときは、設定の「元請」で有効に戻してください。これまでのお支払通知は、そのまま見られます。`);
+  }
   const tenant = await getTenant(db, tenantId);
   if (input.bytes.byteLength === 0) throw new UserError("ファイルが空です。元請から届いたファイルを選んでください");
   if (input.bytes.byteLength > MAX_NOTICE_FILE_BYTES) throw new UserError("ファイルが大きすぎます（5MB まで）。不要なシートを消すか、CSV にしてから上げてください");
@@ -540,7 +577,9 @@ export async function importNotice(db: Db, tenantId: string, userId: string | nu
   const pick = pickSheet(read.sheets, profile);
   const rows = pick.sheet.rows;
   const rounding = tenant.amountRounding as Rounding;
-  const parsed: ParsedNotice | null = pick.problem ? null : parseNoticeRows(rows, pick.headerIndex, pick.det.columns, { rounding, month: input.month });
+  const parsed: ParsedNotice | null = pick.problem
+    ? null
+    : parseNoticeRows(rows, pick.headerIndex, pick.det.columns, { rounding, month: input.month, period: clientPeriod(client, input.month) });
   if (parsed && parsed.lines.length === 0) {
     throw new UserError("読み取れる行がありませんでした。見出しの下に品目と金額（または数量と単価）が並んでいるか確かめてください");
   }
@@ -690,7 +729,12 @@ export async function updateNoticeColumns(db: Db, tenantId: string, userId: stri
   if (problem) throw new UserError(problem);
 
   const tenant = await getTenant(db, tenantId);
-  const parsed = parseNoticeRows(summary.rows, headerIndex, input.columns, { rounding: tenant.amountRounding as Rounding, month: notice.month });
+  const client = notice.clientId ? await getClient(db, tenantId, notice.clientId).catch(() => null) : null;
+  const parsed = parseNoticeRows(summary.rows, headerIndex, input.columns, {
+    rounding: tenant.amountRounding as Rounding,
+    month: notice.month,
+    period: clientPeriod(client, notice.month),
+  });
   if (parsed.lines.length === 0) throw new UserError("この列の選び方では、読み取れる行がありませんでした。見出しの行と列を確かめてください");
 
   const next: NoticeBatchSummary = {
@@ -720,7 +764,6 @@ export async function updateNoticeColumns(db: Db, tenantId: string, userId: stri
       .set({ summary: next as unknown as Record<string, unknown>, rowCount: parsed.lines.length })
       .where(and(eq(s.importBatches.id, batch.id), eq(s.importBatches.tenantId, tenantId)));
   });
-  const client = notice.clientId ? await getClient(db, tenantId, notice.clientId).catch(() => null) : null;
   if (client) {
     const header = summary.rows[headerIndex] ?? [];
     await saveProfile(db, tenantId, client, { mapping: columnsToMapping(header, input.columns), headerSignature: headerSignature(header), options: { headerRow: headerIndex } });
@@ -861,13 +904,21 @@ export type ItemStatusInput = {
   itemId: string;
   status: ItemStatus;
   note: string | null;
-  /** 「解決」のとき：取り戻せた額（入金された・次の支払に上乗せされると決まった額）。わからなければ null */
+  /** 「解決」のとき：取り戻せた額（入金された・次の支払に上乗せされると決まった額。差と違ってよい）。わからなければ null */
   recoveredAmount?: number | null;
 };
+
+/** 「解決」にするのに足りないもの（取り戻せた額もメモも無い）を知らせる言葉 */
+export function resolveNeeds(diff: number): string {
+  return diff < 0
+    ? "「解決」にするときは、取り戻せた額（円）か、どう片付いたかのメモのどちらかを入れてください（例：11月分に上乗せで入金／自社の記録を直した）"
+    : "「解決」にするときは、どう片付いたかをメモに残してください（例：待機料の請求どおりと確認した）";
+}
 
 /**
  * 差の扱いを変える。問い合わせた日・片付けた日を残す（「返事待ち n 日」と、取り戻せたお金の記録に使う）。
  * - 「この金額で了承」は理由のメモが必須（あとで「なぜ受け入れたか」を説明できるように）
+ * - 「解決」は、取り戻せた額（0 円以上。差と違ってよい）か、説明のメモ（例：自社の記録を直した）のどちらかが必須
  * - 取り戻せた額は「解決」で、受け取りが少ない可能性の差（マイナス）のときだけ残す
  */
 export async function setItemStatus(db: Db, tenantId: string, userId: string | null, input: ItemStatusInput): Promise<{ noticeId: string }> {
@@ -886,6 +937,7 @@ export async function setItemStatus(db: Db, tenantId: string, userId: string | n
   if (recovered !== null && (!Number.isInteger(recovered) || recovered < 0 || recovered > 2_000_000_000)) {
     throw new UserError("取り戻せた額は 0 以上の円で入れてください");
   }
+  if (input.status === "resolved" && !note && !(item.diff < 0 && recovered !== null)) throw new UserError(resolveNeeds(item.diff));
   const now = new Date();
   const same = item.status === input.status;
   const values: Partial<typeof s.reconciliationItems.$inferInsert> = { status: input.status, note };
@@ -991,6 +1043,8 @@ export type ItemView = {
   askedAt: Date | null;
   resolvedAt: Date | null;
   recoveredAmount: number | null;
+  /** 差を最初に見つけた（保存した）日時。まだ保存していない差は null */
+  createdAt: Date | null;
   /** 今の突き合わせにも出ている差か（false は、片付いたあとで差が無くなった履歴） */
   current: boolean;
 };
@@ -1021,6 +1075,8 @@ export type NoticeView = {
   tenantName: string;
   /** 締めた月で、明細の写しの受注単価（締めたときの単価）を使った */
   snapshotRates: boolean;
+  /** 比べた稼働の期間（元請の締め日が違えば、その締めの期間。日付が無ければ当社の月） */
+  period: ComparePeriod;
   /** 保存した差（状態とメモを変えられる） */
   items: ItemView[];
   /**
@@ -1087,6 +1143,7 @@ function toItemView(row: typeof s.reconciliationItems.$inferSelect, live: Map<st
     askedAt: row.askedAt,
     resolvedAt: row.resolvedAt,
     recoveredAmount: row.recoveredAmount,
+    createdAt: row.createdAt,
     current: live.has(key),
   };
 }
@@ -1117,7 +1174,7 @@ const KIND_ORDER: Record<string, number> = { missing: 0, qty: 1, price: 2, amoun
 export async function loadNoticeView(db: Db, tenantId: string, noticeId: string): Promise<NoticeView> {
   const ctx = await loadContext(db, tenantId, noticeId);
   const resolved = resolveAll(ctx);
-  const live = compareFromContext(ctx, resolved);
+  const { result: live, period } = compareWithPeriod(ctx, resolved);
   const [rows, batch] = await Promise.all([
     db
       .select()
@@ -1167,6 +1224,7 @@ export async function loadNoticeView(db: Db, tenantId: string, noticeId: string)
       askedAt: saved?.askedAt ?? null,
       resolvedAt: saved?.resolvedAt ?? null,
       recoveredAmount: saved?.recoveredAmount ?? null,
+      createdAt: saved?.createdAt ?? null,
       current: true,
     };
   });
@@ -1232,12 +1290,13 @@ export async function loadNoticeView(db: Db, tenantId: string, noticeId: string)
     client: ctx.client ? { id: ctx.client.id, name: ctx.client.name, closingDay: ctx.client.closingDay } : null,
     tenantName: ctx.tenant.name,
     snapshotRates: ctx.snapshotRates > 0,
+    period,
     items,
     display,
     live,
     stale,
     totals: { ...sumDiffs(unsettled), settledCount: settled.length, settledNet: settled.reduce((a, i) => a + i.diff, 0), ...recoveredOf(display) },
-    facts: receivingFacts({ month: ctx.notice.month, paidOn: ctx.notice.paidOn, feeDeducted: ctx.notice.feeDeducted }),
+    facts: receivingFacts({ month: ctx.notice.month, paidOn: ctx.notice.paidOn, feeDeducted: ctx.notice.feeDeducted, periodEnd: clientPeriod(ctx.client, ctx.notice.month)?.to }),
     lineGroups,
     driverGroups,
     projects: ctx.projects
@@ -1270,14 +1329,19 @@ export async function loadNoticeView(db: Db, tenantId: string, noticeId: string)
   };
 }
 
+
 // ---------------------------------------------------------------- 月の一覧
 
 export type MonthClientRow = {
   clientId: string | null;
   clientName: string;
+  /** 取引中の元請か（取引をやめた元請は、お支払通知か稼働がある月だけ並べる） */
+  clientActive: boolean;
   /** その元請の案件の、当社の記録（受注単価 × 数量）の合計。通知があれば、通知の行が当たった案件も含む */
   ourTotal: number;
   projectsWithWork: number;
+  /** 比べた稼働の期間（元請の締め日が違えば、その締めの期間） */
+  period: ComparePeriod | null;
   notice: {
     id: string;
     fileName: string;
@@ -1296,6 +1360,8 @@ export type MonthClientRow = {
     settledCount: number;
     /** 取り戻せた額（確定）の合計 */
     recovered: number;
+    /** 問い合わせてから 14 日を過ぎても返事待ちの差 */
+    waitingLong: number;
     /** 受注単価が 0 円の案件の名前（当社の記録が出ない） */
     zeroRate: string[];
     /** 保存した差と、今の記録で出した差が違う（突き合わせ直すとよい） */
@@ -1303,15 +1369,22 @@ export type MonthClientRow = {
   } | null;
 };
 
-/** その月の元請ごとのまとめ（差は今の記録で計算し、状態は保存したものを使う） */
-export async function listMonth(db: Db, tenantId: string, month: string): Promise<{ rows: MonthClientRow[]; clients: { id: string; name: string }[] }> {
+/** その月の元請ごとのまとめ（差は今の記録で計算し、状態は保存したものを使う）。found は「見つけたお金」（確定と見込みを分けて） */
+export async function listMonth(
+  db: Db,
+  tenantId: string,
+  month: string,
+  now: Date = new Date(),
+): Promise<{ rows: MonthClientRow[]; clients: { id: string; name: string; active: boolean }[]; found: FoundMoney }> {
   assertMonth(month);
   const report = await loadReport(db, tenantId, month, month, { includeEmpty: true });
   const rows: MonthClientRow[] = report.cells.map((c) => ({
     clientId: c.clientId,
     clientName: c.clientName,
+    clientActive: c.clientActive ?? true,
     ourTotal: c.ourTotal,
     projectsWithWork: c.projectsWithWork,
+    period: c.period ?? null,
     notice: c.notice
       ? {
           id: c.notice.id,
@@ -1329,12 +1402,13 @@ export async function listMonth(db: Db, tenantId: string, month: string): Promis
           askedCount: c.asked,
           settledCount: c.settled,
           recovered: c.recovered,
+          waitingLong: waitingLongOf(c.items, now),
           zeroRate: c.zeroRate,
           stale: c.stale,
         }
       : null,
   }));
-  return { rows, clients: report.clients };
+  return { rows, clients: report.clients, found: foundMoneyFromReport(report, now) };
 }
 
 // ---------------------------------------------------------------- 突合レポート（何か月分か）
@@ -1352,10 +1426,14 @@ export type ReportItem = CompareItem & {
 export type ReportCell = {
   clientId: string | null;
   clientName: string;
+  /** 取引中の元請か（無ければ取引中として扱う） */
+  clientActive?: boolean;
   month: string;
   ourTotal: number;
   /** その元請の案件のうち、当社に稼働がある数 */
   projectsWithWork: number;
+  /** 比べた稼働の期間（元請の締め日が違えば、その締めの期間。日付が無ければ当社の月） */
+  period?: ComparePeriod;
   notice: {
     id: string;
     fileName: string;
@@ -1387,7 +1465,7 @@ export type ReportCell = {
 
 export type Report = {
   tenantName: string;
-  clients: { id: string; name: string }[];
+  clients: { id: string; name: string; active: boolean }[];
   from: string;
   to: string;
   months: string[];
@@ -1410,6 +1488,9 @@ export async function loadReport(db: Db, tenantId: string, from: string, to: str
   assertMonth(to);
   const months: string[] = [];
   for (let m = from; m <= to && months.length < 12; m = shiftMonth(m, 1)) months.push(m);
+  // 元請の締めの期間で比べるときは、前後の月の稼働（日付つき）も使う
+  const workFrom = shiftMonth(months[0], -1);
+  const workTo = shiftMonth(months[months.length - 1], 1);
 
   const [tenant, clients, projects, drivers, work, notices, profiles, closedRates] = await Promise.all([
     getTenant(db, tenantId),
@@ -1417,13 +1498,13 @@ export async function loadReport(db: Db, tenantId: string, from: string, to: str
     db.select().from(s.projects).where(eq(s.projects.tenantId, tenantId)),
     db.select({ id: s.drivers.id, name: s.drivers.name }).from(s.drivers).where(eq(s.drivers.tenantId, tenantId)),
     db
-      .select({ month: s.workEntries.month, projectId: s.workEntries.projectId, driverId: s.workEntries.driverId, qty: s.workEntries.qty })
+      .select({ month: s.workEntries.month, projectId: s.workEntries.projectId, driverId: s.workEntries.driverId, qty: s.workEntries.qty, workDate: s.workEntries.workDate })
       .from(s.workEntries)
-      .where(and(eq(s.workEntries.tenantId, tenantId), gte(s.workEntries.month, from), lte(s.workEntries.month, to))),
+      .where(and(eq(s.workEntries.tenantId, tenantId), gte(s.workEntries.month, workFrom), lte(s.workEntries.month, workTo))),
     db
       .select()
       .from(s.paymentNotices)
-      .where(and(eq(s.paymentNotices.tenantId, tenantId), gte(s.paymentNotices.month, from), lte(s.paymentNotices.month, to))),
+      .where(and(eq(s.paymentNotices.tenantId, tenantId), gte(s.paymentNotices.month, months[0]), lte(s.paymentNotices.month, months[months.length - 1]))),
     db.select().from(s.mappingProfiles).where(and(eq(s.mappingProfiles.tenantId, tenantId), eq(s.mappingProfiles.kind, "payment_notice"))),
     closedBillRates(db, tenantId, months),
   ]);
@@ -1450,10 +1531,10 @@ export async function loadReport(db: Db, tenantId: string, from: string, to: str
   };
 
   const cells: ReportCell[] = [];
-  const clientList: { id: string | null; name: string }[] = [...clients.map((c) => ({ id: c.id as string | null, name: c.name }))];
-  if (notices.some((n) => !n.clientId || !clients.some((c) => c.id === n.clientId))) clientList.push({ id: null, name: "（元請が削除されています）" });
+  const clientList: { id: string | null; name: string; row: (typeof clients)[number] | null }[] = clients.map((c) => ({ id: c.id as string | null, name: c.name, row: c }));
+  if (notices.some((n) => !n.clientId || !clients.some((c) => c.id === n.clientId))) clientList.push({ id: null, name: "（元請が削除されています）", row: null });
 
-  const workByMonth = new Map<string, typeof work>();
+  const workByMonth = new Map<string, PeriodWork[]>();
   for (const w of work) {
     const arr = workByMonth.get(w.month);
     if (arr) arr.push(w);
@@ -1467,23 +1548,49 @@ export async function loadReport(db: Db, tenantId: string, from: string, to: str
   }
 
   for (const c of clientList) {
+    const active = c.row?.active ?? false;
     for (const month of months) {
-      const monthWork = workByMonth.get(month) ?? [];
       const cmpProjects = cmpProjectsFor(month);
       const notice = notices.find((n) => n.month === month && (c.id ? n.clientId === c.id : !n.clientId || !clients.some((x) => x.id === n.clientId)));
+      const lineMap = notice ? lineMapFor(notice.clientId) : {};
+      const cache = new Map<string, { projectId: string | null; role: LineRole }>();
+      const nLines: CmpLine[] = notice
+        ? (linesByNotice.get(notice.id) ?? []).map((l) => {
+            // まだ突き合わせていない通知も、突き合わせたときと同じ当て方で数える（DB には書かない。同じ名前は 1 回だけ照合）
+            const ck = `${l.rawProject}\u0000${l.projectId ?? ""}`;
+            let hit = cache.get(ck);
+            if (!hit) {
+              hit = resolveLine(l, lineMap, notice.clientId, projectRefs);
+              cache.set(ck, hit);
+            }
+            return { id: l.id, rawProject: l.rawProject, rawDriver: l.rawDriver, projectId: hit.projectId, driverId: l.driverId, qty: l.qty, unitPrice: l.unitPrice, amount: l.amount, role: hit.role };
+          })
+        : [];
+      // 比べる稼働：元請の締め日が当社と違い、稼働に日付があれば、元請の締めの期間の稼働
+      const scopeClientId = notice ? notice.clientId : c.id;
+      const { work: monthWork, period } = selectPeriodWork({
+        month,
+        tenantClosingDay: tenant.closingDay,
+        clientClosingDay: c.row ? c.row.closingDay : null,
+        projectIds: scopeProjectIds(scopeClientId, projects, nLines),
+        work: [shiftMonth(month, -1), month, shiftMonth(month, 1)].flatMap((m) => workByMonth.get(m) ?? []),
+      });
       const qty = new Map<string, number>();
       for (const w of monthWork) if (w.qty > 0) qty.set(w.projectId, (qty.get(w.projectId) ?? 0) + w.qty);
       const own = cmpProjects.filter((p) => c.id && p.clientId === c.id && (qty.get(p.id) ?? 0) > 0);
       const ownTotal = () => own.reduce((a, p) => a + roundYen((qty.get(p.id) ?? 0) * p.billRate, rounding), 0);
       if (!notice) {
         const ourTotal = ownTotal();
-        if (ourTotal === 0 && !opts.includeEmpty) continue;
+        // 稼働もお支払通知も無い月は並べない（一覧では、取引中の元請だけ「未登録」として並べる）
+        if (ourTotal === 0 && (!opts.includeEmpty || !active)) continue;
         cells.push({
           clientId: c.id,
           clientName: c.name,
+          clientActive: active,
           month,
           ourTotal,
           projectsWithWork: own.length,
+          period,
           notice: null,
           items: [],
           short: 0,
@@ -1501,18 +1608,6 @@ export async function loadReport(db: Db, tenantId: string, from: string, to: str
         });
         continue;
       }
-      const lineMap = lineMapFor(notice.clientId);
-      const cache = new Map<string, { projectId: string | null; role: LineRole }>();
-      const nLines: CmpLine[] = (linesByNotice.get(notice.id) ?? []).map((l) => {
-        // まだ突き合わせていない通知も、突き合わせたときと同じ当て方で数える（DB には書かない。同じ名前は 1 回だけ照合）
-        const ck = `${l.rawProject}\u0000${l.projectId ?? ""}`;
-        let hit = cache.get(ck);
-        if (!hit) {
-          hit = resolveLine(l, lineMap, notice.clientId, projectRefs);
-          cache.set(ck, hit);
-        }
-        return { id: l.id, rawProject: l.rawProject, rawDriver: l.rawDriver, projectId: hit.projectId, driverId: l.driverId, qty: l.qty, unitPrice: l.unitPrice, amount: l.amount, role: hit.role };
-      });
       const result = compareNotice({ clientId: notice.clientId, projects: cmpProjects, drivers, work: monthWork, lines: nLines, rounding });
       const saved = stored.filter((i) => i.noticeId === notice.id);
       const savedKeys = saved.map((i) => itemKey(i.kind, i.projectId, i.label));
@@ -1569,9 +1664,11 @@ export async function loadReport(db: Db, tenantId: string, from: string, to: str
       cells.push({
         clientId: c.id,
         clientName: c.name,
+        clientActive: active,
         month,
         ourTotal: nLines.length ? result.ourTotal : ownTotal(),
         projectsWithWork: own.length,
+        period,
         notice: {
           id: notice.id,
           fileName: notice.fileName,
@@ -1593,7 +1690,7 @@ export async function loadReport(db: Db, tenantId: string, from: string, to: str
         recovered: rec.recovered,
         recoveredCount: rec.recoveredCount,
         zeroRate: nLines.length ? result.zeroRateProjects.map((p) => p.name) : own.filter((p) => !(p.billRate > 0)).map((p) => p.name),
-        facts: receivingFacts({ month, paidOn: notice.paidOn, feeDeducted: notice.feeDeducted }),
+        facts: receivingFacts({ month, paidOn: notice.paidOn, feeDeducted: notice.feeDeducted, periodEnd: clientPeriod(c.row, month)?.to }),
         stale,
       });
     }
@@ -1601,7 +1698,7 @@ export async function loadReport(db: Db, tenantId: string, from: string, to: str
   const withNotice = cells.filter((x) => x.notice);
   return {
     tenantName: tenant.name,
-    clients: clients.map((c) => ({ id: c.id, name: c.name })),
+    clients: clients.map((c) => ({ id: c.id, name: c.name, active: c.active })),
     from,
     to,
     months,
@@ -1622,4 +1719,164 @@ export async function loadReport(db: Db, tenantId: string, from: string, to: str
 /** レポートの期間の既定（今の月を含む 3 か月） */
 export function defaultReportParams(month: string): { from: string; to: string } {
   return { from: monthParam(shiftMonth(month, -2)), to: monthParam(month) };
+}
+
+// ---------------------------------------------------------------- 見つけたお金（確定と見込みを分けて。足し合わせない）
+
+export type FoundMoney = {
+  /** YYYY-MM-01 */
+  from: string;
+  to: string;
+  /** 確定：「解決」にして入れた、取り戻せた額の合計（入金された・次の支払に上乗せされると決まった額） */
+  confirmed: number;
+  confirmedCount: number;
+  /** 見込み：未対応・問い合わせ済みの差のうち、受け取りが少ない可能性（マイナスの差）の額の合計。まだ決まったお金ではない */
+  estimated: number;
+  estimatedCount: number;
+  /** 問い合わせてから 14 日を過ぎても返事待ちの差の数 */
+  waitingLong: number;
+  /** 突き合わせたお支払通知の数 */
+  notices: number;
+  /** 月ごと（お支払通知の月＝稼働の月で数える） */
+  byMonth: { month: string; confirmed: number; estimated: number }[];
+};
+
+function waitingLongOf(items: { status: string; askedAt: Date | null }[], now: Date): number {
+  return items.filter((i) => (waitingDays(i.status, i.askedAt, now) ?? -1) >= WAIT_ALERT_DAYS).length;
+}
+
+/**
+ * レポートから「見つけたお金」を出す（突合の画面・レポートと同じ数え方）。
+ * 確定と見込みは別の数で、足し合わせた数は作らない（盛らない）
+ */
+export function foundMoneyFromReport(report: Pick<Report, "from" | "to" | "months" | "cells">, now: Date = new Date()): FoundMoney {
+  const withNotice = report.cells.filter((c) => c.notice);
+  const byMonth = report.months.map((month) => {
+    const list = withNotice.filter((c) => c.month === month);
+    return { month, confirmed: list.reduce((a, c) => a + c.recovered, 0), estimated: list.reduce((a, c) => a + c.short, 0) };
+  });
+  return {
+    from: report.months[0] ?? report.from,
+    to: report.months[report.months.length - 1] ?? report.to,
+    confirmed: withNotice.reduce((a, c) => a + c.recovered, 0),
+    confirmedCount: withNotice.reduce((a, c) => a + c.recoveredCount, 0),
+    estimated: withNotice.reduce((a, c) => a + c.short, 0),
+    estimatedCount: withNotice.reduce((a, c) => a + c.shortCount, 0),
+    waitingLong: withNotice.reduce((a, c) => a + waitingLongOf(c.items, now), 0),
+    notices: withNotice.length,
+    byMonth,
+  };
+}
+
+function toMonthStart(value: string): string {
+  const m = /^(\d{4})-(0[1-9]|1[0-2])(?:-01)?$/.exec(value);
+  if (!m) throw new UserError("月の形が正しくありません");
+  return `${m[1]}-${m[2]}-01`;
+}
+
+/**
+ * 見つけたお金（ホーム・利益の画面から使う入口）。when は 1 か月（YYYY-MM か YYYY-MM-01）か、期間 { from, to }（12 か月まで）。
+ * - confirmed：取り戻せた額（確定）。「解決」にして額を入れた差の合計
+ * - estimated：見込み。未対応・問い合わせ済みの差のうち、受け取りが少ない可能性の額の合計
+ * 2 つは足さないこと（SPEC P1-1.2）
+ */
+export async function foundMoney(db: Db, tenantId: string, when: string | { from: string; to: string }, now: Date = new Date()): Promise<FoundMoney> {
+  let from = toMonthStart(typeof when === "string" ? when : when.from);
+  let to = toMonthStart(typeof when === "string" ? when : when.to);
+  if (from > to) [from, to] = [to, from];
+  if (shiftMonth(from, 11) < to) from = shiftMonth(to, -11);
+  const report = await loadReport(db, tenantId, from, to);
+  return foundMoneyFromReport(report, now);
+}
+
+// ---------------------------------------------------------------- 返事待ちの追いかけ
+
+export type WaitingItem = {
+  itemId: string;
+  noticeId: string;
+  clientName: string;
+  month: string;
+  kind: ItemKind;
+  label: string;
+  diff: number;
+  note: string | null;
+  askedAt: Date | null;
+  /** 問い合わせてからの日数（日付の記録が無い古い差は null） */
+  days: number | null;
+};
+
+/** 「問い合わせ済み」のまま返事を待っている差（全部の月。長く待っている順） */
+export async function listWaiting(db: Db, tenantId: string, now: Date = new Date()): Promise<WaitingItem[]> {
+  const rows = await db
+    .select({
+      itemId: s.reconciliationItems.id,
+      noticeId: s.reconciliationItems.noticeId,
+      kind: s.reconciliationItems.kind,
+      label: s.reconciliationItems.label,
+      diff: s.reconciliationItems.diff,
+      note: s.reconciliationItems.note,
+      askedAt: s.reconciliationItems.askedAt,
+      month: s.paymentNotices.month,
+      clientName: s.clients.name,
+    })
+    .from(s.reconciliationItems)
+    .innerJoin(s.paymentNotices, and(eq(s.paymentNotices.id, s.reconciliationItems.noticeId), eq(s.paymentNotices.tenantId, tenantId)))
+    .leftJoin(s.clients, and(eq(s.clients.id, s.paymentNotices.clientId), eq(s.clients.tenantId, tenantId)))
+    .where(and(eq(s.reconciliationItems.tenantId, tenantId), eq(s.reconciliationItems.status, "asked")));
+  return rows
+    .map((r) => ({
+      itemId: r.itemId,
+      noticeId: r.noticeId,
+      clientName: r.clientName ?? "（元請が削除されています）",
+      month: r.month,
+      kind: r.kind as ItemKind,
+      label: r.label,
+      diff: r.diff,
+      note: r.note,
+      askedAt: r.askedAt,
+      days: waitingDays("asked", r.askedAt, now),
+    }))
+    .sort((a, b) => (b.days ?? -1) - (a.days ?? -1) || a.month.localeCompare(b.month) || a.clientName.localeCompare(b.clientName, "ja") || a.label.localeCompare(b.label, "ja"));
+}
+
+// ---------------------------------------------------------------- 問い合わせ文（画面と PDF で同じ中身）
+
+export type LetterSourceItem = LetterItem & { status: ItemStatus };
+
+export type LetterSource = {
+  view: NoticeView;
+  clientName: string;
+  /** 問い合わせられる差（未対応・問い合わせ済みで、差のあるもの）。保存していない差は鍵を id にする */
+  items: LetterSourceItem[];
+  /** 元請の締めの期間で比べたときだけ、その期間（本文と表に書く） */
+  period: { from: string; to: string } | null;
+};
+
+/** 問い合わせ文の材料（画面の文面と PDF で同じものを使う） */
+export async function loadLetterSource(db: Db, tenantId: string, noticeId: string): Promise<LetterSource> {
+  const view = await loadNoticeView(db, tenantId, noticeId);
+  // 保存した結果が古いときも、文面は今の記録の数字で作る（「問い合わせ済み」にするのは突き合わせ直してから）
+  const items: LetterSourceItem[] = view.display
+    .filter((i) => isUnsettled(i.status) && i.diff !== 0)
+    .map((i) => ({
+      id: i.id ?? i.key,
+      kind: i.kind,
+      label: i.label,
+      unit: i.unit,
+      ourQty: i.ourQty,
+      theirQty: i.theirQty,
+      ourPrice: i.ourPrice,
+      theirPrice: i.theirPrice,
+      ourAmount: i.ourAmount,
+      theirAmount: i.theirAmount,
+      diff: i.diff,
+      split: i.split,
+      status: i.status,
+    }));
+  return {
+    view,
+    clientName: view.client?.name ?? "元請",
+    items,
+    period: view.period.mode === "closing" && view.period.differs ? { from: view.period.from, to: view.period.to } : null,
+  };
 }

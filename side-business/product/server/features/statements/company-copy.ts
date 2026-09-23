@@ -2,25 +2,31 @@
  * 会社の控え（純関数。DB に触らない）。明細の写し（StatementDraft）から、会社だけが見る数字を拾う。
  * ドライバーの画面・ドライバーの PDF には出さない（DriverStatementView とは別の形にして、混ざらないようにする）。
  *
- * - 受注の売上・会社の利益（profitOf。計算は明細と同じ関数）
  * - 登録の無い方への支払で、会社が控除できずに負担する消費税（経過措置）。締めの期間が段の境目をまたぐときは、
  *   稼働の日ごとに分けた内訳（burdenParts）と、日付の無い稼働があったか（undatedAcrossStep）
  * 古い写しには burdenParts・undatedAcrossStep が無いことがある（無ければ「内訳なし」として扱う）
  */
 import { yen } from "@/lib/payroll/money";
-import { profitOf, type StatementDraft } from "~/server/calc/statement";
+import { TRANSITIONAL_STEPS } from "@/lib/payroll/tax";
+import type { StatementDraft } from "~/server/calc/statement";
 
-export type BurdenPart = { from: string; to: string; base: number; burden: number; ratePercent: number; label: string };
+export type BurdenPart = {
+  /** その割合の段のうち、締めの期間に入る日（例：9/21〜9/30） */
+  spanFrom: string;
+  spanTo: string;
+  /** その段で稼働のあった最初と最後の日 */
+  from: string;
+  to: string;
+  /** 支払（税込）のうち、その段の分 */
+  base: number;
+  /** 会社が負担する消費税 */
+  burden: number;
+  ratePercent: number;
+  /** 「9/21〜9/30」 */
+  label: string;
+};
 
 export type CompanyCopy = {
-  /** 受注の売上（税抜） */
-  sales: number;
-  /** 委託料（税抜） */
-  subtotal: number;
-  /** 控除（会社の売上・税抜） */
-  deductionTotal: number;
-  /** 会社の利益（売上 − 委託料 ＋ 控除 − 控除できない消費税） */
-  profit: number;
   /** 登録番号の無い方か（経過措置の負担の欄を出すか） */
   unregistered: boolean;
   /** 控除できずに会社が負担する消費税 */
@@ -46,17 +52,32 @@ export function shortMonthDay(date: string): string {
   return m ? `${Number(m[1])}/${Number(m[2])}` : date;
 }
 
+/**
+ * 稼働の日が入る経過措置の段を、締めの期間で切った範囲（例：9/21〜10/20 の期間で 9/25 の稼働 → 9/21〜9/30）。
+ * 段が見つからなければ、稼働のあった日の範囲のまま
+ */
+export function stepSpan(date: string, period: { from: string; to: string }, fallbackTo = date): { from: string; to: string } {
+  const step = TRANSITIONAL_STEPS.find((x) => date >= x.from && (x.to === null || date <= x.to));
+  if (!step) return { from: date, to: fallbackTo };
+  return { from: step.from > period.from ? step.from : period.from, to: step.to !== null && step.to < period.to ? step.to : period.to };
+}
+
 export function companyCopy(draft: StatementDraft): CompanyCopy {
   const rawParts = Array.isArray(draft.burdenParts) ? draft.burdenParts : [];
   const parts: BurdenPart[] = rawParts.map((p) => {
-    const pct = ratePercent(p.rate);
-    return { from: p.from, to: p.to, base: p.base, burden: p.burden, ratePercent: pct, label: `${shortMonthDay(p.from)}〜${shortMonthDay(p.to)}` };
+    const span = draft.period ? stepSpan(p.from, draft.period, p.to) : { from: p.from, to: p.to };
+    return {
+      spanFrom: span.from,
+      spanTo: span.to,
+      from: p.from,
+      to: p.to,
+      base: p.base,
+      burden: p.burden,
+      ratePercent: ratePercent(p.rate),
+      label: `${shortMonthDay(span.from)}〜${shortMonthDay(span.to)}`,
+    };
   });
   return {
-    sales: draft.sales ?? 0,
-    subtotal: draft.subtotal,
-    deductionTotal: draft.deductionTotal,
-    profit: profitOf({ ...draft, sales: draft.sales ?? 0, invoiceBurden: draft.invoiceBurden ?? 0 }),
     unregistered: !draft.driver.invoiceRegistered,
     invoiceBurden: draft.invoiceBurden ?? 0,
     deductibleRatePercent: typeof draft.deductibleRate === "number" ? ratePercent(draft.deductibleRate) : null,

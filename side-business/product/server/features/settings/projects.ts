@@ -79,14 +79,22 @@ async function others(db: Db, tenantId: string, exceptId?: string) {
     .where(exceptId ? and(eq(s.projects.tenantId, tenantId), ne(s.projects.id, exceptId)) : eq(s.projects.tenantId, tenantId));
 }
 
-async function assertClient(db: Db, tenantId: string, clientId: string | null) {
+/**
+ * 元請がこの会社のものか。取引をやめた（無効の）元請は新しく結びつけない
+ * （いま結びついている元請のまま直すのはよい：keepId）。
+ */
+async function assertClient(db: Db, tenantId: string, clientId: string | null, keepId?: string | null) {
   if (!clientId) return;
   const rows = await db
-    .select({ id: s.clients.id })
+    .select({ id: s.clients.id, name: s.clients.name, active: s.clients.active })
     .from(s.clients)
     .where(and(eq(s.clients.tenantId, tenantId), eq(s.clients.id, clientId)))
     .limit(1);
-  if (!rows[0]) throw fieldError("clientId", "その元請は見つかりません。選び直してください");
+  const c = rows[0];
+  if (!c) throw fieldError("clientId", "その元請は見つかりません。選び直してください");
+  if (!c.active && c.id !== keepId) {
+    throw fieldError("clientId", `「${c.name}」は取引をやめた（無効の）元請です。別の元請を選ぶか、先に「元請」の画面で戻してください`);
+  }
 }
 
 /** 入力欄から変える項目。「使う・使わない」は別のボタン（setProjectActive）だけで変える（画面の古い値で戻さないように） */
@@ -118,7 +126,7 @@ export async function createProject(db: Db, tenantId: string, input: ProjectInpu
 export async function updateProject(db: Db, tenantId: string, id: string, input: ProjectInput) {
   const before = await getProject(db, tenantId, id);
   if (!before) throw new UserError("その案件は見つかりません。一覧から開き直してください");
-  await assertClient(db, tenantId, input.clientId);
+  await assertClient(db, tenantId, input.clientId, before.clientId);
   const conflict = findNameConflict(input, await others(db, tenantId, id), "案件", `${input.name}（元請の名前）`);
   if (conflict) throw fieldError(conflict.field, conflict.message);
   const next = values(input);

@@ -12,7 +12,7 @@ function points() {
   const maker = makerCopy();
   return [
     { title: "今の Excel のまま", body: "形を変えずに置くだけ。ファイルの形と名前の表記ゆれを覚えます" },
-    { title: "1 円まで確かめてから", body: "今の Excel の振込額と 1 人ずつ比べ、合ってから本番へ切り替えます" },
+    { title: "1 円まで確かめてから", body: "今の Excel の振込額と 1 人ずつ比べ、合うか差の理由が分かってから本番へ" },
     { title: "データは御社のもの", body: "御社の Vercel と Postgres に置きます。全データをいつでも書き出せます" },
     { title: maker.pointTitle, body: maker.pointBody },
   ];

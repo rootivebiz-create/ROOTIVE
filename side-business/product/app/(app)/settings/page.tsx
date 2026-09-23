@@ -48,7 +48,16 @@ export default async function SettingsHome() {
         ...(o.drivers.unregistered ? [{ tone: "gray" as const, text: `インボイス未登録 ${o.drivers.unregistered}人` }] : []),
       ],
     },
-    { href: "/settings/clients", title: "元請", body: <>{o.clients.total}社</>, notes: [] },
+    {
+      href: "/settings/clients",
+      title: "元請",
+      body: (
+        <>
+          取引している元請 {o.clients.active}社{o.clients.total > o.clients.active && `（無効 ${o.clients.total - o.clients.active}社）`}
+        </>
+      ),
+      notes: [],
+    },
     {
       href: "/settings/projects",
       title: "案件と単価",
@@ -77,6 +86,9 @@ export default async function SettingsHome() {
       body: <>{o.company.aiConsent ? "AI を使ってよい（同意あり）" : "AI を使わない（既定）"}</>,
       notes: [],
     },
+    ...(isOwner ? [{ href: "/data", title: "全データの書き出し", body: <>この会社のデータを全部 1 つの ZIP で持ち帰れます</>, notes: [] }] : []),
+    { href: "/settings/account", title: "自分のアカウント", body: <>パスワードの変更・ログインの記録</>, notes: [] },
+    { href: "/help", title: "ヘルプ", body: <>月末の流れ・よくある質問・困ったときの連絡先</>, notes: [] },
   ];
 
   return (
@@ -125,6 +137,9 @@ export default async function SettingsHome() {
           ドライバーを何人もまとめて足すときは <Link href="/onboarding/drivers">まとめて登録（Excel・貼り付け）</Link> が早いです。
         </p>
       )}
+      <p className="text-sm text-muted-foreground">
+        どこに何を入れるか迷ったら、<Link href="/help">ヘルプ</Link> の「月末の流れ」と「よくある質問」をご覧ください。
+      </p>
     </div>
   );
 }

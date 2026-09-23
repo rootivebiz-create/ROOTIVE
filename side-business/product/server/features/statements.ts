@@ -265,6 +265,8 @@ export async function deemedClauseOf(db: Db, tenantId: string, driverId: string)
  * どの版をいつ確認したかを並べる。今の版の写しが無い古いデータは、明細そのものの写しで補う。
  */
 export async function loadVersionHistory(db: Db, tenantId: string, st: StatementRow): Promise<VersionHistoryItem[]> {
+  // 他社の明細の行を渡されても、何も返さない（写しで補うときに他社の中身を出さない）
+  if (st.tenantId !== tenantId) return [];
   const [versions, confs] = await Promise.all([
     db
       .select()

@@ -2,12 +2,13 @@ import "server-only";
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
-import { roundYen } from "@/lib/payroll/money";
+import { and, asc, desc, eq, inArray, ne, or, sql } from "drizzle-orm";
+import { roundYen, yen } from "@/lib/payroll/money";
 import type { Db } from "~/db/client";
 import * as s from "~/db/schema";
 import { UserError } from "~/server/action";
 import { buildStatementDrafts, type BuildInput } from "~/server/calc/statement";
+import { saveParallelChecks } from "~/server/features/parallel";
 import { monthLabelJa, shiftMonth } from "~/server/month";
 import { isMonthClosed, loadBuildInput } from "~/server/repo";
 import { readTable, TableReadError } from "~/server/tabular";
@@ -26,7 +27,9 @@ import {
   trimSheet,
   type ProfileLike,
 } from "./detect";
+import { readPayout, type PayoutRead } from "./columns";
 import { emptyParse, parseWithMapping } from "./parse";
+import { moneyExtras, type DeductionProposal, type MoneyExtras } from "./proposals";
 import {
   compareWithPrev,
   registrableDrivers,
@@ -47,6 +50,7 @@ import {
   type DraftSummary,
   type Learned,
   type ParseResult,
+  type PayoutSaved,
   type RestoreEntry,
   type SampleKey,
   type StoredSheet,
@@ -222,12 +226,14 @@ export async function createDraftFromFile(
   const guessMonth = suggestMonth(rows, mapping, fileName, sheetHint);
   const month = guessMonth?.month ?? input.pageMonth;
 
+  // 置いたファイルそのもののハッシュ（同じファイルの二重の取り込みを見つける）
+  const fileHash = createHash("sha256").update(input.bytes).digest("hex");
   const summary: DraftSummary = {
     v: 1,
     file: {
       name: fileName,
       size: input.bytes.byteLength,
-      hash: createHash("sha256").update(input.bytes).digest("hex"),
+      hash: fileHash,
       encoding: read.encoding,
       uploadedAt: new Date().toISOString(),
       ...(input.sample ? { sample: true } : {}),
@@ -252,6 +258,7 @@ export async function createDraftFromFile(
       month,
       kind: "work",
       fileName,
+      fileHash,
       mappingProfileId: profileId,
       rowCount: summary.stats.records,
       status: "draft",
@@ -607,7 +614,38 @@ export async function registerAllDrivers(db: Db, tenantId: string, batchId: stri
 // ---------------------------------------------------------------- 確かめる（反映の前）
 
 type EntryLite = { id: string; driverId: string; projectId: string; qty: number; workDate: string | null; note: string | null; importBatchId: string | null };
-type AppliedBatchLite = { id: string; fileName: string; createdAt: Date; signature: string | null; hash: string | null; mappingProfileId: string | null };
+type AppliedBatchLite = {
+  id: string;
+  fileName: string;
+  createdAt: Date;
+  signature: string | null;
+  hash: string | null;
+  mappingProfileId: string | null;
+  appliedAt: string | null;
+  appliedBy: string | null;
+};
+
+/** 同じファイル（ハッシュが同じ）が、この月にもう反映されている */
+export type SameFileInfo = {
+  batchId: string;
+  fileName: string;
+  /** 反映した日時（無ければ置いた日時） */
+  appliedAt: string;
+  appliedByName: string | null;
+  /** 前の取り込みで入っている稼働の行数 */
+  entries: number;
+  /** 二重に数えたときに多く払ってしまう額の目安（取り込む数量 × 支払単価。重なる分だけ） */
+  yen: number;
+};
+
+const dayJa = new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", month: "long", day: "numeric" });
+
+/** 「同じファイルがすでに反映されています（10月5日・山田さん）。二重に数えると ¥X 多く払うおそれがあります」 */
+export function sameFileMessage(info: SameFileInfo): string {
+  const when = dayJa.format(new Date(info.appliedAt));
+  const who = info.appliedByName ? `・${info.appliedByName}さん` : "";
+  return `同じファイルがすでに反映されています（${when}${who}）。二重に数えると ${yen(info.yen)} 多く払うおそれがあります`;
+}
 
 export type DuplicateRow = {
   driverId: string;
@@ -666,6 +704,8 @@ export type DraftView = {
     statements: StatementDiff[];
     unchangedStatements: number;
     prevMonth: string;
+    /** 同じファイルが反映済みのとき：「取り消して入れ直す」の中身（前の取り込みと入れ替える） */
+    reapply: ModeOption | null;
   } | null;
   /** 反映済みのとき：この取り込みで入っている稼働（いまの DB） */
   appliedTotals: ReturnType<typeof totalsOf> | null;
@@ -673,7 +713,57 @@ export type DraftView = {
   blockers: string[];
   /** 取り込みで作られた・入れ替えた相手（反映済み・取り消し済みの説明に使う） */
   related: { id: string; fileName: string; status: string }[];
+  /** 同じファイルがこの月にもう反映されている（下書きのとき） */
+  sameFile: SameFileInfo | null;
+  /** 同じファイルが別の月に反映されている（月の選び間違いのおそれ） */
+  sameFileOtherMonths: { batchId: string; month: string; fileName: string }[];
+  /** ファイルの金額の列から分かったこと（振込額・控除の提案・振込手数料）。読み方と名前が決まってから */
+  extras: MoneyExtras | null;
 };
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+async function userName(db: Db, tenantId: string, id: string | null): Promise<string | null> {
+  if (!id || !UUID_RE.test(id)) return null;
+  const rows = await db
+    .select({ name: s.users.name })
+    .from(s.users)
+    .where(and(eq(s.users.id, id), eq(s.users.tenantId, tenantId)))
+    .limit(1);
+  return rows[0]?.name ?? null;
+}
+
+/** 同じファイル（ハッシュが同じ）の、この月に反映済みの取り込み。二重に数えたときの額は、重なる分の数量 × 支払単価 */
+async function sameFileOf(
+  db: Db,
+  tenantId: string,
+  batchId: string,
+  summary: DraftSummary,
+  entries: EntryLite[],
+  applied: AppliedBatchLite[],
+  resolved: ResolvedRecord[],
+  known: Known,
+  input: BuildInput,
+): Promise<{ info: SameFileInfo; ids: Set<string> } | null> {
+  const same = applied.filter((b) => b.id !== batchId && !!b.hash && b.hash === summary.file.hash);
+  if (same.length === 0) return null;
+  const when = (b: AppliedBatchLite) => b.appliedAt ?? b.createdAt.toISOString();
+  const latest = [...same].sort((a, b) => when(b).localeCompare(when(a)))[0];
+  const ids = new Set(same.map((b) => b.id));
+  const theirs = entries.filter((e) => e.importBatchId && ids.has(e.importBatchId));
+  const dups = findDuplicates(resolved, theirs, known, () => latest.fileName, input);
+  return {
+    info: {
+      batchId: latest.id,
+      fileName: latest.fileName,
+      appliedAt: when(latest),
+      appliedByName: await userName(db, tenantId, latest.appliedBy),
+      entries: theirs.length,
+      yen: dups.reduce((a, d) => a + d.yen, 0),
+    },
+    ids,
+  };
+}
 
 function entryKey(e: { driverId: string; projectId: string }): string {
   return `${e.driverId}:${e.projectId}`;
@@ -755,8 +845,10 @@ async function appliedBatches(db: Db, tenantId: string, month: string): Promise<
       fileName: s.importBatches.fileName,
       createdAt: s.importBatches.createdAt,
       signature: sql<string | null>`${s.importBatches.summary}->>'signature'`,
-      hash: sql<string | null>`${s.importBatches.summary}->'file'->>'hash'`,
+      hash: sql<string | null>`coalesce(${s.importBatches.fileHash}, ${s.importBatches.summary}->'file'->>'hash')`,
       mappingProfileId: s.importBatches.mappingProfileId,
+      appliedAt: sql<string | null>`${s.importBatches.summary}->'applied'->>'at'`,
+      appliedBy: sql<string | null>`${s.importBatches.summary}->'applied'->>'by'`,
     })
     .from(s.importBatches)
     .where(
@@ -775,14 +867,18 @@ function removalFor(
   entries: EntryLite[],
   applied: AppliedBatchLite[],
   resolved: ResolvedRecord[],
+  /** 必ず入れ替える取り込み（「取り消して入れ直す」の同じファイル） */
+  force: Set<string> = new Set(),
 ): { removed: EntryLite[]; batches: AppliedBatchLite[]; kept: AppliedBatchLite[] } {
   if (mode === "add") return { removed: [], batches: [], kept: [] };
   if (mode === "replaceAll") return { removed: entries, batches: applied.filter((b) => b.id !== selfId), kept: [] };
   const newPairs = new Set(resolved.map(entryKey));
   const shape = applied.filter(
-    (b) => b.id !== selfId && (b.signature === summary.signature || (!!summary.profileId && b.mappingProfileId === summary.profileId)),
+    (b) =>
+      b.id !== selfId && (force.has(b.id) || b.signature === summary.signature || (!!summary.profileId && b.mappingProfileId === summary.profileId)),
   );
-  const overlaps = (b: AppliedBatchLite) => b.hash === summary.file.hash || entries.some((e) => e.importBatchId === b.id && newPairs.has(entryKey(e)));
+  const overlaps = (b: AppliedBatchLite) =>
+    force.has(b.id) || b.hash === summary.file.hash || entries.some((e) => e.importBatchId === b.id && newPairs.has(entryKey(e)));
   const same = shape.filter(overlaps);
   const ids = new Set(same.map((b) => b.id));
   return { removed: entries.filter((e) => e.importBatchId && ids.has(e.importBatchId)), batches: same, kept: shape.filter((b) => !ids.has(b.id)) };
@@ -797,8 +893,9 @@ function modeOption(
   resolved: ResolvedRecord[],
   known: Known,
   input: BuildInput,
+  force: Set<string> = new Set(),
 ): ModeOption {
-  const { removed, batches, kept } = removalFor(mode, batchId, summary, entries, applied, resolved);
+  const { removed, batches, kept } = removalFor(mode, batchId, summary, entries, applied, resolved, force);
   const removedIds = new Set(removed.map((e) => e.id));
   const remaining = entries.filter((e) => !removedIds.has(e.id));
   const fileName = new Map(applied.map((b) => [b.id, b.fileName]));
@@ -853,6 +950,9 @@ export async function loadDraftView(db: Db, tenantId: string, batchId: string, o
   let preview: DraftView["preview"] = null;
   let appliedTotals: DraftView["appliedTotals"] = null;
   let appliedEntries = 0;
+  let sameFile: SameFileInfo | null = null;
+  let sameFileOtherMonths: DraftView["sameFileOtherMonths"] = [];
+  let extras: MoneyExtras | null = null;
 
   if (batch.status === "draft") {
     if (closed) blockers.push(`${monthLabelJa(batch.month)}は締め済みです。この月には取り込めません（直すときは、オーナーが「締め」の画面で締めを外してから）`);
@@ -863,25 +963,31 @@ export async function loadDraftView(db: Db, tenantId: string, batchId: string, o
       );
     else if (computed.resolution.resolved.length === 0) blockers.push("取り込める行がありません。読み方と、取り込まない名前を確かめてください");
 
-    const [entries, applied, input, prev] = await Promise.all([
+    const [entries, applied, input, prev, others] = await Promise.all([
       monthEntries(db, tenantId, batch.month),
       appliedBatches(db, tenantId, batch.month),
       loadBuildInput(db, tenantId, batch.month),
       monthEntries(db, tenantId, shiftMonth(batch.month, -1)),
+      sameHashOtherMonths(db, tenantId, batch.month, summary.file.hash),
     ]);
+    sameFileOtherMonths = others;
     const resolved = computed.resolution.resolved;
+    const same = await sameFileOf(db, tenantId, batch.id, summary, entries, applied, resolved, known, input);
+    sameFile = same?.info ?? null;
     const modes = {
       replace: modeOption("replace", batch.id, summary, entries, applied, resolved, known, input),
       replaceAll: modeOption("replaceAll", batch.id, summary, entries, applied, resolved, known, input),
       add: modeOption("add", batch.id, summary, entries, applied, resolved, known, input),
     };
+    // 同じファイルが反映済み：前の取り込みと入れ替える（取り消して入れ直す）ことだけを出す
+    const reapply = same ? modeOption("replace", batch.id, summary, entries, applied, resolved, known, input, same.ids) : null;
     // 今ある稼働がすべてこのファイルと重なっているなら、「すべて入れ替える」を先に選んでおく（丸ごと出し直したファイル）
     const suggested: ApplyMode =
       modes.replace.duplicates.length > 0 && modes.replace.removeEntries + coveredCount(modes.replace, entries, modes.replace.removeBatches) === entries.length
         ? "replaceAll"
         : "replace";
     const mode = opts.mode ?? suggested;
-    const { removed } = removalFor(mode, batch.id, summary, entries, applied, resolved);
+    const { removed } = same ? removalFor("replace", batch.id, summary, entries, applied, resolved, same.ids) : removalFor(mode, batch.id, summary, entries, applied, resolved);
     const removedIds = new Set(removed.map((e) => e.id));
     // 反映したあとの稼働（日付も持たせる：明細の計算が日付を使うようになっても、そのまま同じ結果になるように）
     const after = [
@@ -918,7 +1024,29 @@ export async function loadDraftView(db: Db, tenantId: string, batchId: string, o
       statements,
       unchangedStatements: unchanged,
       prevMonth: shiftMonth(batch.month, -1),
+      reapply,
     };
+    // 金額の列（振込額・控除・振込手数料）：読み方と名前が決まってから読む
+    if (!computed.problem && computed.resolution.unresolvedRecords === 0 && resolved.length > 0) {
+      extras = moneyExtras({
+        rows: computed.rows,
+        mapping: summary.mapping,
+        header: computed.header,
+        resolved,
+        names: new Map(known.drivers.map((d) => [d.id, d.name])),
+        bases: afterDrafts.map((d) => ({ driverId: d.driverId, subtotal: d.subtotal, qty: d.lines.reduce((a, l) => a + l.qty, 0) })),
+        rules: input.rules.map((r) => ({
+          id: r.id,
+          driverId: r.driverId,
+          name: r.name,
+          kind: r.kind,
+          rate: r.rate,
+          amount: r.amount,
+          active: r.active,
+          agreedInWriting: r.agreedInWriting,
+        })),
+      });
+    }
   } else {
     const rows = await db
       .select({ driverId: s.workEntries.driverId, projectId: s.workEntries.projectId, qty: s.workEntries.qty })
@@ -959,13 +1087,38 @@ export async function loadDraftView(db: Db, tenantId: string, batchId: string, o
     appliedEntries,
     blockers,
     related,
+    sameFile,
+    sameFileOtherMonths,
+    extras,
   };
+}
+
+/** 同じファイルが、ほかの月に反映されていないか（月の選び間違いに気づくため） */
+async function sameHashOtherMonths(db: Db, tenantId: string, month: string, hash: string): Promise<DraftView["sameFileOtherMonths"]> {
+  if (!hash) return [];
+  const rows = await db
+    .select({ batchId: s.importBatches.id, month: s.importBatches.month, fileName: s.importBatches.fileName })
+    .from(s.importBatches)
+    .where(
+      and(
+        eq(s.importBatches.tenantId, tenantId),
+        eq(s.importBatches.kind, "work"),
+        eq(s.importBatches.status, "applied"),
+        ne(s.importBatches.month, month),
+        or(eq(s.importBatches.fileHash, hash), sql`${s.importBatches.summary}->'file'->>'hash' = ${hash}`),
+      ),
+    )
+    .orderBy(desc(s.importBatches.createdAt))
+    .limit(5);
+  return rows;
 }
 
 // ---------------------------------------------------------------- 反映・取り消し
 
 async function upsertProfile(db: Db, tenantId: string, summary: DraftSummary, header: string[]): Promise<string> {
-  const data = profileData(header, summary.mapping);
+  const base = profileData(header, summary.mapping);
+  // 元の見出し（並び・書き方）も覚える（「Excel に戻す」で同じ列の並びにするため）
+  const data = { mapping: base.mapping, options: { ...base.options, labels: header } };
   const existing = await db
     .select({ id: s.mappingProfiles.id })
     .from(s.mappingProfiles)
@@ -992,21 +1145,33 @@ async function upsertProfile(db: Db, tenantId: string, summary: DraftSummary, he
   return p.id;
 }
 
-export type ApplyResult = { entries: number; removedEntries: number; replacedBatches: number; month: string };
+export type ApplyResult = {
+  entries: number;
+  removedEntries: number;
+  replacedBatches: number;
+  month: string;
+  /** 「取り消して入れ直す」で入れ替えた同じファイルの取り込み */
+  reappliedFrom?: string[];
+  /** ファイルの振込額の列を、並行運用の比べ合わせに入れた結果 */
+  payouts?: PayoutSaved;
+};
 
 /**
  * 反映：稼働（work_entries）に書く。
  * - replace（既定）：同じ月に反映済みの「同じ形のファイル」の取り込みの行を消してから書く（直したファイルを置き直しても倍にならない）
  * - replaceAll：その月の稼働をすべて消してから書く（手入力の分も）
- * - add：今ある稼働に足す（同じファイルなら止める）
+ * - add：今ある稼働に足す
+ * 同じファイル（ハッシュが同じ）がこの月にもう反映されていれば、どのやり方でも止める。
+ * reapply（「取り消して入れ直す」）のときだけ、その取り込みと入れ替えて入れる（取り消すと、前の取り込みに戻る）。
  * 消した行は、取り消しで戻せるように summary に残す。
+ * ファイルに振込額の列（振込額・差引支給額 など）があれば、反映のあとで並行運用の比べ合わせに入れる（メモのある人は上書きしない）。
  */
 export async function applyBatch(
   db: Db,
   tenantId: string,
   user: ImportUser,
   batchId: string,
-  opts: { mode: ApplyMode; confirmDuplicates: boolean },
+  opts: { mode: ApplyMode; confirmDuplicates: boolean; reapply?: boolean },
 ): Promise<ApplyResult> {
   const { batch, summary } = await getDraft(db, tenantId, batchId);
   const month = batch.month;
@@ -1034,7 +1199,14 @@ export async function applyBatch(
     appliedBatches(db, tenantId, month),
     loadBuildInput(db, tenantId, month),
   ]);
-  const option = modeOption(opts.mode, batch.id, summary, entries, applied, resolved, known, input);
+  const same = await sameFileOf(db, tenantId, batch.id, summary, entries, applied, resolved, known, input);
+  if (same && !opts.reapply) {
+    throw new UserError(`${sameFileMessage(same.info)}。前の取り込みを取り消して入れ直すときは「取り消して入れ直す」を押してください`);
+  }
+  // 入れ直すときは、同じファイルの前の取り込みと入れ替える（手入力の分・別のファイルの分は残す）
+  const mode: ApplyMode = same ? "replace" : opts.mode;
+  const force = same?.ids ?? new Set<string>();
+  const option = modeOption(mode, batch.id, summary, entries, applied, resolved, known, input, force);
   if (option.sameFileApplied) {
     throw new UserError("同じファイルがこの月にもう反映されています。足すと数量が倍になります。「入れ替える」を選んでください");
   }
@@ -1047,7 +1219,7 @@ export async function applyBatch(
       `今ある稼働と重なる行があります（${ex}${option.duplicates.length > 3 ? ` ほか ${option.duplicates.length - 3} 件` : ""}）。二重の可能性 ${option.duplicateYen.toLocaleString("ja-JP")}円。入れ替えるか、重なっていないことを確かめてからチェックを付けてください`,
     );
   }
-  const { removed, batches } = removalFor(opts.mode, batch.id, summary, entries, applied, resolved);
+  const { removed, batches } = removalFor(mode, batch.id, summary, entries, applied, resolved, force);
   const now = new Date().toISOString();
   const rows = computed.rows;
   const header = effectiveHeader(rows, summary.mapping.headerRow, summary.mapping.headerDepth);
@@ -1094,7 +1266,8 @@ export async function applyBatch(
     summary.applied = {
       at: now,
       by: user.id,
-      mode: opts.mode,
+      mode,
+      ...(same ? { reappliedFrom: [...same.ids] } : {}),
       entries: values.length,
       replacedBatchIds: batches.map((b) => b.id),
       removed: removed.map<RestoreEntry>((e) => ({
@@ -1111,7 +1284,55 @@ export async function applyBatch(
       .set({ status: "applied", rowCount: values.length, mappingProfileId: summary.profileId, summary: summary as unknown as Record<string, unknown> })
       .where(and(eq(s.importBatches.id, batch.id), eq(s.importBatches.tenantId, tenantId)));
   });
-  return { entries: resolved.length, removedEntries: removed.length, replacedBatches: batches.length, month };
+
+  // 今の Excel の振込額（振込額・差引支給額 などの列）を、並行運用の比べ合わせに入れる。うまくいかなくても反映はそのまま
+  const payoutRead = readPayout(rows, summary.mapping, header, resolved, new Map(known.drivers.map((d) => [d.id, d.name])));
+  let payouts: PayoutSaved | undefined;
+  if (payoutRead && payoutRead.entries.length > 0) {
+    payouts = await saveImportedPayouts(db, tenantId, month, payoutRead, user.id);
+    await db
+      .update(s.importBatches)
+      .set({ summary: sql`jsonb_set(${s.importBatches.summary}, '{applied,payouts}', ${JSON.stringify(payouts)}::jsonb)` })
+      .where(and(eq(s.importBatches.id, batch.id), eq(s.importBatches.tenantId, tenantId)));
+  }
+  return {
+    entries: resolved.length,
+    removedEntries: removed.length,
+    replacedBatches: batches.length,
+    month,
+    ...(same ? { reappliedFrom: [...same.ids] } : {}),
+    ...(payouts ? { payouts } : {}),
+  };
+}
+
+/**
+ * ファイルの振込額を、並行運用の比べ合わせ（parallel_checks）に入れる。
+ * すでに理由のメモが付いている人は上書きしない（比べた結果の説明を消さないため）。
+ */
+export async function saveImportedPayouts(db: Db, tenantId: string, month: string, read: PayoutRead, userId: string | null): Promise<PayoutSaved> {
+  const at = new Date().toISOString();
+  const existing = await db
+    .select({ driverId: s.parallelChecks.driverId, note: s.parallelChecks.note })
+    .from(s.parallelChecks)
+    .where(and(eq(s.parallelChecks.tenantId, tenantId), eq(s.parallelChecks.month, month)));
+  const noted = new Set(existing.filter((e) => (e.note ?? "").trim() !== "").map((e) => e.driverId));
+  const kept = read.entries.filter((e) => noted.has(e.driverId)).map((e) => e.name);
+  const entries = read.entries.filter((e) => !noted.has(e.driverId));
+  if (entries.length === 0) return { header: read.header, saved: 0, kept, at };
+  try {
+    const r = await saveParallelChecks(
+      db,
+      tenantId,
+      month,
+      entries.map((e) => ({ driverId: e.driverId, excelTotal: e.amount })),
+      userId,
+    );
+    return { header: read.header, saved: r.saved, kept, at };
+  } catch (error) {
+    console.error("import payouts failed", error instanceof Error ? error.message : error);
+    const message = error instanceof UserError ? error.message : "保存できませんでした";
+    return { header: read.header, saved: 0, kept, at, error: message };
+  }
 }
 
 /** 取り消し：この取り込みで入れた稼働を消し、入れ替えで消した稼働を戻す（締めた月はできない） */

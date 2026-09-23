@@ -37,9 +37,15 @@ export function DeemedCheck({ status, terms, deemedDays }: { status: StatementSt
       : `取引条件の記録（版 ${terms.version}・${jpDate(terms.issuedOn)}）に、みなし確認の条項がありません`
     : "取引条件の記録がありません";
 
+  const met = [c.sent && c.daysPassed, c.noQuestion, c.clause].filter(Boolean).length;
+  // みなし確認になった・条項が無くて止まっているときは開いて見せ、それ以外はたたんでおく
+  const important = status.key === "deemed" || status.deemedBlockedByClause;
   return (
-    <section className="rounded-card border border-border bg-card p-4 text-sm" aria-label="みなし確認の条件">
-      <h2 className="font-bold">みなし確認の条件</h2>
+    <details open={important} className="rounded-card border border-border bg-card p-4 text-sm" aria-label="みなし確認の条件">
+      <summary className="flex min-h-11 cursor-pointer flex-wrap items-center gap-2">
+        <span className="font-bold">みなし確認の条件</span>
+        <span className="text-muted-foreground">3 つのうち {met} つ</span>
+      </summary>
       <p className="mt-1 text-muted-foreground">3 つがそろったときだけ「みなし確認」と表示します。1 つでも欠けていれば未確認のままです。</p>
       {status.deemedBlockedByClause && (
         <p role="status" className="mt-2 rounded-lg border border-warning/40 bg-warning/10 p-3 font-bold text-warning">
@@ -79,6 +85,6 @@ export function DeemedCheck({ status, terms, deemedDays }: { status: StatementSt
         </a>
         ）。
       </p>
-    </section>
+    </details>
   );
 }

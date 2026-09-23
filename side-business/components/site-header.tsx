@@ -2,10 +2,14 @@ import Link from "next/link";
 import { PlateLogo } from "@/components/plate-logo";
 import { SITE } from "@/site.config";
 
-/** スマホでは「記事」を隠す（フッターから辿れる）。「相談する」は目立たせる */
+/**
+ * 幅の狭いスマホ（420px 未満）では「無料ツール」、640px 未満では「記事」を隠す（どちらもフッターから辿れる）。
+ * 375px・320px でも横にはみ出さないこと（e2e/smoke.spec.ts）。「相談する」は目立たせる。
+ */
 const NAV = [
+  { href: "/product", label: "製品", className: "inline-flex" },
   { href: "/demo", label: "デモ", className: "inline-flex" },
-  { href: "/tools", label: "無料ツール", className: "inline-flex" },
+  { href: "/tools", label: "無料ツール", className: "hidden min-[420px]:inline-flex" },
   { href: "/articles", label: "記事", className: "hidden sm:inline-flex" },
 ] as const;
 

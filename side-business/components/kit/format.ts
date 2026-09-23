@@ -1,5 +1,5 @@
 /** 営業資料（/kit）で使う宛名・リンクの組み立て（純関数）。料金は lib/plans、円と日付の書式は lib/format */
-import { SITE } from "@/site.config";
+import { SITE, productDemoStartUrl } from "@/site.config";
 
 /* ───────────── 宛名 ───────────── */
 
@@ -36,11 +36,30 @@ export function addressee(raw: string | string[] | undefined): string | null {
 
 export type KitSource = "fax" | "flyer" | "proposal";
 
-/** 印刷物の QR に入れる URL（SITE.url ＋ パス ＋ ?utm_source=） */
-export function kitUrl(path: string, source: KitSource, base: string = SITE.url): string {
+/**
+ * 印刷物の QR に入れる URL（SITE.url ＋ パス ＋ ?utm_source=）。
+ * campaign を渡すと utm_campaign も付ける（FAX の見出しを、相談フォームの「流入元」で見分けるため）。
+ */
+export function kitUrl(path: string, source: KitSource, base: string = SITE.url, campaign?: string): string {
   const url = new URL(path, `${base.replace(/\/+$/, "")}/`);
   url.searchParams.set("utm_source", source);
+  if (campaign) url.searchParams.set("utm_campaign", campaign);
   return url.toString();
+}
+
+/* ───────────── 製品のデモ ───────────── */
+
+/**
+ * 製品のデモの入口（NEXT_PUBLIC_PRODUCT_DEMO_URL ＋ /demo/start）。読み方は site.config.ts の productDemoStartUrl と同じ。
+ * 未設定・読めない値なら null（資料にリンクも QR も出さない）。
+ */
+export function productDemoUrl(raw: string | undefined = process.env.NEXT_PUBLIC_PRODUCT_DEMO_URL): string | null {
+  return productDemoStartUrl(raw);
+}
+
+/** 紙に印刷する短い形（https:// を外す）。例：shimebi-demo.vercel.app/demo/start */
+export function shortUrl(url: string): string {
+  return url.replace(/^https?:\/\//, "");
 }
 
 /** 紙に印刷する短い URL（https:// と utm を付けない）。例：example.jp/tools/invoice-cost */

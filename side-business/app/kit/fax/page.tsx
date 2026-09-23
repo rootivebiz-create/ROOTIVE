@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { FREE_CHECK, shortSource } from "@/components/kit/content";
+import { LEAD, shortSource } from "@/components/kit/content";
 import { makerCopy } from "@/components/kit/maker";
-import { FAX_HOOK_IDS, faxHook, parseFaxHook } from "@/components/kit/fax-hooks";
+import { FAX_HOOK_IDS, faxHook, faxHookHref, parseFaxHook } from "@/components/kit/fax-hooks";
 import { displayUrl, kitUrl } from "@/components/kit/format";
 import { KitToolbar, PaperStyle } from "@/components/kit/paper";
 import { Qr } from "@/components/kit/qr";
@@ -51,7 +51,7 @@ function keepTogether(text: string): ReactNode[] {
 export default async function FaxPage({ searchParams }: Props) {
   const sp = await searchParams;
   const hook = faxHook(parseFaxHook(sp.hook));
-  const qrUrl = kitUrl(hook.qrPath, "fax");
+  const qrUrl = kitUrl(hook.qrPath, "fax", undefined, hook.id);
   const stop = stopContact();
   const price = priceSummary();
 
@@ -71,7 +71,7 @@ export default async function FaxPage({ searchParams }: Props) {
               return (
                 <li key={id}>
                   <Link
-                    href={id === "70" ? "/kit/fax" : `/kit/fax?hook=${id}`}
+                    href={faxHookHref(id)}
                     aria-current={current ? "page" : undefined}
                     className={cx(
                       "flex min-h-11 items-center rounded-lg border px-3 text-sm font-bold no-underline",
@@ -139,17 +139,15 @@ export default async function FaxPage({ searchParams }: Props) {
           >
             <div>
               <h3 id="fax-offer" className="text-lg font-bold leading-snug md:text-xl print:text-xl">
-                無料でどうぞ
+                {hook.offerHeading}
               </h3>
               <ul className="mt-2 space-y-2 leading-snug">
-                <li>
-                  <span className="font-bold">■ {hook.qrTitle}</span>
-                  <span className="mt-0.5 block text-[14px] md:text-[15px]">{hook.qrBody}</span>
-                </li>
-                <li>
-                  <span className="font-bold">■ {FREE_CHECK.title}</span>
-                  <span className="mt-0.5 block text-[14px] md:text-[15px]">{FREE_CHECK.body}</span>
-                </li>
+                {hook.offers.map((o) => (
+                  <li key={o.title}>
+                    <span className="font-bold">■ {o.title}</span>
+                    <span className="mt-0.5 block text-[14px] md:text-[15px]">{o.body}</span>
+                  </li>
+                ))}
               </ul>
             </div>
             <figure className="mx-auto flex w-[46mm] flex-col items-center sm:mx-0 print:mx-0">
@@ -164,15 +162,14 @@ export default async function FaxPage({ searchParams }: Props) {
           {/* 何をしているか */}
           <section aria-labelledby="fax-about" className="mt-4 leading-snug">
             <h3 id="fax-about" className="font-bold">
-              {SITE.name}がお作りするもの
+              {SITE.name}とは
             </h3>
             <p className="mt-1 text-[14px]">
-              業務委託ドライバーの<span className="font-bold">支払明細・振込データ（全銀）・案件別の利益</span>
-              を、今のExcelのルールのまま、御社のアカウントに作ります。データもシステムも御社のもの。月額は定額で、ドライバーは何人でも同じです
+              {LEAD.what}データは御社のサーバーに置きます。月額は定額で、ドライバーは何人でも同じです
               {price ? `（${price.replace(/（税抜）$/, "・税抜")}）` : ""}。{makerCopy().fax}
             </p>
             <p className="mt-1 text-[12px]">
-              お作りするのは計算と書類づくりの仕組みです。税務・法律の最終的な判断は、税理士・弁護士・社労士にご確認ください。
+              差や指摘は記録から分かることで、判断ではありません。税務・法律の最終的な判断は、税理士・弁護士・社労士にご確認ください。
             </p>
           </section>
 

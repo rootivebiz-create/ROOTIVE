@@ -24,7 +24,11 @@ export function daysAfter(a: string, b: string): number {
   return Math.round((toUtc(b) - toUtc(a)) / 86400000);
 }
 
-export function receivingFacts(notice: { month: string; paidOn: string | null; feeDeducted: number }): ReceivingFact[] {
+/**
+ * periodEnd：元請の締めの日（締め日が月末でないとき。例：20 日締めの 10 月分なら 2026-10-20）。
+ * 渡さなければ、その月の末日から数える
+ */
+export function receivingFacts(notice: { month: string; paidOn: string | null; feeDeducted: number; periodEnd?: string | null }): ReceivingFact[] {
   const facts: ReceivingFact[] = [];
   if (notice.feeDeducted > 0) {
     facts.push({
@@ -36,13 +40,15 @@ export function receivingFacts(notice: { month: string; paidOn: string | null; f
     });
   }
   if (notice.paidOn) {
-    const end = monthEnd(notice.month.slice(0, 7));
+    const monthLast = monthEnd(notice.month.slice(0, 7));
+    const closing = notice.periodEnd && notice.periodEnd !== monthLast ? notice.periodEnd : null;
+    const end = closing ?? monthLast;
     const days = daysAfter(end, notice.paidOn);
     if (days > 60) {
       facts.push({
         code: "paid_after_60_days",
-        title: "入金日が月末から60日を超えています",
-        detail: `${monthJa(notice.month)}分の入金日は ${dateJa(notice.paidOn)} で、その月の末日（${dateJa(end)}）から ${days}日後です。支払の期日が取引の条件どおりか確かめてください。`,
+        title: closing ? "入金日が締めの日から60日を超えています" : "入金日が月末から60日を超えています",
+        detail: `${monthJa(notice.month)}分の入金日は ${dateJa(notice.paidOn)} で、${closing ? "元請の締めの日" : "その月の末日"}（${dateJa(end)}）から ${days}日後です。支払の期日が取引の条件どおりか確かめてください。`,
         note: "取引が取適法（旧・下請法）の対象になる場合は、支払期日の決まりがあります。対象になるか・どう扱うかは、取引の条件をご確認のうえ、必要に応じて専門家にご相談ください。",
         sources: TORITEKI_SOURCES,
       });

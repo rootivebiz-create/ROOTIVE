@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { PlateLogo } from "@/components/plate-logo";
-import { BENEFITS, FEATURES, FREE_CHECK, FREELANCE, STEP_70_DATE } from "@/components/kit/content";
-import { displayUrl, kitUrl } from "@/components/kit/format";
+import { BENEFITS, FEATURES, FREELANCE, LEAD, STEP_70_CHANGE, STEP_70_DATE, leadOffer } from "@/components/kit/content";
+import { displayUrl, kitUrl, productDemoUrl, shortUrl } from "@/components/kit/format";
 import { makerCopy } from "@/components/kit/maker";
 import { KitToolbar, PaperStyle } from "@/components/kit/paper";
 import { Qr } from "@/components/kit/qr";
@@ -46,7 +46,7 @@ export default function FlyerPage() {
   const qrUrl = kitUrl("/", "flyer");
   const trial = trialPlan();
   const hasPacks = buildPlans().length > 0;
-  const tagline = SITE.tagline.replace(/。$/, "");
+  const productDemo = productDemoUrl();
 
   return (
     <div>
@@ -71,11 +71,9 @@ export default function FlyerPage() {
               <span className="ml-auto text-xs font-bold text-white/80">軽貨物・運送会社の社長さんへ</span>
             </p>
             <h2 className="mt-3 text-[1.6rem] font-bold leading-tight tracking-tight text-plate-foreground [word-break:auto-phrase] sm:text-[2rem] md:text-[2.2rem] print:text-[2.2rem]">
-              {tagline}
+              {LEAD.question}
             </h2>
-            <p className="mt-2 leading-snug text-white md:text-[17px] print:text-[17px]">
-              支払明細・振込データ・案件別の利益を、今のExcelのルールのまま、御社のアカウントに作ります。
-            </p>
+            <p className="mt-2 text-lg font-bold leading-snug text-white md:text-xl print:text-xl">{leadOffer()}</p>
             <p className="mt-2 text-sm leading-snug text-white/85">
               {makerCopy().flyer}
             </p>
@@ -189,7 +187,7 @@ export default function FlyerPage() {
 
             {/* 期限 */}
             <p className="mt-3 rounded-card bg-plate px-3 py-2 text-[13px] font-bold leading-snug text-white">
-              <span className="text-plate-foreground">{STEP_70_DATE}から</span>、免税ドライバーへの支払の控除は80%→70%。
+              <span className="text-plate-foreground">{STEP_70_DATE}から</span>、免税ドライバーへの支払の{STEP_70_CHANGE}。
               <span className="text-plate-foreground">{FREELANCE.recommendedOn}</span>には、日本郵便がフリーランス法で勧告を受けました。
             </p>
 
@@ -200,10 +198,18 @@ export default function FlyerPage() {
                 <figcaption className="mt-1 text-center text-[11px] leading-tight [overflow-wrap:anywhere]">{displayUrl("/")}</figcaption>
               </figure>
               <div className="min-w-0">
-                <p className="font-bold leading-snug">まずは30分の無料相談と、{FREE_CHECK.title}から</p>
-                <p className="mt-1 text-xs leading-snug text-muted-foreground">
-                  QRコードからデモも触れます。無理にすすめることはしません。お知り合いの会社にも、このチラシを渡していただけるとうれしいです。
+                <p className="font-bold leading-snug">
+                  まずは{trial ? `${trial.name}（${yenText(trial.initialYen)}・税抜）` : "30分の無料相談"}から
                 </p>
+                <p className="mt-1 text-xs leading-snug text-muted-foreground">
+                  30分の無料相談もあります。無理にすすめることはしません。お知り合いの会社にも、このチラシを渡していただけるとうれしいです。
+                </p>
+                {productDemo && (
+                  <p className="mt-1 text-xs leading-snug [overflow-wrap:anywhere]">
+                    <span className="font-bold">製品のデモ（架空の会社）：</span>
+                    {shortUrl(productDemo)}
+                  </p>
+                )}
                 <div className="mt-2 rounded-card border border-border p-2.5 text-xs leading-snug">
                   <SenderBlock wide />
                 </div>

@@ -6,9 +6,11 @@ import { Badge, Notice, PageHeader } from "~/components/page";
 import { DriverForm } from "~/components/settings/driver-form";
 import { toDriverInitial } from "~/components/settings/driver-initial";
 import { DriverSummary } from "~/components/settings/driver-summary";
+import { DriverTermsPanel } from "~/components/settings/driver-terms";
 import { ActionButton } from "~/components/settings/form-kit";
 import { getDb } from "~/db/client";
 import { requirePageUser, roleAtLeast } from "~/server/auth";
+import { latestTermsByDriver } from "~/server/features/terms-content";
 import { driverBadges, driverReferences, getDriver } from "~/server/features/settings/drivers";
 import { rateText, ruleNameKey, ruleValueText, todayJst } from "~/server/features/settings/format";
 import { listOverrides } from "~/server/features/settings/rates";
@@ -29,7 +31,20 @@ export default async function DriverPage({ params, searchParams }: { params: Pro
   const d = await getDriver(db, user.tenantId, id);
   if (!d) notFound();
   const canEdit = roleAtLeast(user.role, "staff");
-  const [refs, overrides, rules] = await Promise.all([driverReferences(db, user.tenantId, id), listOverrides(db, user.tenantId, { driverId: id }), listRules(db, user.tenantId)]);
+  const [refs, overrides, rules, terms] = await Promise.all([
+    driverReferences(db, user.tenantId, id),
+    listOverrides(db, user.tenantId, { driverId: id }),
+    listRules(db, user.tenantId),
+    latestTermsByDriver(db, user.tenantId, [id]),
+  ]);
+  const t = terms.get(id);
+  const termsPanel = (
+    <DriverTermsPanel
+      driverId={d.id}
+      termsIssuedOn={d.termsIssuedOn}
+      latest={t ? { version: t.version, issuedOn: t.issuedOn, sentAt: t.sentAt, receivedAt: t.receivedAt } : null}
+    />
+  );
   const own = rules.filter((r) => r.driverId === id);
   const everyone = rules.filter((r) => r.driverId === null && r.active);
   // 同じ名前の「この人だけ」の控除があれば、全員の控除の代わりにそちらを使う（明細の計算と同じ）
@@ -64,9 +79,13 @@ export default async function DriverPage({ params, searchParams }: { params: Pro
           submitLabel="保存"
           today={todayJst()}
           sources={{ invoiceRegistry: SOURCES.invoiceRegistry, flLaw: SOURCES.flLaw, mhlwFl: SOURCES.mhlwFl }}
+          termsSlot={termsPanel}
         />
       ) : (
-        <DriverSummary d={d} />
+        <div className="space-y-3">
+          <DriverSummary d={d} />
+          {termsPanel}
+        </div>
       )}
 
       <section aria-labelledby="own-rates" className="space-y-2">

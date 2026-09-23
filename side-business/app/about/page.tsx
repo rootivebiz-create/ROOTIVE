@@ -28,8 +28,8 @@ export const metadata: Metadata = {
 };
 
 /**
- * 導入の期間はパックで違うので、料金（site.config.ts の PLANS）の目安をそのまま出す。
- * 並行運用（1か月）はこの期間のあと。トップページの「導入の流れ」と同じ数え方。
+ * 立ち上げの期間はパックで違うので、料金（site.config.ts の PLANS）の目安をそのまま出す。
+ * 並行運用（1〜2か月）はこの期間のあと。トップページの「導入の流れ」と同じ数え方。
  */
 const BUILD_WEEKS = PLANS.filter((p) => p.monthlyYen > 0)
   .map((p) => `${p.name}が${p.weeks}`)
@@ -38,21 +38,21 @@ const BUILD_WEEKS = PLANS.filter((p) => p.monthlyYen > 0)
 const STEPS = [
   {
     title: "御社のやり方を聞く",
-    body: "30分のオンライン相談で、いまの締めのやり方（Excel・紙・単価や控除の決まり）を伺います。",
+    body: "30分のオンライン相談で、いまの締めのやり方（Excel・元請の支払通知・単価や控除の決まり）を伺います。",
   },
   {
-    title: "次の一歩を1つだけご提案",
-    body: "相談のあと、次の一歩を1つだけご提案します（先月分でのお試し・見積もり・無料診断のどれか）。決めるのは、それを見てからで大丈夫です。",
+    title: "先月分でお試し",
+    body: "御社の先月分の Excel で明細を計算し、今の振込額と 1 円単位で比べます。元請の支払通知があれば突き合わせます。決めるのは、その結果を見てからで大丈夫です。",
   },
   {
-    title: "導入",
-    body: `今の Excel からデータを移して御社用に仕上げ、使い方をご説明します。${
-      BUILD_WEEKS ? `期間の目安は、${BUILD_WEEKS}です。` : ""
-    }そのあと1か月ほど、今のやり方と並べて締め、数字が合うことを確かめます。`,
+    title: "立ち上げ",
+    body: `製品を御社の Vercel と Postgres に置き、最初の午後に一緒に画面を見ながら、先月の Excel で並行運用レポートまで作ります。${
+      BUILD_WEEKS ? `立ち上げの期間の目安は、${BUILD_WEEKS}です。` : ""
+    }そのあと1〜2か月、今の Excel と並べて締め、1 人ずつ 1 円まで比べます。全員が合うか、差の理由が分かってから本番に切り替えます。`,
   },
   {
     title: "保守",
-    body: "使いながらの直しや、税率・経過措置など制度が変わったときの手直しを続けます。",
+    body: "製品の直しと改良、税率・経過措置など制度が変わったときの手直しを続けます。新しい版は御社の画面に自動で届きます。",
   },
 ] as const;
 
@@ -117,9 +117,9 @@ export default function AboutPage() {
         <ul className="mt-3 space-y-3">
           <li>
             <Card>
-              <p className="font-bold">税務・社会保険の個別の判断</p>
+              <p className="font-bold">税務・法律・社会保険の判断</p>
               <p className="mt-1 text-sm">
-                税理士・社労士の領分なので、行いません。計算の仕組みは、御社と顧問の先生が決めたルールのとおりに作ります。
+                税理士・弁護士・社労士の領分なので、行いません。製品の見張り番も、記録から分かる事実と根拠を出すところまでです。計算は、御社と顧問の先生が決めたルールのとおりに動かします。
               </p>
             </Card>
           </li>
@@ -127,6 +127,14 @@ export default function AboutPage() {
             <Card>
               <p className="font-bold">お金の振込</p>
               <p className="mt-1 text-sm">作るのは銀行に出す振込データまでです。振込は御社が行い、当方はお金に触れません。</p>
+            </Card>
+          </li>
+          <li>
+            <Card>
+              <p className="font-bold">元請とのやりとり</p>
+              <p className="mt-1 text-sm">
+                元請の支払通知との差は、問い合わせ文の下書きまで作ります。送るかどうか、どう話すかは御社が決めます。
+              </p>
             </Card>
           </li>
         </ul>
@@ -138,10 +146,10 @@ export default function AboutPage() {
         </h2>
         <div className="mt-3 space-y-2">
           <p>
-            御社のデータは、<strong>御社のアカウント（クラウド）に置くのが基本</strong>
-            です。当方の都合で、御社がデータを使えなくなることがないようにするためです。
+            製品もデータも、<strong>御社の Vercel（サーバー）と Postgres（データベース）に置きます</strong>
+            。当方の都合で、御社がデータを使えなくなることがないようにするためです。全データは、いつでも書き出せます。
           </p>
-          <p>当方は、作業に必要な範囲だけ、御社の許可を得て見ます。</p>
+          <p>当方は、立ち上げと保守に必要な範囲だけ、御社の許可を得て見ます。</p>
           <p className="text-sm text-muted-foreground">
             くわしくは<Link href="/legal/privacy">プライバシーポリシー</Link>をご覧ください。
           </p>
@@ -174,8 +182,8 @@ export default function AboutPage() {
           <Link href="/contact" className={buttonClass("accent")}>
             相談する（無料・30分）
           </Link>
-          <Link href="/demo" className={buttonClass("secondary")}>
-            デモをさわる
+          <Link href="/product" className={buttonClass("secondary")}>
+            製品のご紹介を見る
           </Link>
         </div>
       </Card>

@@ -145,9 +145,16 @@ export type DraftSummary = {
     entries: number;
     replacedBatchIds: string[];
     removed: RestoreEntry[];
+    /** 「取り消して入れ直す」で入れ替えた、同じファイルの前の取り込み */
+    reappliedFrom?: string[];
+    /** ファイルの振込額の列（今の Excel の振込額）を、並行運用の比べ合わせに入れた結果 */
+    payouts?: PayoutSaved;
   };
   discarded?: { at: string; by: string | null; reason: "undo" | "replaced" | "cancel"; replacedBy?: string };
 };
+
+/** 振込額の列を並行運用に入れた記録（saved：入れた人数・kept：メモがあるので上書きしなかった人） */
+export type PayoutSaved = { header: string; saved: number; kept: string[]; at: string; error?: string };
 
 /** 1 回に取り込めるファイルの大きさ */
 export const MAX_FILE_BYTES = 10 * 1024 * 1024;

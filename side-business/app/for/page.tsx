@@ -43,8 +43,9 @@ export default function ForIndexPage() {
         ))}
       </ul>
       <p className="mt-8 text-sm text-muted-foreground">
-        しめ日ラボが仕組みづくりをお受けしているのは、主に運送会社です。ほかの業種でも、毎月の支払を自動にしたい方は
-        <Link href="/contact">ご相談ください</Link>。
+        しめ日ラボの製品（月末の締めの仕組み）は、業務委託ドライバーに支払う軽貨物・運送会社向けです（
+        <Link href="/product">製品のご紹介</Link>
+        ）。ほかの業種向けの製品はまだありません。毎月の支払を仕組みにしたい方は、<Link href="/contact">ご相談ください</Link>。
       </p>
     </div>
   );

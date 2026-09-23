@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import type { Db } from "~/db/client";
 import * as s from "~/db/schema";
 import { UserError } from "~/server/action";
@@ -8,24 +8,44 @@ import { fieldError } from "./errors";
 import type { ClientInput } from "./schemas";
 
 /**
- * 元請（荷主）。案件や支払通知から使われている元請は消さない（元請には「無効」が無いので、案件の側を「使わない」にする）。
+ * 元請（荷主）。案件や支払通知から使われている元請は消さない。
+ * 取引をやめた元請は「無効」にする（過去の案件・お支払通知・明細はそのまま残る。選ぶところには出さない）。
  */
 
 export type ClientRow = typeof s.clients.$inferSelect;
 export type ClientListItem = ClientRow & { projects: number; activeProjects: number; notices: number };
 
-export async function listClients(db: Db, tenantId: string): Promise<ClientListItem[]> {
+/** 一覧（既定はすべて。無効の元請も含む）。有効な元請 → 名前の順 */
+export async function listClients(db: Db, tenantId: string, opts: { status?: "active" | "inactive" | "all" } = {}): Promise<ClientListItem[]> {
   const [clients, projects, notices] = await Promise.all([
-    db.select().from(s.clients).where(eq(s.clients.tenantId, tenantId)).orderBy(asc(s.clients.name)),
+    db.select().from(s.clients).where(eq(s.clients.tenantId, tenantId)),
     db.select({ clientId: s.projects.clientId, active: s.projects.active }).from(s.projects).where(eq(s.projects.tenantId, tenantId)),
     db.select({ clientId: s.paymentNotices.clientId }).from(s.paymentNotices).where(eq(s.paymentNotices.tenantId, tenantId)),
   ]);
-  return clients.map((c) => ({
-    ...c,
-    projects: projects.filter((p) => p.clientId === c.id).length,
-    activeProjects: projects.filter((p) => p.clientId === c.id && p.active).length,
-    notices: notices.filter((n) => n.clientId === c.id).length,
-  }));
+  const status = opts.status ?? "all";
+  return clients
+    .filter((c) => status === "all" || (status === "active" ? c.active : !c.active))
+    .sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name, "ja"))
+    .map((c) => ({
+      ...c,
+      projects: projects.filter((p) => p.clientId === c.id).length,
+      activeProjects: projects.filter((p) => p.clientId === c.id && p.active).length,
+      notices: notices.filter((n) => n.clientId === c.id).length,
+    }));
+}
+
+/**
+ * 元請を選ぶところ（案件の入力など）の候補：有効な元請だけ。
+ * ただし、いま選ばれている元請（keepId）が無効なら、それだけは「（取引をやめた元請）」を付けて残す
+ * （直すときに、知らないうちに元請が外れないように）。
+ */
+export function clientPickerOptions(
+  clients: readonly { id: string; name: string; active: boolean }[],
+  keepId?: string | null,
+): { id: string; name: string }[] {
+  return clients
+    .filter((c) => c.active || c.id === keepId)
+    .map((c) => ({ id: c.id, name: c.active ? c.name : `${c.name}（取引をやめた元請）` }));
 }
 
 export async function getClient(db: Db, tenantId: string, id: string): Promise<ClientRow | null> {
@@ -71,6 +91,102 @@ export async function updateClient(db: Db, tenantId: string, id: string, input: 
   return { before, after, changed: changes(before, next, KEYS) };
 }
 
+/** 取引をやめたときに一緒に「使わない」にした案件（戻すときに、その案件だけを戻す）。操作の記録に残す名前 */
+export const CLIENT_DEACTIVATE_ACTION = "client.deactivate";
+export const CLIENT_ACTIVATE_ACTION = "client.activate";
+
+/**
+ * 取引をやめる（無効にする）。記録は消さない。
+ * withProjects のとき、この元請の「使っている」案件も「使わない」にする（取り込みの候補に出なくなる）。
+ * 戻すときのために、「使わない」にした案件の id を返す（操作の記録に残す）。
+ */
+export async function deactivateClient(db: Db, tenantId: string, id: string, opts: { withProjects: boolean }) {
+  return db.transaction(async (tx) => {
+    const t = tx as unknown as Db;
+    const [before] = await t
+      .select()
+      .from(s.clients)
+      .where(and(eq(s.clients.tenantId, tenantId), eq(s.clients.id, id)))
+      .for("update");
+    if (!before) throw new UserError("その元請は見つかりません。一覧から開き直してください");
+    if (!before.active) throw new UserError(`「${before.name}」はもう無効になっています。画面を読み直してください`);
+    const [after] = await t
+      .update(s.clients)
+      .set({ active: false })
+      .where(and(eq(s.clients.tenantId, tenantId), eq(s.clients.id, id)))
+      .returning();
+    const projectIds = opts.withProjects
+      ? (
+          await t
+            .update(s.projects)
+            .set({ active: false })
+            .where(and(eq(s.projects.tenantId, tenantId), eq(s.projects.clientId, id), eq(s.projects.active, true)))
+            .returning({ id: s.projects.id })
+        ).map((p) => p.id)
+      : [];
+    return { before, after, projectIds };
+  });
+}
+
+/**
+ * 無効にした元請を戻す。withProjects のとき、取引をやめたときに一緒に「使わない」にした案件だけを戻す
+ * （それより前から「使わない」だった案件は戻さない）。どれを戻すかは、最後に無効にしたときの操作の記録から読む。
+ */
+export async function restoreClient(db: Db, tenantId: string, id: string, opts: { withProjects: boolean }) {
+  return db.transaction(async (tx) => {
+    const t = tx as unknown as Db;
+    const [before] = await t
+      .select()
+      .from(s.clients)
+      .where(and(eq(s.clients.tenantId, tenantId), eq(s.clients.id, id)))
+      .for("update");
+    if (!before) throw new UserError("その元請は見つかりません。一覧から開き直してください");
+    if (before.active) throw new UserError(`「${before.name}」はもう有効です。画面を読み直してください`);
+    const [after] = await t
+      .update(s.clients)
+      .set({ active: true })
+      .where(and(eq(s.clients.tenantId, tenantId), eq(s.clients.id, id)))
+      .returning();
+    let projectIds: string[] = [];
+    if (opts.withProjects) {
+      const ids = await projectsTurnedOffWith(t, tenantId, id);
+      if (ids.length) {
+        projectIds = (
+          await t
+            .update(s.projects)
+            .set({ active: true })
+            .where(and(eq(s.projects.tenantId, tenantId), eq(s.projects.clientId, id), inArray(s.projects.id, ids)))
+            .returning({ id: s.projects.id })
+        ).map((p) => p.id);
+      }
+    }
+    return { before, after, projectIds };
+  });
+}
+
+/** 最後に「取引をやめる」にしたとき、一緒に「使わない」にした案件の id（記録が無ければ空） */
+export async function projectsTurnedOffWith(db: Db, tenantId: string, clientId: string): Promise<string[]> {
+  const [row] = await db
+    .select({ detail: s.auditLog.detail })
+    .from(s.auditLog)
+    .where(and(eq(s.auditLog.tenantId, tenantId), eq(s.auditLog.action, CLIENT_DEACTIVATE_ACTION), eq(s.auditLog.entityId, clientId)))
+    .orderBy(desc(s.auditLog.id))
+    .limit(1);
+  const ids = (row?.detail as { projectIds?: unknown } | undefined)?.projectIds;
+  return Array.isArray(ids) ? ids.filter((v): v is string => typeof v === "string" && /^[0-9a-f-]{36}$/i.test(v)) : [];
+}
+
+/** 戻すときに一緒に戻せる案件の数（やめたときに一緒に「使わない」にして、今も「使わない」のもの） */
+export async function restorableProjectCount(db: Db, tenantId: string, clientId: string): Promise<number> {
+  const ids = await projectsTurnedOffWith(db, tenantId, clientId);
+  if (!ids.length) return 0;
+  const rows = await db
+    .select({ id: s.projects.id })
+    .from(s.projects)
+    .where(and(eq(s.projects.tenantId, tenantId), eq(s.projects.clientId, clientId), eq(s.projects.active, false), inArray(s.projects.id, ids)));
+  return rows.length;
+}
+
 /** 消す：案件と支払通知のどちらからも使われていないときだけ */
 export async function deleteClient(db: Db, tenantId: string, id: string) {
   return db.transaction(async (tx) => {
@@ -88,7 +204,7 @@ export async function deleteClient(db: Db, tenantId: string, id: string) {
     if (projects || notices) {
       const what = [projects && `案件 ${projects}件`, notices && `支払通知 ${notices}件`].filter(Boolean).join("・");
       throw new UserError(
-        `「${before.name}」は ${what} から使われているので消せません。使わなくなったときは、その案件を「使わない」にすれば、取り込みの候補に出なくなります。`,
+        `「${before.name}」は ${what} から使われているので消せません。取引をやめたときは「取引をやめる（無効にする）」を使ってください。記録はそのまま残ります。`,
       );
     }
     await t.delete(s.clients).where(and(eq(s.clients.tenantId, tenantId), eq(s.clients.id, id)));

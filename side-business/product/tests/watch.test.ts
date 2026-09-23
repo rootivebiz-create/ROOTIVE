@@ -468,7 +468,8 @@ describe("見張り番：記録を変えたときの指摘", () => {
     await setSettings(db, tenantId, { capitalYen: 30_000_000, employees: 12 });
     const [i] = find(await run(), "toriteki");
     expect(i.title).toBe("取適法の対象になる可能性があります");
-    expect(i.detail).toContain("支払期日・手形の禁止・書面の保存などを弁護士等にご確認ください");
+    expect(i.detail).toContain("支払期日・手形などでの支払の禁止・書面の保存などのルールがかかります");
+    expect(i.detail).toContain("目安です。区分ごとに基準が違います。弁護士などにご確認ください。");
     await setSettings(db, tenantId, { capitalYen: 5_000_000, employees: 12 });
     expect(find(await run(), "toriteki")).toHaveLength(0);
   });

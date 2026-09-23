@@ -7,7 +7,7 @@ import { CloseMonthForm, ReopenMonthForm } from "~/components/close/close-forms"
 import { jstDateTime } from "~/components/close/format";
 import { getDb } from "~/db/client";
 import { requirePageUser, roleAtLeast } from "~/server/auth";
-import { loadCloseChecklist, monthAuditLog, REOPEN_REASON_MIN, type CloseChecklist } from "~/server/features/close";
+import { loadCloseChecklist, monthAuditLog, OVERRIDE_REASON_MIN, REOPEN_REASON_MIN, type CloseChecklist } from "~/server/features/close";
 import { monthFromParam, monthLabelJa, monthParam } from "~/server/month";
 
 export const metadata = { title: "締め" };
@@ -37,7 +37,7 @@ function CheckItem({ item }: { item: Item }) {
   );
 }
 
-function buildItems(c: CloseChecklist, m: string, canEdit: boolean): Item[] {
+function buildItems(c: CloseChecklist, m: string, canEdit: boolean, isOwner = false): Item[] {
   const items: Item[] = [];
 
   // ① 稼働
@@ -102,7 +102,12 @@ function buildItems(c: CloseChecklist, m: string, canEdit: boolean): Item[] {
       status: `${c.watch.blocking.length} 件`,
       body: (
         <div className="space-y-2">
-          <p>{c.closed ? "締めたあとに見つかった指摘です。内容を確かめてください。" : "赤い指摘が残っている間は締められません。直すか、内容を確かめて「確認済み」にしてください。"}</p>
+          <p>
+            {c.closed
+              ? "締めたあとに見つかった指摘です。内容を確かめてください。"
+              : "赤い指摘が残っている間は締められません。直すか、内容を確かめて「確認済み」にしてください。"}
+            {!c.closed && isOwner && c.overridable && " 直せない事情があるときは、オーナーは下の「締める」で理由を書いて締めることもできます。"}
+          </p>
           <ul className="space-y-2">
             {c.watch.blocking.map((i) => (
               <li key={`${i.code}:${i.subjectId}`} className="rounded-lg border border-danger/30 p-2">
@@ -243,10 +248,10 @@ export default async function ClosePage({ searchParams }: { searchParams: Promis
   const m = monthParam(month);
   const label = monthLabelJa(month);
   const db = await getDb();
-  const [c, log] = await Promise.all([loadCloseChecklist(db, user.tenantId, month), monthAuditLog(db, user.tenantId, month, 50)]);
+  const [c, log] = await Promise.all([loadCloseChecklist(db, user.tenantId, month), monthAuditLog(db, user.tenantId, month, 20)]);
   const canEdit = roleAtLeast(user.role, "staff");
   const isOwner = user.role === "owner";
-  const items = buildItems(c, m, canEdit);
+  const items = buildItems(c, m, canEdit, isOwner);
   const changes = { created: c.statements.missing, updated: c.statements.stale, removed: c.statements.orphan };
 
   return (
@@ -264,7 +269,23 @@ export default async function ClosePage({ searchParams }: { searchParams: Promis
           </p>
           <p className="text-sm">
             明細 {c.totals.drivers}人・振込額の合計 <Money value={c.totals.total} className="font-bold" />
+            {c.minutesSpent !== null && <span className="ml-2">・締めにかかった時間 {c.minutesSpent}分</span>}
           </p>
+          {c.override && (
+            <div className="rounded-lg border border-danger/40 bg-card p-3 text-sm">
+              <p className="font-bold text-danger">見張り番の赤い指摘が残ったまま締めました</p>
+              <p>
+                {jstDateTime(c.override.at)}
+                {c.override.byName ? `・${c.override.byName}さん` : ""}　理由：{c.override.reason}
+              </p>
+              {c.override.issues.length > 0 && <p className="text-muted-foreground">そのときの指摘：{c.override.issues.join("、")}</p>}
+            </div>
+          )}
+          {c.reopenedAt && (
+            <p className="text-sm text-muted-foreground">
+              この月は {jstDateTime(c.reopenedAt)} に一度締めを外し、締め直しています{c.reopenReason ? `（外した理由：${c.reopenReason}）` : ""}。
+            </p>
+          )}
           <div>
             <p className="text-sm font-bold">つぎにすること</p>
             <ul className="mt-2 grid gap-2 sm:grid-cols-3">
@@ -328,6 +349,11 @@ export default async function ClosePage({ searchParams }: { searchParams: Promis
                 changes={changes}
                 transferBatches={c.transfer.batches}
                 blockers={c.blockers}
+                isOwner={isOwner}
+                overridable={c.overridable}
+                redIssues={c.watch.blocking.map((i) => ({ key: `${i.code}:${i.subjectId}`, title: i.title, subjectLabel: i.subjectLabel }))}
+                overrideMin={OVERRIDE_REASON_MIN}
+                minutesDefault={c.minutesSpent}
               />
             </Card>
           ) : (
@@ -362,7 +388,22 @@ export default async function ClosePage({ searchParams }: { searchParams: Promis
         <h2 id="log-heading" className="text-lg font-bold">
           {label}の操作の記録
         </h2>
-        <p className="text-sm text-muted-foreground">だれが・いつ・何をしたかを、新しい順に 50 件まで出します。この記録は消したり書き換えたりできません。</p>
+        <p className="text-sm text-muted-foreground">
+          だれが・いつ・何をしたかを、新しい順に 20 件まで出します。この記録は消したり書き換えたりできません。
+          {canEdit && "種類や人での絞り込みと CSV は「操作の記録」の画面で。"}
+        </p>
+        {canEdit && (
+          <div className="flex flex-wrap gap-2">
+            <Link href={`/audit?m=${m}`} className={buttonClass("secondary")}>
+              {label}の操作の記録をすべて見る
+            </Link>
+            {isOwner && (
+              <Link href="/data" className={buttonClass("ghost")}>
+                全データの書き出し（オーナー）
+              </Link>
+            )}
+          </div>
+        )}
         {log.length === 0 ? (
           <EmptyState title="この月の操作の記録はまだありません">明細を作る・締める・振込データを作る、などの操作をすると、ここに残ります。</EmptyState>
         ) : (
@@ -374,7 +415,7 @@ export default async function ClosePage({ searchParams }: { searchParams: Promis
                   <p className="num text-xs text-muted-foreground">{jstDateTime(r.at)}</p>
                 </div>
                 <p className="text-muted-foreground">
-                  {r.userName === "ドライバー" ? "ドライバー" : r.userName ? `${r.userName}さん` : "自動"}
+                  {r.actor}
                   {r.summary && <span className="ml-2 break-all text-foreground">{r.summary}</span>}
                 </p>
               </li>

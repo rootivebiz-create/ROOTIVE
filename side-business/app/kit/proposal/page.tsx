@@ -3,37 +3,44 @@ import { TableWrap } from "@/components/ui";
 import { PlateLogo } from "@/components/plate-logo";
 import {
   BENEFITS,
-  COMPARISON_CRITERIA,
-  COMPARISON_NOTE,
+  DEMO_COMPANY,
+  DEMO_MONTH_LABEL,
+  ENOUGH,
   EXAMPLE_PAID,
-  FEATURES,
   FREELANCE,
-  FREE_CHECK,
+  LEAD,
   MAKER,
   NOT_ADVICE,
   PAINS,
   SAFETY,
   SOURCES,
+  STATEMENT_EXAMPLE,
+  STEP_70,
+  STEP_70_CHANGE,
   STEP_70_DATE,
+  TRIAL_DELIVERABLES,
   TRUST,
   burdenExample,
-  comparisonChoices,
   flowSteps,
-  perHeadEquivalent,
+  leadOffer,
+  parallelExample,
+  PARALLEL_EXAMPLE,
+  reconcileExample,
+  ratePct,
+  reconcileLetterLine,
   shortSource,
+  signedYen,
+  statementExampleTotal,
+  watchExample,
 } from "@/components/kit/content";
-import { addressee, displayUrl, kitUrl } from "@/components/kit/format";
+import { addressee, displayUrl, kitUrl, productDemoUrl, shortUrl } from "@/components/kit/format";
 import { KitToolbar, PaperStyle } from "@/components/kit/paper";
 import { Qr } from "@/components/kit/qr";
 import { SenderBlock, SetupWarning } from "@/components/kit/sender";
 import { DemoBadge, MiniTable, Slide } from "@/components/kit/slide";
 import { cx } from "@/lib/cx";
-import { jpDate, jpMonth, jpToday, yenText } from "@/lib/format";
+import { jpToday, yenText } from "@/lib/format";
 import { trialOffer } from "@/lib/plans";
-import { summarize } from "@/lib/payroll/calc";
-import { pct, yen } from "@/lib/payroll/money";
-import { sampleData } from "@/lib/payroll/sample";
-import { deductibleRateForExempt } from "@/lib/payroll/tax";
 import { CONTACT, MAINTENANCE_INCLUDES, OPTIONS, PLANS, SITE, businessInfo, type Plan } from "@/site.config";
 
 type Props = { searchParams: Promise<Record<string, string | string[] | undefined>> };
@@ -68,7 +75,6 @@ const DECK_CSS = `
 `;
 
 const TOTAL = 9;
-const DEMO_MONTH = "2026-10";
 
 function PriceLine({ label, value }: { label: string; value: string }) {
   return (
@@ -98,9 +104,9 @@ function PlanCard({ plan }: { plan: Plan }) {
       <dl className="mt-2 text-sm">
         <PriceLine label={oneOff ? "費用（1回）" : "初期費用"} value={yenText(plan.initialYen)} />
         <PriceLine label="月額" value={oneOff ? "なし" : yenText(plan.monthlyYen)} />
-        <PriceLine label="期間の目安" value={plan.weeks} />
+        <PriceLine label={oneOff ? "期間の目安" : "立ち上げの目安"} value={plan.weeks} />
       </dl>
-      <ul className="mt-2 list-disc space-y-0.5 pl-4 text-xs leading-snug">
+      <ul className="mt-2 list-disc space-y-0.5 pl-4 text-[11px] leading-snug">
         {plan.includes.map((item) => (
           <li key={item}>{item}</li>
         ))}
@@ -110,34 +116,38 @@ function PlanCard({ plan }: { plan: Plan }) {
   );
 }
 
+/** 見張り番の重さの札（赤・黄・お知らせ）。紙でも読めるよう、色だけに頼らず文字で書く */
+function LevelTag({ level }: { level: string }) {
+  return (
+    <span
+      className={cx(
+        "inline-flex h-5 min-w-10 shrink-0 items-center justify-center rounded px-1.5 text-[11px] font-bold leading-none",
+        level === "赤" ? "bg-danger text-white" : level === "黄" ? "bg-accent text-accent-foreground" : "border border-foreground",
+      )}
+    >
+      {level}
+    </span>
+  );
+}
+
 export default async function ProposalPage({ searchParams }: Props) {
   const sp = await searchParams;
   const to = addressee(sp.company);
   const info = businessInfo();
   const today = jpToday();
 
-  const data = sampleData(DEMO_MONTH);
-  const summary = summarize(data);
-  const exempt =
-    summary.statements.find((s) => !s.driver.invoiceRegistered && s.adjustmentTotal !== 0) ??
-    summary.statements.find((s) => !s.driver.invoiceRegistered) ??
-    summary.statements[0];
-  const exemptPL = summary.drivers.find((d) => d.driver.id === exempt.driver.id);
-  const taxRateLabel = pct(data.settings.taxRate);
-  const demoDeductible = pct(deductibleRateForExempt(summary.judgedOn));
-  const monthLabel = jpMonth(`${DEMO_MONTH}-01`);
-  const bestProject = [...summary.projects]
-    .filter((p) => p.margin !== null)
-    .sort((a, b) => (b.margin ?? 0) - (a.margin ?? 0))[0];
+  const rec = reconcileExample();
+  const recFirst = rec.lines.find((l) => l.diff !== 0) ?? rec.lines[0];
+  const par = parallelExample();
+  const watch = watchExample();
+  const payout = statementExampleTotal();
 
   const burden = burdenExample();
-  const choices = comparisonChoices();
-  const perHead = perHeadEquivalent();
   const steps = flowSteps();
   const trial = trialOffer();
   const contactUrl = kitUrl("/contact", "proposal");
-  const demoUrl = kitUrl("/demo", "proposal");
-  const tagline = SITE.tagline.replace(/。$/, "");
+  const productDemo = productDemoUrl();
+  const demoQrUrl = productDemo ?? kitUrl("/demo", "proposal");
 
   return (
     <div className="kit-deck">
@@ -164,6 +174,12 @@ export default async function ProposalPage({ searchParams }: Props) {
             宛名を入れる
           </button>
         </form>
+        {!productDemo && (
+          <p className="mt-3 rounded-card border border-border bg-card p-3 text-sm leading-relaxed">
+            製品のデモの URL（<code className="break-all rounded bg-muted px-1 text-xs">NEXT_PUBLIC_PRODUCT_DEMO_URL</code>
+            ）が入っていないため、最後のページの QR は「計算のデモ（ブラウザだけ）」を指します。
+          </p>
+        )}
         <SetupWarning className="mt-3" />
       </KitToolbar>
 
@@ -185,11 +201,10 @@ export default async function ProposalPage({ searchParams }: Props) {
                 業務委託ドライバーを使う軽貨物・運送会社さまへのご提案
               </p>
               <h2 className="mt-2 text-[1.6rem] font-bold leading-tight tracking-tight [word-break:auto-phrase] sm:text-[2rem] lg:text-[2.6rem]">
-                {tagline}
+                {LEAD.question}
+                <span className="block">{leadOffer()}</span>
               </h2>
-              <p className="mt-3 max-w-3xl leading-relaxed lg:text-lg">
-                支払明細・振込データ・案件別の利益を、今のExcelのルールのまま、御社のアカウントに作ります。
-              </p>
+              <p className="mt-3 max-w-3xl leading-relaxed lg:text-lg">{LEAD.what}</p>
             </div>
 
             <ul className="mt-6 grid gap-2 sm:grid-cols-3 lg:mt-auto print:mt-auto print:grid-cols-3">
@@ -229,12 +244,80 @@ export default async function ProposalPage({ searchParams }: Props) {
             ))}
           </ul>
           <p className="mt-5 rounded-card bg-muted p-4 font-bold leading-relaxed lg:mt-8 lg:p-6 lg:text-xl">
-            ひとつでも当てはまれば、今のやり方を変えずに、毎月の締めを仕組みにできるかもしれません。
+            ひとつでも当てはまれば、今のExcelを変えずに、先月分で確かめてみませんか。
           </p>
         </Slide>
 
-        {/* 3. 期限 */}
-        <Slide id="deadlines" n={3} total={TOTAL} kicker="今知っておきたい期限" title="10月からの70%と、フリーランス法">
+        {/* 3. 元請の支払通知との突合（いちばんの見せ場） */}
+        <Slide id="reconcile" n={3} total={TOTAL} kicker="できること①　元請の支払通知との突合" title="元請の支払通知を、自社の記録で確かめます">
+          <p className="-mt-2 mb-3 flex flex-wrap items-center gap-2 text-sm">
+            <DemoBadge />
+            <span className="text-muted-foreground">
+              製品のデモ：{DEMO_COMPANY}・{rec.client}の{DEMO_MONTH_LABEL}（実在の会社ではありません）
+            </span>
+          </p>
+          <div className="grid gap-4 lg:grid-cols-[1.35fr_1fr] print:grid-cols-[1.35fr_1fr]">
+            <div className="min-w-0">
+              <TableWrap>
+                <MiniTable
+                  head={[{ label: "案件" }, { label: "自社の記録", num: true }, { label: "お支払通知", num: true }, { label: "差", num: true }]}
+                  rows={rec.lines.map((l) => [
+                    <span key="p">
+                      <span className="block font-bold">{l.project}</span>
+                      <span className="block text-xs text-muted-foreground">{l.kind}</span>
+                    </span>,
+                    <span key="o">
+                      <span className="block text-xs text-muted-foreground">
+                        {l.ours.qty.toLocaleString("ja-JP")}
+                        {l.unit} × {yenText(l.ours.price)}
+                      </span>
+                      <span className="block">{yenText(l.ourAmount)}</span>
+                    </span>,
+                    <span key="t">
+                      <span className="block text-xs text-muted-foreground">
+                        {l.theirs.qty.toLocaleString("ja-JP")}
+                        {l.unit} × {yenText(l.theirs.price)}
+                      </span>
+                      <span className="block">{yenText(l.theirAmount)}</span>
+                    </span>,
+                    <span key="d" className={cx(l.diff !== 0 && "font-bold")}>
+                      {signedYen(l.diff)}
+                    </span>,
+                  ])}
+                />
+              </TableWrap>
+              <p className="mt-3 rounded-card bg-plate p-3 text-plate-foreground lg:p-4">
+                <span className="block text-sm font-bold text-white">受け取りが少ない可能性</span>
+                <span className="num text-2xl font-bold lg:text-3xl">{yenText(rec.short)}</span>
+                <span className="ml-2 text-sm text-white">（{rec.shortCount}件）</span>
+              </p>
+            </div>
+            <div className="flex min-w-0 flex-col gap-3">
+              <section aria-labelledby="letter" className="rounded-card border-2 border-foreground p-3">
+                <h3 id="letter" className="text-sm font-bold lg:text-base">
+                  問い合わせ文の下書き（抜粋）
+                </h3>
+                <p className="mt-1 text-sm leading-relaxed">{reconcileLetterLine(recFirst)}。お手数ですが、ご確認をお願いできますでしょうか。</p>
+              </section>
+              <ul className="space-y-1.5 text-sm leading-snug lg:space-y-2.5 lg:text-[15px]">
+                {[
+                  "通知のExcel・CSVを置くと、案件ごとに数量・単価の違いを金額で出します",
+                  "送るかどうかは御社が決めます。責める言葉は使わず、確認のお願いにします",
+                  "問い合わせ済み・解決・了承（理由のメモ）で、返事を追いかけられます",
+                  "差がいくらになるかは会社によって違います。だから、御社の先月分で測ります",
+                ].map((t) => (
+                  <li key={t} className="flex gap-2">
+                    <span aria-hidden className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-accent" />
+                    <span>{t}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </Slide>
+
+        {/* 4. 期限 */}
+        <Slide id="deadlines" n={4} total={TOTAL} kicker="今知っておきたい期限" title={`10月からの${ratePct(STEP_70.rate)}と、フリーランス法`}>
           <div className="grid gap-4 lg:grid-cols-2 print:grid-cols-2">
             <section aria-labelledby="d70" className="flex flex-col rounded-card border border-border p-4 lg:p-5">
               <p className="flex flex-wrap items-center gap-2">
@@ -242,7 +325,7 @@ export default async function ProposalPage({ searchParams }: Props) {
                 <span className="rounded bg-muted px-2 text-xs font-bold leading-5">消費税</span>
               </p>
               <h3 id="d70" className="mt-1 text-lg font-bold leading-snug lg:text-xl">
-                免税ドライバーへの支払の控除が、80%から70%に
+                免税ドライバーへの支払の{STEP_70_CHANGE}に
               </h3>
               <p className="mt-1 text-sm leading-snug lg:text-[15px]">
                 インボイス未登録（免税）の方への支払は、消費税の一部しか差し引けません。その割合が下がり、会社の負担が増えます（令和8年度税制改正）。
@@ -297,6 +380,9 @@ export default async function ProposalPage({ searchParams }: Props) {
                   </span>
                 </li>
               </ul>
+              <p className="mt-3 text-sm leading-snug lg:text-[15px]">
+                しめ日ラボの見張り番は、取引条件の記録・支払期日・免税の方の分の負担を、締める前に記録からお知らせします（6枚目）。
+              </p>
               <p className="mt-auto pt-2 text-[11px] leading-snug text-muted-foreground lg:text-xs">
                 出典：{SOURCES.jftc.label}
                 <span className="block [overflow-wrap:anywhere]">{shortSource(SOURCES.jftc.url)}</span>
@@ -312,188 +398,111 @@ export default async function ProposalPage({ searchParams }: Props) {
           </p>
         </Slide>
 
-        {/* 4. できること：支払明細と振込データ */}
-        <Slide id="statements" n={4} total={TOTAL} kicker="できること①" title="支払明細と振込データを、毎月自動で">
-          <p className="-mt-2 mb-3 flex flex-wrap items-center gap-2 text-sm">
-            <DemoBadge />
-            <span className="text-muted-foreground">
-              {data.settings.companyName}・{monthLabel}分（実在の人物・会社ではありません）
-            </span>
-          </p>
-          <div className="grid gap-4 lg:grid-cols-[1fr_1.15fr] print:grid-cols-[1fr_1.15fr]">
-            <section aria-labelledby="st-title" className="rounded-card border-2 border-foreground p-3">
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <h3 id="st-title" className="font-bold lg:text-lg">
-                  支払明細書（{monthLabel}分）
-                </h3>
-                <span className="text-xs text-muted-foreground">振込日 {jpDate(data.settings.payDate)}</span>
-              </div>
-              <p className="mt-1 text-sm">
-                <span className="font-bold">{exempt.driver.name} 様</span>
-                <span className="ml-2 text-xs text-muted-foreground">
-                  {exempt.driver.invoiceRegistered ? `登録番号 ${exempt.driver.registrationNo ?? ""}` : "インボイス未登録（免税）"}
-                </span>
-              </p>
+        {/* 5. Excel をそのまま → 今の Excel と比べてから切り替え */}
+        <Slide id="parallel" n={5} total={TOTAL} kicker="できること②　取り込みと並行運用" title="今のExcelのまま置いて、1人ずつ比べてから切り替え">
+          <div className="grid gap-4 lg:grid-cols-[1fr_1.25fr] print:grid-cols-[1fr_1.25fr]">
+            <section aria-labelledby="import-title">
+              <h3 id="import-title" className="text-sm font-bold lg:text-base">
+                Excelをそのまま取り込み
+              </h3>
+              <ul className="mt-2 space-y-1.5 text-sm leading-snug lg:space-y-2.5 lg:text-[15px]">
+                {[
+                  "今のExcel・CSVを、形を変えずに置くだけ。打ち直しは要りません",
+                  "日付が横に並んだ表や、合計の行があっても読みます。ファイルの合計と照らし合わせます",
+                  "一度読んだ形と、名前の表記ゆれ（全角・半角・カナ）は覚えます",
+                  "同じファイルを2回置いても、数量は倍になりません。締めるまでは取り消せます",
+                ].map((t) => (
+                  <li key={t} className="flex gap-2">
+                    <span aria-hidden className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-accent" />
+                    <span>{t}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+            <section aria-labelledby="parallel-title" className="min-w-0">
+              <h3 id="parallel-title" className="flex flex-wrap items-center gap-2 text-sm font-bold lg:text-base">
+                今のExcelと1人ずつ比べる
+                <DemoBadge>製品のデモ（架空）</DemoBadge>
+              </h3>
               <TableWrap>
                 <MiniTable
                   className="mt-2"
-                  head={[{ label: "案件（元請）" }, { label: "数量", num: true }, { label: "単価", num: true }, { label: "金額", num: true }]}
-                  rows={exempt.lines.map((l) => [
-                    `${l.projectName}（${l.client}）`,
-                    `${l.qty.toLocaleString("ja-JP")}${l.unit}`,
-                    yen(l.rate),
-                    yen(l.amount),
+                  head={[{ label: "ドライバー" }, { label: "Excel", num: true }, { label: "しめ日ラボ", num: true }, { label: "差", num: true }, { label: "原因の候補" }]}
+                  rows={PARALLEL_EXAMPLE.map((r) => [
+                    r.name,
+                    yenText(r.excel),
+                    yenText(r.ours),
+                    signedYen(r.ours - r.excel),
+                    r.reason ?? "一致",
                   ])}
                 />
               </TableWrap>
-              <dl className="mt-2 text-[13px] lg:text-sm">
-                {[
-                  ["委託料（税抜）", exempt.subtotal],
-                  [`消費税（${taxRateLabel}）`, exempt.tax],
-                  [`ロイヤリティ（${pct(exempt.driver.royaltyRate)}）`, -exempt.royalty],
-                  ["管理費", -exempt.fee],
-                  ["控除にかかる消費税", -exempt.deductionTax],
-                  ...exempt.adjustments.map((a) => [a.label, a.amount] as const),
-                ].map(([label, value]) => (
-                  <div key={String(label)} className="flex justify-between gap-2 border-b border-border py-0.5 lg:py-1">
-                    <dt>{label}</dt>
-                    <dd className="num">{yen(Number(value))}</dd>
-                  </div>
-                ))}
-                <div className="flex justify-between gap-2 pt-1 text-sm font-bold lg:text-lg">
-                  <dt>振込額</dt>
-                  <dd className="num">{yen(exempt.total)}</dd>
-                </div>
-              </dl>
-              {exemptPL && exemptPL.invoiceCost > 0 && (
-                <p className="mt-2 rounded bg-muted p-2 text-xs leading-snug lg:text-sm">
-                  この方への支払で、会社が控除できない消費税：<span className="num font-bold">{yen(exemptPL.invoiceCost)}</span>
-                  （{monthLabel}・控除{demoDeductible}の期間）。会社側の集計にだけ出し、明細には載せません。
-                </p>
-              )}
+              <p className="mt-2 text-sm leading-snug lg:text-[15px]">
+                {par.total}人中{par.matched}人が一致。差には「原因の候補」を付けます（断定はしません。どちらに合わせるかは御社が決めます）。
+              </p>
+              <p className="mt-3 rounded-card border-l-4 border-accent bg-muted p-3 text-sm font-bold leading-snug lg:text-base">
+                全員が一致するか、差のある人の理由が分かるまで、本番に切り替えません。比べた結果は、印刷できる報告1枚になります。
+              </p>
             </section>
+          </div>
+        </Slide>
 
-            <div className="flex min-w-0 flex-col gap-3">
-              <section aria-labelledby="tr-title">
-                <h3 id="tr-title" className="text-sm font-bold lg:text-base">
-                  振込データ（全銀形式・{jpDate(data.settings.payDate)}振込）
-                </h3>
-                <TableWrap>
-                  <MiniTable
-                    className="mt-1"
-                    head={[{ label: "ドライバー" }, { label: "振込先" }, { label: "振込額", num: true }]}
-                    rows={summary.statements.map((s) => [
-                      s.driver.name,
-                      s.driver.bank ? `${s.driver.bank.bankNameKana} ${s.driver.bank.branchNameKana}` : "—",
-                      yen(s.total),
-                    ])}
-                    foot={["合計", `${summary.statements.length}件`, yen(summary.payout)]}
-                  />
-                </TableWrap>
-              </section>
-              <ul className="space-y-1.5 text-sm leading-snug lg:mt-2 lg:space-y-2.5 lg:text-[15px]">
-                {FEATURES.slice(0, 2)
-                  .concat(FEATURES.slice(3))
-                  .map((f) => (
-                    <li key={f.title} className="flex gap-2">
-                      <span aria-hidden className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-accent" />
-                      <span>
-                        <span className="font-bold">{f.title}</span>：{f.body}
-                      </span>
-                    </li>
+        {/* 6. ドライバーの明細と、締め前の見張り番 */}
+        <Slide id="statements" n={6} total={TOTAL} kicker="できること③　明細と見張り番" title="ドライバーが納得する明細と、締める前の見張り番">
+          <div className="grid gap-4 lg:grid-cols-[0.85fr_1.15fr] print:grid-cols-[0.85fr_1.15fr]">
+            <section aria-labelledby="phone" className="min-w-0">
+              <h3 id="phone" className="flex flex-wrap items-center gap-2 text-sm font-bold lg:text-base">
+                ドライバーのスマホに出る明細
+                <DemoBadge>架空</DemoBadge>
+              </h3>
+              <div className="mx-auto mt-2 max-w-[80mm] rounded-[1.25rem] border-2 border-foreground p-3 text-[12px] leading-snug">
+                <p className="text-muted-foreground">{STATEMENT_EXAMPLE.driver} 様・10月分</p>
+                <p className="mt-0.5 font-bold">
+                  振込額 <span className="num text-xl">{yenText(payout)}</span>
+                </p>
+                <dl className="mt-1.5">
+                  {[...STATEMENT_EXAMPLE.lines, ...STATEMENT_EXAMPLE.deductions, ...STATEMENT_EXAMPLE.adjustments].map((l) => (
+                    <div key={l.label} className="flex justify-between gap-2 border-b border-border py-0.5">
+                      <dt>{l.label}</dt>
+                      <dd className="num whitespace-nowrap">{signedYen(l.amount)}</dd>
+                    </div>
                   ))}
-              </ul>
-            </div>
-          </div>
-        </Slide>
-
-        {/* 5. できること：利益 */}
-        <Slide id="profit" n={5} total={TOTAL} kicker="できること②" title="案件別・元請別・ドライバー別の利益が、毎月見える">
-          <p className="-mt-2 mb-3 flex flex-wrap items-center gap-2 text-sm">
-            <DemoBadge />
-            <span className="text-muted-foreground">
-              {data.settings.companyName}・{monthLabel}分（前のページと同じ架空のデータ）
-            </span>
-          </p>
-          <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5 print:grid-cols-5">
-            {[
-              { label: "売上", value: summary.sales },
-              { label: "委託料", value: summary.cost },
-              { label: "ロイヤリティ・管理費", value: summary.royaltyAndFee },
-              { label: "控除できない消費税", value: summary.invoiceCost },
-              { label: "会社に残る利益", value: summary.profit, strong: true },
-            ].map((k) => (
-              <div
-                key={k.label}
-                className={cx("rounded-card p-2.5 lg:p-3.5", k.strong ? "bg-plate text-plate-foreground" : "border border-border")}
-              >
-                <dt className={cx("text-xs font-bold lg:text-sm", k.strong ? "text-plate-foreground" : "text-muted-foreground")}>{k.label}</dt>
-                <dd className="num mt-0.5 text-lg font-bold leading-tight lg:mt-1 lg:text-2xl">
-                  {yen(k.value)}
-                  {k.strong && summary.margin !== null && <span className="ml-1 text-xs">（{pct(summary.margin)}）</span>}
-                </dd>
+                </dl>
+                <p className="mt-2 rounded-lg bg-foreground py-1.5 text-center font-bold text-background">内容を確認しました</p>
+                <p className="mt-1 text-center text-muted-foreground">明細の行ごとに質問できます</p>
               </div>
-            ))}
-          </dl>
-          <div className="mt-4 grid gap-4 lg:mt-5 lg:grid-cols-[1.35fr_1fr_1fr] lg:gap-5 print:grid-cols-[1.35fr_1fr_1fr]">
-            <TableWrap>
-              <MiniTable
-                caption="案件別"
-                head={[{ label: "案件（元請）" }, { label: "売上", num: true }, { label: "粗利", num: true }, { label: "粗利率", num: true }]}
-                rows={summary.projects.map((p) => [
-                  `${p.project.name}（${p.project.client}）`,
-                  yen(p.sales),
-                  yen(p.gross),
-                  p.margin === null ? "—" : pct(p.margin),
-                ])}
-              />
-            </TableWrap>
-            <TableWrap>
-              <MiniTable
-                caption="元請別"
-                head={[{ label: "元請" }, { label: "売上", num: true }, { label: "粗利", num: true }, { label: "粗利率", num: true }]}
-                rows={summary.clients.map((c) => [c.client, yen(c.sales), yen(c.gross), c.margin === null ? "—" : pct(c.margin)])}
-              />
-            </TableWrap>
-            <TableWrap>
-              <MiniTable
-                caption="ドライバー別"
-                head={[{ label: "ドライバー" }, { label: "売上", num: true }, { label: "利益", num: true }]}
-                rows={summary.drivers.map((d) => [
-                  <span key="n">
-                    {d.driver.name}
-                    {!d.driver.invoiceRegistered && <span className="ml-1 text-[11px] text-muted-foreground">免税</span>}
-                  </span>,
-                  yen(d.sales),
-                  yen(d.profit),
-                ])}
-              />
-            </TableWrap>
+              <ul className="mt-2 space-y-1 text-xs leading-snug lg:text-sm">
+                <li>・リンクを押すだけ。アプリもパスワードも要りません</li>
+                <li>・「確認しました」の日時と、行ごとの質問と返事が残ります</li>
+                <li>・明細を仕入明細書として使うときの、相手方の確認の記録として使える形です（国税庁 Q&A 問86 の方法に沿う。最終的な判断は税理士と）</li>
+              </ul>
+            </section>
+            <section aria-labelledby="watch" className="min-w-0">
+              <h3 id="watch" className="flex flex-wrap items-center gap-2 text-sm font-bold lg:text-base">
+                締め前の見張り番（製品のデモの10月分から）
+                <DemoBadge>架空</DemoBadge>
+              </h3>
+              <ul className="mt-2 space-y-2">
+                {watch.map((w) => (
+                  <li key={w.title} className="flex gap-2 rounded-card border border-border p-2.5 lg:p-3">
+                    <LevelTag level={w.level} />
+                    <span className="min-w-0 text-sm leading-snug lg:text-[15px]">
+                      <span className="block font-bold">{w.title}</span>
+                      <span className="block">{w.detail}</span>
+                      {w.basis && <span className="block text-xs text-muted-foreground">根拠：{w.basis}</span>}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-3 rounded-card bg-muted p-3 text-sm font-bold leading-snug lg:text-base">
+                出すのは、記録から分かる事実と根拠だけです。「違反です」とは言いません。直すかどうかは御社が決め、理由のメモを残せます。
+              </p>
+            </section>
           </div>
-          <ul className="mt-4 grid gap-2 sm:grid-cols-2 lg:mt-5 lg:gap-4 print:grid-cols-2">
-            {bestProject && bestProject.margin !== null && (
-              <li className="rounded-card border-l-4 border-accent bg-muted p-3 text-sm leading-snug lg:text-base">
-                粗利率がいちばん高い案件は
-                <span className="font-bold">
-                  {bestProject.project.name}（{bestProject.project.client}）の{pct(bestProject.margin)}
-                </span>
-              </li>
-            )}
-            {summary.invoiceCost > 0 && (
-              <li className="rounded-card border-l-4 border-accent bg-muted p-3 text-sm leading-snug lg:text-base">
-                免税の方の分の、控除できない消費税は
-                <span className="num font-bold">月{yen(summary.invoiceCost)}</span>
-                （12か月なら<span className="num">{yen(summary.invoiceCost * 12)}</span>）
-              </li>
-            )}
-          </ul>
-          <p className="mt-3 text-xs leading-snug text-muted-foreground lg:text-sm">
-            粗利 ＝ 売上 − 委託料。会社に残る利益 ＝ 売上 − 委託料 ＋ ロイヤリティ・管理費 − 免税の方の分の控除できない消費税。数字の出し方は、御社の今の集計に合わせて作ります。
-          </p>
         </Slide>
 
-        {/* 6. 料金 */}
-        <Slide id="pricing" n={6} total={TOTAL} kicker="料金（税抜）" title="月額は定額。ドライバーは何人でも同じです">
+        {/* 7. 料金 */}
+        <Slide id="pricing" n={7} total={TOTAL} kicker="料金（税抜）" title="月額は定額。ドライバーは何人でも同じです">
           <div className="grid gap-3 lg:grid-cols-[1fr_1fr_1fr_0.95fr] print:grid-cols-[1fr_1fr_1fr_0.95fr]">
             <ul className="contents">
               {PLANS.map((p) => (
@@ -508,7 +517,7 @@ export default async function ProposalPage({ searchParams }: Props) {
                 <ul className="mt-1 list-disc space-y-0.5 pl-4">
                   <li>表示はすべて税抜です</li>
                   <li>月額は、ドライバーが何人でも同じです</li>
-                  <li>サーバー代は御社が直接お支払いください（見積で目安をお示しします）</li>
+                  <li>サーバー代（置き場所とデータベース）は、御社名義で契約し、御社が直接お支払いください（見積で目安をお示しします）</li>
                   {info.invoiceRegNo && <li className="num">登録番号 {info.invoiceRegNo}</li>}
                 </ul>
               </section>
@@ -537,75 +546,31 @@ export default async function ProposalPage({ searchParams }: Props) {
           </div>
         </Slide>
 
-        {/* 7. 比較 */}
-        <Slide id="compare" n={7} total={TOTAL} kicker="ほかの選び方との比較" title="形が合うなら、既製品が一番安い">
-          <p className="-mt-1 mb-3 text-sm leading-relaxed lg:mb-4 lg:text-base">
-            既製品で足りるなら、そちらをおすすめします。当方が向いているのは、控除が複雑な会社や、元請ごとに締めや明細の形が違う会社です。
-          </p>
-          {/* スマホ：選び方ごとのカード */}
-          <ul className="grid gap-3 md:hidden print:hidden">
-            {choices.map((c) => (
-              <li key={c.name} className={cx("rounded-card p-3", c.ours ? "border-2 border-foreground" : "border border-border")}>
-                <h3 className="font-bold">{c.name}</h3>
-                <dl className="mt-1 space-y-1 text-sm">
-                  {COMPARISON_CRITERIA.map((k) => (
-                    <div key={k.key}>
-                      <dt className="text-xs font-bold text-muted-foreground">{k.label}</dt>
-                      <dd className="leading-snug">{c.values[k.key]}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </li>
-            ))}
-          </ul>
-          {/* タブレット・PC・印刷：表 */}
-          <table className="hidden w-full border-collapse text-[13px] leading-snug md:table lg:text-sm print:table">
-            <caption className="sr-only">ほかの選び方と{SITE.name}の比較</caption>
-            <thead>
-              <tr>
-                <th scope="col" className="w-32 border-b-2 border-foreground">
-                  <span className="sr-only">比べる点</span>
-                </th>
-                {choices.map((c) => (
-                  <th
-                    key={c.name}
-                    scope="col"
-                    className={cx(
-                      "border-b-2 border-foreground px-2 py-2 text-left align-bottom font-bold [word-break:auto-phrase] lg:px-3 lg:text-base",
-                      c.ours && "bg-accent",
-                    )}
-                  >
-                    {c.name}
-                  </th>
+        {/* 8. 今の道具で十分では？ と、導入の流れ */}
+        <Slide id="flow" n={8} total={TOTAL} kicker="よくいただくご質問と、導入の流れ" title={ENOUGH.title}>
+          <div className="grid gap-4 lg:grid-cols-[1.1fr_1fr] print:grid-cols-[1.1fr_1fr]">
+            <section aria-labelledby="enough">
+              <h3 id="enough" className="text-sm leading-snug lg:text-base">
+                {ENOUGH.lead}
+              </h3>
+              <ul className="mt-2 grid gap-2 sm:grid-cols-2 lg:gap-3 print:grid-cols-2">
+                {ENOUGH.items.map((t) => (
+                  <li key={t.title} className="rounded-card bg-muted p-2.5 lg:p-3.5">
+                    <p className="text-sm font-bold leading-snug lg:text-base">{t.title}</p>
+                    <p className="mt-0.5 text-xs leading-snug lg:mt-1 lg:text-sm">{t.body}</p>
+                  </li>
                 ))}
-              </tr>
-            </thead>
-            <tbody>
-              {COMPARISON_CRITERIA.map((k) => (
-                <tr key={k.key}>
-                  <th scope="row" className="border-b border-border py-2 pr-2 text-left align-top text-xs font-bold text-muted-foreground lg:py-3 lg:text-sm">
-                    {k.label}
-                  </th>
-                  {choices.map((c) => (
-                    <td key={c.name} className={cx("border-b border-border px-2 py-2 align-top lg:px-3 lg:py-3", c.ours && "bg-muted font-bold")}>
-                      {c.values[k.key]}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {perHead && perHead.heads > 0 && (
-            <p className="mt-3 rounded-card border-l-4 border-accent bg-muted p-3 text-sm leading-snug lg:mt-5 lg:p-4 lg:text-base">
-              例：月額{yenText(perHead.monthly)}は、1人月1,000円前後のアプリなら{perHead.heads}人分。当方はドライバーが増えても月額が変わりません。
-            </p>
-          )}
-          <p className="mt-2 text-xs text-muted-foreground">{COMPARISON_NOTE}</p>
-        </Slide>
-
-        {/* 8. 導入の流れと安心の仕組み */}
-        <Slide id="flow" n={8} total={TOTAL} kicker="導入の流れと安心の仕組み" title="今のExcelと並べて、差がないことを確かめてから">
-          <div className="grid gap-4 lg:grid-cols-[1fr_1.1fr] print:grid-cols-[1fr_1.1fr]">
+              </ul>
+              <p className="mt-2 text-sm font-bold leading-snug lg:text-base">{ENOUGH.close}</p>
+              <ul className="mt-3 grid gap-x-3 gap-y-1 text-xs leading-snug sm:grid-cols-2 lg:text-sm print:grid-cols-2">
+                {TRUST.map((t) => (
+                  <li key={t.title}>
+                    <span className="font-bold">{t.title}：</span>
+                    {t.body}
+                  </li>
+                ))}
+              </ul>
+            </section>
             <section aria-labelledby="flow-steps">
               <h3 id="flow-steps" className="text-sm font-bold lg:text-base">
                 導入の流れ
@@ -628,29 +593,16 @@ export default async function ProposalPage({ searchParams }: Props) {
                 ))}
               </ol>
             </section>
-            <section aria-labelledby="trust">
-              <h3 id="trust" className="text-sm font-bold lg:text-base">
-                安心してお任せいただくために
-              </h3>
-              <ul className="mt-2 grid gap-2 sm:grid-cols-2 lg:gap-3 print:grid-cols-2">
-                {TRUST.map((t) => (
-                  <li key={t.title} className="rounded-card bg-muted p-2.5 lg:p-3.5">
-                    <p className="text-sm font-bold leading-snug lg:text-base">{t.title}</p>
-                    <p className="mt-0.5 text-xs leading-snug lg:mt-1 lg:text-sm">{t.body}</p>
-                  </li>
-                ))}
-              </ul>
-            </section>
           </div>
         </Slide>
 
-        {/* 9. 次の一歩：いちばん上は有料の「先月分でお試し」。無料診断と相談の予約はその下に小さく */}
+        {/* 9. 次の一歩：いちばん上は有料の「先月分でお試し」。相談の予約はその下に小さく */}
         <Slide
           id="next"
           n={9}
           total={TOTAL}
           kicker="次の一歩"
-          title={trial ? `まずは、${trial.name}（${trial.weeks}）` : "まずは、先月分の無料診断から"}
+          title={trial ? `まずは、${trial.name}（${trial.weeks}）` : "まずは、30分の無料相談から"}
         >
           <div className="grid gap-5 lg:grid-cols-[1.25fr_1fr] print:grid-cols-[1.25fr_1fr]">
             <div className="min-w-0">
@@ -673,41 +625,40 @@ export default async function ProposalPage({ searchParams }: Props) {
                     {trial.credit}
                   </p>
                   <p className="mt-2 text-sm leading-snug lg:text-base">
-                    御社の先月分のExcelで支払明細を計算し、実際の支払額と1行ずつ突き合わせます。合わなかった行と理由をまとめてお渡しします（やることの一覧は6枚目）。
+                    先月の稼働のExcel・今の振込額・元請の支払通知をお預かりし（ドライバーの名前は番号に）、次の4つをお渡しします。
                   </p>
+                  <ul className="mt-1.5 grid gap-1.5 sm:grid-cols-2 print:grid-cols-2">
+                    {TRIAL_DELIVERABLES.map((d) => (
+                      <li key={d.title} className="rounded-card border border-border p-2 text-xs leading-snug lg:text-sm">
+                        <span className="block font-bold">{d.title}</span>
+                        {d.body}
+                      </li>
+                    ))}
+                  </ul>
                 </section>
               ) : null}
-              <h3 className={cx("text-sm font-bold lg:text-base", trial && "mt-3")}>
-                {trial ? "その前に、無料でできること" : "無料でできること"}
-              </h3>
-              <ul className="mt-1.5 grid gap-2 sm:grid-cols-2 print:grid-cols-2">
-                <li className="rounded-card border border-border p-2.5 lg:p-3">
-                  <p className="text-sm font-bold lg:text-base">{FREE_CHECK.title}</p>
-                  <p className="mt-0.5 text-xs leading-snug lg:text-sm">{FREE_CHECK.body}</p>
-                </li>
-                <li className="rounded-card border border-border p-2.5 lg:p-3">
-                  <p className="text-sm font-bold lg:text-base">30分のオンライン相談</p>
-                  <p className="mt-0.5 text-xs leading-snug lg:text-sm">
-                    今の締め方をうかがい、合うかどうかを正直にお伝えします。合わなければ、既製品をおすすめします。
-                  </p>
-                </li>
-              </ul>
-              <p className="mt-3 text-xs leading-snug text-muted-foreground lg:text-sm">{NOT_ADVICE}</p>
+              <p className={cx("text-sm leading-snug lg:text-base", trial && "mt-3")}>
+                <span className="font-bold">30分の無料相談</span>
+                ：今の締め方をうかがい、合うかどうかを正直にお伝えします。合わなければ、今のままをおすすめします。
+              </p>
+              <p className="mt-2 text-xs leading-snug text-muted-foreground lg:text-sm">{NOT_ADVICE}</p>
             </div>
             <div className="flex min-w-0 flex-col gap-3">
               <div className="grid grid-cols-2 gap-3">
                 <figure className="rounded-card border border-border p-3 text-center">
                   <Qr url={contactUrl} label="お申し込み・相談のページのQRコード" className="mx-auto w-full max-w-[40mm]" />
                   <figcaption className="mt-2 text-xs font-bold leading-snug">
-                    {trial ? "お試し・相談の申し込み" : "相談・無料診断"}
+                    {trial ? "お試し・相談の申し込み" : "相談の申し込み"}
                     <span className="block font-normal text-muted-foreground [overflow-wrap:anywhere]">{displayUrl("/contact")}</span>
                   </figcaption>
                 </figure>
                 <figure className="rounded-card border border-border p-3 text-center">
-                  <Qr url={demoUrl} label="デモのページのQRコード" className="mx-auto w-full max-w-[40mm]" />
+                  <Qr url={demoQrUrl} label={productDemo ? "製品のデモのQRコード" : "計算のデモのページのQRコード"} className="mx-auto w-full max-w-[40mm]" />
                   <figcaption className="mt-2 text-xs font-bold leading-snug">
-                    デモを触る
-                    <span className="block font-normal text-muted-foreground [overflow-wrap:anywhere]">{displayUrl("/demo")}</span>
+                    {productDemo ? "製品のデモを触る（架空の会社）" : "計算のデモ（ブラウザだけ）"}
+                    <span className="block font-normal text-muted-foreground [overflow-wrap:anywhere]">
+                      {productDemo ? shortUrl(productDemo) : displayUrl("/demo")}
+                    </span>
                   </figcaption>
                 </figure>
               </div>

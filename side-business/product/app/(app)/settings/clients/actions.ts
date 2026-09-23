@@ -5,8 +5,16 @@ import { getDb } from "~/db/client";
 import { runAction, type ActionResult } from "~/server/action";
 import { audit } from "~/server/audit";
 import { requireUser } from "~/server/auth";
-import { createClient, deleteClient, updateClient } from "~/server/features/settings/clients";
-import { clientSchema, formObject, idSchema } from "~/server/features/settings/schemas";
+import {
+  CLIENT_ACTIVATE_ACTION,
+  CLIENT_DEACTIVATE_ACTION,
+  createClient,
+  deactivateClient,
+  deleteClient,
+  restoreClient,
+  updateClient,
+} from "~/server/features/settings/clients";
+import { checkbox, clientSchema, formObject, idSchema } from "~/server/features/settings/schemas";
 
 /** 元請（事務から） */
 
@@ -46,4 +54,33 @@ export async function deleteClientAction(_prev: State, form: FormData): Promise<
     await audit(db, { tenantId: user.tenantId, userId: user.id, action: "client.delete", entity: "client", entityId: id, detail: { name: before.name } });
     revalidatePath("/", "layout");
   }, "消しました");
+}
+
+/** 取引をやめる（無効にする）・戻す。案件も一緒に「使わない」にする／戻すかを選べる */
+export async function setClientActiveAction(_prev: State, form: FormData): Promise<State> {
+  const active = form.get("active") === "1";
+  const withProjects = checkbox.parse(String(form.get("withProjects") ?? ""));
+  let projects = 0;
+  const result = await runAction(async () => {
+    const user = await requireUser("staff");
+    const id = idOf(form);
+    const db = await getDb();
+    const r = active ? await restoreClient(db, user.tenantId, id, { withProjects }) : await deactivateClient(db, user.tenantId, id, { withProjects });
+    projects = r.projectIds.length;
+    await audit(db, {
+      tenantId: user.tenantId,
+      userId: user.id,
+      action: active ? CLIENT_ACTIVATE_ACTION : CLIENT_DEACTIVATE_ACTION,
+      entity: "client",
+      entityId: id,
+      // 一緒に切り替えた案件の id（戻すときに、この案件だけを戻す）
+      detail: { name: r.before.name, projectIds: r.projectIds },
+    });
+    revalidatePath("/", "layout");
+  });
+  if (!result.ok) return result;
+  const message = active
+    ? `元請を戻しました。${projects ? `案件 ${projects}件も「使う」に戻しました。` : ""}`
+    : `取引をやめた元請にしました。${projects ? `案件 ${projects}件も「使わない」にしました。` : ""}過去の記録はそのまま残り、「戻す」でいつでも元に戻せます。`;
+  return { ...result, message };
 }

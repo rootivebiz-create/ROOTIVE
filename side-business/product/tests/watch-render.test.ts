@@ -97,6 +97,18 @@ describe("見張り番の画面", () => {
     expect(html).toContain(FOOTER);
     // 判定の言葉を出さない
     expect(html).not.toMatch(/(?<!取)適法|違反です|違反はありません|問題ありません/);
+    // どのカードにも影響額（円か「—」）と、ルールの時点が出る。赤は影響額の大きい順（遠藤さん 294,800 円 → 制服代 5,000 円）
+    expect(html).toContain("影響額");
+    expect(html).toContain("¥294,800");
+    expect(html).toContain("（遠藤 大輔さんの2026年10月分の支払額）");
+    expect(html).toContain("¥5,000");
+    expect(html).toContain("（2026年9月時点の情報）");
+    expect(html).toContain("金額で出す指摘ではありません");
+    expect(html).toContain("同じ重さの中は、影響額の大きい順です。");
+    expect(html.indexOf("¥294,800")).toBeLessThan(html.indexOf("制服代（木村 誠）"));
+    // 見張り番が確かめていることの一覧にも、時点と当てる月が出る
+    expect(html).toContain("2024年11月1日以降の月で確かめます");
+    expect(html).toContain("同じお金が複数の指摘に数えられることがあるので、足し合わせないでください");
   });
 
   it("閲覧の人：確認済みにする欄は出さず、直す画面は「見る」だけ", async () => {
@@ -136,6 +148,10 @@ describe("見張り番の画面", () => {
     expect(html).toContain("業務委託契約書（2026年5月1日）を確認した");
     expect(html).toContain("デモ 事務さん");
     expect(html).toContain("確認済みを外す");
+    // 確認済みの指摘は消さずに、灰色の 1 行にたたむ（開くと中身とメモ）
+    expect(html).toContain("赤・取引条件を明示した記録がありません（遠藤 大輔）");
+    expect(html).toContain("お知らせ・支払期日の文言が入っていません（取引条件の支払期日の文言）");
+    expect(html.match(/<details class="group rounded-card border border-border bg-muted"/g)).toHaveLength(2);
   });
 
   it("前の月に確認済みにした指摘は、翌月の欄に下書きとして入る", async () => {

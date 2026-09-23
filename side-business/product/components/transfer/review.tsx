@@ -55,7 +55,7 @@ export function TransferReviewSection({ review, m }: { review: TransferReview; m
                         <span className="num">{c.previous.masked}</span>
                         <span className="text-muted-foreground">
                           （{c.previous.month ? `${monthLabelJa(c.previous.month)}分・` : ""}
-                          {jstDateTime(c.previous.at)} に作った振込データ）
+                          {jstDateTime(c.previous.at)} に作った振込データ{c.previous.deleted ? "・あとで取り消したもの" : ""}）
                         </span>
                       </dd>
                     </div>

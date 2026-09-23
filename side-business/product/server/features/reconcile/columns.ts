@@ -184,9 +184,16 @@ const FEE_ROW = /振込手数料|送金手数料|振替手数料/;
 const TOTAL_ROW = /^(総?合計|小計|計|合計額|合計金額|お?支払合計|お?支払総?額合計|差引.*額|税込合計|税抜合計)$/;
 
 /**
- * 見出し行より下を読む。month は YYYY-MM-01（日付の年を補う・月の外の行を数える）
+ * 見出し行より下を読む。month は YYYY-MM-01（日付の年を補う・月の外の行を数える）。
+ * period を渡すと（元請の締め日が月末でないとき。例：9/21〜10/20）、その期間の外の行を数える。
+ * 年の無い日付（「9/25」）が期間の外になるときは、前の年として読み直す（1 月分の「12/25」など）
  */
-export function parseNoticeRows(rows: string[][], headerIndex: number, columns: ColumnMap, opts: { rounding: Rounding; month: string }): ParsedNotice {
+export function parseNoticeRows(
+  rows: string[][],
+  headerIndex: number,
+  columns: ColumnMap,
+  opts: { rounding: Rounding; month: string; period?: { from: string; to: string } | null },
+): ParsedNotice {
   const lines: ParsedLine[] = [];
   const skipped: SkippedRow[] = [];
   const warnings: string[] = [];
@@ -240,10 +247,16 @@ export function parseNoticeRows(rows: string[][], headerIndex: number, columns: 
     }
     let date: string | null = null;
     if (columns.date !== null) {
-      date = parseDateCell(cell(r, columns.date), year);
+      const raw = cell(r, columns.date);
+      date = parseDateCell(raw, year);
+      const period = opts.period ?? null;
+      if (date && period && (date < period.from || date > period.to) && !/\d{4}/.test(raw.normalize("NFKC"))) {
+        const before = parseDateCell(raw, year - 1);
+        if (before && before >= period.from && before <= period.to) date = before;
+      }
       if (date) {
         dates.push(date);
-        if (date.slice(0, 7) !== ym) outside++;
+        if (period ? date < period.from || date > period.to : date.slice(0, 7) !== ym) outside++;
       }
     }
     const driver = cell(r, columns.driver);
@@ -254,7 +267,10 @@ export function parseNoticeRows(rows: string[][], headerIndex: number, columns: 
   if (fileTotal !== null && fileTotal !== total && fileTotal !== total + taxTotal && fileTotal !== total + taxTotal - feeTotal && fileTotal !== total - feeTotal) {
     warnings.push(`ファイルの合計（${fileTotal.toLocaleString("ja-JP")}円）と、読み取った行の合計（${total.toLocaleString("ja-JP")}円）が合いません。読み飛ばした行や、列の選び方を確かめてください。`);
   }
-  if (outside > 0) warnings.push(`${ym.replace("-", "年")}月の外の日付の行が ${outside} 行あります。別の月の分が入っていないか確かめてください。`);
+  if (outside > 0) {
+    const where = opts.period ? `締めの期間（${jaDate(opts.period.from)}〜${jaDate(opts.period.to)}）` : `${ym.replace("-", "年")}月`;
+    warnings.push(`${where}の外の日付の行が ${outside} 行あります。別の月の分が入っていないか確かめてください。`);
+  }
   const sortedDates = [...dates].sort();
   return {
     lines,
@@ -266,6 +282,12 @@ export function parseNoticeRows(rows: string[][], headerIndex: number, columns: 
     dates: sortedDates.length ? { from: sortedDates[0], to: sortedDates[sortedDates.length - 1], outside } : null,
     warnings,
   };
+}
+
+/** 2026-09-21 → 2026年9月21日 */
+function jaDate(date: string): string {
+  const [y, m, d] = date.split("-").map(Number);
+  return `${y}年${m}月${d}日`;
 }
 
 function lastNumber(r: string[]): number | null {

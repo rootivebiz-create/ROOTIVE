@@ -54,23 +54,52 @@ describe("明細の状態", () => {
     expect(resent).toMatchObject({ key: "changed", needsResend: false });
   });
 
-  it("みなし確認：今の中身を送ってから決めた日数が過ぎ、連絡が無いときだけ", () => {
-    expect(statementStatus(input({ sentAt: t0 }), at(6.9), 7).key).toBe("sent");
-    const deemed = statementStatus(input({ sentAt: t0 }), at(7), 7);
-    expect(deemed).toMatchObject({ key: "deemed", label: "みなし確認（7日経過）", deemedDays: 7, tone: "green" });
-    expect(statementStatus(input({ sentAt: t0 }), at(10.5), 7).label).toBe("みなし確認（10日経過）");
+  it("みなし確認：今の中身を送ってから決めた日数が過ぎ、連絡が無く、取引条件に条項があるときだけ", () => {
+    const clause = { deemedClause: true };
+    expect(statementStatus(input({ sentAt: t0, ...clause }), at(6.9), 7).key).toBe("sent");
+    const deemed = statementStatus(input({ sentAt: t0, ...clause }), at(7), 7);
+    expect(deemed).toMatchObject({ key: "deemed", label: "みなし確認（7日経過）", deemedDays: 7, tone: "green", deemedBlockedByClause: false });
+    expect(deemed.deemedCheck).toEqual({ sent: true, daysSinceSent: 7, daysPassed: true, noQuestion: true, clause: true });
+    expect(statementStatus(input({ sentAt: t0, ...clause }), at(10.5), 7).label).toBe("みなし確認（10日経過）");
     // 日数は会社ごと
-    expect(statementStatus(input({ sentAt: t0 }), at(3), 3).key).toBe("deemed");
+    expect(statementStatus(input({ sentAt: t0, ...clause }), at(3), 3).key).toBe("deemed");
     // 送ってから質問があった（解決していても）→ みなさない
-    const asked = input({ sentAt: t0, driverMessages: [{ createdAt: at(1), resolvedAt: at(2), readAt: at(1) }] });
-    expect(statementStatus(asked, at(9), 7).key).toBe("sent");
+    const asked = input({ sentAt: t0, ...clause, driverMessages: [{ createdAt: at(1), resolvedAt: at(2), readAt: at(1) }] });
+    expect(statementStatus(asked, at(9), 7)).toMatchObject({ key: "sent", deemedBlockedByClause: false });
+    expect(statementStatus(asked, at(9), 7).deemedCheck.noQuestion).toBe(false);
     // 送る前の質問でも、解決していなければみなさない
-    const open = input({ sentAt: t0, driverMessages: [{ createdAt: at(-0.5), resolvedAt: null, readAt: null }] });
+    const open = input({ sentAt: t0, ...clause, driverMessages: [{ createdAt: at(-0.5), resolvedAt: null, readAt: null }] });
     expect(statementStatus(open, at(9), 7).key).toBe("sent");
+    // 送る前の質問で、解決済みなら妨げない
+    const before = input({ sentAt: t0, ...clause, driverMessages: [{ createdAt: at(-0.5), resolvedAt: at(-0.2), readAt: at(-0.4) }] });
+    expect(statementStatus(before, at(9), 7).key).toBe("deemed");
     // 送ったあとで中身が変わった（新しい中身は送っていない）→ みなさない
-    expect(statementStatus(input({ sentAt: t0, updatedAt: at(1) }), at(9), 7)).toMatchObject({ key: "sent", needsResend: true });
+    expect(statementStatus(input({ sentAt: t0, updatedAt: at(1), ...clause }), at(9), 7)).toMatchObject({ key: "sent", needsResend: true });
+    expect(statementStatus(input({ sentAt: t0, updatedAt: at(1), ...clause }), at(9), 7).deemedCheck).toMatchObject({ sent: false, daysSinceSent: null, daysPassed: false });
     // はっきり確認していれば、そちらが先
-    expect(statementStatus(input({ sentAt: t0, confirmations: [{ version: 1, createdAt: at(8) }] }), at(9), 7).key).toBe("confirmed");
+    expect(statementStatus(input({ sentAt: t0, ...clause, confirmations: [{ version: 1, createdAt: at(8) }] }), at(9), 7).key).toBe("confirmed");
+  });
+
+  it("みなし確認：取引条件に条項が無ければ、日数が過ぎて質問が無くても未確認のまま", () => {
+    // 条項なし（記録はあるが条項が無い）
+    const noClause = statementStatus(input({ sentAt: t0, deemedClause: false }), at(8), 7);
+    expect(noClause).toMatchObject({ key: "sent", label: "送付済み", deemedDays: null, deemedBlockedByClause: true });
+    expect(noClause.deemedCheck).toEqual({ sent: true, daysSinceSent: 8, daysPassed: true, noQuestion: true, clause: false });
+    // 記録が無い・渡さない（ほかの画面の古い呼び方）も、条項なしとして扱う
+    expect(statementStatus(input({ sentAt: t0 }), at(8), 7)).toMatchObject({ key: "sent", deemedBlockedByClause: true });
+    // 開いていれば「開封」のまま
+    expect(statementStatus(input({ sentAt: t0, viewedAt: at(0.5), deemedClause: false }), at(8), 7)).toMatchObject({ key: "viewed", deemedBlockedByClause: true });
+    // 日数がまだなら、条項が無いことは「妨げ」にしない（まだ関係ない）
+    expect(statementStatus(input({ sentAt: t0, deemedClause: false }), at(2), 7).deemedBlockedByClause).toBe(false);
+    // 質問があれば、条項の有無より先に質問が理由
+    const asked = input({ sentAt: t0, deemedClause: false, driverMessages: [{ createdAt: at(1), resolvedAt: null, readAt: null }] });
+    expect(statementStatus(asked, at(9), 7).deemedBlockedByClause).toBe(false);
+    // 確認済みなら妨げの印は出さない
+    expect(statementStatus(input({ sentAt: t0, deemedClause: false, confirmations: [{ version: 1, createdAt: at(1) }] }), at(9), 7).deemedBlockedByClause).toBe(false);
+    // 前の版だけ確認して、新しい版を送り直してから日数が過ぎた（条項あり）→ みなし確認、条項なし → 確認後に変更あり
+    const changed = { version: 2, updatedAt: at(1), sentAt: at(2), confirmations: [{ version: 1, createdAt: at(0.5) }] };
+    expect(statementStatus(input({ ...changed, deemedClause: true }), at(10), 7).key).toBe("deemed");
+    expect(statementStatus(input({ ...changed, deemedClause: false }), at(10), 7)).toMatchObject({ key: "changed", deemedBlockedByClause: true });
   });
 
   it("質問の数と未読", () => {
@@ -101,7 +130,7 @@ describe("明細の状態", () => {
       statementStatus(input(), t0, 7),
       statementStatus(input({ sentAt: t0 }), at(1), 7),
       statementStatus(input({ sentAt: t0, confirmations: [{ version: 1, createdAt: at(1) }] }), at(1), 7),
-      statementStatus(input({ sentAt: t0 }), at(8), 7),
+      statementStatus(input({ sentAt: t0, deemedClause: true }), at(8), 7),
       statementStatus(input({ sentAt: t0, driverMessages: [{ createdAt: at(1), resolvedAt: null, readAt: null }] }), at(2), 7),
     ];
     const c = countStatuses(list);

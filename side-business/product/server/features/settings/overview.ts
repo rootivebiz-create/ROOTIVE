@@ -22,7 +22,7 @@ export async function settingsOverview(db: Db, tenantId: string) {
       })
       .from(s.drivers)
       .where(eq(s.drivers.tenantId, tenantId)),
-    db.select({ id: s.clients.id }).from(s.clients).where(eq(s.clients.tenantId, tenantId)),
+    db.select({ id: s.clients.id, active: s.clients.active }).from(s.clients).where(eq(s.clients.tenantId, tenantId)),
     db.select({ active: s.projects.active, billRate: s.projects.billRate, payRate: s.projects.payRate }).from(s.projects).where(eq(s.projects.tenantId, tenantId)),
     db.select({ agreedOn: s.rateOverrides.agreedOn }).from(s.rateOverrides).where(eq(s.rateOverrides.tenantId, tenantId)),
     db.select({ active: s.deductionRules.active, agreedInWriting: s.deductionRules.agreedInWriting }).from(s.deductionRules).where(eq(s.deductionRules.tenantId, tenantId)),
@@ -53,7 +53,7 @@ export async function settingsOverview(db: Db, tenantId: string) {
       unregistered: activeDrivers.filter((d) => !d.invoiceRegistered).length,
       noRegNo: activeDrivers.filter((d) => d.invoiceRegistered && !d.registrationNo).length,
     },
-    clients: { total: clients.length },
+    clients: { total: clients.length, active: clients.filter((c) => c.active).length },
     projects: {
       total: projects.length,
       active: activeProjects.length,

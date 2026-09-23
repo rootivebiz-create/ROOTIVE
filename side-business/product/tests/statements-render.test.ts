@@ -239,7 +239,7 @@ describe("ドライバーの画面 /s/[token]", () => {
     await generateStatements(db, tenantId, DEMO_MONTH);
     const h = await portalPage(token);
     expect(h).toContain("内容が変わりました。もう一度ご確認ください。");
-    expect(h).toContain("変わったところ");
+    expect(h).toContain("前に確認した内容からの変更");
     expect(h).toContain("調整「洗車代の立替」＋1,500円 が加わりました");
   });
 
