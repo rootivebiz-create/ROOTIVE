@@ -9,7 +9,9 @@ import {
   periodEndYearOf,
   periodOptions,
   periodTitle,
+  summarizePeriod,
 } from "@/lib/fiscal";
+import { yenCompact } from "@/lib/format";
 
 /** 期（事業年度。0030）：決算月で区切り、設立日から第N期と数える */
 describe("期の区切り（決算月）", () => {
@@ -100,5 +102,27 @@ describe("選べる期", () => {
     expect(parsePeriodYear(["2025"])).toBe(2025);
     expect(parsePeriodYear("26")).toBeNull();
     expect(parsePeriodYear(undefined)).toBeNull();
+  });
+});
+
+describe("月の切り替えの表", () => {
+  it("期のまとめは、その期の月だけを数える", () => {
+    const p = fiscalPeriod(2026, { fiscalMonth: 9, establishedOn: null });
+    const s = summarizePeriod(p, [
+      { month: "2025-09", status: "closed", bill: 999, entry_count: 3 },
+      { month: "2025-10", status: "closed", bill: 1_000_000, entry_count: 10 },
+      { month: "2026-09", status: "open", bill: 500_000, entry_count: 8 },
+      { month: "2026-10", status: "open", bill: 1, entry_count: 1 },
+    ]);
+    expect(s).toEqual({ bill: 1_500_000, closed: 1, withData: 2, total: 12 });
+  });
+
+  it("小さな場所の金額は万・億でまとめる", () => {
+    expect(yenCompact(2_559_573)).toBe("255万");
+    expect(yenCompact(123_456_789)).toBe("1.2億");
+    expect(yenCompact(100_000_000)).toBe("1億");
+    expect(yenCompact(9_999)).toBe("¥9,999");
+    expect(yenCompact(-50_000)).toBe("-5万");
+    expect(yenCompact(null)).toBe("¥0");
   });
 });

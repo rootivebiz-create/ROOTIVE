@@ -125,3 +125,26 @@ export function parsePeriodYear(param: string | string[] | undefined): number | 
   const y = Number(raw);
   return y >= 2000 && y <= 2100 ? y : null;
 }
+
+/** 月の切り替えの表に出す、月ごとの状態（v_month_list の行） */
+export interface PeriodMonthInfo {
+  month: string;
+  status: "open" | "closed";
+  bill?: number | null;
+  entry_count?: number | null;
+}
+
+/** 期のまとめ（月の切り替えの表の下に出す）：売上の合計・締めた月の数・データのある月の数 */
+export function summarizePeriod(p: FiscalPeriod, infos: PeriodMonthInfo[]): { bill: number; closed: number; withData: number; total: number } {
+  const set = new Set(p.months);
+  let bill = 0;
+  let closed = 0;
+  let withData = 0;
+  for (const i of infos) {
+    if (!set.has(i.month)) continue;
+    bill += Number(i.bill ?? 0);
+    if (i.status === "closed") closed += 1;
+    if (Number(i.entry_count ?? 0) > 0) withData += 1;
+  }
+  return { bill, closed, withData, total: p.months.length };
+}

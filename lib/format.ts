@@ -9,6 +9,19 @@ export function yen(n: number | null | undefined): string {
   return r < 0 ? `-¥${jpNumber.format(-r)}` : `¥${jpNumber.format(r)}`;
 }
 
+/**
+ * 小さな場所に出す円（月の切り替えの表など）：1 万円以上は「256万」、1 億円以上は「1.2億」。
+ * 正確な金額は画面の表で出す（ここは目安）
+ */
+export function yenCompact(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return "¥0";
+  const sign = n < 0 ? "-" : "";
+  const a = Math.abs(n);
+  if (a >= 100_000_000) return `${sign}${(Math.floor(a / 10_000_000) / 10).toFixed(1).replace(/\.0$/, "")}億`;
+  if (a >= 10_000) return `${sign}${jpNumber.format(Math.floor(a / 10_000))}万`;
+  return yen(n);
+}
+
 /** 円表示（¥ なし） */
 export function yenPlain(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return "0";

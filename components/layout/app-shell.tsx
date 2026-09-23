@@ -8,6 +8,7 @@ import { RouteProgress } from "./route-progress";
 import { UpdateBanner } from "./update-banner";
 import { HelpButton } from "@/components/guide/help-button";
 import type { Role } from "@/lib/db/types";
+import type { FiscalSettings } from "@/lib/fiscal";
 
 export function AppShell({
   companyName,
@@ -24,6 +25,7 @@ export function AppShell({
   startPage,
   management,
   canExport = true,
+  fiscal,
   build,
   children,
 }: {
@@ -48,6 +50,8 @@ export function AppShell({
   management?: boolean;
   /** 出力（ダウンロード）してよいか。false なら出力のリンクとボタンを出さない（0029） */
   canExport?: boolean;
+  /** 会社の期（決算月・設立日）。月の切り替えを期ごとに並べる（0030） */
+  fiscal?: FiscalSettings;
   /** いま配られている版（新しい版が出たら帯で知らせる） */
   build: string;
   children: React.ReactNode;
@@ -68,7 +72,7 @@ export function AppShell({
           </Link>
           {showMonthSelector && (
             <Suspense fallback={<div className="h-9 w-40" />}>
-              <MonthSelector months={months} />
+              <MonthSelector months={months} fiscal={fiscal} />
             </Suspense>
           )}
           <div className="flex shrink-0 items-center gap-1">
