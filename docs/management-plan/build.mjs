@@ -31,6 +31,9 @@ const C = {
   MUTED: "5B6675",
   BAR_OFF: "C5CCD6",
   RED: "C26A5E",
+  FOOT_DK: "8A97AB", // 暗いページのフッター
+  OFF_DK: "6F829C", // 暗いページの目印（非表示側）
+  OFF_L: "8C96A6", // 明るいページの目印（非表示側）
 };
 const F = { JPB: "Yu Gothic", JP: "Yu Gothic Medium", MIN: "Yu Mincho", EN: "Arial", NUM: "Cambria" };
 const LATIN_FONTS = new Set([F.EN, F.NUM]);
@@ -43,28 +46,28 @@ const CW = X1 - X0;
 
 const SECTION = {
   1: "",
-  2: "I 理念と長期目標",
-  3: "I 理念と長期目標",
-  4: "I 理念と長期目標",
-  5: "I 理念と長期目標",
-  6: "II 5カ年目標とロードマップ",
-  7: "II 5カ年目標とロードマップ",
-  8: "II 5カ年目標とロードマップ",
-  9: "II 5カ年目標とロードマップ",
-  10: "II 5カ年目標とロードマップ",
-  11: "II 5カ年目標とロードマップ",
-  12: "II 5カ年目標とロードマップ",
-  13: "II 5カ年目標とロードマップ",
-  14: "II 5カ年目標とロードマップ",
-  15: "III グループ経営の設計",
-  16: "III グループ経営の設計",
-  17: "III グループ経営の設計",
-  18: "III グループ経営の設計",
-  19: "III グループ経営の設計",
-  20: "III グループ経営の設計",
-  21: "IV 経営者の役割と次のフェーズ",
-  22: "IV 経営者の役割と次のフェーズ",
-  23: "IV 経営者の役割と次のフェーズ",
+  2: "第Ⅰ章　理念と長期目標",
+  3: "第Ⅰ章　理念と長期目標",
+  4: "第Ⅰ章　理念と長期目標",
+  5: "第Ⅰ章　理念と長期目標",
+  6: "第Ⅱ章　5カ年目標とロードマップ",
+  7: "第Ⅱ章　5カ年目標とロードマップ",
+  8: "第Ⅱ章　5カ年目標とロードマップ",
+  9: "第Ⅱ章　5カ年目標とロードマップ",
+  10: "第Ⅱ章　5カ年目標とロードマップ",
+  11: "第Ⅱ章　5カ年目標とロードマップ",
+  12: "第Ⅱ章　5カ年目標とロードマップ",
+  13: "第Ⅱ章　5カ年目標とロードマップ",
+  14: "第Ⅱ章　5カ年目標とロードマップ",
+  15: "第Ⅲ章　グループ経営の設計",
+  16: "第Ⅲ章　グループ経営の設計",
+  17: "第Ⅲ章　グループ経営の設計",
+  18: "第Ⅲ章　グループ経営の設計",
+  19: "第Ⅲ章　グループ経営の設計",
+  20: "第Ⅲ章　グループ経営の設計",
+  21: "第Ⅳ章　経営者の役割と次のフェーズ",
+  22: "第Ⅳ章　経営者の役割と次のフェーズ",
+  23: "第Ⅳ章　経営者の役割と次のフェーズ",
   24: "",
 };
 
@@ -272,8 +275,8 @@ function items(slide, list, o) {
 // ---------- 枠（キッカー・見出し・フッター・現在地の目印） ----------
 const STOPS = ["NOW", "2028", "2031", "IPO"];
 function pathMarker(slide, dark, range) {
-  // range: {from, to} ノードの番号 or {seg:[a,b]} 区間だけ
-  const xs = [9.0, 10.1, 11.2, 12.2];
+  // range: {from, to} ノードの番号 or {seg:[a,b]} 区間だけ。右端の「IPO」が本文の右端にそろう
+  const xs = [9.18, 10.28, 11.38, 12.38];
   const y = 0.64;
   const on = (i) => range.from !== undefined && i >= range.from && i <= range.to;
   const segOn = (i) => (range.seg ? range.seg[0] === i : on(i) && on(i + 1));
@@ -281,21 +284,21 @@ function pathMarker(slide, dark, range) {
   const goldLine = dark ? C.GOLD : C.GOLD_L;
   for (let i = 0; i < 3; i++) {
     const x1 = xs[i] + 0.1 + lineWidthIn([{ text: STOPS[i], size: 10, bold: true }]) + 0.1;
-    const x2 = xs[i + 1] - 0.08;
+    const x2 = xs[i + 1] - 0.09;
     line(slide, x1, y, x2, y, { color: segOn(i) ? goldLine : offLine, width: segOn(i) ? 1.5 : 1, dash: i === 2 ? "sysDash" : undefined });
   }
   STOPS.forEach((s, i) => {
     const active = on(i);
-    node(slide, xs[i], y, 0.1, { color: active ? goldLine : dark ? C.CHIP_DK : C.BAR_OFF });
+    node(slide, xs[i], y, 0.1, { color: active ? goldLine : dark ? C.OFF_DK : C.BAR_OFF });
     tx(slide, s, {
       x: xs[i] + 0.1,
       y: y - 0.13,
-      w: 0.48,
+      w: Math.min(0.46, 12.78 - xs[i] - 0.1),
       h: 0.26,
       font: F.EN,
       size: 10,
       bold: true,
-      color: active ? (dark ? C.WHITE : C.NAVY) : dark ? C.STEEL : C.SILVER,
+      color: active ? (dark ? C.WHITE : C.NAVY) : dark ? C.OFF_DK : C.OFF_L,
       valign: "middle",
     });
   });
@@ -307,12 +310,11 @@ function frame(slide, o) {
   slide.background = { color: theme === "black" ? C.BLACK : dark ? C.DEEP : C.WHITE };
   const n = String(o.n).padStart(2, "0");
   if (o.kicker) {
-    const quiet = theme === "black";
     tx(
       slide,
       [
-        { text: n, o: { color: quiet ? C.SILVER : dark ? C.GOLD : C.GOLD_D } },
-        { text: "   |   ", o: { color: dark ? C.STEEL : C.RULE_D } },
+        { text: n, o: { color: dark ? C.GOLD : C.GOLD_D } },
+        { text: "   |   ", o: { color: dark ? C.OFF_DK : C.RULE_D } },
         { text: o.kicker, o: { color: dark ? C.SILVER : C.MUTED } },
       ],
       { x: X0, y: 0.5, w: 8.2, h: 0.28, font: F.EN, size: 11, bold: true, cs: 2, valign: "middle" },
@@ -324,9 +326,9 @@ function frame(slide, o) {
       y: 0.82,
       w: CW,
       h: 0.62,
-      font: o.titleFont ?? F.JPB,
-      bold: o.titleFont ? false : true,
-      size: o.titleSize ?? 26,
+      font: F.JPB,
+      bold: true,
+      size: 26,
       color: dark ? C.WHITE : C.NAVY,
       valign: "middle",
     });
@@ -335,20 +337,18 @@ function frame(slide, o) {
     tx(slide, o.lead, { x: X0, y: 1.45, w: CW, h: 0.36, size: 14, color: dark ? C.SILVER_L : C.MUTED, valign: "middle" });
   }
   if (o.marker) pathMarker(slide, dark, o.marker);
-  if (o.footer !== false) {
-    if (SECTION[o.n]) {
-      tx(slide, `ROOTIVE GROUP 5カ年経営計画 2026–2031  ｜  ${SECTION[o.n]}`, {
-        x: X0,
-        y: 6.8,
-        w: 8,
-        h: 0.22,
-        size: 10,
-        color: dark ? C.STEEL : C.MUTED,
-        valign: "middle",
-      });
-    }
-    tx(slide, n, { x: 11.93, y: 6.8, w: 0.8, h: 0.22, font: F.EN, size: 10, color: dark ? C.STEEL : C.MUTED, align: "right", valign: "middle" });
+  if (SECTION[o.n]) {
+    tx(slide, `ROOTIVE GROUP 5カ年経営計画 2026–2031　｜　${SECTION[o.n]}`, {
+      x: X0,
+      y: 6.8,
+      w: 8,
+      h: 0.22,
+      size: 10,
+      color: dark ? C.FOOT_DK : C.MUTED,
+      valign: "middle",
+    });
   }
+  tx(slide, n, { x: 11.93, y: 6.8, w: 0.8, h: 0.22, font: F.EN, size: 10, color: dark ? C.FOOT_DK : C.MUTED, align: "right", valign: "middle" });
   if (o.notes) slide.addNotes(o.notes);
 }
 
@@ -369,9 +369,9 @@ function s01() {
   tx(s, "2026–2031｜第一期中期経営計画", { x: 0.8, y: 3.22, w: 10, h: 0.5, size: 22, color: C.SILVER_L, valign: "middle" });
   tx(s, "物流会社から、複数の事業を所有し育てる企業グループへ。", { x: 0.8, y: 3.98, w: 11.5, h: 0.55, font: F.MIN, size: 24, color: C.GOLD, valign: "middle" });
 
-  // THE LINE（NOW → 2028 → 2031 → IPO）
+  // THE LINE（NOW → 2028 → 2031 → IPO）。間隔は等しく
   const y = 5.45;
-  const xs = [1.4, 5.0, 8.6, 11.9];
+  const xs = [1.55, 5.0, 8.45, 11.9];
   line(s, xs[0], y, xs[2], y, { color: C.GOLD, width: 1.5 });
   line(s, xs[2], y, xs[3], y, { color: C.SILVER, width: 1.25, dash: "sysDash" });
   node(s, xs[0], y, 0.2, { color: C.GOLD });
@@ -381,11 +381,11 @@ function s01() {
   const labels = ["NOW", "2028", "2031", "IPO"];
   const subs = ["経営基盤構築", "親会社設立", "グループ連結売上30億円", "上場"];
   xs.forEach((x, i) => {
-    tx(s, labels[i], { x: x - 0.8, y: 5.66, w: 1.6, h: 0.28, font: F.EN, size: 12, bold: true, cs: 2, color: C.GOLD, align: "center", valign: "middle" });
-    const w = i === 2 ? 2.4 : 1.6;
+    tx(s, labels[i], { x: x - 0.75, y: 5.66, w: 1.5, h: 0.28, font: F.EN, size: 12, bold: true, cs: 2, color: C.GOLD, align: "center", valign: "middle" });
+    const w = i === 2 ? 2.4 : 1.5;
     tx(s, subs[i], { x: x - w / 2, y: 5.96, w, h: 0.28, size: 11, color: C.SILVER, align: "center", valign: "middle" });
   });
-  tx(s, "2026年9月", { x: 0.8, y: 6.55, w: 3, h: 0.3, size: 12, color: C.SILVER, valign: "middle" });
+  tx(s, "2026年9月　株式会社ROOTIVE", { x: 0.8, y: 6.55, w: 5, h: 0.3, size: 12, color: C.SILVER, valign: "middle" });
   s.addNotes(
     "本資料はROOTIVE GROUPの「経営の憲法」である。事業・M&A・人が増え、判断が複雑になっても、向かう先を見失わないために作った。対象は2026–2031年の第一期中期経営計画。下の線は、今（NOW）から2028年の親会社設立、2031年のグループ連結売上30億円、その先の上場までを一本で示している。",
   );
@@ -411,25 +411,28 @@ function s02() {
     { x: X0, y: 3.28, w: CW, h: 0.95, font: F.MIN, size: 19, ls: 32, color: C.WHITE },
   );
 
-  // 物流 → 蓄積する経営能力 → 次へ
-  rect(s, { x: 0.6, y: 4.75, w: 1.95, h: 1.45, line: C.SILVER, lineW: 0.75 });
-  tx(s, "FIRST BUSINESS", { x: 0.78, y: 4.9, w: 1.7, h: 0.25, font: F.EN, size: 10, bold: true, cs: 1, color: C.GOLD, valign: "middle" });
-  tx(s, "物流", { x: 0.78, y: 5.2, w: 1.6, h: 0.5, font: F.JPB, bold: true, size: 22, color: C.WHITE, valign: "middle" });
-  tx(s, "最初に挑戦する事業", { x: 0.78, y: 5.76, w: 1.72, h: 0.3, size: 11, color: C.SILVER, valign: "middle" });
-  line(s, 2.65, 5.47, 3.0, 5.47, { color: C.GOLD, width: 1.5, arrowEnd: true });
+  // 物流 → 蓄積する経営能力 → 次へ（3つの塊の上下をそろえる）
+  const top = 4.55;
+  const bh = 1.86;
+  const mid = top + bh / 2;
+  rect(s, { x: 0.6, y: top, w: 1.95, h: bh, line: C.SILVER, lineW: 0.75 });
+  tx(s, "FIRST BUSINESS", { x: 0.78, y: top + 0.28, w: 1.7, h: 0.25, font: F.EN, size: 10, bold: true, cs: 1, color: C.GOLD, valign: "middle" });
+  tx(s, "物流", { x: 0.78, y: top + 0.62, w: 1.6, h: 0.5, font: F.JPB, bold: true, size: 22, color: C.WHITE, valign: "middle" });
+  tx(s, "最初に挑戦する事業", { x: 0.78, y: top + 1.2, w: 1.72, h: 0.3, size: 11, color: C.SILVER, valign: "middle" });
+  line(s, 2.65, mid, 3.0, mid, { color: C.GOLD, width: 1.5, arrowEnd: true });
 
-  rect(s, { x: 3.1, y: 4.5, w: 6.05, h: 1.95, fill: C.CARD_DK, line: C.GOLD, lineW: 0.75 });
-  tx(s, "物流で蓄積する経営能力", { x: 3.35, y: 4.62, w: 5.5, h: 0.32, font: F.JPB, bold: true, size: 13, color: C.GOLD, valign: "middle" });
+  rect(s, { x: 3.1, y: top, w: 6.05, h: bh, fill: C.CARD_DK, line: C.GOLD, lineW: 0.75 });
+  tx(s, "物流で蓄積する経営能力", { x: 3.35, y: top + 0.2, w: 5.5, h: 0.32, font: F.JPB, bold: true, size: 13, color: C.GOLD, valign: "middle" });
   const caps = ["営業力", "採用力", "組織構築力", "現場運営力", "DX力", "財務力", "資金調達力", "経営力", "ブランド", "信用"];
   caps.forEach((c, i) => {
     const col = i % 5;
     const row = Math.floor(i / 5);
     tx(s, c, {
-      x: 3.35 + col * 1.13,
-      y: 5.05 + row * 0.56,
-      w: 1.05,
+      x: 3.33 + col * 1.13,
+      y: top + 0.66 + row * 0.56,
+      w: 1.07,
       h: 0.42,
-      size: 13,
+      size: 12,
       color: C.WHITE,
       align: "center",
       valign: "middle",
@@ -437,17 +440,19 @@ function s02() {
       lineW: 0.75,
     });
   });
-  line(s, 9.25, 5.47, 9.6, 5.47, { color: C.GOLD, width: 1.5, arrowEnd: true });
+  line(s, 9.25, mid, 9.6, mid, { color: C.GOLD, width: 1.5, arrowEnd: true });
   const nexts = [
     ["次の事業", "NEW BUSINESS"],
     ["次の会社", "M&A"],
     ["次の経営者", "LEADERS"],
   ];
+  const nh = 0.52;
+  const ngap = (bh - 3 * nh) / 2;
   nexts.forEach(([jp, en], i) => {
-    const y = 4.55 + i * 0.65;
-    rect(s, { x: 9.7, y, w: 3.03, h: 0.52, fill: C.CARD_DK });
-    tx(s, jp, { x: 9.9, y, w: 1.6, h: 0.52, font: F.JPB, bold: true, size: 15, color: C.WHITE, valign: "middle" });
-    tx(s, en, { x: 11.25, y, w: 1.3, h: 0.52, font: F.EN, size: 10, bold: true, color: C.GOLD, align: "right", valign: "middle" });
+    const y = top + i * (nh + ngap);
+    rect(s, { x: 9.7, y, w: 3.03, h: nh, fill: C.CARD_DK });
+    tx(s, jp, { x: 9.9, y, w: 1.6, h: nh, font: F.JPB, bold: true, size: 15, color: C.WHITE, valign: "middle" });
+    tx(s, en, { x: 11.25, y, w: 1.3, h: nh, font: F.EN, size: 10, bold: true, color: C.GOLD, align: "right", valign: "middle" });
   });
 }
 
@@ -525,23 +530,29 @@ function s04() {
     n: 4,
     kicker: "GOAL ARCHITECTURE",
     title: "今日の仕事と上場は、一本の線でつながっている。",
+    marker: { from: 0, to: 3 },
     notes:
       "目標は3階層でできている。いちばん上が長期目標の上場企業グループ、その下が5年後の2031年（グループ連結売上30億円・グループ経営基盤の完成）、途中に2028年の親会社設立がある。いちばん下が今。ROOTIVEの自走化、つまり利益・人材・仕組み・信用を積み上げ、代表依存から脱却すること。今日の仕事は、この一本の線の上にある。",
   });
+  const rows = { lt: [1.85, 1.42], y5: [3.39, 1.0], m28: [4.51, 0.7], now: [5.33, 1.17] };
+  const cy = (r) => r[0] + r[1] / 2;
   // 背骨の線（NOW → LONG TERM）
   const sx = 0.95;
-  line(s, sx, 5.925, sx, 2.74, { color: C.GOLD_L, width: 1.75, arrowEnd: true });
-  node(s, sx, 2.52, 0.34, { ring: true, color: C.GOLD_L, lineW: 2, dot: 0.12 });
-  node(s, sx, 3.925, 0.24, { color: C.GOLD_L });
-  node(s, sx, 4.9, 0.18, { color: C.GOLD_L });
-  node(s, sx, 5.925, 0.3, { color: C.NAVY });
+  line(s, sx, cy(rows.now), sx, cy(rows.lt) + 0.19, { color: C.GOLD_L, width: 1.75, arrowEnd: true });
+  node(s, sx, cy(rows.lt), 0.34, { ring: true, color: C.GOLD_L, lineW: 2, dot: 0.12 });
+  node(s, sx, cy(rows.y5), 0.24, { color: C.GOLD_L });
+  node(s, sx, cy(rows.m28), 0.18, { color: C.GOLD_L });
+  node(s, sx, cy(rows.now), 0.3, { color: C.NAVY });
+  const label = (t, y, dark) =>
+    tx(s, t, { x: 1.7, y, w: 2.2, h: 0.25, font: F.EN, size: 10, bold: true, cs: 2, color: dark ? C.GOLD : C.GOLD_D, valign: "middle" });
 
   // LONG TERM
-  rect(s, { x: 1.45, y: 1.85, w: 11.28, h: 1.4, fill: C.NAVY });
-  tx(s, "LONG TERM", { x: 1.7, y: 1.98, w: 2.2, h: 0.25, font: F.EN, size: 10, bold: true, cs: 2, color: C.GOLD, valign: "middle" });
-  tx(s, "IPO", { x: 1.7, y: 2.22, w: 2.2, h: 0.55, font: F.NUM, size: 30, bold: true, color: C.WHITE, valign: "middle" });
-  tx(s, "上場企業グループ", { x: 1.7, y: 2.8, w: 2.2, h: 0.3, font: F.JPB, bold: true, size: 13, color: C.WHITE, valign: "middle" });
-  tx(s, "上場に値する企業グループの状態", { x: 4.0, y: 1.98, w: 6, h: 0.25, size: 11, color: C.GOLD, valign: "middle" });
+  let [y, h] = rows.lt;
+  rect(s, { x: 1.45, y, w: 11.28, h, fill: C.NAVY });
+  label("LONG TERM", y + 0.13, true);
+  tx(s, "IPO", { x: 1.7, y: y + 0.37, w: 2.2, h: 0.55, font: F.NUM, size: 30, bold: true, color: C.WHITE, valign: "middle" });
+  tx(s, "上場企業グループ", { x: 1.7, y: y + 0.94, w: 2.2, h: 0.3, font: F.JPB, bold: true, size: 13, color: C.WHITE, valign: "middle" });
+  tx(s, "上場に値する企業グループの状態", { x: 4.0, y: y + 0.13, w: 6, h: 0.25, size: 11, color: C.GOLD, valign: "middle" });
   const cond = [
     ["特定個人に依存しない", "複数事業を持つ", "継続的に利益を生む"],
     ["強い経営陣が存在する", "透明な経営管理ができる", "内部統制が機能する"],
@@ -551,42 +562,45 @@ function s04() {
   const cw = [2.2, 2.35, 3.9];
   cond.forEach((col, c) =>
     col.forEach((t, r) => {
-      const y = 2.3 + r * 0.3;
-      node(s, cx[c] + 0.03, y + 0.14, 0.06, { color: C.GOLD });
-      tx(s, t, { x: cx[c] + 0.15, y, w: cw[c] - 0.15, h: 0.28, size: 12, color: C.WHITE, valign: "middle" });
+      const ry = y + 0.44 + r * 0.3;
+      node(s, cx[c] + 0.03, ry + 0.14, 0.06, { color: C.GOLD });
+      tx(s, t, { x: cx[c] + 0.15, y: ry, w: cw[c] - 0.15, h: 0.28, size: 12, color: C.WHITE, valign: "middle" });
     }),
   );
 
   // 5 YEARS
-  rect(s, { x: 1.45, y: 3.4, w: 11.28, h: 1.05, fill: C.NAVY_MID });
-  tx(s, "5 YEARS", { x: 1.7, y: 3.5, w: 2.2, h: 0.25, font: F.EN, size: 10, bold: true, cs: 2, color: C.GOLD, valign: "middle" });
-  tx(s, "2031", { x: 1.7, y: 3.74, w: 2.2, h: 0.5, font: F.NUM, size: 26, bold: true, color: C.WHITE, valign: "middle" });
-  tx(s, "KGI（暫定）", { x: 4.0, y: 3.52, w: 3, h: 0.25, size: 10.5, color: C.GOLD, valign: "middle" });
+  [y, h] = rows.y5;
+  rect(s, { x: 1.45, y, w: 11.28, h, fill: C.NAVY_MID });
+  label("5 YEARS", y + 0.12, true);
+  tx(s, "2031", { x: 1.7, y: y + 0.38, w: 2.2, h: 0.5, font: F.NUM, size: 26, bold: true, color: C.WHITE, valign: "middle" });
+  tx(s, "KGI（暫定）", { x: 4.0, y: y + 0.12, w: 3, h: 0.25, size: 10.5, color: C.GOLD, valign: "middle" });
   tx(
     s,
     [
       { text: "グループ連結売上 ", o: { size: 14 } },
       { text: "30億円", o: { size: 20 } },
     ],
-    { x: 4.0, y: 3.8, w: 3.3, h: 0.45, font: F.JPB, bold: true, color: C.WHITE, valign: "middle" },
+    { x: 4.0, y: y + 0.42, w: 3.3, h: 0.45, font: F.JPB, bold: true, color: C.WHITE, valign: "middle" },
   );
-  tx(s, "PORTFOLIO", { x: 7.45, y: 3.52, w: 2.5, h: 0.25, font: F.EN, size: 10, bold: true, cs: 1, color: C.GOLD, valign: "middle" });
-  tx(s, "複数事業・複数経営者", { x: 7.45, y: 3.83, w: 2.65, h: 0.4, font: F.JPB, bold: true, size: 15, color: C.WHITE, valign: "middle" });
-  tx(s, "MANAGEMENT", { x: 10.2, y: 3.52, w: 2.4, h: 0.25, font: F.EN, size: 10, bold: true, cs: 1, color: C.GOLD, valign: "middle" });
-  tx(s, "グループ経営基盤完成", { x: 10.2, y: 3.83, w: 2.45, h: 0.4, font: F.JPB, bold: true, size: 15, color: C.WHITE, valign: "middle" });
+  tx(s, "PORTFOLIO", { x: 7.45, y: y + 0.12, w: 2.5, h: 0.25, font: F.EN, size: 10, bold: true, cs: 1, color: C.GOLD, valign: "middle" });
+  tx(s, "複数事業・複数経営者", { x: 7.45, y: y + 0.45, w: 2.65, h: 0.4, font: F.JPB, bold: true, size: 15, color: C.WHITE, valign: "middle" });
+  tx(s, "MANAGEMENT", { x: 10.2, y: y + 0.12, w: 2.4, h: 0.25, font: F.EN, size: 10, bold: true, cs: 1, color: C.GOLD, valign: "middle" });
+  tx(s, "グループ経営基盤完成", { x: 10.2, y: y + 0.45, w: 2.45, h: 0.4, font: F.JPB, bold: true, size: 15, color: C.WHITE, valign: "middle" });
 
   // 2028
-  rect(s, { x: 1.45, y: 4.6, w: 11.28, h: 0.6, fill: C.TINT });
-  tx(s, "2028", { x: 1.7, y: 4.62, w: 0.9, h: 0.56, font: F.NUM, size: 18, bold: true, color: C.NAVY, valign: "middle" });
-  tx(s, "MILESTONE", { x: 2.55, y: 4.62, w: 1.3, h: 0.56, font: F.EN, size: 10, bold: true, cs: 1, color: C.GOLD_D, valign: "middle" });
-  tx(s, "親会社設立", { x: 4.0, y: 4.62, w: 3, h: 0.56, font: F.JPB, bold: true, size: 15, color: C.NAVY, valign: "middle" });
-  tx(s, "グループ経営開始", { x: 7.45, y: 4.62, w: 3, h: 0.56, size: 14, color: C.INK, valign: "middle" });
+  [y, h] = rows.m28;
+  rect(s, { x: 1.45, y, w: 11.28, h, fill: C.TINT });
+  label("MILESTONE", y + 0.08, false);
+  tx(s, "2028", { x: 1.7, y: y + 0.3, w: 1.5, h: 0.36, font: F.NUM, size: 18, bold: true, color: C.NAVY, valign: "middle" });
+  tx(s, "親会社設立", { x: 4.0, y, w: 3, h, font: F.JPB, bold: true, size: 15, color: C.NAVY, valign: "middle" });
+  tx(s, "グループ経営開始", { x: 7.45, y, w: 3, h, size: 14, color: C.INK, valign: "middle" });
 
   // NOW
-  rect(s, { x: 1.45, y: 5.35, w: 11.28, h: 1.15, fill: C.WHITE, line: C.NAVY, lineW: 1 });
-  tx(s, "NOW", { x: 1.7, y: 5.47, w: 2.2, h: 0.25, font: F.EN, size: 10, bold: true, cs: 2, color: C.GOLD_D, valign: "middle" });
-  tx(s, "ROOTIVE自走化", { x: 1.7, y: 5.72, w: 2.3, h: 0.38, font: F.JPB, bold: true, size: 16, color: C.NAVY, valign: "middle" });
-  tx(s, "代表依存からの脱却", { x: 1.7, y: 6.1, w: 2.3, h: 0.28, size: 11, color: C.MUTED, valign: "middle" });
+  [y, h] = rows.now;
+  rect(s, { x: 1.45, y, w: 11.28, h, fill: C.WHITE, line: C.NAVY, lineW: 1 });
+  label("NOW", y + 0.12, false);
+  tx(s, "ROOTIVE自走化", { x: 1.7, y: y + 0.38, w: 2.3, h: 0.38, font: F.JPB, bold: true, size: 16, color: C.NAVY, valign: "middle" });
+  tx(s, "代表依存からの脱却", { x: 1.7, y: y + 0.76, w: 2.3, h: 0.28, size: 11, color: C.MUTED, valign: "middle" });
   const assets = [
     ["MONEY", "利益"],
     ["PEOPLE", "人材"],
@@ -595,9 +609,9 @@ function s04() {
   ];
   assets.forEach(([en, jp], i) => {
     const x = 4.0 + i * 2.17;
-    rect(s, { x, y: 5.5, w: 2.05, h: 0.85, fill: C.TINT });
-    tx(s, en, { x: x + 0.18, y: 5.58, w: 1.7, h: 0.24, font: F.EN, size: 10, bold: true, cs: 1, color: C.GOLD_D, valign: "middle" });
-    tx(s, jp, { x: x + 0.18, y: 5.84, w: 1.7, h: 0.4, font: F.JPB, bold: true, size: 17, color: C.NAVY, valign: "middle" });
+    rect(s, { x, y: y + 0.16, w: 2.05, h: 0.85, fill: C.TINT });
+    tx(s, en, { x: x + 0.18, y: y + 0.24, w: 1.7, h: 0.24, font: F.EN, size: 10, bold: true, cs: 1, color: C.GOLD_D, valign: "middle" });
+    tx(s, jp, { x: x + 0.18, y: y + 0.5, w: 1.7, h: 0.4, font: F.JPB, bold: true, size: 17, color: C.NAVY, valign: "middle" });
   });
 }
 
@@ -623,11 +637,13 @@ function s05() {
     { no: "03", en: "ORGANIZATION", jp: "組織", rows: [["各子会社に経営責任者", "創業者非依存"], ["親会社経営陣", "共通管理機能"], ["経営人材育成"]] },
     { no: "04", en: "MANAGEMENT", jp: "経営管理", rows: [["連結管理", "資本配分"], ["予実管理", "PMI"], ["キャッシュ管理", "内部統制"]] },
   ];
+  const ys = [1.95, 4.55];
+  const hs = [2.35, 2.0];
   quads.forEach((q, i) => {
     const x = i % 2 === 0 ? 0.6 : 6.815;
-    const y = i < 2 ? 1.95 : 4.3;
+    const y = ys[i < 2 ? 0 : 1];
     const w = 5.918;
-    rect(s, { x, y, w, h: 2.2, fill: C.TINT });
+    rect(s, { x, y, w, h: hs[i < 2 ? 0 : 1], fill: C.TINT });
     tx(s, q.no, { x: x + 0.3, y: y + 0.18, w: 0.55, h: 0.38, font: F.NUM, size: 16, bold: true, color: C.GOLD_D, valign: "middle" });
     tx(s, q.jp, { x: x + 0.85, y: y + 0.18, w: 3, h: 0.38, font: F.JPB, bold: true, size: 18, color: C.NAVY, valign: "middle" });
     tx(s, q.en, { x: x + 3.3, y: y + 0.18, w: 2.35, h: 0.38, font: F.EN, size: 11, bold: true, cs: 2, color: C.GOLD_D, align: "right", valign: "middle" });
@@ -652,8 +668,8 @@ function s05() {
         const h = n > 1 ? (21 / 72) * n : 0.34;
         rowH = Math.max(rowH, h);
         const ix = x + 0.3 + c * 2.8;
-        node(s, ix + 0.03, ry + (n > 1 ? 21 / 72 / 2 : 0.17), 0.07, { color: C.GOLD_L });
-        tx(s, t, { x: ix + 0.2, y: ry, w: 2.55, h, size: 14, color: C.INK, valign: n > 1 ? "top" : "middle", ls: n > 1 ? 21 : undefined });
+        node(s, ix + 0.03, ry + 0.17, 0.07, { color: C.GOLD_L });
+        tx(s, t, { x: ix + 0.2, y: n > 1 ? ry + 0.025 : ry, w: 2.55, h, size: 14, color: C.INK, valign: n > 1 ? "top" : "middle", ls: n > 1 ? 21 : undefined });
       });
       ry += rowH + 0.08;
     });
@@ -668,33 +684,29 @@ function s06() {
     title: "5カ年で、グループ連結売上を2億円から30億円へ。",
     marker: { from: 0, to: 2 },
     notes:
-      "グループ連結売上高の暫定経営目標。FY2027 2億円、FY2028 5億円、FY2029 10億円、FY2030 18億円、FY2031 30億円。5年で15倍。前年比は2.5倍から1.7倍へ下がっていく設計で、年平均成長率（FY2027→FY2031）は計算上約97%。いずれも暫定であり、財務モデル策定後に確定する。",
+      "グループ連結売上高の暫定経営目標。FY2027 2億円、FY2028 5億円、FY2029 10億円、FY2030 18億円、FY2031 30億円。FY2027の2億円からFY2031の30億円へ15倍。前年比は2.5倍から1.7倍へ下がっていく設計で、年平均成長率（FY2027→FY2031）は計算上約97%。FY2027は親会社設立（2028年3月）の前なので、ROOTIVE単体の売上になる。いずれも暫定であり、財務モデル策定後に確定する。",
   });
   tx(s, "グループ連結売上高（単位：億円）", { x: X0, y: 1.9, w: 5.5, h: 0.32, font: F.JPB, bold: true, size: 14, color: C.NAVY, valign: "middle" });
   tx(s, "暫定経営目標", { x: 6.95, y: 1.9, w: 1.6, h: 0.32, font: F.JPB, bold: true, size: 11, color: C.GOLD_D, align: "center", valign: "middle", line: C.GOLD_D, lineW: 1 });
+  // グラフ：描画域を固定し、数値のラベルは点の真上に自前で置く（線と重ならないように）
+  const ch = { x: 0.6, y: 2.3, w: 8.0, h: 3.85 };
+  const pl = { x: 0.1, y: 0.1, w: 0.88, h: 0.78 };
+  const VMAX = 35;
   s.addChart(
     pres.ChartType.line,
     [{ name: "グループ連結売上高（暫定）", labels: FY.slice(), values: REV.slice() }],
     {
-      x: 0.6,
-      y: 2.3,
-      w: 8.0,
-      h: 3.85,
+      ...ch,
+      layout: { ...pl },
       chartColors: [C.NAVY],
       lineSize: 3,
       lineDataSymbol: "circle",
       lineDataSymbolSize: 11,
       lineDataSymbolLineColor: C.WHITE,
       lineDataSymbolLineSize: 2,
-      showValue: true,
-      dataLabelPosition: "l",
-      dataLabelFormatCode: '0"億円"',
-      dataLabelFontFace: F.JPB,
-      dataLabelFontSize: 14,
-      dataLabelFontBold: true,
-      dataLabelColor: C.NAVY,
+      showValue: false,
       valAxisMinVal: 0,
-      valAxisMaxVal: 35,
+      valAxisMaxVal: VMAX,
       valAxisMajorUnit: 5,
       valAxisLabelFormatCode: "0",
       valAxisLabelFontFace: F.EN,
@@ -712,13 +724,23 @@ function s06() {
       altText: "FY2027〜FY2031 グループ連結売上高の暫定経営目標：2億円、5億円、10億円、18億円、30億円",
     },
   );
+  const px = ch.x + pl.x * ch.w;
+  const pw = pl.w * ch.w;
+  const py = ch.y + pl.y * ch.h;
+  const ph = pl.h * ch.h;
+  REV.forEach((v, i) => {
+    const x = px + ((i + 0.5) * pw) / REV.length;
+    const y = py + ph * (1 - v / VMAX);
+    const last = i === REV.length - 1;
+    tx(s, `${v}億円`, { x: x - 0.55, y: y - 0.7, w: 1.1, h: 0.34, font: F.JPB, bold: true, size: last ? 16 : 14, color: last ? C.GOLD_D : C.NAVY, align: "center", valign: "bottom" });
+  });
   VISUALS.add("revenue-line-chart");
 
   // 右の数字
   rect(s, { x: 8.95, y: 1.9, w: 3.78, h: 4.25, fill: C.TINT });
-  tx(s, "5カ年の成長倍率", { x: 9.2, y: 2.05, w: 3.3, h: 0.3, font: F.JPB, bold: true, size: 13, color: C.NAVY, valign: "middle" });
+  tx(s, "成長倍率（FY2027→FY2031）", { x: 9.2, y: 2.05, w: 3.35, h: 0.3, font: F.JPB, bold: true, size: 13, color: C.NAVY, valign: "middle" });
   tx(s, "×15", { x: 9.2, y: 2.33, w: 3.3, h: 1.02, font: F.NUM, size: 60, bold: true, color: C.NAVY, valign: "middle" });
-  tx(s, "FY2027 2億円 → FY2031 30億円", { x: 9.2, y: 3.32, w: 3.35, h: 0.28, size: 12, color: C.INK, valign: "middle" });
+  tx(s, "2億円 → 30億円（4期間）", { x: 9.2, y: 3.32, w: 3.35, h: 0.28, size: 12, color: C.INK, valign: "middle" });
   const tY = 3.78;
   tx(s, "年度", { x: 9.2, y: tY, w: 1.1, h: 0.26, size: 11, color: C.MUTED, valign: "middle" });
   tx(s, "暫定売上", { x: 10.35, y: tY, w: 1.1, h: 0.26, size: 11, color: C.MUTED, valign: "middle" });
@@ -734,15 +756,11 @@ function s06() {
     if (i < 4) line(s, 9.2, y + 0.32, 12.5, y + 0.32, { color: C.RULE_D, width: 0.5 });
   });
   tx(s, "倍率は暫定目標値からの算出", { x: 9.2, y: 5.8, w: 3.3, h: 0.26, size: 10, color: C.MUTED, valign: "middle" });
-  tx(s, "※ FY＝10月〜翌9月の12か月（例：FY2027＝2026年10月〜2027年9月）。数値はすべて暫定経営目標であり、財務モデル策定後に確定する。", {
-    x: X0,
-    y: 6.28,
-    w: CW,
-    h: 0.26,
-    size: 10,
-    color: C.MUTED,
-    valign: "middle",
-  });
+  tx(
+    s,
+    "※ FY＝10月〜翌9月の12か月（FY2027＝2026年10月〜2027年9月）。FY2027は親会社設立（2028年3月）前のためROOTIVE単体。\n　 数値はすべて暫定経営目標であり、財務モデル策定後に確定する。",
+    { x: X0, y: 6.24, w: CW, h: 0.46, size: 10, ls: 15, color: C.MUTED },
+  );
 }
 
 function s07() {
@@ -750,11 +768,11 @@ function s07() {
   frame(s, {
     n: 7,
     kicker: "GROWTH ENGINE",
-    title: "30億円は、3つの成長エンジンを重ねて作る。",
-    lead: "既存事業の成長だけでは届かない。新規事業とM&Aを重ね、グループとして売上を形成する。",
+    title: "3つの成長エンジンを重ね、グループとして成長する。",
+    lead: "30億円を物流単体だけで作る計画ではない。既存事業・新規事業・M&Aを時間とともに重ね、グループ売上を形成する。",
     marker: { from: 0, to: 2 },
     notes:
-      "30億円を物流単体で作る計画ではない。ROOTIVE既存事業の成長（ORGANIC）、自社で立ち上げる新規事業（NEW BUSINESS）、異業種企業の買収（M&A）の3つが、時間とともに重なってグループ売上を作る。各エンジンの構成比はまだ決めていない。財務モデルを作ってから確定する。",
+      "30億円を物流単体だけで作る計画ではない。ROOTIVE既存事業の成長（ORGANIC）、自社で立ち上げる新規事業（NEW BUSINESS）、異業種企業の買収（M&A）の3つが、時間とともに重なってグループ売上を作る。各エンジンの構成比はまだ決めていない。財務モデルを作ってから確定する。",
   });
   const colX = (j) => 3.3 + j * 1.45;
   for (let j = 0; j < 5; j++) {
@@ -773,21 +791,17 @@ function s07() {
     tx(s, r.jp, { x: 0.8, y: r.cy - 0.02, w: 2.15, h: 0.3, size: 12, color: C.INK, valign: "middle" });
   });
   const bh = 0.62;
-  // ORGANIC
   rect(s, { x: colX(0), y: rows[0].cy - bh / 2, w: colX(4) + 1.35 - colX(0), h: bh, fill: C.NAVY });
   tx(s, "既存事業の継続的な成長", { x: colX(0) + 0.2, y: rows[0].cy - bh / 2, w: 5, h: bh, font: F.JPB, bold: true, size: 13, color: C.WHITE, valign: "middle" });
-  // NEW BUSINESS
   const nb = rows[1].cy;
   tx(s, "新規事業検討", { x: colX(1), y: nb - bh / 2, w: 1.35, h: bh, font: F.JPB, bold: true, size: 12, color: C.STEEL, align: "center", valign: "middle", line: C.STEEL, lineW: 1 });
   line(s, colX(1) + 1.35, nb, colX(4), nb, { color: C.STEEL, width: 1.25, dash: "sysDash" });
   tx(s, "新規事業の\n創出", { x: colX(4), y: nb - bh / 2, w: 1.35, h: bh, font: F.JPB, bold: true, size: 12, ls: 17, color: C.WHITE, align: "center", valign: "middle", fill: C.NAVY_MID });
-  // M&A
   const ma = rows[2].cy;
   tx(s, "ソーシング・\n融資準備", { x: colX(1), y: ma - bh / 2, w: 1.35, h: bh, font: F.JPB, bold: true, size: 12, ls: 17, color: C.GOLD_D, align: "center", valign: "middle", line: C.GOLD_L, lineW: 1 });
   ["最初のM&A", "再現性構築", "継続M&A"].forEach((t, k) => {
     tx(s, t, { x: colX(2 + k), y: ma - bh / 2, w: 1.35, h: bh, font: F.JPB, bold: true, size: 12, color: C.NAVY, align: "center", valign: "middle", fill: C.GOLD });
   });
-  // 集まる線
   const endX = colX(4) + 1.35;
   const busX = 10.65;
   rows.forEach((r) => line(s, endX, r.cy, busX, r.cy, { color: C.NAVY, width: 1.25 }));
@@ -855,7 +869,7 @@ function s08() {
     tx(s, `0${k + 1}`, { x: x + 0.2, y: 3.56, w: 0.8, h: 0.4, font: F.NUM, size: 22, bold: true, color: last ? C.GOLD : C.GOLD_D, valign: "middle" });
     tx(s, stages[k], { x: x + 0.2, y: 4.02, w: 1.9, h: 1.0, font: F.JPB, bold: true, size: 15, ls: 22, color: last ? C.WHITE : C.NAVY });
     if (k === 1) tx(s, "2028.3 親会社設立", { x: x + 0.2, y: 5.02, w: 1.75, h: 0.3, font: F.JPB, bold: true, size: 11, color: C.GOLD_D, align: "center", valign: "middle", line: C.GOLD_D, lineW: 1 });
-    tx(s, k === 0 ? "売上（暫定）" : "グループ売上（暫定）", { x: x + 0.2, y: 5.4, w: 1.9, h: 0.26, size: 11, color: last ? C.SILVER_L : C.MUTED, valign: "middle" });
+    tx(s, k === 0 ? "ROOTIVE売上（暫定）" : "グループ売上（暫定）", { x: x + 0.2, y: 5.4, w: 1.9, h: 0.26, size: 11, color: last ? C.SILVER_L : C.MUTED, valign: "middle" });
     tx(
       s,
       [
@@ -874,7 +888,7 @@ function s09() {
     n: 9,
     theme: "dark",
     kicker: "FIRST 18 MONTHS",
-    title: "最初の18か月は、「次の会社を買える企業になる18か月」。",
+    title: "最初の18か月は「次の会社を買える企業になる18か月」",
     marker: { from: 0, to: 1 },
     notes:
       "2026年10月から2028年3月の親会社設立までの18か月（YEAR 1とYEAR 2の前半）。この期間の目的は、次の会社を買える企業になること。そのために、金（利益・現預金・営業CF・金融機関の信用・借入余力）、人、仕組み、信用の4つの資産を積み上げる。これらがM&Aの資金調達と実行の前提になる。",
@@ -883,22 +897,20 @@ function s09() {
     s,
     [
       { text: "2028", o: { font: F.NUM, size: 60, bold: true } },
-      { text: "年3月", o: { font: F.JPB, size: 30, bold: true } },
+      { text: "年3月", o: { font: F.MIN, size: 34 } },
     ],
     { x: X0, y: 1.86, w: 5.8, h: 1.06, color: C.GOLD, valign: "middle" },
   );
   tx(s, "親会社設立", { x: X0, y: 2.88, w: 5.8, h: 0.75, font: F.MIN, size: 40, color: C.WHITE, valign: "middle" });
 
-  // 18か月の物差し
   tx(s, "18 MONTHS", { x: 6.9, y: 1.95, w: 3, h: 0.28, font: F.EN, size: 12, bold: true, cs: 3, color: C.GOLD, valign: "middle" });
   const rx0 = 7.0;
   const rx1 = 12.5;
   const ry = 2.75;
   line(s, rx0, ry, rx1, ry, { color: C.GOLD, width: 1.5 });
-  for (let m = 0; m <= 18; m++) {
+  for (let m = 0; m < 18; m++) {
     const x = rx0 + (m * (rx1 - rx0)) / 18;
     const big = m === 0 || m === 12;
-    if (m === 18) continue;
     line(s, x, big ? ry - 0.13 : ry - 0.06, x, big ? ry + 0.13 : ry + 0.06, { color: big ? C.GOLD : C.SILVER, width: big ? 1.25 : 0.75 });
   }
   node(s, rx0, ry, 0.16, { color: C.GOLD });
@@ -922,32 +934,32 @@ function s09() {
     rect(s, { x, y: 3.8, w: 2.846, h: 2.7, fill: C.CARD_DK });
     tx(s, c.en, { x: x + 0.25, y: 3.95, w: 1.6, h: 0.36, font: F.EN, size: 13, bold: true, cs: 2, color: C.GOLD, valign: "middle" });
     tx(s, c.jp, { x: x + 1.25, y: 3.95, w: 1.35, h: 0.36, font: F.JPB, bold: true, size: 18, color: C.WHITE, align: "right", valign: "middle" });
-    items(s, c.list, { x: x + 0.25, y: 4.48, w: 2.45, size: 13, color: C.SILVER_L, dotColor: C.GOLD, gap: 0.05, dot: 0.06 });
+    items(s, c.list, { x: x + 0.25, y: 4.46, w: 2.45, size: 13, color: C.SILVER_L, dotColor: C.GOLD, gap: 0.02, dot: 0.06 });
   });
 }
 
 // YEAR ページの帯（年・段階・棒グラフ・売上）
 function yearStrip(s, k, stage) {
-  rect(s, { x: X0, y: 1.72, w: CW, h: 0.88, fill: C.TINT });
+  rect(s, { x: X0, y: 1.72, w: CW, h: 0.9, fill: C.TINT });
   tx(s, `YEAR ${k + 1}`, { x: 0.85, y: 1.8, w: 2.1, h: 0.42, font: F.NUM, size: 24, bold: true, color: C.NAVY, valign: "middle" });
   const periods = ["2026.10–2027.9", "2027.10–2028.9", "2028.10–2029.9", "2029.10–2030.9", "2030.10–2031.9"];
   tx(s, periods[k], { x: 0.85, y: 2.23, w: 2.1, h: 0.26, font: F.EN, size: 12, color: C.MUTED, valign: "middle" });
-  line(s, 3.05, 1.88, 3.05, 2.44, { color: C.RULE_D, width: 0.75 });
+  line(s, 3.05, 1.89, 3.05, 2.45, { color: C.RULE_D, width: 0.75 });
   tx(s, "STAGE", { x: 3.3, y: 1.84, w: 4.4, h: 0.24, font: F.EN, size: 10, bold: true, cs: 2, color: C.GOLD_D, valign: "middle" });
   tx(s, stage, { x: 3.3, y: 2.1, w: 4.5, h: 0.4, font: F.JPB, bold: true, size: 16, color: C.NAVY, valign: "middle" });
   const colors = REV.map((_, i) => (i === k ? C.GOLD_L : C.BAR_OFF));
   s.addChart(pres.ChartType.bar, [{ name: "グループ連結売上（暫定）", labels: ["Y1", "Y2", "Y3", "Y4", "Y5"], values: REV.slice() }], {
     x: 7.85,
-    y: 1.76,
+    y: 1.82,
     w: 2.45,
-    h: 0.82,
+    h: 0.76,
     barDir: "col",
     chartColors: colors,
     barGapWidthPct: 40,
     showValue: false,
     valAxisHidden: true,
     valAxisMinVal: 0,
-    valAxisMaxVal: 30,
+    valAxisMaxVal: 34,
     valGridLine: { style: "none" },
     catGridLine: { style: "none" },
     catAxisLabelFontFace: F.EN,
@@ -958,15 +970,15 @@ function yearStrip(s, k, stage) {
     showTitle: false,
     altText: `グループ連結売上の暫定目標の推移（YEAR ${k + 1} を強調）`,
   });
-  line(s, 10.5, 1.88, 10.5, 2.44, { color: C.RULE_D, width: 0.75 });
-  tx(s, k === 0 ? "売上（暫定）" : k === 4 ? "連結売上（暫定）" : "グループ売上（暫定）", { x: 10.62, y: 1.84, w: 1.96, h: 0.24, size: 10, color: C.MUTED, align: "right", valign: "middle" });
+  line(s, 10.5, 1.89, 10.5, 2.45, { color: C.RULE_D, width: 0.75 });
+  tx(s, k === 0 ? "ROOTIVE売上（暫定）" : "グループ売上（暫定）", { x: 10.62, y: 1.84, w: 1.96, h: 0.24, size: 10, color: C.MUTED, align: "right", valign: "middle" });
   tx(
     s,
     [
       { text: String(REV[k]), o: { font: F.NUM, size: 26, bold: true } },
       { text: "億円", o: { font: F.JPB, size: 14, bold: true } },
     ],
-    { x: 10.62, y: 2.07, w: 1.96, h: 0.46, color: C.NAVY, align: "right", valign: "middle" },
+    { x: 10.62, y: 2.08, w: 1.96, h: 0.46, color: C.NAVY, align: "right", valign: "middle" },
   );
 }
 
@@ -999,27 +1011,27 @@ function s10() {
   const s = newSlide(10);
   frame(s, {
     n: 10,
-    kicker: "YEAR 1  |  2026–2027",
+    kicker: "YEAR 1   2026–2027",
     title: "ROOTIVEを「代表が回す会社」から「組織で回る会社」へ。",
     marker: { from: 0, to: 0 },
     notes:
-      "YEAR 1のテーマは、ROOTIVEを代表が回す会社から組織で回る会社に変えること。暫定売上は2億円。営業組織・荷主への直営業・採用導線・ドライバー供給力・運行管理を固め、幹部を育て、請求支払・管理会計・資金繰り・月次経営管理・SOPを整える。終了条件は、代表が1週間日常オペレーションに入らなくても会社が回ること。",
+      "YEAR 1のテーマは、ROOTIVEを代表が回す会社から組織で回る会社に変えること。暫定売上は2億円。営業組織・荷主への直営業・採用導線・ドライバー供給力・運行管理を固め、幹部を育て、請求支払・管理会計・資金繰り・月次経営管理・SOPを整え、代表が現場から離れる（代表現場離脱）。終了条件は、代表が1週間日常オペレーションに入らなくても会社が回ること。",
   });
   yearStrip(s, 0, "ROOTIVE経営基盤構築");
   sectionHead(s, "重点施策（12）", "KEY INITIATIVES", X0, 2.85, 7.5);
   const list = ["営業組織構築", "荷主直営業", "採用導線", "ドライバー供給力", "運行管理", "幹部育成", "請求支払", "管理会計", "資金繰り", "月次経営管理", "SOP", "代表現場離脱"];
-  tiles(s, list, { x: X0, y: 3.25, cols: 3, w: 2.45, h: 0.64, gapX: 0.17, gapY: 0.14, hi: new Set([11]) });
-  rect(s, { x: 8.6, y: 2.85, w: 4.13, h: 3.65, fill: C.NAVY });
-  tx(s, "EXIT CONDITION", { x: 8.9, y: 3.05, w: 3.5, h: 0.3, font: F.EN, size: 12, bold: true, cs: 2, color: C.GOLD, valign: "middle" });
-  tx(s, "YEAR 1 の終了条件", { x: 8.9, y: 3.38, w: 3.5, h: 0.3, size: 12, color: C.SILVER_L, valign: "middle" });
-  tx(s, "代表が1週間、\n日常オペレーションに\n入らなくても\n会社が回る。", { x: 8.9, y: 3.95, w: 3.6, h: 2.1, font: F.MIN, size: 22, ls: 36, color: C.WHITE });
+  tiles(s, list, { x: X0, y: 3.25, cols: 3, w: 2.45, h: 0.68, gapX: 0.17, gapY: 0.14, hi: new Set([11]) });
+  rect(s, { x: 8.6, y: 3.25, w: 4.13, h: 3.14, fill: C.NAVY });
+  tx(s, "EXIT CONDITION", { x: 8.9, y: 3.42, w: 3.5, h: 0.3, font: F.EN, size: 12, bold: true, cs: 2, color: C.GOLD, valign: "middle" });
+  tx(s, "YEAR 1 の終了条件", { x: 8.9, y: 3.74, w: 3.5, h: 0.3, size: 12, color: C.SILVER_L, valign: "middle" });
+  tx(s, "代表が1週間、\n日常オペレーションに\n入らなくても\n会社が回る。", { x: 8.9, y: 4.2, w: 3.6, h: 2.0, font: F.MIN, size: 22, ls: 35, color: C.WHITE });
 }
 
 function s11() {
   const s = newSlide(11);
   frame(s, {
     n: 11,
-    kicker: "YEAR 2  |  2027–2028",
+    kicker: "YEAR 2   2027–2028",
     title: "事業経営者から、グループ経営者へ。",
     marker: { from: 1, to: 1 },
     notes:
@@ -1054,7 +1066,7 @@ function s12() {
   const s = newSlide(12);
   frame(s, {
     n: 12,
-    kicker: "YEAR 3  |  2028–2029",
+    kicker: "YEAR 3   2028–2029",
     title: "最初のM&Aを成功させる。",
     marker: { seg: [1, 2] },
     notes:
@@ -1103,13 +1115,15 @@ function s12() {
     ["IMPROVE", "改善する"],
     ["GROW", "成長させる"],
   ];
+  const mw = 1.66;
+  const mstep = (X1 - 5.3 - mw) / 3;
   model.forEach(([en, jp], k) => {
-    const x = 5.3 + k * 1.9;
+    const x = 5.3 + k * mstep;
     const last = k === 3;
-    rect(s, { x, y: 5.12, w: 1.6, h: 1.1, fill: last ? C.NAVY : C.TINT });
+    rect(s, { x, y: 5.12, w: mw, h: 1.1, fill: last ? C.NAVY : C.TINT });
     tx(s, en, { x: x + 0.18, y: 5.24, w: 1.3, h: 0.24, font: F.EN, size: 10, bold: true, cs: 1, color: last ? C.GOLD : C.GOLD_D, valign: "middle" });
     tx(s, jp, { x: x + 0.18, y: 5.55, w: 1.4, h: 0.45, font: F.JPB, bold: true, size: 17, color: last ? C.WHITE : C.NAVY, valign: "middle" });
-    if (k < 3) line(s, x + 1.64, 5.67, x + 1.86, 5.67, { color: C.GOLD_L, width: 1.5, arrowEnd: true });
+    if (k < 3) line(s, x + mw + 0.05, 5.67, x + mstep - 0.05, 5.67, { color: C.GOLD_L, width: 1.5, arrowEnd: true });
   });
 }
 
@@ -1124,7 +1138,7 @@ function s13() {
   const s = newSlide(13);
   frame(s, {
     n: 13,
-    kicker: "YEAR 4  |  2029–2030",
+    kicker: "YEAR 4   2029–2030",
     title: "M&Aを、個人技から組織能力へ。",
     marker: { seg: [1, 2] },
     notes:
@@ -1132,15 +1146,14 @@ function s13() {
   });
   yearStrip(s, 3, "M&A再現性構築");
   sectionHead(s, "親会社に置く機能（8）", "PARENT FUNCTIONS", X0, 2.85, 7);
+  const rowsY = [3.3, 4.1, 4.9, 5.7];
   const ccx = 4.15;
-  const ccy = 4.78;
+  const ccy = (rowsY[0] + rowsY[3] + 0.55) / 2;
   const r = 0.85;
   const left = ["経営企画", "財務", "M&A", "人事"];
   const right = ["PMI", "DX", "法務", "管理"];
-  const rowsY = [3.3, 4.05, 4.8, 5.55];
   rowsY.forEach((y, i) => {
     const cy = y + 0.275;
-    // 円の縁まで線を引く
     const ang = Math.atan2(cy - ccy, 2.5 - ccx);
     line(s, 2.5, cy, ccx + r * Math.cos(ang), ccy + r * Math.sin(ang), { color: C.SILVER, width: 1 });
     const ang2 = Math.atan2(cy - ccy, 5.8 - ccx);
@@ -1152,21 +1165,24 @@ function s13() {
   tx(s, "PARENT\nCOMPANY", { x: ccx - r, y: ccy - 0.5, w: 2 * r, h: 0.42, font: F.EN, size: 10, bold: true, cs: 1, ls: 14, color: C.GOLD, align: "center" });
   tx(s, "親会社機能", { x: ccx - r, y: ccy - 0.02, w: 2 * r, h: 0.36, font: F.JPB, bold: true, size: 15, color: C.WHITE, align: "center", valign: "middle" });
 
-  rect(s, { x: 8.0, y: 2.85, w: 4.73, h: 3.65, fill: C.TINT });
-  tx(s, "目指す状態", { x: 8.3, y: 3.03, w: 4, h: 0.3, font: F.JPB, bold: true, size: 13, color: C.GOLD_D, valign: "middle" });
-  tx(s, "複数案件が同時並行で進み、\n創業者本人が全てを\n処理しなくても回る状態。", { x: 8.3, y: 3.45, w: 4.25, h: 1.35, font: F.MIN, size: 19, ls: 31, color: C.NAVY });
-  tx(s, "個人技", { x: 8.3, y: 5.2, w: 1.6, h: 0.44, font: F.JPB, bold: true, size: 14, color: C.MUTED, align: "center", valign: "middle", fill: C.WHITE, line: C.RULE_D, lineW: 1 });
-  line(s, 9.98, 5.42, 10.52, 5.42, { color: C.GOLD_L, width: 1.5, arrowEnd: true });
-  tx(s, "組織能力", { x: 10.6, y: 5.2, w: 1.8, h: 0.44, font: F.JPB, bold: true, size: 14, color: C.WHITE, align: "center", valign: "middle", fill: C.NAVY });
-  tx(s, "創業者が処理", { x: 8.2, y: 5.72, w: 1.8, h: 0.26, size: 11, color: C.MUTED, align: "center", valign: "middle" });
-  tx(s, "親会社機能が処理", { x: 10.4, y: 5.72, w: 2.2, h: 0.26, size: 11, color: C.MUTED, align: "center", valign: "middle" });
+  const pY = 3.3;
+  const pH = 6.25 - pY;
+  rect(s, { x: 8.1, y: pY, w: 4.63, h: pH, fill: C.TINT });
+  tx(s, "目指す状態", { x: 8.4, y: pY + 0.18, w: 4, h: 0.3, font: F.JPB, bold: true, size: 13, color: C.GOLD_D, valign: "middle" });
+  tx(s, "複数案件が同時並行で進み、\n創業者本人が全てを\n処理しなくても回る状態。", { x: 8.4, y: pY + 0.58, w: 4.2, h: 1.35, font: F.MIN, size: 19, ls: 31, color: C.NAVY });
+  const pillY = pY + 2.15;
+  tx(s, "個人技", { x: 8.4, y: pillY, w: 1.6, h: 0.44, font: F.JPB, bold: true, size: 14, color: C.MUTED, align: "center", valign: "middle", fill: C.WHITE, line: C.RULE_D, lineW: 1 });
+  line(s, 10.06, pillY + 0.22, 10.6, pillY + 0.22, { color: C.GOLD_L, width: 1.5, arrowEnd: true });
+  tx(s, "組織能力", { x: 10.68, y: pillY, w: 1.8, h: 0.44, font: F.JPB, bold: true, size: 14, color: C.WHITE, align: "center", valign: "middle", fill: C.NAVY });
+  tx(s, "創業者が処理", { x: 8.3, y: pillY + 0.52, w: 1.8, h: 0.26, size: 11, color: C.MUTED, align: "center", valign: "middle" });
+  tx(s, "親会社機能が処理", { x: 10.48, y: pillY + 0.52, w: 2.2, h: 0.26, size: 11, color: C.MUTED, align: "center", valign: "middle" });
 }
 
 function s14() {
   const s = newSlide(14);
   frame(s, {
     n: 14,
-    kicker: "YEAR 5  |  2030–2031",
+    kicker: "YEAR 5   2030–2031",
     title: "30億を作るのではない。30億を運営できるグループを作る。",
     marker: { from: 2, to: 2 },
     notes:
@@ -1182,23 +1198,24 @@ function s14() {
     const y = 3.3 + r * 1.05;
     rect(s, { x, y, w: 2.4, h: 0.9, fill: C.TINT });
     tx(s, String(i + 1).padStart(2, "0"), { x: x + 0.18, y, w: 0.45, h: 0.9, font: F.NUM, size: 13, bold: true, color: C.GOLD_D, valign: "middle" });
-    tx(s, t, { x: x + 0.62, y: y + (t.includes("\n") ? 0.16 : 0), w: 1.7, h: t.includes("\n") ? 0.6 : 0.9, font: F.JPB, bold: true, size: 15, ls: t.includes("\n") ? 21 : undefined, color: C.NAVY, valign: t.includes("\n") ? "top" : "middle" });
+    const multi = t.includes("\n");
+    tx(s, t, { x: x + 0.62, y: y + (multi ? 0.16 : 0), w: 1.7, h: multi ? 0.6 : 0.9, font: F.JPB, bold: true, size: 15, ls: multi ? 21 : undefined, color: C.NAVY, valign: multi ? "top" : "middle" });
   });
-  rect(s, { x: 8.5, y: 2.85, w: 4.23, h: 3.65, fill: C.NAVY });
-  tx(s, "FY2031", { x: 8.8, y: 3.02, w: 3.6, h: 0.28, font: F.EN, size: 12, bold: true, cs: 2, color: C.GOLD, valign: "middle" });
-  tx(s, "グループ連結売上", { x: 8.8, y: 3.32, w: 3.6, h: 0.3, size: 13, color: C.SILVER_L, valign: "middle" });
+  const pY = 3.3;
+  rect(s, { x: 8.5, y: pY, w: 4.23, h: 3.0, fill: C.NAVY });
+  tx(s, "FY2031  グループ連結売上", { x: 8.8, y: pY + 0.16, w: 3.7, h: 0.28, size: 12, color: C.SILVER_L, valign: "middle" });
   tx(
     s,
     [
-      { text: "30", o: { font: F.NUM, size: 80, bold: true } },
+      { text: "30", o: { font: F.NUM, size: 72, bold: true } },
       { text: "億円", o: { font: F.JPB, size: 24, bold: true } },
     ],
-    { x: 8.8, y: 3.55, w: 3.7, h: 1.42, color: C.WHITE, valign: "middle" },
+    { x: 8.8, y: pY + 0.4, w: 3.7, h: 1.25, color: C.WHITE, valign: "middle" },
   );
-  tx(s, "暫定経営目標", { x: 8.8, y: 4.98, w: 3.6, h: 0.26, size: 11, color: C.SILVER, valign: "middle" });
-  line(s, 8.8, 5.38, 12.43, 5.38, { color: C.CHIP_DK, width: 0.75 });
-  tx(s, "次のフェーズ：50億円 → 100億円", { x: 8.8, y: 5.52, w: 3.75, h: 0.3, font: F.JPB, bold: true, size: 13, color: C.GOLD, valign: "middle" });
-  tx(s, "詳細 P.22", { x: 8.8, y: 5.88, w: 3.6, h: 0.24, size: 10, color: C.SILVER, valign: "middle" });
+  tx(s, "暫定経営目標", { x: 8.8, y: pY + 1.66, w: 3.6, h: 0.26, size: 11, color: C.SILVER, valign: "middle" });
+  line(s, 8.8, pY + 2.08, 12.43, pY + 2.08, { color: C.CHIP_DK, width: 0.75 });
+  tx(s, "次のフェーズ：50億円 → 100億円", { x: 8.8, y: pY + 2.2, w: 3.75, h: 0.3, font: F.JPB, bold: true, size: 13, color: C.GOLD, valign: "middle" });
+  tx(s, "詳細 P.22", { x: 8.8, y: pY + 2.56, w: 3.6, h: 0.24, size: 10, color: C.SILVER, valign: "middle" });
 }
 
 function s15() {
@@ -1209,11 +1226,11 @@ function s15() {
     title: "親会社が原則100%保有し、各子会社は別の社長が経営する。",
     marker: { from: 1, to: 2 },
     notes:
-      "グループの資本構造。創業者が親会社の株式を100%持ち、親会社の代表取締役を務める。親会社は各子会社を原則100%保有する。各子会社には別の代表取締役社長を置き、創業者は代表権を持たず、日常経営も行わない。原則として子会社の取締役にも入らず、必要に応じて会長として経営監督と社長支援を行う。A〜D社は構造を示す例示で、社数・業種の目標ではない。",
+      "グループの資本構造。創業者が親会社の株式を100%持ち、親会社の代表取締役を務める。親会社は各子会社を原則100%保有する。各子会社には別の代表取締役社長を置き、創業者は代表権を持たず、日常経営も行わない。原則として子会社の取締役にも入らず、必要に応じて会長として経営監督と社長支援を行う。A〜D社は構造を示す例示で、社数・業種の目標ではない。ROOTIVEを子会社にする方法（株式移転など）と税務は、専門家と協議して確定する。",
   });
   const cx = 4.25;
-  tx(s, "創業者", { x: 3.35, y: 1.9, w: 1.8, h: 0.36, font: F.JPB, bold: true, size: 15, color: C.NAVY, align: "center", valign: "middle" });
   rect(s, { x: 3.35, y: 1.9, w: 1.8, h: 0.66, line: C.NAVY, lineW: 1.25 });
+  tx(s, "創業者", { x: 3.35, y: 1.9, w: 1.8, h: 0.36, font: F.JPB, bold: true, size: 15, color: C.NAVY, align: "center", valign: "middle" });
   tx(s, "親会社100%株主", { x: 3.35, y: 2.24, w: 1.8, h: 0.26, size: 10.5, color: C.MUTED, align: "center", valign: "middle" });
   line(s, cx, 2.56, cx, 3.05, { color: C.NAVY, width: 1.25 });
   tx(s, "100%", { x: cx + 0.12, y: 2.68, w: 0.8, h: 0.26, font: F.EN, size: 12, bold: true, color: C.GOLD_D, valign: "middle" });
@@ -1239,19 +1256,27 @@ function s15() {
     }
   }
   VISUALS.add("org-chart");
-  tx(s, "※ A社〜D社は構造を示す例示であり、社数・業種・時期の目標ではない。", { x: X0, y: 6.05, w: 7.3, h: 0.26, size: 10, color: C.MUTED, valign: "middle" });
+  tx(s, "※ A社〜D社は構造を示す例示であり、社数・業種・時期の目標ではない。\n※ ROOTIVEの子会社化の方法（株式移転等）と税務は、専門家と協議のうえ確定する。", {
+    x: X0,
+    y: 5.98,
+    w: 7.3,
+    h: 0.46,
+    size: 10,
+    ls: 15,
+    color: C.MUTED,
+  });
 
-  rect(s, { x: 8.3, y: 1.9, w: 4.43, h: 1.75, fill: C.TINT });
+  rect(s, { x: 8.3, y: 1.9, w: 4.43, h: 1.82, fill: C.TINT });
   tx(s, "CAPITAL", { x: 8.55, y: 2.02, w: 2, h: 0.24, font: F.EN, size: 10, bold: true, cs: 2, color: C.GOLD_D, valign: "middle" });
   tx(s, "資本の基本", { x: 8.55, y: 2.26, w: 3.5, h: 0.34, font: F.JPB, bold: true, size: 15, color: C.NAVY, valign: "middle" });
-  items(s, ["親会社が各子会社を原則100%保有", "創業者は親会社の100%株主", "創業者は親会社の代表取締役"], { x: 8.55, y: 2.68, w: 4.0, size: 13, gap: 0.03, dot: 0.06 });
-  rect(s, { x: 8.3, y: 3.85, w: 4.43, h: 2.65, fill: C.TINT });
-  tx(s, "SUBSIDIARIES", { x: 8.55, y: 3.97, w: 2.5, h: 0.24, font: F.EN, size: 10, bold: true, cs: 2, color: C.GOLD_D, valign: "middle" });
-  tx(s, "各子会社の原則", { x: 8.55, y: 4.21, w: 3.5, h: 0.34, font: F.JPB, bold: true, size: 15, color: C.NAVY, valign: "middle" });
+  items(s, ["親会社が各子会社を原則100%保有", "創業者は親会社の100%株主", "創業者は親会社の代表取締役"], { x: 8.55, y: 2.66, w: 4.0, size: 13, gap: 0.03, dot: 0.06 });
+  rect(s, { x: 8.3, y: 3.87, w: 4.43, h: 2.75, fill: C.TINT });
+  tx(s, "SUBSIDIARIES", { x: 8.55, y: 3.99, w: 2.5, h: 0.24, font: F.EN, size: 10, bold: true, cs: 2, color: C.GOLD_D, valign: "middle" });
+  tx(s, "各子会社の原則", { x: 8.55, y: 4.23, w: 3.5, h: 0.34, font: F.JPB, bold: true, size: 15, color: C.NAVY, valign: "middle" });
   items(
     s,
     ["別の代表取締役社長を配置", "創業者は代表権を持たない", "日常経営を行わない", "原則として子会社取締役には入らない", "必要に応じて会長として\n経営監督・社長支援"],
-    { x: 8.55, y: 4.63, w: 4.0, size: 13, gap: 0.03, dot: 0.06 },
+    { x: 8.55, y: 4.65, w: 4.0, size: 13, gap: 0.03, dot: 0.06 },
   );
 }
 
@@ -1265,20 +1290,20 @@ function s16() {
     lead: "資本を持つ親会社と、日常を経営する子会社社長の役割を明確に分ける。",
     marker: { from: 1, to: 2 },
     notes:
-      "所有と執行を分ける。親会社が持つのは、資本・社長人事・M&A・大型投資・戦略・財務・撤退判断。子会社の社長が持つのは、売上・利益・顧客・人材・現場・日常経営。オーナーはオペレーターではない（OWNER ≠ OPERATOR）。これがグループを創業者一人に依存させないための原則である。",
+      "所有と執行を分ける。親会社が持つのは、資本・社長人事・M&A・大型投資・戦略・財務・撤退判断。子会社の社長が持つのは、売上・利益・顧客・人材・現場・日常経営。オーナーはオペレーターではない（OWNER ≠ OPERATOR）。これがグループを創業者一人に依存させないための原則である。親会社は社長人事と資本を通じて子会社を監督し、日常の経営には入らない。",
   });
-  const col = (x, en, jp, list) => {
+  const col = (x, en, jp, list, pitch) => {
     rect(s, { x, y: 2.05, w: 4.6, h: 4.45, fill: C.CARD_DK });
     tx(s, en, { x: x + 0.3, y: 2.22, w: 4, h: 0.3, font: F.EN, size: 14, bold: true, cs: 2, color: C.GOLD, valign: "middle" });
     tx(s, jp, { x: x + 0.3, y: 2.55, w: 4, h: 0.42, font: F.JPB, bold: true, size: 20, color: C.WHITE, valign: "middle" });
     list.forEach((t, i) => {
-      const y = 3.15 + i * 0.46;
+      const y = 3.15 + i * pitch;
       tx(s, t, { x: x + 0.3, y, w: 4, h: 0.44, size: 17, color: C.WHITE, valign: "middle" });
-      if (i < list.length - 1) line(s, x + 0.3, y + 0.45, x + 4.3, y + 0.45, { color: C.LINE_DK, width: 0.75 });
+      if (i < list.length - 1) line(s, x + 0.3, y + pitch - 0.01, x + 4.3, y + pitch - 0.01, { color: C.LINE_DK, width: 0.75 });
     });
   };
-  col(0.6, "PARENT COMPANY", "親会社｜所有", ["資本", "社長人事", "M&A", "大型投資", "戦略", "財務", "撤退判断"]);
-  col(8.13, "SUBSIDIARY CEO", "子会社社長｜執行", ["売上", "利益", "顧客", "人材", "現場", "日常経営"]);
+  col(0.6, "PARENT COMPANY", "親会社｜所有", ["資本", "社長人事", "M&A", "大型投資", "戦略", "財務", "撤退判断"], 0.46);
+  col(8.13, "SUBSIDIARY CEO", "子会社社長｜執行", ["売上", "利益", "顧客", "人材", "現場", "日常経営"], 0.552);
   tx(s, "OWNER", { x: 5.3, y: 2.95, w: 2.73, h: 0.5, font: F.NUM, size: 26, bold: true, color: C.WHITE, align: "center", valign: "middle" });
   tx(s, "所有", { x: 5.3, y: 3.45, w: 2.73, h: 0.28, size: 12, color: C.SILVER, align: "center", valign: "middle" });
   tx(s, "≠", { x: 5.3, y: 3.78, w: 2.73, h: 0.96, font: F.JPB, size: 54, bold: true, color: C.GOLD, align: "center", valign: "middle" });
@@ -1295,16 +1320,24 @@ function s17() {
     lead: "利益として生まれたキャッシュを、どこへどう配分すれば企業価値が最大になるかを判断する。",
     marker: { from: 1, to: 2 },
     notes:
-      "親会社の最大の仕事は資本配分。事業が利益として生んだキャッシュを、既存事業・M&A・新規事業・人材・DX・借入返済・現預金のどこへどれだけ配分すれば企業価値が最大になるかを判断する。配分の比率や金額は、財務モデルを作ってから決める。",
+      "親会社の最大の仕事は資本配分。事業が利益として生んだキャッシュに、金融機関からの借入（M&A融資）を加えた資金を、既存事業・M&A・新規事業・人材・DX・借入返済・現預金のどこへどれだけ配分すれば企業価値が最大になるかを判断する。借入の返済と現預金の確保は、次のM&Aのための借入余力を保つことでもある。配分の比率や金額は、財務モデルを作ってから決める。",
   });
-  rect(s, { x: 0.6, y: 3.5, w: 2.0, h: 1.5, fill: C.TINT });
-  tx(s, "CASH", { x: 0.8, y: 3.64, w: 1.7, h: 0.42, font: F.EN, size: 20, bold: true, cs: 1, color: C.NAVY, valign: "middle" });
-  tx(s, "利益として\n生まれたキャッシュ", { x: 0.8, y: 4.15, w: 1.75, h: 0.6, size: 12, ls: 18, color: C.INK });
-  line(s, 2.65, 4.25, 3.05, 4.25, { color: C.GOLD_L, width: 2, arrowEnd: true });
-  rect(s, { x: 3.1, y: 3.0, w: 2.5, h: 2.5, fill: C.NAVY });
-  tx(s, "CAPITAL\nALLOCATION", { x: 3.1, y: 3.25, w: 2.5, h: 0.52, font: F.EN, size: 13, bold: true, cs: 1, ls: 18, color: C.GOLD, align: "center" });
-  tx(s, "資本配分", { x: 3.1, y: 3.88, w: 2.5, h: 0.6, font: F.MIN, size: 28, color: C.WHITE, align: "center", valign: "middle" });
-  tx(s, "親会社の最大の仕事", { x: 3.1, y: 4.62, w: 2.5, h: 0.26, size: 11, color: C.SILVER_L, align: "center", valign: "middle" });
+  // 入口：事業が生むキャッシュ ＋ 金融機関からの借入
+  const hub = { x: 3.1, y: 2.75, w: 2.5, h: 3.0 };
+  const inputs = [
+    { y: 2.75, en: "CASH", jp: "利益として\n生まれたキャッシュ" },
+    { y: 4.35, en: "FINANCING", jp: "金融機関からの\n借入（M&A融資）" },
+  ];
+  inputs.forEach((b) => {
+    rect(s, { x: 0.6, y: b.y, w: 2.0, h: 1.4, fill: C.TINT });
+    tx(s, b.en, { x: 0.8, y: b.y + 0.14, w: 1.7, h: 0.38, font: F.EN, size: b.en === "CASH" ? 20 : 16, bold: true, cs: 1, color: C.NAVY, valign: "middle" });
+    tx(s, b.jp, { x: 0.8, y: b.y + 0.62, w: 1.75, h: 0.6, size: 12, ls: 18, color: C.INK });
+    line(s, 2.65, b.y + 0.7, 3.05, b.y + 0.7, { color: C.GOLD_L, width: 2, arrowEnd: true });
+  });
+  rect(s, { ...hub, fill: C.NAVY });
+  tx(s, "CAPITAL\nALLOCATION", { x: hub.x, y: hub.y + 0.35, w: hub.w, h: 0.52, font: F.EN, size: 13, bold: true, cs: 1, ls: 18, color: C.GOLD, align: "center" });
+  tx(s, "資本配分", { x: hub.x, y: hub.y + 1.0, w: hub.w, h: 0.6, font: F.MIN, size: 28, color: C.WHITE, align: "center", valign: "middle" });
+  tx(s, "親会社の最大の仕事", { x: hub.x, y: hub.y + 1.75, w: hub.w, h: 0.26, size: 11, color: C.SILVER_L, align: "center", valign: "middle" });
   const dest = [
     ["ORGANIC GROWTH", "既存事業"],
     ["M&A", "企業買収"],
@@ -1313,8 +1346,9 @@ function s17() {
     ["TECH", "DX"],
     ["BALANCE SHEET", "借入返済・現預金"],
   ];
+  const hy = hub.y + hub.h / 2;
   const cys = dest.map((_, i) => 2.2 + i * 0.72 + 0.28);
-  line(s, 5.6, 4.25, 5.95, 4.25, { color: C.NAVY, width: 1.25 });
+  line(s, 5.6, hy, 5.95, hy, { color: C.NAVY, width: 1.25 });
   line(s, 5.95, cys[0], 5.95, cys[5], { color: C.NAVY, width: 1.25 });
   dest.forEach(([en, jp], i) => {
     const y = 2.2 + i * 0.72;
@@ -1325,12 +1359,12 @@ function s17() {
     line(s, 10.15, cys[i], 10.35, cys[i], { color: C.NAVY, width: 1.25 });
   });
   line(s, 10.35, cys[0], 10.35, cys[5], { color: C.NAVY, width: 1.25 });
-  line(s, 10.35, 4.25, 10.58, 4.25, { color: C.NAVY, width: 1.5, arrowEnd: true });
-  rect(s, { x: 10.6, y: 3.4, w: 2.13, h: 1.7, fill: C.WHITE, line: C.GOLD_L, lineW: 1.75 });
-  tx(s, "ENTERPRISE\nVALUE", { x: 10.6, y: 3.55, w: 2.13, h: 0.48, font: F.EN, size: 12, bold: true, cs: 1, ls: 16, color: C.GOLD_D, align: "center" });
-  tx(s, "企業価値の\n最大化", { x: 10.6, y: 4.15, w: 2.13, h: 0.72, font: F.JPB, bold: true, size: 17, ls: 25, color: C.NAVY, align: "center" });
+  line(s, 10.35, hy, 10.58, hy, { color: C.NAVY, width: 1.5, arrowEnd: true });
+  rect(s, { x: 10.6, y: hy - 0.85, w: 2.13, h: 1.7, fill: C.WHITE, line: C.GOLD_L, lineW: 1.75 });
+  tx(s, "ENTERPRISE\nVALUE", { x: 10.6, y: hy - 0.7, w: 2.13, h: 0.48, font: F.EN, size: 12, bold: true, cs: 1, ls: 16, color: C.GOLD_D, align: "center" });
+  tx(s, "企業価値の\n最大化", { x: 10.6, y: hy - 0.1, w: 2.13, h: 0.72, font: F.JPB, bold: true, size: 17, ls: 25, color: C.NAVY, align: "center" });
   VISUALS.add("capital-allocation");
-  tx(s, "※ 配分の比率・金額は財務モデル策定後に確定する。", { x: X0, y: 5.9, w: 5, h: 0.26, size: 10, color: C.MUTED, valign: "middle" });
+  tx(s, "※ 配分の比率・金額は財務モデル策定後に確定する。", { x: X0, y: 6.1, w: 5, h: 0.26, size: 10, color: C.MUTED, valign: "middle" });
 }
 
 function s18() {
@@ -1338,7 +1372,7 @@ function s18() {
   frame(s, {
     n: 18,
     kicker: "M&A STRATEGY",
-    title: "良い会社を適正価格で買い、長期保有し、企業価値を高める。",
+    title: "物流に限定せず、経営能力を移植できる会社を買う。",
     marker: { from: 1, to: 2 },
     notes:
       "M&Aの基本思想は、良い会社を適正価格で買い、長期保有し、経営改善によって企業価値を高めること。対象は物流企業に限定しない。候補の条件は11項目で、事業が続くこと（需要・継続収益・キャッシュ創出力・顧客基盤・過度な設備投資が要らないこと）、改善の余地（営業・採用・DX）、承継と移植（後継者不足・経営者交代が可能・ROOTIVE GROUPの経営能力を移植できること）に分けて見る。",
@@ -1352,14 +1386,27 @@ function s18() {
   const groups = [
     { en: "SUSTAINABILITY", jp: "事業の持続性", list: ["需要が消えにくい", "継続収益", "キャッシュ創出力", "顧客基盤", "過度なCAPEX不要"] },
     { en: "UPSIDE", jp: "改善の余地", list: ["営業改善余地", "採用改善余地", "DX余地"] },
-    { en: "TRANSFERABILITY", jp: "承継と移植", list: ["後継者不足", "経営者交代可能", { t: "ROOTIVE GROUPの\n経営能力を\n移植できる", bold: true, color: C.NAVY, font: F.JPB }] },
+    { en: "TRANSFERABILITY", jp: "承継と移植", list: ["後継者不足", "経営者交代可能", "ROOTIVE GROUPの\n経営能力を\n移植できる"] },
   ];
   groups.forEach((g, i) => {
     const x = 5.15 + i * 2.593;
-    rect(s, { x, y: 2.35, w: 2.393, h: 4.15, fill: C.TINT });
+    rect(s, { x, y: 2.35, w: 2.393, h: 3.55, fill: C.TINT });
     tx(s, g.en, { x: x + 0.2, y: 2.53, w: 2.05, h: 0.24, font: F.EN, size: 10, bold: true, cs: 1, color: C.GOLD_D, valign: "middle" });
     tx(s, g.jp, { x: x + 0.2, y: 2.8, w: 2.05, h: 0.34, font: F.JPB, bold: true, size: 15, color: C.NAVY, valign: "middle" });
-    items(s, g.list, { x: x + 0.2, y: 3.4, w: 2.1, size: 13.5, gap: 0.22, dot: 0.06 });
+    items(s, g.list, { x: x + 0.2, y: 3.35, w: 2.1, size: 13.5, gap: 0.16, dot: 0.06 });
+  });
+  tx(s, "条件を満たし、P.19 の投資規律を通過した会社を買う。", {
+    x: 5.15,
+    y: 6.05,
+    w: 7.58,
+    h: 0.45,
+    font: F.JPB,
+    bold: true,
+    size: 14,
+    color: C.WHITE,
+    fill: C.NAVY,
+    align: "center",
+    valign: "middle",
   });
 }
 
@@ -1373,36 +1420,36 @@ function s19() {
     notes:
       "買える会社と買うべき会社は違う。買収の判断では、収益力・キャッシュと財務・価値とリターン・依存リスクの12指標を確認する。あわせて、簿外債務・重大な法令違反・未払い残業・社会保険問題・顧客集中・オーナー依存・慢性的なCF赤字・重大訴訟・大型設備更新・重要人材の流出の10項目をRED FLAGSとして確認する。各指標の判断水準は財務モデル策定後に設定する。",
   });
-  sectionHead(s, "確認指標（12）", "KEY METRICS", X0, 1.9, 6.5);
+  sectionHead(s, "確認指標（12）", "KEY METRICS", X0, 1.9, 4.5);
+  tx(s, "※ 判断水準は財務モデル策定後に設定する", { x: 4.3, y: 1.9, w: 3.2, h: 0.3, size: 10, color: C.MUTED, align: "right", valign: "middle" });
   const hy = 2.3;
-  tx(s, "区分", { x: 0.75, y: hy, w: 1.4, h: 0.3, size: 11, color: C.MUTED, valign: "middle" });
-  tx(s, "指標", { x: 2.3, y: hy, w: 2.7, h: 0.3, size: 11, color: C.MUTED, valign: "middle" });
-  tx(s, "意味", { x: 5.2, y: hy, w: 2.2, h: 0.3, size: 11, color: C.MUTED, valign: "middle" });
+  tx(s, "区分", { x: 0.75, y: hy, w: 1.3, h: 0.3, size: 11, color: C.MUTED, valign: "middle" });
+  tx(s, "指標", { x: 2.1, y: hy, w: 2.6, h: 0.3, size: 11, color: C.MUTED, valign: "middle" });
+  tx(s, "何を確かめるか", { x: 4.85, y: hy, w: 2.6, h: 0.3, size: 11, color: C.MUTED, valign: "middle" });
   line(s, 0.6, 2.63, 7.5, 2.63, { color: C.NAVY, width: 1 });
   const groups = [
-    { name: "収益力", rows: [["Revenue", "売上高"], ["Operating Profit", "営業利益"], ["EBITDA", "償却前営業利益"]] },
-    { name: "キャッシュ・\n財務", rows: [["Operating Cash Flow", "営業キャッシュフロー"], ["Net Debt", "純有利子負債"], ["CAPEX", "設備投資"]] },
-    { name: "価値・\nリターン", rows: [["Enterprise Value", "企業価値"], ["EV / EBITDA", "EV倍率"], ["ROIC", "投下資本利益率"], ["Payback Period", "投資回収期間"]] },
-    { name: "依存リスク", rows: [["Customer Concentration", "顧客集中度"], ["Management Dependence", "経営者依存度"]] },
+    { name: "収益力", rows: [["Revenue", "売上の規模と推移"], ["Operating Profit", "本業で稼ぐ力"], ["EBITDA", "返済の原資となる利益"]] },
+    { name: "キャッシュ・\n財務", rows: [["Operating Cash Flow", "利益が現金になっているか"], ["Net Debt", "引き継ぐ借入の重さ"], ["CAPEX", "今後必要な設備投資"]] },
+    { name: "価値・\nリターン", rows: [["Enterprise Value", "企業価値（価格の土台）"], ["EV / EBITDA", "価格が割高でないか"], ["ROIC", "投下資本に対する収益性"], ["Payback Period", "何年で投資を回収できるか"]] },
+    { name: "依存リスク", rows: [["Customer Concentration", "特定の顧客への依存"], ["Management Dependence", "オーナーが退いても回るか"]] },
   ];
   let y = 2.68;
   const rh = 0.31;
   groups.forEach((g, gi) => {
     const gh = g.rows.length * rh;
     if (gi % 2 === 0) rect(s, { x: 0.6, y, w: 6.9, h: gh, fill: C.TINT });
-    tx(s, g.name, { x: 0.75, y, w: 1.4, h: gh, font: F.JPB, bold: true, size: 12, ls: g.name.includes("\n") ? 16 : undefined, color: C.NAVY, valign: "middle" });
+    tx(s, g.name, { x: 0.75, y, w: 1.3, h: gh, font: F.JPB, bold: true, size: 12, ls: g.name.includes("\n") ? 16 : undefined, color: C.NAVY, valign: "middle" });
     g.rows.forEach(([en, jp], ri) => {
       const ry = y + ri * rh;
-      tx(s, en, { x: 2.3, y: ry, w: 2.8, h: rh, font: F.EN, size: 12, bold: true, color: C.NAVY, valign: "middle" });
-      tx(s, jp, { x: 5.2, y: ry, w: 2.25, h: rh, size: 12, color: C.INK, valign: "middle" });
-      if (ri < g.rows.length - 1) line(s, 2.3, ry + rh, 7.5, ry + rh, { color: C.RULE, width: 0.5 });
+      tx(s, en, { x: 2.1, y: ry, w: 2.7, h: rh, font: F.EN, size: 12, bold: true, color: C.NAVY, valign: "middle" });
+      tx(s, jp, { x: 4.85, y: ry, w: 2.6, h: rh, size: 12, color: C.INK, valign: "middle" });
+      if (ri < g.rows.length - 1) line(s, 2.1, ry + rh, 7.5, ry + rh, { color: C.RULE, width: 0.5 });
     });
     y += gh;
     line(s, 0.6, y, 7.5, y, { color: C.RULE_D, width: 0.75 });
   });
-  tx(s, "※ 判断水準は財務モデル策定後に設定する", { x: 4.3, y: 1.9, w: 3.2, h: 0.3, size: 10, color: C.MUTED, align: "right", valign: "middle" });
 
-  rect(s, { x: 7.85, y: 1.9, w: 4.88, h: 4.6, fill: C.BLACK });
+  rect(s, { x: 7.85, y: 1.9, w: 4.88, h: y - 1.9, fill: C.BLACK });
   tx(s, "RED FLAGS", { x: 8.15, y: 2.08, w: 2.5, h: 0.3, font: F.EN, size: 14, bold: true, cs: 3, color: C.RED, valign: "middle" });
   tx(s, "重大なリスクの兆候（10）", { x: 8.15, y: 2.42, w: 4.3, h: 0.36, font: F.JPB, bold: true, size: 15, color: C.WHITE, valign: "middle" });
   const flags = ["簿外債務", "重大な法令違反", "未払い残業", "社会保険問題", "顧客集中", "オーナー依存", "慢性的CF赤字", "重大訴訟", "大型設備更新", "重要人材流出"];
@@ -1410,8 +1457,8 @@ function s19() {
     const c = Math.floor(i / 5);
     const r = i % 5;
     const x = c === 0 ? 8.1 : 10.35;
-    const fy = 3.05 + r * 0.66;
-    tx(s, String(i + 1).padStart(2, "0"), { x, y: fy, w: 0.42, h: 0.4, font: F.NUM, size: 13, bold: true, color: C.RED, valign: "middle" });
+    const fy = 3.02 + r * 0.66;
+    tx(s, String(i + 1).padStart(2, "0"), { x, y: fy, w: 0.42, h: 0.4, font: F.NUM, size: 13, bold: true, color: C.GOLD, valign: "middle" });
     tx(s, t, { x: x + 0.45, y: fy, w: 1.75, h: 0.4, size: 14, color: C.WHITE, valign: "middle" });
     if (r < 4) line(s, x, fy + 0.53, x + 2.1, fy + 0.53, { color: "2A2F38", width: 0.75 });
   });
@@ -1425,36 +1472,42 @@ function s20() {
     title: "売上30億円だけを追わない。5つの視点で経営を測る。",
     marker: { from: 2, to: 2 },
     notes:
-      "グループのKPIは売上だけでは見ない。成長・利益・キャッシュ・組織・M&Aの5つの視点で経営を測る。目標値が決まっているのは連結売上（FY2031 30億円・暫定）だけで、ほかのKPIの目標値・算定方法・見る頻度は財務モデルを作ってから確定する。",
+      "グループのKPIは売上だけでは見ない。成長・利益・キャッシュ・組織・M&Aの5つの視点で経営を測る。主な責任は、P.16の所有と執行の分担に沿って置く（売上・利益は各子会社の社長、資本・財務・社長人事・M&Aは親会社）。目標値が決まっているのは連結売上（FY2031 30億円・暫定）だけで、ほかのKPIの目標値・算定方法・見る頻度は財務モデルを作ってから確定する。",
   });
   const panels = [
-    { en: "GROWTH", jp: "成長", list: ["連結売上", "成長率", "M&A寄与売上", "新規事業売上"] },
-    { en: "PROFIT", jp: "利益", list: ["営業利益", "営業利益率", "EBITDA", "ROIC"] },
-    { en: "CASH", jp: "キャッシュ", list: ["営業CF", "現預金", "Net Debt", "借入余力"] },
-    { en: "ORGANIZATION", jp: "組織", list: ["子会社社長配置率", "幹部人数", "重要ポジション\n充足率", "創業者依存業務数"] },
-    { en: "M&A", jp: "M&A", list: ["案件パイプライン", "DD案件数", "成約数", "PMI進捗", "買収後利益成長", "投資回収"] },
+    { en: "GROWTH", jp: "成長", list: ["連結売上", "成長率", "M&A寄与売上", "新規事業売上"], owner: "各社社長・親会社" },
+    { en: "PROFIT", jp: "利益", list: ["営業利益", "営業利益率", "EBITDA", "ROIC"], owner: "各子会社の社長" },
+    { en: "CASH", jp: "キャッシュ", list: ["営業CF", "現預金", "Net Debt", "借入余力"], owner: "親会社（財務）" },
+    { en: "ORGANIZATION", jp: "組織", list: ["子会社社長配置率", "幹部人数", "重要ポジション\n充足率", "創業者依存業務数"], owner: "親会社（社長人事）" },
+    { en: "M&A", jp: "買収・PMI", list: ["案件パイプライン", "DD案件数", "成約数", "PMI進捗", "買収後利益成長", "投資回収"], owner: "親会社（M&A）" },
   ];
+  const top = 1.85;
+  const bottom = 6.3;
   panels.forEach((p, k) => {
     const x = 0.6 + k * 2.476;
-    rect(s, { x, y: 1.9, w: 2.226, h: 4.2, fill: C.TINT });
-    tx(s, p.en, { x: x + 0.2, y: 2.03, w: 1.9, h: 0.3, font: F.EN, size: 13, bold: true, cs: 1, color: C.NAVY, valign: "middle" });
-    tx(s, p.jp, { x: x + 0.2, y: 2.33, w: 1.9, h: 0.28, size: 12, color: C.MUTED, valign: "middle" });
+    rect(s, { x, y: top, w: 2.226, h: bottom - top, fill: C.TINT });
+    tx(s, p.en, { x: x + 0.2, y: top + 0.12, w: 1.9, h: 0.3, font: F.EN, size: 13, bold: true, cs: 1, color: C.NAVY, valign: "middle" });
+    tx(s, p.jp, { x: x + 0.2, y: top + 0.42, w: 1.9, h: 0.28, size: 12, color: C.MUTED, valign: "middle" });
     p.list.forEach((t, i) => {
-      const y = 2.78 + i * 0.55;
+      const y = top + 0.85 + i * 0.48;
       const kgi = k === 0 && i === 0;
-      rect(s, { x: x + 0.14, y, w: 1.946, h: 0.48, fill: C.WHITE, line: kgi ? C.GOLD_L : undefined, lineW: 1.25 });
-      node(s, x + 0.32, y + 0.24, 0.08, { color: C.GOLD_L });
+      rect(s, { x: x + 0.14, y, w: 1.946, h: 0.42, fill: C.WHITE, line: kgi ? C.GOLD_L : undefined, lineW: 1.25 });
+      node(s, x + 0.32, y + 0.21, 0.08, { color: C.GOLD_L });
       const multi = t.includes("\n");
-      tx(s, t, { x: x + 0.46, y: multi ? y + 0.03 : y, w: kgi ? 0.95 : 1.58, h: multi ? 0.42 : 0.48, font: F.JPB, bold: true, size: 12, ls: multi ? 15 : undefined, color: C.NAVY, valign: multi ? "top" : "middle" });
-      if (kgi) tx(s, "30億円", { x: x + 1.3, y, w: 0.72, h: 0.48, font: F.JPB, bold: true, size: 12, color: C.GOLD_D, align: "right", valign: "middle" });
+      tx(s, t, { x: x + 0.46, y: multi ? y + 0.0 : y, w: kgi ? 0.9 : 1.58, h: multi ? 0.42 : 0.42, font: F.JPB, bold: true, size: 12, ls: multi ? 15 : undefined, color: C.NAVY, valign: multi ? "top" : "middle" });
+      if (kgi) tx(s, "30億円", { x: x + 1.26, y, w: 0.66, h: 0.42, font: F.JPB, bold: true, size: 12, color: C.GOLD_D, align: "right", valign: "middle" });
     });
+    // 主な責任（P.16 の分担）
+    line(s, x + 0.2, bottom - 0.6, x + 2.03, bottom - 0.6, { color: C.RULE_D, width: 0.75 });
+    tx(s, "主な責任", { x: x + 0.2, y: bottom - 0.55, w: 1.9, h: 0.24, size: 10, color: C.MUTED, valign: "middle" });
+    tx(s, p.owner, { x: x + 0.2, y: bottom - 0.32, w: 1.9, h: 0.28, font: F.JPB, bold: true, size: 12, color: C.NAVY, valign: "middle" });
   });
   VISUALS.add("kpi-dashboard");
-  tx(s, "※ 連結売上の目標（FY2031 30億円）は暫定経営目標。その他のKPIの目標値・算定方法・モニタリング頻度は、財務モデル策定後に確定する。", {
+  tx(s, "※ 目標値が決まっているのは連結売上（FY2031 30億円・暫定）のみ。その他のKPIの目標値・算定方法・頻度は財務モデル策定後に確定する。主な責任はP.16の分担による。", {
     x: X0,
-    y: 6.24,
+    y: 6.38,
     w: CW,
-    h: 0.26,
+    h: 0.3,
     size: 10,
     color: C.MUTED,
     valign: "middle",
@@ -1469,18 +1522,17 @@ function s21() {
     title: "創業者の役割を、5つの段階で変えていく。",
     marker: { from: 0, to: 3 },
     notes:
-      "創業者の役割の変化。2026年は現場・営業・採用・資金・トラブル対応・経営のすべてを自分で担っている。2027年は組織づくりと幹部育成に移り、2028年に親会社のCEOとしてM&A・金融機関・経営者採用を担う。2029〜2031年はグループCEOとして資本配分・M&A・社長人事・グループ戦略に集中し、その先は上場企業グループのCEOになる。自分が事業を回すのではなく、経営者と資本を配置する。",
+      "創業者の役割の変化。2026年は現場・営業・採用・資金・トラブル対応・経営のすべてを自分で担っている。2027年は組織・幹部育成に軸足を移しつつ、営業・財務・経営を担う。2028年に親会社のCEO（PARENT COMPANY CEO）としてM&A・金融機関・経営者採用を担う。2029〜2031年はグループCEO（GROUP CEO）として資本配分（CAPITAL ALLOCATION）・M&A・社長人事（CEO APPOINTMENT）・グループ戦略（GROUP STRATEGY）に集中し、その先は上場企業グループのCEO（PUBLIC COMPANY GROUP CEO）になる。自分が事業を回すのではなく、経営者と資本を配置する。",
   });
   const cards = [
-    { yr: "2026", en: "", jp: "ROOTIVE代表", list: ["現場", "営業", "採用", "資金", "トラブル", "経営"], fill: C.TINT },
-    { yr: "2027", en: "", jp: "ROOTIVE代表", list: ["組織", "幹部育成", "営業", "財務", "経営"], fill: C.TINT },
+    { yr: "2026", en: "ROOTIVE CEO", jp: "ROOTIVE代表", list: ["現場", "営業", "採用", "資金", "トラブル", "経営"], fill: C.TINT },
+    { yr: "2027", en: "ROOTIVE CEO", jp: "ROOTIVE代表", list: ["組織", "幹部育成", "営業", "財務", "経営"], fill: C.TINT },
     { yr: "2028", en: "PARENT COMPANY CEO", jp: "親会社CEO", list: ["M&A", "金融機関", "経営者採用"], fill: C.NAVY_MID, dark: true },
-    { yr: "2029–2031", en: "GROUP CEO", jp: "グループCEO", list: ["CAPITAL ALLOCATION", "M&A", "CEO APPOINTMENT", "GROUP STRATEGY"], fill: C.NAVY, dark: true, latin: true },
-    { yr: "FUTURE", en: "PUBLIC COMPANY\nGROUP CEO", jp: "上場企業グループCEO", list: [], fill: C.WHITE, future: true },
+    { yr: "2029–2031", en: "GROUP CEO", jp: "グループCEO", list: ["資本配分", "M&A", "社長人事", "グループ戦略"], fill: C.NAVY, dark: true },
+    { yr: "FUTURE", en: "PUBLIC COMPANY\nGROUP CEO", jp: "上場企業\nグループCEO", list: [], fill: C.WHITE, future: true },
   ];
   const ys = cards.map((_, k) => 2.9 - 0.22 * k);
   const cxs = cards.map((_, k) => 0.6 + k * 2.476 + 1.113);
-  // 線（カードの上のノードを結ぶ）
   for (let k = 0; k < 4; k++) {
     line(s, cxs[k], ys[k] - 0.2, cxs[k + 1], ys[k + 1] - 0.2, { color: k < 3 ? C.GOLD_L : C.SILVER, width: 1.5, dash: k < 3 ? undefined : "sysDash" });
   }
@@ -1493,18 +1545,15 @@ function s21() {
     else node(s, cxs[k], y - 0.2, 0.16, { color: C.GOLD_L });
     const txt = c.dark ? C.WHITE : C.NAVY;
     tx(s, c.yr, { x: x + 0.2, y: y + 0.14, w: 1.9, h: 0.4, font: F.NUM, size: c.future ? 18 : 20, bold: true, color: c.future ? C.GOLD_D : txt, valign: "middle" });
-    let iy = y + 0.6;
-    if (c.en) {
-      const n = c.en.split("\n").length;
-      tx(s, c.en, { x: x + 0.2, y: iy, w: 1.9, h: 0.22 * n + 0.02, font: F.EN, size: 10, bold: true, ls: n > 1 ? 13 : undefined, color: c.dark ? C.GOLD : C.GOLD_D, valign: n > 1 ? "top" : "middle" });
-      iy += 0.22 * n + 0.06;
-    }
-    const jpLines = c.jp.length > 9 ? "上場企業グループ\nCEO" : c.jp;
-    const jn = jpLines.split("\n").length;
-    tx(s, jpLines, { x: x + 0.2, y: iy, w: 1.9, h: jn > 1 ? 0.52 : 0.3, font: F.JPB, bold: true, size: 12, ls: jn > 1 ? 18 : undefined, color: txt, valign: jn > 1 ? "top" : "middle" });
-    iy += jn > 1 ? 0.62 : 0.4;
+    let iy = y + 0.54;
+    const n = c.en.split("\n").length;
+    tx(s, c.en, { x: x + 0.2, y: iy, w: 1.9, h: 0.22 * n + 0.02, font: F.EN, size: 10, bold: true, ls: n > 1 ? 13 : undefined, color: c.dark ? C.GOLD : C.GOLD_D, valign: n > 1 ? "top" : "middle" });
+    iy += 0.22 * n + 0.04;
+    const jn = c.jp.split("\n").length;
+    tx(s, c.jp, { x: x + 0.2, y: iy, w: 1.9, h: jn > 1 ? 0.52 : 0.3, font: F.JPB, bold: true, size: 12, ls: jn > 1 ? 18 : undefined, color: txt, valign: jn > 1 ? "top" : "middle" });
+    iy += jn > 1 ? 0.6 : 0.36;
     if (c.list.length) {
-      items(s, c.list, { x: x + 0.2, y: iy, w: 1.95, size: c.latin ? 10.5 : 12, font: c.latin ? F.EN : F.JP, color: c.dark ? C.SILVER_L : C.INK, dotColor: c.dark ? C.GOLD : C.GOLD_L, gap: 0.0, dot: 0.06, indent: 0.17 });
+      items(s, c.list, { x: x + 0.2, y: iy, w: 1.95, size: 12, color: c.dark ? C.SILVER_L : C.INK, dotColor: c.dark ? C.GOLD : C.GOLD_L, gap: 0.0, dot: 0.06, indent: 0.17 });
     }
   });
   VISUALS.add("founder-roles");
@@ -1527,7 +1576,7 @@ function s22() {
     title: "2031年以降は、成長と経営体制の整備を同時に進める。",
     marker: { from: 2, to: 3 },
     notes:
-      "2031年以降の考え方。PHASE 1（2026–2031）でグループを形成し連結売上30億円を作る。PHASE 2で50億、100億へ複数事業を成長させる。同時に、連結会計・監査・内部統制・コンプライアンス・法務・取締役会・ガバナンス・経営陣の強化・IR・資本政策を整備し、IPO READYの状態を作ってから上場する。売上規模だけでは上場しない。上場できる経営体制を先に作る。",
+      "2031年以降の考え方。PHASE 1（2026–2031）でグループを形成し連結売上30億円を作る。PHASE 2で50億、100億へ複数事業を成長させる。同時に、連結会計・監査・内部統制・コンプライアンス・法務・取締役会・ガバナンス・経営陣の強化・IR・資本政策を整備し、IPO READYの状態を作ってから上場する。連結管理と内部統制はPHASE 1（2031年の成功条件）から着手している。売上規模だけでは上場しない。上場できる経営体制を先に作る。",
   });
   const py = 1.9;
   const ph = 1.35;
@@ -1552,12 +1601,12 @@ function s22() {
 
   tx(s, "GOVERNANCE", { x: X0, y: 3.62, w: 3, h: 0.26, font: F.EN, size: 11, bold: true, cs: 2, color: C.GOLD, valign: "middle" });
   tx(s, "上場できる\n経営体制の整備", { x: X0, y: 3.92, w: 3.2, h: 0.75, font: F.JPB, bold: true, size: 17, ls: 25, color: C.WHITE });
-  tx(s, "PHASE 2と同時に整備する10項目", { x: X0, y: 4.7, w: 3.3, h: 0.26, size: 11, color: C.SILVER, valign: "middle" });
+  tx(s, "PHASE 2の成長と同時に整備する10項目\n（連結管理・内部統制はPHASE 1から着手）", { x: X0, y: 4.72, w: 3.4, h: 0.44, size: 10.5, ls: 15, color: C.SILVER });
   const gov = ["連結会計", "監査", "内部統制", "コンプライアンス", "法務", "取締役会", "ガバナンス", "経営陣強化", "IR", "資本政策"];
   gov.forEach((t, i) => {
     const c = i % 5;
     const r = Math.floor(i / 5);
-    tx(s, t, { x: 4.1 + c * 1.7525, y: 3.65 + r * 0.62, w: 1.62, h: 0.48, size: 13, color: C.WHITE, align: "center", valign: "middle", fill: C.CARD_DK, line: C.CHIP_DK, lineW: 0.75 });
+    tx(s, t, { x: 4.1 + c * 1.7525, y: 3.65 + r * 0.62, w: 1.62, h: 0.48, size: 12, color: C.WHITE, align: "center", valign: "middle", fill: C.CARD_DK, line: C.CHIP_DK, lineW: 0.75 });
   });
   tx(
     s,
@@ -1575,8 +1624,9 @@ function s23() {
     n: 23,
     theme: "dark",
     kicker: "MANAGEMENT COMPASS",
-    title: "迷ったら、ここへ戻る。",
+    title: "迷ったらここへ戻る。",
     lead: "重要な経営判断をする際は、次の5つの問いで判断する。",
+    marker: { from: 0, to: 3 },
     notes:
       "重要な経営判断に迷ったら、この5つの問いに戻る。2031年のグループ30億円に近づくか。上場できる企業グループに近づくか。金・人・仕組み・信用のどれかが積み上がるか。創業者依存を減らすか、増やすか。5年後、10年後にも残る経営資産になるか。右の番号は、判断の根拠になるページ。",
   });
@@ -1610,16 +1660,10 @@ function s23() {
 
 function s24() {
   const s = newSlide(24);
-  frame(s, {
-    n: 24,
-    theme: "black",
-    kicker: "AND AFTER ALL OF THAT",
-    title: "その先に、個人として何を残すのか。",
-    titleFont: F.MIN,
-    titleSize: 28,
-    notes:
-      "最後の1ページだけ、創業者個人の思い。会社を大きくすること、30億円、企業グループ、上場は、その時々で本気で追い続ける目標である。そのすべての先に、経験を一冊の本として残したい。成功だけでなく途中の現実を書き、読んだ誰かが挑戦するきっかけになるものにしたい。",
-  });
+  s.background = { color: C.BLACK };
+  // 本編と切り離した、静かな最終ページ（番号付きの見出しとフッターは置かない）
+  tx(s, "AND AFTER ALL OF THAT", { x: 0.9, y: 0.78, w: 6, h: 0.28, font: F.EN, size: 11, bold: true, cs: 4, color: C.SILVER, valign: "middle" });
+  tx(s, "その先に、個人として何を残すのか。", { x: 0.9, y: 1.12, w: 11.5, h: 0.68, font: F.MIN, size: 30, color: C.WHITE, valign: "middle" });
   const para = (lines, last) =>
     lines.map((t, i) => ({ text: t, o: { br: !(last && i === lines.length - 1), paraAfter: i === lines.length - 1 ? 12 : undefined } }));
   const left = [
@@ -1632,12 +1676,15 @@ function s24() {
     ...para(["成功だけを書く本ではない。", "その途中にあった現実を残したい。"]),
     ...para(["そして、その本を読んだ誰かが、", "「自分も挑戦してみよう」「自分にもできるかもしれない」", "と思えるものにしたい。"], true),
   ];
-  tx(s, left, { x: X0, y: 1.8, w: 5.8, h: 3.4, font: F.MIN, size: 14, ls: 24, color: C.SILVER_L });
-  tx(s, right, { x: 6.93, y: 1.8, w: 5.8, h: 3.6, font: F.MIN, size: 14, ls: 24, color: C.SILVER_L });
-  tx(s, "会社だけではなく、挑戦した証明を残す。", { x: X0, y: 5.55, w: CW, h: 0.62, font: F.MIN, size: 30, color: C.WHITE, valign: "middle" });
-  line(s, X0, 6.47, 2.25, 6.47, { color: C.STEEL, width: 1, dash: "sysDash" });
-  node(s, 2.35, 6.47, 0.13, { color: C.GOLD });
-  tx(s, "WRITE THE STORY.", { x: 2.6, y: 6.33, w: 4, h: 0.28, font: F.NUM, size: 12, cs: 6, color: C.GOLD, valign: "middle" });
+  tx(s, left, { x: 0.9, y: 2.2, w: 5.6, h: 3.1, font: F.MIN, size: 14, ls: 24, color: C.SILVER_L });
+  tx(s, right, { x: 7.0, y: 2.2, w: 5.6, h: 3.5, font: F.MIN, size: 14, ls: 24, color: C.SILVER_L });
+  tx(s, "会社だけではなく、挑戦した証明を残す。", { x: 0.9, y: 5.82, w: 11.5, h: 0.62, font: F.MIN, size: 30, color: C.WHITE, valign: "middle" });
+  line(s, 0.9, 6.72, 2.45, 6.72, { color: C.STEEL, width: 1, dash: "sysDash" });
+  node(s, 2.55, 6.72, 0.13, { color: C.GOLD });
+  tx(s, "WRITE THE STORY.", { x: 2.8, y: 6.58, w: 4, h: 0.28, font: F.NUM, size: 12, cs: 6, color: C.GOLD, valign: "middle" });
+  s.addNotes(
+    "最後の1ページだけ、創業者個人の思い。会社を大きくすること、30億円、企業グループ、上場は、その時々で本気で追い続ける目標である。そのすべての先に、経験を一冊の本として残したい。成功だけでなく途中の現実を書き、読んだ誰かが挑戦するきっかけになるものにしたい。",
+  );
 }
 
 // ---------- 組み立て ----------
