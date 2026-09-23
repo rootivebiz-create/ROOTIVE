@@ -75,3 +75,16 @@ describe("DB の守り", () => {
     expect(st.linkNonce).toMatch(/^[0-9a-f]{32}$/);
   });
 });
+
+describe("締めたあとの明細", () => {
+  it("送った・開いた・リンクの作り直しは記録できるが、金額は変えられない", async () => {
+    const [st] = await db
+      .insert(s.statements)
+      .values({ tenantId, month: "2026-08-01", driverId, snapshot: { a: 1 }, subtotal: 100, tax: 10, deductions: 0, total: 110 })
+      .returning();
+    await db.insert(s.monthCloses).values({ tenantId, month: "2026-08-01", status: "closed", closedAt: new Date() });
+    await db.update(s.statements).set({ sentAt: new Date(), viewedAt: new Date(), linkNonce: "renewed" }).where(eq(s.statements.id, st.id));
+    await rejectsWith(db.update(s.statements).set({ total: 999 }).where(eq(s.statements.id, st.id)), /MONTH_CLOSED/);
+    await rejectsWith(db.delete(s.statements).where(eq(s.statements.id, st.id)), /MONTH_CLOSED/);
+  });
+});

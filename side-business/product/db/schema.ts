@@ -320,7 +320,12 @@ export const statements = pgTable(
     total: integer("total").notNull(),
     /** リンクを無効にしたいときに変える（署名に含める） */
     linkNonce: text("link_nonce").notNull().default(sql`replace(gen_random_uuid()::text, '-', '')`),
+    /** ドライバーへリンクを送った（コピーした）日時 */
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    /** ドライバーが初めて開いた日時 */
+    viewedAt: timestamp("viewed_at", { withTimezone: true }),
     createdAt: createdAt(),
+    updatedAt: updatedAt(),
   },
   (t) => [uniqueIndex("statements_unique").on(t.tenantId, t.month, t.driverId), index("statements_month").on(t.tenantId, t.month)],
 );
@@ -352,6 +357,23 @@ export const statementMessages = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index("statement_messages_statement").on(t.statementId)],
+);
+
+/**
+ * 並行運用の比べ合わせ：今の Excel で出した振込額（お客様が入れる）と、しめ日ラボの振込額を並べる。
+ * 差が 0 になるまで並行して締めるための記録。
+ */
+export const parallelChecks = pgTable(
+  "parallel_checks",
+  {
+    tenantId: tenantId(),
+    month: date("month", { mode: "string" }).notNull(),
+    driverId: uuid("driver_id").notNull().references(() => drivers.id, { onDelete: "cascade" }),
+    excelTotal: integer("excel_total").notNull(),
+    note: text("note"),
+    updatedAt: updatedAt(),
+  },
+  (t) => [primaryKey({ columns: [t.tenantId, t.month, t.driverId] })],
 );
 
 // ---------------------------------------------------------------- 元請の支払通知と突合
