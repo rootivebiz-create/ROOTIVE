@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import * as Popover from "@radix-ui/react-popover";
 import {
   Home,
+  Inbox,
   ClipboardList,
   Wallet,
   Receipt,
@@ -51,15 +52,18 @@ export interface NavItem {
   group?: string;
   /** 代表（owner）だけに出す（画面側は requirePageRole(["owner"]) でも閉じる） */
   ownerOnly?: boolean;
+  /** 登録・編集ができる人（owner・admin）だけに出す（画面側も requirePageRole で閉じる） */
+  adminOnly?: boolean;
 }
 
 /** 未読・未対応の件数（href をキーにした数。0 は出さない） */
 export type NavBadges = Record<string, number>;
 
-/** PC のサイドナビ（23 項目。group ごとに見出しを付けて表示する。「代表」は owner だけ） */
+/** PC のサイドナビ（24 項目。group ごとに見出しを付けて表示する。「代表」は owner、「事務」は owner・admin だけ） */
 export const MAIN_NAV: NavItem[] = [
   { href: "/executive", label: "代表", icon: Crown, group: "代表", ownerOnly: true },
   { href: "/dashboard", label: "ホーム", icon: Home },
+  { href: "/office", label: "事務", icon: Inbox, adminOnly: true },
   { href: "/dispatch", label: "配車", icon: CalendarRange, group: "入力" },
   { href: "/entries", label: "稼働", icon: ClipboardList, group: "入力" },
   { href: "/daily", label: "日報・点呼", icon: ClipboardCheck, group: "入力" },
@@ -83,8 +87,16 @@ export const MAIN_NAV: NavItem[] = [
   { href: "/settings", label: "設定", icon: Settings },
 ];
 
-/** スマホの下タブに直接出す項目（5 つ目は「メニュー」） */
+/** スマホの下タブに直接出す項目（5 つ目は「メニュー」）。最初に開く画面が「事務」の人は先頭が事務になる */
 export const BOTTOM_NAV_HREFS = ["/dashboard", "/entries", "/payouts", "/invoices"];
+
+/** 最初に開く画面（profiles.start_page）。lib/schemas/office.ts の StartPage と同じ */
+export type NavStartPage = "dashboard" | "office";
+
+/** 下タブの並び（最初に開く画面が事務なら、ホームの代わりに事務を先頭に置く） */
+export function bottomHrefsFor(startPage?: NavStartPage): string[] {
+  return startPage === "office" ? ["/office", ...BOTTOM_NAV_HREFS.slice(1)] : BOTTOM_NAV_HREFS;
+}
 
 /** スマホの下タブ（4 項目）。5 つ目の「メニュー」は MENU_TAB */
 export const BOTTOM_NAV: NavItem[] = MAIN_NAV.filter((i) => BOTTOM_NAV_HREFS.includes(i.href));
@@ -117,13 +129,19 @@ export function navItemsFor(variant: NavVariant | undefined, role?: Role): NavIt
 }
 
 /** スマホの下タブに出すリンク（ドライバーはメニュー無しで全項目） */
-export function bottomItemsFor(variant: NavVariant | undefined, role?: Role): NavItem[] {
-  return visibleForRole(variant === "driver" ? DRIVER_NAV : BOTTOM_NAV, role);
+export function bottomItemsFor(variant: NavVariant | undefined, role?: Role, startPage?: NavStartPage): NavItem[] {
+  if (variant === "driver") return visibleForRole(DRIVER_NAV, role);
+  const hrefs = bottomHrefsFor(startPage);
+  const items = hrefs.map((h) => MAIN_NAV.find((i) => i.href === h)).filter((i): i is NavItem => Boolean(i));
+  const visible = visibleForRole(items, role);
+  // 事務を使えないロール（閲覧者）には、いつもの 4 つを出す
+  return visible.length === hrefs.length ? visible : visibleForRole(BOTTOM_NAV, role);
 }
 
-/** スマホの「メニュー」シートに出す項目（下タブに入らない残り。代表はここに入る） */
-export function moreItemsFor(role?: Role): NavItem[] {
-  return visibleForRole(MORE_NAV, role);
+/** スマホの「メニュー」シートに出す項目（下タブに入らない残り。代表・事務はここに入る） */
+export function moreItemsFor(role?: Role, startPage?: NavStartPage): NavItem[] {
+  const bottom = new Set(bottomItemsFor("staff", role, startPage).map((i) => i.href));
+  return visibleForRole(MAIN_NAV.filter((i) => !bottom.has(i.href)), role);
 }
 
 /* ------------------------------------------------------------------ *
@@ -244,16 +262,18 @@ export function BottomTabs({
   sub,
   badges,
   role,
+  startPage,
 }: {
   variant?: NavVariant;
   sub?: { parent: string; items: { href: string; label: string }[] };
   badges?: NavBadges;
   role?: Role;
+  startPage?: NavStartPage;
 }) {
   const isDriver = variant === "driver";
   const all = navItemsFor(variant, role);
-  const items = bottomItemsFor(variant, role);
-  const more = isDriver ? [] : moreItemsFor(role);
+  const items = bottomItemsFor(variant, role, startPage);
+  const more = isDriver ? [] : moreItemsFor(role, startPage);
   const pathname = usePathname();
   const { href } = useMonth();
   const columns = items.length + (isDriver ? 0 : 1);
@@ -410,6 +430,8 @@ export function notificationRows(badges: NavBadges | undefined, role?: Role): No
     { href: "/chat", label: "未読のチャット", count: badges?.["/chat"] ?? 0 },
   ];
   if (role === "owner") rows.push({ href: "/executive/approvals", label: "決裁待ち", count: badges?.["/executive"] ?? 0 });
+  // 0026：事務の承認待ち（稼働報告 ＋ 休み希望）。登録・編集ができる人だけ
+  if (role === "owner" || role === "admin") rows.push({ href: "/office", label: "事務の承認待ち", count: badges?.["/office"] ?? 0 });
   return rows.filter((r) => r.count > 0);
 }
 
@@ -428,11 +450,13 @@ export function NotificationBell({ badges, role }: { badges?: NavBadges; role?: 
   const router = useRouter();
   const [live, setLive] = useState<NavBadges | undefined>(badges);
   const lastChat = useRef<number>(badges?.["/chat"] ?? 0);
+  const lastOffice = useRef<number>(badges?.["/office"] ?? 0);
 
   // サーバーが描き直したら、そちらを正とする
   useEffect(() => {
     setLive(badges);
     lastChat.current = badges?.["/chat"] ?? 0;
+    lastOffice.current = badges?.["/office"] ?? 0;
   }, [badges]);
 
   useEffect(() => {
@@ -443,11 +467,12 @@ export function NotificationBell({ badges, role }: { badges?: NavBadges; role?: 
       try {
         const res = await fetch("/api/nav-badges", { cache: "no-store" });
         if (!res.ok || stopped) return;
-        const json = (await res.json()) as { alerts?: number; chat?: number; approvals?: number };
+        const json = (await res.json()) as { alerts?: number; chat?: number; approvals?: number; office?: number };
         const next: NavBadges = {
           "/alerts": Number(json.alerts ?? 0),
           "/chat": Number(json.chat ?? 0),
           "/executive": Number(json.approvals ?? 0),
+          "/office": Number(json.office ?? 0),
         };
         setLive(next);
         const chat = next["/chat"] ?? 0;
@@ -458,6 +483,15 @@ export function NotificationBell({ badges, role }: { badges?: NavBadges; role?: 
           });
         }
         lastChat.current = chat;
+        // 事務：稼働報告や休み希望が届いたら知らせる（RPC は admin 以上にしか数を返さない）
+        const office = next["/office"] ?? 0;
+        if (office > lastOffice.current) {
+          toast("承認待ちが届きました", {
+            description: `事務の承認待ち ${office} 件`,
+            action: { label: "開く", onClick: () => router.push("/office") },
+          });
+        }
+        lastOffice.current = office;
       } catch {
         // 電波が無いときは黙って次の機会を待つ
       }

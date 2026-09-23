@@ -5,6 +5,7 @@ import { requireStaff } from "@/lib/auth/session";
 import { loadMonthList, loadNavBadges } from "@/lib/db/queries";
 import { dateToMonth, formatMonthJa } from "@/lib/month";
 import { visibleForRole, type RoleVisibility } from "@/lib/nav/visibility";
+import { startPageOf } from "@/lib/schemas/office";
 
 /** 設定のサブナビ（サイドナビ・スマホのメニューシート・コマンドパレットで共用） */
 const SETTINGS_SUBNAV: ({ href: string; label: string; keywords?: string[] } & RoleVisibility)[] = [
@@ -34,6 +35,8 @@ const MAIN_PAGES: ({ href: string; label: string; keywords: string[] } & RoleVis
   { href: "/executive/rules", label: "決裁のルールと委任", keywords: ["rule", "delegation", "るーる", "ルール", "いにん", "委任", "代理", "しきい値"], ownerOnly: true },
   { href: "/executive/security", label: "ログインと持ち出しの記録", keywords: ["security", "login", "ろぐいん", "ログイン", "もちだし", "持ち出し", "出力", "きろく", "記録"], ownerOnly: true },
   { href: "/dashboard", label: "ホーム", keywords: ["home", "dashboard", "ほーむ", "だっしゅぼーど", "売上", "利益"] },
+  { href: "/office", label: "事務（今日やること・月締め）", keywords: ["office", "じむ", "事務", "やること", "承認", "催促", "月締め", "つきじめ", "締め", "手順"], adminOnly: true },
+  { href: "/office#reports", label: "今日の報告を催促", keywords: ["さいそく", "催促", "報告", "点呼", "まだ", "未提出", "remind"], adminOnly: true },
   { href: "/entries", label: "稼働", keywords: ["entries", "work", "かどう", "稼働入力"] },
   { href: "/dispatch", label: "配車", keywords: ["dispatch", "はいしゃ", "配車", "しふと", "シフト", "予定", "欠員", "休み"] },
   { href: "/daily", label: "日報・点呼", keywords: ["daily", "にっぽう", "てんこ", "点呼", "アルコール", "業務記録", "承認"] },
@@ -124,6 +127,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     "/chat": badgeCounts.chat,
     "/alerts": badgeCounts.alerts,
     "/executive": role === "owner" ? badgeCounts.approvals : 0,
+    // 0026：事務の承認待ち（稼働報告 ＋ 休み希望）
+    "/office": role === "owner" || role === "admin" ? badgeCounts.office : 0,
   };
 
   return (
@@ -137,6 +142,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       subNav={{ parent: "/settings", items: subItems }}
       commandItems={commandItems}
       badges={badges}
+      startPage={startPageOf(profile.start_page)}
     >
       {children}
     </AppShell>

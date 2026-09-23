@@ -2040,4 +2040,148 @@ select public.t_assert(
 select public.test_logout();
 reset role;
 
-\echo '== すべてのアサーションが通りました（18〜32 節）'
+-- =============================================================================
+-- 33. 事務（0026）
+--   最初に開く画面・月締めの手順のチェック・今日の報告の催促・事務の画面の 1 往復・ナビのバッジ
+-- =============================================================================
+\echo '-- 33. 事務（0026）'
+
+set role authenticated;
+
+-- ---------- 最初に開く画面 ----------
+select public.test_login(:'admin_a');
+select public.t_assert(public.set_start_page('office') = 'office', '管理者は最初に開く画面を「事務」にできる');
+select public.t_assert((select start_page = 'office' from public.profiles where id = :'admin_a'), '選んだ画面が残る');
+select public.t_expect_error($$select public.set_start_page('reports')$$, 'INVALID', '決まった画面以外は選べない');
+select public.set_start_page('dashboard');
+select public.test_login(:'viewer_a');
+select public.t_expect_error($$select public.set_start_page('office')$$, 'FORBIDDEN', '閲覧者は「事務」を選べない');
+select public.t_assert(public.set_start_page('dashboard') = 'dashboard', '閲覧者もホームは選べる');
+
+-- ---------- 月締めの手順のチェック ----------
+select public.test_login(:'admin_a');
+select public.t_assert(
+  (public.set_close_check('2027-03-01', 'statements_sent', true))->>'done_by_name' <> '',
+  'チェックを付けると付けた人の名前が残る');
+select public.set_close_check('2027-03-01', 'statements_sent', true);
+select public.t_assert(
+  (select count(*) from public.month_close_checks where company_id = :'company_a' and month = '2027-03-01' and key = 'statements_sent') = 1,
+  '同じチェックを二度付けても 1 件のまま');
+select public.set_close_check('2027-03-01', 'transfer_done', true);
+select public.t_assert(public.set_close_check('2027-03-01', 'transfer_done', false) is null, 'チェックを外せる');
+select public.t_assert(
+  (select count(*) from public.month_close_checks where company_id = :'company_a' and month = '2027-03-01' and key = 'transfer_done') = 0,
+  '外したチェックは消える');
+select public.t_expect_error($$select public.set_close_check('2027-03-01', 'Bad Key!', true)$$, 'INVALID', '手順の名前は英小文字と _ だけ');
+select public.t_assert(public.is_month_closed(:'company_a', '2026-09-01'), '（前提）2026 年 9 月は締め済み');
+select public.t_expect_error($$select public.set_close_check('2026-09-01', 'statements_sent', true)$$, 'MONTH_CLOSED', '締めた月のチェックは変えられない');
+select public.test_login(:'viewer_a');
+select public.t_expect_error($$select public.set_close_check('2027-03-01', 'transfer_done', true)$$, 'FORBIDDEN', '閲覧者はチェックを付けられない');
+select public.t_assert(
+  (select count(*) from public.month_close_checks where month = '2027-03-01') = 1,
+  '閲覧者もチェックの状態は見られる');
+select public.test_login(:'driver_a');
+select public.t_assert((select count(*) from public.month_close_checks) = 0, 'ドライバーには月締めのチェックは見えない');
+
+-- ---------- 今日の報告の催促 ----------
+select public.test_login(:'admin_a');
+select public.t_assert(
+  cardinality(public.record_report_reminders((now() at time zone 'Asia/Tokyo')::date,
+    array[public.t30_driver('相曽慧'), public.t30_driver('金島幸太')])) = 2,
+  '今日まだ催促していない 2 人を記録する');
+select public.t_assert(
+  cardinality(public.record_report_reminders((now() at time zone 'Asia/Tokyo')::date,
+    array[public.t30_driver('相曽慧'), public.t30_driver('沼田基')])) = 1,
+  '同じ日に二度は催促しない（返るのは新しい人だけ）');
+select public.t_assert(
+  (select sent_by_name <> '' from public.report_reminders where driver_id = public.t30_driver('相曽慧') and work_date = (now() at time zone 'Asia/Tokyo')::date),
+  '催促した人の名前が残る');
+select public.t_assert(
+  cardinality(public.record_report_reminders((now() at time zone 'Asia/Tokyo')::date,
+    array[(select id from public.drivers where company_id = :'company_b' limit 1)])) = 0,
+  '他社のドライバーは催促できない');
+select public.t_expect_error(
+  $$select public.record_report_reminders((now() at time zone 'Asia/Tokyo')::date - 3, array[public.t30_driver('相曽慧')])$$,
+  'INVALID_DATE', '過ぎた日の催促はしない');
+select public.test_login(:'viewer_a');
+select public.t_expect_error(
+  $$select public.record_report_reminders((now() at time zone 'Asia/Tokyo')::date, array[public.t30_driver('石田泰典')])$$,
+  'FORBIDDEN', '閲覧者は催促できない');
+
+-- ---------- 事務の画面の 1 往復 ----------
+select public.test_login(:'admin_a');
+select public.submit_day_entries('2026-12-20', array[public.t30_item('三郷Amazon')]::uuid[], array[1]::numeric[], public.t30_driver('相曽慧'));
+reset role;
+insert into public.driver_day_offs (company_id, driver_id, on_date, status, reason)
+values (:'company_a', public.t30_driver('金島幸太'), (now() at time zone 'Asia/Tokyo')::date + 20, 'requested', '通院');
+set role authenticated;
+select public.test_login(:'admin_a');
+insert into public.recurring_expenses (company_id, category_id, label, amount)
+values (:'company_a', (select id from public.expense_categories where company_id = :'company_a' order by sort_order limit 1), '事務テストの毎月の経費', 1000);
+create temporary table t33_desk as select public.office_desk('2027-03-01', (now() at time zone 'Asia/Tokyo')::date) as d;
+select public.t_assert(
+  (select d ? 'pending_entries' and d ? 'day_offs' and d ? 'drivers' and d ? 'today_reports' and d ? 'reminders'
+      and d ? 'tomorrow' and d ? 'invoices_issued' and d ? 'bank_unmatched' and d ? 'alerts_high' and d ? 'closing' and d ? 'open_past_months'
+     from t33_desk),
+  '事務の画面に要るものが 1 回で返る');
+select public.t_assert(
+  (select exists (select 1 from jsonb_array_elements(d->'pending_entries') e where e->>'work_date' = '2026-12-20') from t33_desk),
+  '承認待ちの稼働報告が出る');
+select public.t_assert(
+  (select (d->>'pending_entries_total')::int >= 1 from t33_desk),
+  '承認待ちの件数が出る');
+select public.t_assert(
+  (select exists (select 1 from jsonb_array_elements(d->'day_offs') e where e->>'reason' = '通院') from t33_desk),
+  '決まっていない休み希望が出る');
+select public.t_assert(
+  (select jsonb_array_length(d->'reminders') = 3 from t33_desk),
+  '今日の催促が出る');
+select public.t_assert(
+  (select exists (select 1 from jsonb_array_elements(d->'closing'->'checks') c where c->>'key' = 'statements_sent') from t33_desk),
+  '月締めのチェックが出る');
+select public.t_assert(
+  (select (d->'closing'->>'recurring_unapplied')::int >= 1
+      and (d->'closing'->>'recurring_unapplied')::int <= (d->'closing'->>'recurring_due')::int from t33_desk),
+  'まだ計上していない毎月の経費が数えられる');
+select public.apply_recurring_expenses('2027-03-01');
+select public.t_assert(
+  (public.office_desk('2027-03-01', (now() at time zone 'Asia/Tokyo')::date)->'closing'->>'recurring_unapplied')::int = 0,
+  '計上すると 0 になる');
+select public.t_assert(
+  (select jsonb_typeof(d->'closing'->'clients') = 'array' and jsonb_typeof(d->'closing'->'invoices') = 'array' from t33_desk),
+  '行が無くても配列で返る');
+select public.t_assert(
+  (public.office_desk('2026-09-01', (now() at time zone 'Asia/Tokyo')::date)->'closing'->>'status') = 'closed',
+  '締めた月は closed と出る');
+select public.t_assert(
+  (select (public.office_desk(null, '2027-06-15')->>'month') = coalesce(
+     (select min(month)::text from public.v_month_list where company_id = :'company_a' and status = 'open' and month < '2027-06-01' and entry_count > 0),
+     '2027-06-01')),
+  '月を省くと、締めていない一番古い過去の月を選ぶ');
+
+-- ナビのバッジ
+select public.t_assert((public.nav_badges()->>'office')::int >= 2, '事務のバッジは稼働報告と休み希望の承認待ちの合計');
+select public.test_login(:'viewer_a');
+select public.t_expect_error($$select public.office_desk('2027-03-01', current_date)$$, 'FORBIDDEN', '閲覧者は事務の画面を読めない');
+select public.t_assert((public.nav_badges()->>'office')::int = 0, '閲覧者には事務のバッジを出さない');
+select public.test_login(:'owner_b');
+select public.t_assert(
+  (select not exists (select 1 from jsonb_array_elements(d->'pending_entries') e where e->>'work_date' = '2026-12-20')
+      and jsonb_array_length(d->'reminders') = 0
+     from (select public.office_desk('2027-03-01', (now() at time zone 'Asia/Tokyo')::date) as d) x),
+  '他社の承認待ち・催促は混ざらない');
+
+-- 後片付け（後の実行に影響しないように）
+reset role;
+delete from public.driver_day_offs where company_id = :'company_a' and reason = '通院';
+delete from public.work_day_entries where company_id = :'company_a' and work_date = '2026-12-20';
+delete from public.report_reminders where company_id = :'company_a';
+delete from public.month_close_checks where company_id = :'company_a' and month = '2027-03-01';
+delete from public.expenses where company_id = :'company_a' and month = '2027-03-01';
+delete from public.recurring_expenses where company_id = :'company_a' and label = '事務テストの毎月の経費';
+set role authenticated;
+
+select public.test_logout();
+reset role;
+
+\echo '== すべてのアサーションが通りました（18〜33 節）'

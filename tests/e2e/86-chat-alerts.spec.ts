@@ -3,7 +3,7 @@
  * 前提：§8.6 の初期データ（resetToSeed）。テストは順番に依存するため serial
  */
 import { test, expect } from "@playwright/test";
-import { E2E, adminSql, loginViaMagicLink, readState, requireState, resetToSeed, saveScreenshot, setMonthClosed, toast } from "./helpers";
+import { E2E, adminSql, clickToUrl, loginViaMagicLink, readState, requireState, resetToSeed, saveScreenshot, setMonthClosed, toast } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -45,7 +45,7 @@ test.describe("社内チャット", () => {
     await expect(page.getByText("全体").filter({ visible: true }).first()).toBeVisible();
     await expect(page.getByText("経営").filter({ visible: true }).first()).toBeVisible();
 
-    await page.getByRole("link", { name: /全体/ }).first().click();
+    await clickToUrl(page, page.getByRole("link", { name: /全体/ }).first(), /\/chat\/[0-9a-f-]{36}/);
     await expect(page.getByLabel("メッセージ")).toBeVisible();
     await page.getByLabel("メッセージ").fill("今月もよろしくお願いします");
     await page.getByRole("button", { name: "送信" }).click();
@@ -55,7 +55,7 @@ test.describe("社内チャット", () => {
 
   test("閲覧者も発言でき、オーナーには未読が出る", async ({ page }) => {
     await loginViaMagicLink(page, E2E.users.viewer.email, "/chat");
-    await page.getByRole("link", { name: /全体/ }).first().click();
+    await clickToUrl(page, page.getByRole("link", { name: /全体/ }).first(), /\/chat\/[0-9a-f-]{36}/);
     await expect(page.getByText("今月もよろしくお願いします")).toBeVisible();
     await page.getByLabel("メッセージ").fill("確認しました");
     await page.getByRole("button", { name: "送信" }).click();
@@ -64,7 +64,7 @@ test.describe("社内チャット", () => {
     // オーナーから見ると未読が 1 件（閲覧者の発言）
     await loginViaMagicLink(page, E2E.users.owner.email, "/chat");
     await expect(page.getByText(/未読が 1 件あります/)).toBeVisible();
-    await page.getByRole("link", { name: /全体/ }).first().click();
+    await clickToUrl(page, page.getByRole("link", { name: /全体/ }).first(), /\/chat\/[0-9a-f-]{36}/);
     await expect(page.getByText("確認しました")).toBeVisible();
 
     // 開くと既読になる（既読の反映は画面側の効果なので、読み直しながら待つ）

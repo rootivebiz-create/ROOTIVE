@@ -305,6 +305,8 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 | **決裁のルール・委任・機密の見せ方の変更** | ○ | × | × | × |
 | **借入・納税・現金残高の閲覧** | ○ | 既定で ○ | 既定で × | × |
 | **ドライバーの振込口座の閲覧** | ○ | 既定で ○ | × | × |
+| **事務（`/office`：その場での承認・催促・月締めのチェック）** | ○ | ○ | × | × |
+| **最初に開く画面を「事務」にする** | ○ | ○ | × | × |
 
 ### 4-2. 二重チェックの考え方
 
@@ -574,6 +576,32 @@ SQL 側に判断を移すと純関数と食い違い、どちらが正か分か�
 - **いま開いている画面が入っている見出しは、畳んでいても開く**（自分の居場所を見失わないため）
 - 判定は純関数（`groupNavItems` / `isGroupOpen` / `toggleNavGroup`）
 
+## 4-12. 事務（`lib/office`・0026）
+
+事務の仕事は 10 画面以上に散らばっていた（稼働報告の承認は日報・点呼、休み希望は配車、消込は入金、月締めは設定 → 月締め …）。
+しかも月締めには手順の案内が無く、「締める」ボタンの付いた表しかなかった。`/office` に 1 画面でまとめる。
+
+```
+office_desk(month, today)  ── 1 往復（security invoker・admin 以上）。行と数だけ
+        │
+        ├─ todayReporters()    今日報告が要る人・まだの人・催促できる人
+        ├─ buildInbox()        今日やること（急ぎ → 今日中 → 近いうちに、の順。同じなら種類の順）
+        └─ buildClosingSteps() 月締めの手順（done / todo / warn / skip）→ closingProgress()
+```
+
+| まとまり | 中身 | その場でできること（既存の Action をそのまま呼ぶ） |
+|---|---|---|
+| 今日やること | 稼働報告の承認待ち・今日の報告がまだ・休み希望・明日の人不足／未確定・期日を過ぎた未入金・重要な気になること・締めていない過去の月・消し込めていない入金 | 承認／差戻し（`approveDayEntriesAction`）・休みの返事（`decideDayOffAction`）・催促・明日の確定（`confirmDispatchAction`）・自動消込（`autoMatchBankAction`） |
+| 今日の報告 | 報告が要る人ごとの 済み／まだ／催促済み／連絡手段なし | まとめて催促（`remindReportsAction`）・代わりに入力（/daily） |
+| 月締めの手順 | 承認 → 稼働 → 点呼と報告 → 単価 → 毎月の経費 → 支払通知 → 請求書 → 支払明細の送付 → 振込 → 締める | 経費の計上（`applyRecurringExpensesAction`）・手作業のチェック（`setCloseCheckAction`）・締める（`closeMonthAction`） |
+
+- **todo は「締めても良いが、ほぼやり直しになる」、warn は「確かめたほうが良い」**。締めるボタンは todo が残っていても押せる（確認のダイアログに残りを並べる）
+- 今月・先の月は「月が終わってから締めます」（skip）
+- 今日の報告が要る人：配車が 1 件でもあれば配車に入っている人、無ければ定休日でない全員。承認済みの休みは外す
+- 催促は `report_reminders` の一意制約（会社 × ドライバー × 日）で **1 人 1 日 1 回**。RPC は今回初めて記録した人だけを返し、その人にだけ送る
+- 手作業の手順（`month_close_checks`）は締めた月には付け外しできない（0002 の `guard_month_closed` をそのまま付けた）
+- 最初に開く画面（`profiles.start_page`）：`/` とログイン後の既定の行き先（`next` を省いたとき）が振り分ける。事務の人は下タブの先頭とロゴも事務
+
 ---
 
 ## 5. 認証フロー
@@ -673,8 +701,8 @@ SQL 側に判断を移すと純関数と食い違い、どちらが正か分か�
 | 種類 | コマンド | 内容 |
 |---|---|---|
 | 単体（Vitest） | `npm test` | `lib/calc`（§2.6 の全ケース、誤差 0.01 円以内、端数処理 4 種、恒等式）、zod スキーマ、`lib/migrate` の変換と決定的 ID、`lib/voice` の解析、`lib/push` の宛先と文面。**プッシュの送信（`tests/push-send.test.ts`）は使い捨ての自己署名証明書で HTTPS のテストサーバーを立て、暗号化された本文と VAPID の署名が届くこと・410 なら購読を消すことまで確かめる**（openssl が無い環境では飛ばす） |
-| SQL 結合（psql） | `npm run test:sql` | ローカル PostgreSQL に `tests/sql/auth_stub.sql`（auth.uid() 等のスタブ）+ 全マイグレーションを適用し `tests/sql/test.sql` を実行。ビューの計算が §2.6 と一致、RLS（viewer / driver の拒否）、締めガード、招待制、復元・全削除、経費と営業利益（`v_month_pl`）、取引先と請求書（`build_invoice` / 合計の自動計算 / 状態）、ポータルの速報、代表と機密の隔離、通知の購読と設定、配車（必要人数・割り当て・休み希望・写しと確定・見通し）、法定帳票（運転者台帳・適性診断・保存期間・監査で足りないもの）、出力の機密判定と LINE 連携の復元とダッシュボードの 1 往復。32 節。**1 回目の適用直後にテーブル権限の抜けも確かめる** |
-| E2E（Playwright） | `npm run test:e2e` | Supabase 互換のテストサーバー（`supabase-lite`：PostgreSQL + GoTrue 相当 + PostgREST 相当の軽量実装）を自動起動し、iPhone 13 と Desktop Chrome の 2 プロジェクトで主要導線（招待ログイン → ダッシュボード → 稼働追加・複製・一括入力 → 支払明細・PDF → 設定 → 月締め・解除 → 経費と営業利益 → 取引先と請求書（PDF・入金） → 年次レポートと月次目標 → ナビとコマンドパレット・ポータルの速報 → 閲覧者／ドライバーの権限 → 移行 JSON の取り込み）をブラウザで確認。25 spec・137 シナリオ × 2 プロジェクト = **274 件**。スクリーンショットを `docs/screenshots/` に保存。詳細は [docs/E2E.md](E2E.md) |
+| SQL 結合（psql） | `npm run test:sql` | ローカル PostgreSQL に `tests/sql/auth_stub.sql`（auth.uid() 等のスタブ）+ 全マイグレーションを適用し `tests/sql/test.sql` を実行。ビューの計算が §2.6 と一致、RLS（viewer / driver の拒否）、締めガード、招待制、復元・全削除、経費と営業利益（`v_month_pl`）、取引先と請求書（`build_invoice` / 合計の自動計算 / 状態）、ポータルの速報、代表と機密の隔離、通知の購読と設定、配車（必要人数・割り当て・休み希望・写しと確定・見通し）、法定帳票（運転者台帳・適性診断・保存期間・監査で足りないもの）、出力の機密判定と LINE 連携の復元とダッシュボードの 1 往復、事務（月締めのチェック・催促・最初に開く画面・office_desk）。33 節。**1 回目の適用直後にテーブル権限の抜けも確かめる** |
+| E2E（Playwright） | `npm run test:e2e` | Supabase 互換のテストサーバー（`supabase-lite`：PostgreSQL + GoTrue 相当 + PostgREST 相当の軽量実装）を自動起動し、iPhone 13 と Desktop Chrome の 2 プロジェクトで主要導線（招待ログイン → ダッシュボード → 稼働追加・複製・一括入力 → 支払明細・PDF → 設定 → 月締め・解除 → 経費と営業利益 → 取引先と請求書（PDF・入金） → 年次レポートと月次目標 → ナビとコマンドパレット・ポータルの速報 → 閲覧者／ドライバーの権限 → 移行 JSON の取り込み）をブラウザで確認。26 spec・143 シナリオ × 2 プロジェクト = **286 件**。スクリーンショットを `docs/screenshots/` に保存。詳細は [docs/E2E.md](E2E.md) |
 | 静的 | `npm run typecheck` / `npm run lint` / `npm run build` | 型・Lint・本番ビルド |
 | まとめ | `npm run check` | typecheck + lint + test + build:sql |
 

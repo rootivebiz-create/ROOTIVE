@@ -157,3 +157,28 @@ export function dispatchLineText(opts: {
   if (opts.companyName) out.push(`（${opts.companyName}）`);
   return out.join("\n");
 }
+
+/**
+ * 「今日の報告がまだです」の催促（ドライバー本人あて。0026 の事務から送る）。
+ * 責める言い方にしない（忘れているだけのことが多いので、押せばすぐ報告できる入口を渡す）
+ */
+export function reportReminderPushPayload(opts: { dateLabel: string }): PushPayload {
+  return {
+    title: "今日の報告をお願いします",
+    body: `${opts.dateLabel}の点呼・稼働の報告がまだ届いていません。落ち着いたら入力してください。`,
+    url: "/driver/today",
+    tag: "report-reminder",
+  };
+}
+
+/** 今日の報告の催促を LINE で送る文面 */
+export function reportReminderLineText(opts: { companyName: string; driverName: string; dateLabel: string; appUrl: string }): string {
+  const out = [
+    "📝 今日の報告のお願い",
+    `${opts.driverName ? `${opts.driverName}さん、` : ""}${opts.dateLabel}の点呼・稼働の報告がまだ届いていません。`,
+    "落ち着いたら入力をお願いします。",
+  ];
+  if (opts.appUrl) out.push(`${opts.appUrl.replace(/\/$/, "")}/driver/today`);
+  if (opts.companyName) out.push(`（${opts.companyName}）`);
+  return out.join("\n");
+}

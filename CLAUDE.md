@@ -16,6 +16,7 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
 - `lib/voice/` 声で入力（`parse.ts` 純関数の解析・`speech.ts` 音声認識の包み）
 - `lib/dispatch/` 配車（`board.ts` 純関数の週のボード・過不足・自動割り当て・見通し・`queries.ts` サーバー専用の読み取り）
 - `lib/compliance/` 法令対応（`helpers.ts` 純関数の不足のまとめ・台帳の記入率・`queries.ts` サーバー専用の読み取り）
+- `lib/office/` 事務（`desk.ts` 純関数の今日やること・今日の報告・月締めの手順・`queries.ts` サーバー専用の読み取り）
 - `lib/push/` 通知（`targets.ts` 純関数の宛先と文面・`config.ts` VAPID・`send.ts` 送信・`client.ts` ブラウザ側の購読・`notify-chat.ts` / `notify-daily.ts` 実際の通知）
 - `lib/alerts/` `lib/chat/` `lib/bank/` `lib/integrations/` `lib/daily/` `lib/fleet/` `lib/intake/` `lib/hr/` `lib/executive/`（代表：読み取り `queries.ts`・信号 `cockpit.ts`・現金の残り日数 `runway.ts`・予実の分解 `variance.ts`・朝のひとこと `brief.ts`） 各機能の純関数とサーバー専用の処理
 - `lib/db/database.types.ts` supabase-js 用の型（自動生成）、`lib/db/types.ts` 型エイリアス、`lib/db/queries.ts` 共通クエリ
@@ -25,7 +26,7 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
 - `lib/month.ts` 稼動月ユーティリティ、`lib/format.ts` 表示書式（円・%・数量）
 - `components/ui/*` UI 部品（shadcn/ui 相当）、`components/layout/*` シェル・ナビ・月セレクタ
 - `app/(app)/*` スタッフ画面（ホーム・稼働・支払・請求・経費・資金繰り・案件・レポート・ドライバー別の採算・設定）、`app/driver/*` ドライバーポータル、`app/(auth)/*` ログイン・招待、`app/api/export/*` 出力
-- `supabase/migrations/*.sql` スキーマ（0001 テーブル、0002 認証・RLS、0003 ビュー、0004 RPC、0005 ポータル・初期データ、0006 Storage・権限、0007 ドライバー別単価（bill_rate 上書き・rate_diffs・apply_master_rates）、0008 消費税・ロゴと認印・ドライバーごとの支払日、0009 経費と営業利益・取引先と請求書・月次目標、0010 資金繰り・案件別採算、0011 AI チャット・社内チャット・異常検知・外部連携、0012 運行管理と法令対応（点呼・業務記録・日別の稼働・車両・書類）、0013 取り込みと採用・契約、0014 法人の経営管理（振込先口座・決算と税務カレンダー・借入金・経営指標・契約書の保管）、0015 バックアップと復元を全テーブルへ拡張、0016 異常の検知を毎日自動で回す、0017 会社を明示して集計する RPC、0018 労務（拘束時間・休息）と元請の支払通知との突合、0019 代表（決裁・意思決定ログ・会社の台帳・中期計画・ログインの記録）、0020 代表の守り（機密の隔離・決裁のルールと委任・持ち出しの記録・計画の配分・振込口座の分離）、0021 表示を速くする（me / nav_badges）、0022 通知（端末への通知の購読・受け取り方の設定）、0023 配車・シフト（必要人数・割り当て・休み希望・定休日）、0024 法定帳票（運転者台帳・適性診断・保存期間・監査で足りないもの）、0025 使ってみて気づいた直し（台帳の出力を機密に・LINE 連携の復元・ダッシュボードの 1 往復））
+- `supabase/migrations/*.sql` スキーマ（0001 テーブル、0002 認証・RLS、0003 ビュー、0004 RPC、0005 ポータル・初期データ、0006 Storage・権限、0007 ドライバー別単価（bill_rate 上書き・rate_diffs・apply_master_rates）、0008 消費税・ロゴと認印・ドライバーごとの支払日、0009 経費と営業利益・取引先と請求書・月次目標、0010 資金繰り・案件別採算、0011 AI チャット・社内チャット・異常検知・外部連携、0012 運行管理と法令対応（点呼・業務記録・日別の稼働・車両・書類）、0013 取り込みと採用・契約、0014 法人の経営管理（振込先口座・決算と税務カレンダー・借入金・経営指標・契約書の保管）、0015 バックアップと復元を全テーブルへ拡張、0016 異常の検知を毎日自動で回す、0017 会社を明示して集計する RPC、0018 労務（拘束時間・休息）と元請の支払通知との突合、0019 代表（決裁・意思決定ログ・会社の台帳・中期計画・ログインの記録）、0020 代表の守り（機密の隔離・決裁のルールと委任・持ち出しの記録・計画の配分・振込口座の分離）、0021 表示を速くする（me / nav_badges）、0022 通知（端末への通知の購読・受け取り方の設定）、0023 配車・シフト（必要人数・割り当て・休み希望・定休日）、0024 法定帳票（運転者台帳・適性診断・保存期間・監査で足りないもの）、0025 使ってみて気づいた直し（台帳の出力を機密に・LINE 連携の復元・ダッシュボードの 1 往復）、0026 事務（月締めの手順のチェック・今日の報告の催促・最初に開く画面・office_desk））
 - `tests/` Vitest（`*.test.ts`）、`tests/sql/`（psql）、`tests/e2e/`（Playwright ＋ `supabase-lite` テストサーバー）
 
 ## 必ず守る規約
@@ -148,8 +149,20 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
     **いま開いている画面が入っている見出しは、畳んでいても開く**
   - 日付まわり（`isDateString` / `emptyToNull` / `optionalDateSchema` / `optionalIdSchema`）は **`lib/schemas/common.ts` が正**。
     expenses / hr / finance は再輸出するだけ（請求書だけはメッセージを 2 種類に分けているため `dateSchema` を自前で組み立てる）
+- **事務（0026）**：`/office`（owner / admin。`requirePageRole(["owner", "admin"])`）。散らばっていた事務の仕事を 1 画面にまとめる。
+  - 読み取りは RPC **`office_desk(month, today)`** の 1 往復だけ（行と数だけを返す）。**並べ方と判定は `lib/office/desk.ts` の純関数**
+    （`buildInbox` 今日やること／`todayReporters` 今日の報告／`buildClosingSteps` 月締めの手順）。月を省くと DB が「締めていない一番古い過去の月、無ければ今月」を選ぶ
+  - その場での承認・休み希望・自動消込・毎月の経費の計上・配車の確定・月締めは**既存の Server Action をそのまま呼ぶ**（事務のために足さない）
+  - 「今日の報告」が要る人：その日に配車があれば配車に入っている人、無ければ定休日でない全員（どちらも承認済みの休みを除く）。点呼か稼働があれば報告済み
+  - 催促は `record_report_reminders`（`report_reminders`。**1 人 1 日 1 回まで**、返るのは今回初めて催促した人だけ）→ `after()` で端末への通知 ＋ LINE（`lib/push/notify-remind.ts`）
+  - 月締めの手順のうちアプリが判定できないもの（支払明細の送付・振込）は `month_close_checks`（`set_close_check`。付けた人の名前が残る。**締めた月は番人が拒否**）。
+    手の手順の名前は `MANUAL_CLOSE_STEPS` にだけ足す（Server Action は `isManualCloseKey` で弾く）
+  - 最初に開く画面は `profiles.start_page`（`dashboard` / `office`。`set_start_page`。事務は admin 以上だけ）。`/` とログイン後の既定の行き先が振り分け、
+    事務の人はスマホの下タブの先頭とロゴの行き先も事務になる（`bottomItemsFor(variant, role, startPage)`）
+  - ナビのバッジ `nav_badges().office`＝承認待ちの稼働報告 ＋ 休み希望（admin 以上だけ）。ベルは増えたらトーストで知らせる
+  - `month_close_checks` / `report_reminders` はバックアップに含めない（運用の記録。データ全削除では消す）
 - **新しいテーブルには必ず権限を出す**：0020 の末尾にある `grant ... on all tables in schema public to authenticated` は**そのあとの番号で作ったテーブルには届かない**。`security invoker` の RPC は RLS の手前で `permission denied` になる。テーブルを足したマイグレーションの末尾で grant を出し直すこと（`tests/sql/run.sh` が 1 回目の適用直後に抜けを検出する）
-- ロール：owner（すべて ＋ `/executive` の決裁・意思決定・会社の台帳・中期計画・守り）／admin（登録・編集・月締め・出力・代表への申請）／viewer（閲覧・CSV・チャット・AI 相談。借入・納税・現金・振込口座は既定で見えない）／driver（自分の締め済み月の明細、今日の報告（点呼・稼働）、自分の予定と休みの申請、自分の書類・車両・契約）
+- ロール：owner（すべて ＋ `/executive` の決裁・意思決定・会社の台帳・中期計画・守り）／admin（登録・編集・月締め・出力・代表への申請・`/office` の事務）／viewer（閲覧・CSV・チャット・AI 相談。借入・納税・現金・振込口座は既定で見えない）／driver（自分の締め済み月の明細、今日の報告（点呼・稼働）、自分の予定と休みの申請、自分の書類・車両・契約）
 
 ## supabase-js の使い方の制約（E2E 用の互換テストサーバーが対応する範囲に限定する）
 - `from(table|view).select("col, col2" | "*")` — **埋め込みリソース（`drivers(name)` など）は使わない**。名称が必要なら `v_*` ビューを使う

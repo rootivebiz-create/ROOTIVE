@@ -8,6 +8,7 @@ import {
   MAIN_NAV,
   MORE_NAV,
   badgeText,
+  bottomHrefsFor,
   bottomItemsFor,
   groupNavItems,
   isGroupOpen,
@@ -98,16 +99,23 @@ describe("コマンドパレットの検索（filterCommands）", () => {
 });
 
 describe("ナビの定義", () => {
-  it("PC のサイドナビは 23 項目（代表 ＋ 入力・経営・管理・相談のまとまり ＋ ホームと設定）", () => {
-    expect(MAIN_NAV).toHaveLength(23);
+  it("PC のサイドナビは 24 項目（代表 ＋ ホーム・事務 ＋ 入力・経営・管理・相談のまとまり ＋ 設定）", () => {
+    expect(MAIN_NAV).toHaveLength(24);
     expect(MAIN_NAV.map((i) => i.href)).toEqual([
-      "/executive", "/dashboard", "/dispatch", "/entries", "/daily", "/intake", "/payouts", "/invoices", "/expenses", "/bank",
+      "/executive", "/dashboard", "/office", "/dispatch", "/entries", "/daily", "/intake", "/payouts", "/invoices", "/expenses", "/bank",
       "/cashflow", "/projects", "/finance", "/reports", "/alerts", "/fleet", "/compliance", "/hr", "/records", "/exports", "/ai", "/chat", "/settings",
     ]);
     expect(MAIN_NAV.map((i) => i.label)).toEqual([
-      "代表", "ホーム", "配車", "稼働", "日報・点呼", "取り込み", "支払", "請求", "経費", "入金",
+      "代表", "ホーム", "事務", "配車", "稼働", "日報・点呼", "取り込み", "支払", "請求", "経費", "入金",
       "資金繰り", "案件", "財務", "レポート", "気になること", "車両と書類", "法令対応", "採用と契約", "書類の検索", "出力", "AI 相談", "チャット", "設定",
     ]);
+  });
+
+  it("事務だけ adminOnly（owner・admin に出し、閲覧者・ドライバーには出さない）", () => {
+    expect(MAIN_NAV.filter((i) => i.adminOnly).map((i) => i.href)).toEqual(["/office"]);
+    expect(navItemsFor("staff", "admin").map((i) => i.href)).toContain("/office");
+    expect(navItemsFor("staff", "viewer").map((i) => i.href)).not.toContain("/office");
+    expect(moreItemsFor("viewer").map((i) => i.href)).not.toContain("/office");
   });
 
   it("代表だけ ownerOnly で、ほかの項目には付かない", () => {
@@ -143,9 +151,9 @@ describe("ナビの定義", () => {
     expect(BOTTOM_NAV.map((i) => i.label)).toEqual(["ホーム", "稼働", "支払", "請求"]);
   });
 
-  it("メニューシートには下タブに入らない 19 項目が入り、合計はサイドナビと一致する", () => {
+  it("メニューシートには下タブに入らない 20 項目が入り、合計はサイドナビと一致する", () => {
     expect(MORE_NAV.map((i) => i.href)).toEqual([
-      "/executive", "/dispatch", "/daily", "/intake", "/expenses", "/bank", "/cashflow", "/projects", "/finance", "/reports", "/alerts",
+      "/executive", "/office", "/dispatch", "/daily", "/intake", "/expenses", "/bank", "/cashflow", "/projects", "/finance", "/reports", "/alerts",
       "/fleet", "/compliance", "/hr", "/records", "/exports", "/ai", "/chat", "/settings",
     ]);
     expect(BOTTOM_NAV.length + MORE_NAV.length).toBe(MAIN_NAV.length);
@@ -176,7 +184,8 @@ describe("ナビの定義", () => {
     expect(navItemsFor("staff", "owner").map((i) => i.href)).toEqual(MAIN_NAV.map((i) => i.href));
     for (const role of ["admin", "viewer", "driver"] as const) {
       expect(navItemsFor("staff", role).map((i) => i.href)).not.toContain("/executive");
-      expect(navItemsFor("staff", role)).toHaveLength(MAIN_NAV.length - 1);
+      // 閲覧者・ドライバーには「事務」も出さない
+      expect(navItemsFor("staff", role)).toHaveLength(MAIN_NAV.length - (role === "admin" ? 1 : 2));
       expect(moreItemsFor(role).map((i) => i.href)).not.toContain("/executive");
     }
     expect(moreItemsFor("owner").map((i) => i.href)).toEqual(MORE_NAV.map((i) => i.href));
@@ -185,6 +194,25 @@ describe("ナビの定義", () => {
     for (const role of ["owner", "admin", "viewer"] as const) {
       expect(bottomItemsFor("staff", role).map((i) => i.href)).toEqual(BOTTOM_NAV_HREFS);
     }
+  });
+
+  it("最初に開く画面が事務の人は、下タブの先頭が事務になり、ホームはメニューへ移る", () => {
+    expect(bottomHrefsFor()).toEqual(BOTTOM_NAV_HREFS);
+    expect(bottomHrefsFor("dashboard")).toEqual(BOTTOM_NAV_HREFS);
+    expect(bottomHrefsFor("office")).toEqual(["/office", "/entries", "/payouts", "/invoices"]);
+    for (const role of ["owner", "admin"] as const) {
+      expect(bottomItemsFor("staff", role, "office").map((i) => i.label)).toEqual(["事務", "稼働", "支払", "請求"]);
+      const more = moreItemsFor(role, "office").map((i) => i.href);
+      expect(more).toContain("/dashboard");
+      expect(more).not.toContain("/office");
+      // 下タブとメニューを合わせるとサイドナビと同じ数
+      expect(bottomItemsFor("staff", role, "office").length + more.length).toBe(navItemsFor("staff", role).length);
+    }
+  });
+
+  it("事務を使えない閲覧者は、事務を選んでいても今までの下タブ", () => {
+    expect(bottomItemsFor("staff", "viewer", "office").map((i) => i.href)).toEqual(BOTTOM_NAV_HREFS);
+    expect(moreItemsFor("viewer", "office").map((i) => i.href)).not.toContain("/office");
   });
 
   it("コマンドパレットのグループはすべて定義されている", () => {
@@ -253,6 +281,13 @@ describe("ヘッダーのベルの行（notificationRows）", () => {
     expect(notificationRows({ "/executive": 2 }, "admin")).toEqual([]);
     expect(notificationRows({ "/executive": 2 })).toEqual([]);
     expect(notificationRows({ "/alerts": 1, "/chat": 1, "/executive": 1 }, "owner").map((r) => r.href)).toEqual(["/alerts", "/chat", "/executive/approvals"]);
+  });
+
+  it("「事務の承認待ち」は owner・admin だけ（閲覧者には出さない）", () => {
+    expect(notificationRows({ "/office": 3 }, "admin")).toEqual([{ href: "/office", label: "事務の承認待ち", count: 3 }]);
+    expect(notificationRows({ "/office": 3 }, "owner").map((r) => r.href)).toEqual(["/office"]);
+    expect(notificationRows({ "/office": 3 }, "viewer")).toEqual([]);
+    expect(notificationRows({ "/office": 0 }, "admin")).toEqual([]);
   });
 });
 

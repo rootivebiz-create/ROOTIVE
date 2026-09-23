@@ -10,7 +10,7 @@ import { loadNavBadges } from "@/lib/db/queries";
 
 export const dynamic = "force-dynamic";
 
-const EMPTY = { alerts: 0, chat: 0, approvals: 0 };
+const EMPTY = { alerts: 0, chat: 0, approvals: 0, office: 0 };
 
 export async function GET() {
   const ctx = await getSessionContext();

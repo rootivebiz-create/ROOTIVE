@@ -8,6 +8,8 @@ import {
   dispatchLines,
   dispatchPushPayload,
   formatDayLabel,
+  reportReminderLineText,
+  reportReminderPushPayload,
   shouldNotifyChat,
   shouldNotifyLine,
   trimForNotification,
@@ -197,5 +199,21 @@ describe("明日の配車の知らせ", () => {
   it("URL が無ければリンクを付けない", () => {
     const text = dispatchLineText({ companyName: "", dateLabel: "9月23日（水）", lines, appUrl: "" });
     expect(text).not.toContain("http");
+  });
+});
+
+describe("今日の報告の催促", () => {
+  it("端末への通知は今日の報告画面を開く", () => {
+    const p = reportReminderPushPayload({ dateLabel: "9月23日（水）" });
+    expect(p).toMatchObject({ title: "今日の報告をお願いします", url: "/driver/today", tag: "report-reminder" });
+    expect(p.body).toContain("9月23日（水）の点呼・稼働の報告");
+  });
+
+  it("LINE は名前・入口・会社名を入れ、URL が無ければリンクを付けない", () => {
+    const text = reportReminderLineText({ companyName: "株式会社ROOTIVE", driverName: "相曽慧", dateLabel: "9月23日（水）", appUrl: "https://example.com/" });
+    expect(text).toContain("相曽慧さん、9月23日（水）の点呼・稼働の報告がまだ届いていません。");
+    expect(text).toContain("https://example.com/driver/today");
+    expect(text).toContain("（株式会社ROOTIVE）");
+    expect(reportReminderLineText({ companyName: "", driverName: "", dateLabel: "今日", appUrl: "" })).not.toContain("http");
   });
 });

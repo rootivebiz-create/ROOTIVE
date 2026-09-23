@@ -672,9 +672,10 @@ export async function loadPaymentNoticeItems(supabase: ServerSupabase, companyId
 }
 
 /** ナビのバッジ（未対応のアラート・未読のチャット・決裁待ち）を 1 往復で取る（0021） */
-export async function loadNavBadges(supabase: ServerSupabase): Promise<{ alerts: number; chat: number; approvals: number }> {
+export async function loadNavBadges(supabase: ServerSupabase): Promise<{ alerts: number; chat: number; approvals: number; office: number }> {
   const { data, error } = await supabase.rpc("nav_badges");
-  if (error || !data) return { alerts: 0, chat: 0, approvals: 0 };
-  const row = data as unknown as { alerts?: number; chat?: number; approvals?: number };
-  return { alerts: Number(row.alerts ?? 0), chat: Number(row.chat ?? 0), approvals: Number(row.approvals ?? 0) };
+  if (error || !data) return { alerts: 0, chat: 0, approvals: 0, office: 0 };
+  const row = data as unknown as { alerts?: number; chat?: number; approvals?: number; office?: number };
+  // office は 0026 から（事務の承認待ち。admin 以上にしか数が入らない）
+  return { alerts: Number(row.alerts ?? 0), chat: Number(row.chat ?? 0), approvals: Number(row.approvals ?? 0), office: Number(row.office ?? 0) };
 }

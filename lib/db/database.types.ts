@@ -2587,6 +2587,36 @@ export type Database = {
         }
         Relationships: []
       }
+      month_close_checks: {
+        Row: {
+          id: string
+          company_id: string
+          month: string
+          key: string
+          done_at: string
+          done_by: string | null
+          done_by_name: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          month: string
+          key: string
+          done_at?: string
+          done_by?: string | null
+          done_by_name?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          month?: string
+          key?: string
+          done_at?: string
+          done_by?: string | null
+          done_by_name?: string
+        }
+        Relationships: []
+      }
       month_closings: {
         Row: {
           company_id: string
@@ -2899,6 +2929,7 @@ export type Database = {
           line_linked_at: string | null
           notify_chat: Database["public"]["Enums"]["notify_chat_mode"]
           notify_line: boolean
+          start_page: string
         }
         Insert: {
           id: string
@@ -2914,6 +2945,7 @@ export type Database = {
           line_linked_at?: string | null
           notify_chat?: Database["public"]["Enums"]["notify_chat_mode"]
           notify_line?: boolean
+          start_page?: string
         }
         Update: {
           id?: string
@@ -2929,6 +2961,7 @@ export type Database = {
           line_linked_at?: string | null
           notify_chat?: Database["public"]["Enums"]["notify_chat_mode"]
           notify_line?: boolean
+          start_page?: string
         }
         Relationships: []
       }
@@ -3178,6 +3211,36 @@ export type Database = {
           created_at?: string
           updated_at?: string
           payment_day?: number | null
+        }
+        Relationships: []
+      }
+      report_reminders: {
+        Row: {
+          id: string
+          company_id: string
+          driver_id: string
+          work_date: string
+          sent_at: string
+          sent_by: string | null
+          sent_by_name: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          driver_id: string
+          work_date: string
+          sent_at?: string
+          sent_by?: string | null
+          sent_by_name?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          driver_id?: string
+          work_date?: string
+          sent_at?: string
+          sent_by?: string | null
+          sent_by_name?: string
         }
         Relationships: []
       }
@@ -5047,6 +5110,13 @@ export type Database = {
         }
         Returns: string
       }
+      office_desk: {
+        Args: {
+          p_month?: string
+          p_today?: string
+        }
+        Returns: Json
+      }
       rate_diffs: {
         Args: {
           p_month: string
@@ -5137,6 +5207,13 @@ export type Database = {
         }
         Returns: string
       }
+      record_report_reminders: {
+        Args: {
+          p_work_date: string
+          p_driver_ids: string[]
+        }
+        Returns: string[]
+      }
       reopen_month: {
         Args: {
           p_month: string
@@ -5200,6 +5277,14 @@ export type Database = {
         }
         Returns: undefined
       }
+      set_close_check: {
+        Args: {
+          p_month: string
+          p_key: string
+          p_done: boolean
+        }
+        Returns: Json
+      }
       set_dispatch_bulk: {
         Args: {
           p_rows: Json
@@ -5244,6 +5329,12 @@ export type Database = {
           p_note?: string
         }
         Returns: undefined
+      }
+      set_start_page: {
+        Args: {
+          p_start_page: string
+        }
+        Returns: string
       }
       spread_plan_year: {
         Args: {

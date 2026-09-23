@@ -21,8 +21,9 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   const sp = await searchParams;
   const code = typeof sp.error === "string" ? sp.error : undefined;
   const error = code ? ERROR_MESSAGES[code] : undefined;
-  const nextRaw = typeof sp.next === "string" ? sp.next : "/dashboard";
-  const next = /^\/(?![\/\\])[^\s]*$/.test(nextRaw) && !nextRaw.includes("\\") ? nextRaw : "/dashboard";
+  // 行き先の指定が無ければ "/"（その人の「最初に開く画面」へ振り分ける。0026）
+  const nextRaw = typeof sp.next === "string" ? sp.next : "/";
+  const next = /^\/(?![\/\\])[^\s]*$/.test(nextRaw) && !nextRaw.includes("\\") ? nextRaw : "/";
 
   // 既にログイン済みなら適切な画面へ。認証はあるが有効なプロフィールが無い（無効化・招待なし）場合はその旨を表示
   const ctx = await getSessionContext();

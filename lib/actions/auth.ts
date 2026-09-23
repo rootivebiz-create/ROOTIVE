@@ -17,9 +17,12 @@ export interface AuthFormState {
   message?: string;
 }
 
-/** リダイレクト先は同一サイト内の絶対パスのみ許可（"//" や "/\\" による外部サイトへの誘導を防ぐ） */
+/**
+ * リダイレクト先は同一サイト内の絶対パスのみ許可（"//" や "/\\" による外部サイトへの誘導を防ぐ）。
+ * 指定が無ければ "/"（その人の「最初に開く画面」へ振り分ける。0026）
+ */
 function safeNext(next: unknown): string {
-  return typeof next === "string" && /^\/(?![\/\\])[^\s]*$/.test(next) && !next.includes("\\") ? next : "/dashboard";
+  return typeof next === "string" && /^\/(?![\/\\])[^\s]*$/.test(next) && !next.includes("\\") ? next : "/";
 }
 
 function translateAuthError(message: string): string {
