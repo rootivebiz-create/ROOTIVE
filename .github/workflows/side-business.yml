@@ -28,3 +28,28 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
+
+  product:
+    name: product（製品）typecheck / lint / test / build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: side-business/product
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            side-business/package-lock.json
+            side-business/product/package-lock.json
+      # 製品はサイトの計算の部品（side-business/lib）を共有するので、サイトの依存も入れる
+      - run: npm ci
+        working-directory: side-business
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
