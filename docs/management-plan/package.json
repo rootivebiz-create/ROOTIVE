@@ -1,0 +1,13 @@
+{
+  "name": "rootive-management-plan",
+  "private": true,
+  "description": "ROOTIVE GROUP 5カ年経営計画（2026–2031）の PowerPoint を生成する",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "jszip": "^3.10.2",
+    "pptxgenjs": "4.0.1"
+  }
+}
