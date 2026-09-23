@@ -272,6 +272,8 @@ export const importBatches = pgTable("import_batches", {
   month: date("month", { mode: "string" }).notNull(),
   kind: text("kind").notNull().default("work"),
   fileName: text("file_name").notNull(),
+  /** 元のファイルのハッシュ（同じファイルの二重の取り込みを止める） */
+  fileHash: text("file_hash"),
   mappingProfileId: uuid("mapping_profile_id").references(() => mappingProfiles.id, { onDelete: "set null" }),
   rowCount: integer("row_count").notNull().default(0),
   /** draft（確認中）・applied（反映済み）・discarded（取り消し） */
@@ -331,6 +333,10 @@ export const monthCloses = pgTable(
     closedAt: timestamp("closed_at", { withTimezone: true }),
     closedBy: uuid("closed_by").references(() => users.id, { onDelete: "set null" }),
     reopenedAt: timestamp("reopened_at", { withTimezone: true }),
+    /** 締めを外した理由（オーナーが書く） */
+    reopenReason: text("reopen_reason"),
+    /** その月の締めにかかった分数（任意。導入の効果を測る） */
+    minutesSpent: integer("minutes_spent"),
   },
   (t) => [primaryKey({ columns: [t.tenantId, t.month] })],
 );
@@ -401,6 +407,58 @@ export const statementMessages = pgTable(
   (t) => [index("statement_messages_statement").on(t.statementId)],
 );
 
+/** 明細の全部の版（作り直すたびに 1 行足す。消さない・書き換えない。明細が消えても残す） */
+export const statementVersions = pgTable(
+  "statement_versions",
+  {
+    id: id(),
+    tenantId: tenantId(),
+    /** 元の明細（明細が消えても版は残すので、外部キーにしない） */
+    statementId: uuid("statement_id").notNull(),
+    month: date("month", { mode: "string" }).notNull(),
+    driverId: uuid("driver_id").notNull(),
+    version: integer("version").notNull(),
+    hash: text("hash").notNull(),
+    snapshot: jsonb("snapshot").$type<Record<string, unknown>>().notNull(),
+    total: integer("total").notNull(),
+    createdBy: uuid("created_by"),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("statement_versions_unique").on(t.tenantId, t.statementId, t.version), index("statement_versions_month").on(t.tenantId, t.month)],
+);
+
+/**
+ * 取引条件の記録（フリーランス法 第3条の明示）。版ごとに中身の写しを残し、ドライバーへ署名つきリンクで渡して「受け取りました」を記録する。
+ * 最新の版を出した日は drivers.terms_issued_on にも入れる（見張り番が使う）。
+ */
+export const termsRecords = pgTable(
+  "terms_records",
+  {
+    id: id(),
+    tenantId: tenantId(),
+    driverId: uuid("driver_id").notNull().references(() => drivers.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    /** 明示した日（書面・メールなどで渡した日） */
+    issuedOn: date("issued_on", { mode: "string" }).notNull(),
+    /** 明示した中身（業務の内容・報酬の額や算定方法・支払期日・控除・場所・期間 など）の写し */
+    content: jsonb("content").$type<Record<string, unknown>>().notNull(),
+    /** 明細の「送付後◯日以内に連絡が無ければ確認とみなす」条項を含むか（みなし確認の前提） */
+    deemedClause: boolean("deemed_clause").notNull().default(false),
+    /** 再委託のときの 3 項目（再委託である旨・元委託者の名前・元委託の支払期日）。60 日の特例の前提 */
+    subcontract: jsonb("subcontract").$type<{ isSubcontract?: boolean; originalClient?: string; originalPayDate?: string }>(),
+    /** 別の書面（契約書など）で明示した場合の名前 */
+    documentName: text("document_name"),
+    linkNonce: text("link_nonce").notNull().default(sql`replace(gen_random_uuid()::text, '-', '')`),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    /** ドライバーが「受け取りました」を押した日時 */
+    receivedAt: timestamp("received_at", { withTimezone: true }),
+    receivedIpHash: text("received_ip_hash"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("terms_records_unique").on(t.tenantId, t.driverId, t.version)],
+);
+
 /**
  * 並行運用の比べ合わせ：今の Excel で出した振込額（お客様が入れる）と、しめ日ラボの振込額を並べる。
  * 差が 0 になるまで並行して締めるための記録。
@@ -468,6 +526,10 @@ export const reconciliationItems = pgTable("reconciliation_items", {
   /** open・asked・resolved・accepted */
   status: text("status").notNull().default("open"),
   note: text("note"),
+  /** 問い合わせた日時・解決した日時・取り戻せた額（確定。見込みとは分けて数える） */
+  askedAt: timestamp("asked_at", { withTimezone: true }),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  recoveredAmount: integer("recovered_amount"),
   createdAt: createdAt(),
 });
 

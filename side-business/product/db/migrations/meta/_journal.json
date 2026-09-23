@@ -50,6 +50,20 @@
       "when": 1790156403918,
       "tag": "0006_purge_tenant",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790156494875,
+      "tag": "0007_versions_terms_recovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790156495771,
+      "tag": "0008_versions_append_only",
+      "breakpoints": true
     }
   ]
 }

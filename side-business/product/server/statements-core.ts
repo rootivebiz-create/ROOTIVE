@@ -12,6 +12,7 @@ import { sha256 } from "~/server/tokens";
  * 支払明細の「写し」を作る・作り直す（明細・振込・締め・利益が共通で使う入口）。
  * - 計算は buildStatementDrafts だけ。ここでは保存と版の管理をする
  * - 中身が変わったときだけ版（version）を 1 つ上げ、ハッシュを付け直す（ドライバーが何を確認したかを後から示すため）
+ * - どの版も statement_versions に写しを残す（追記だけ。DB が書き換えを止める）
  * - 締めた月は作り直せない（DB も止める）
  */
 
@@ -69,8 +70,12 @@ export async function generateStatements(db: Db, tenantId: string, month: string
         hash,
       };
       const prev = byDriver.get(d.driverId);
+      // 版の写し（追記だけの表。明細が作り直されても、前の版を後から見られる）
+      const keepVersion = (statementId: string, version: number) =>
+        tx.insert(s.statementVersions).values({ tenantId, statementId, month, driverId: d.driverId, version, hash, snapshot: values.snapshot, total: d.total, createdBy: userId ?? null });
       if (!prev) {
-        await tx.insert(s.statements).values({ tenantId, month, driverId: d.driverId, version: 1, ...values });
+        const [row] = await tx.insert(s.statements).values({ tenantId, month, driverId: d.driverId, version: 1, ...values }).returning({ id: s.statements.id });
+        await keepVersion(row.id, 1);
         result.created++;
       } else if (prev.hash === hash) {
         result.unchanged++;
@@ -79,6 +84,7 @@ export async function generateStatements(db: Db, tenantId: string, month: string
           .update(s.statements)
           .set({ ...values, version: prev.version + 1, updatedAt: new Date() })
           .where(and(eq(s.statements.id, prev.id), eq(s.statements.tenantId, tenantId)));
+        await keepVersion(prev.id, prev.version + 1);
         result.updated++;
       }
     }
