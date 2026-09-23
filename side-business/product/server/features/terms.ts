@@ -435,13 +435,13 @@ export async function loadTermsDriver(db: Db, tenantId: string, driverId: string
   const latest = versions[0] ?? null;
   const latestContent = latest?.doc.content ?? null;
 
-  // 選べる案件：有効な案件と、最新の版に入っている案件（無効にした案件も、外すかどうか選べるように）
+  // 選べる案件：有効な案件と、最新の版に入っている・最近稼働した案件（無効にした案件も、外すかどうか選べるように）
   const clientName = new Map(clients.map((c) => [c.id, c.name]));
   const override = new Map(overrides.map((o) => [o.projectId, o.payRate]));
   const recentIds = new Set([...work.filter((w) => w.last && w.last.slice(0, 10) >= since).map((w) => w.projectId), ...overrides.map((o) => o.projectId)]);
   const inLatest = new Set(latestContent?.services.map((x) => x.projectId) ?? []);
   const choices: TermsProjectChoice[] = projects
-    .filter((p) => p.active || inLatest.has(p.id))
+    .filter((p) => p.active || inLatest.has(p.id) || recentIds.has(p.id))
     .map((p) => ({
       id: p.id,
       name: p.name,

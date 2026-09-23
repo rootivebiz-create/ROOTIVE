@@ -6,72 +6,20 @@ import { summarize } from "@/lib/payroll/calc";
 import { pct } from "@/lib/payroll/money";
 import { sampleData } from "@/lib/payroll/sample";
 import { deductibleRateForExempt } from "@/lib/payroll/tax";
-import { OPTIONS, PLANS } from "@/site.config";
+import { PLANS } from "@/site.config";
 import { NextStep } from "./primary-cta";
+import { MONTH_STEPS, SCREENS, type PackId } from "./product-content";
 import { ArrowIcon, Section } from "./section";
 
-type Feature = {
-  title: string;
-  body: string;
-  /** どのパックに入るか（PLANS / OPTIONS の id） */
-  planId: string;
-  /** 上のパックにも入っている（「〇〇パックから」と出す） */
-  andUp?: boolean;
-  links?: { href: string; label: string }[];
-};
-
-const FEATURES: Feature[] = [
-  {
-    title: "支払明細PDF",
-    body: "ドライバーごとの支払明細をPDFで作ります。登録番号や税率ごとの金額なども載せ、仕入明細書として使う形にもできます。",
-    planId: "payroll",
-    andUp: true,
-    links: [{ href: "/demo#statements", label: "デモで見る" }],
-  },
-  {
-    title: "全銀の振込データ",
-    body: "ネットバンキングに取り込める、全銀形式の振込データを作ります。振込は御社が金額を確かめてから行います（当方はお金に触れません）。",
-    planId: "payroll",
-    andUp: true,
-    links: [{ href: "/demo#transfer", label: "デモで見る" }],
-  },
-  {
-    title: "取引条件明示書と60日チェック",
-    body: "フリーランス法に合わせて、単価・支払期日などの取引条件を示す書面を作り、支払期日が60日を超えていないかを確かめます。",
-    planId: "payroll",
-    andUp: true,
-    links: [{ href: "/tools/torihiki-joken", label: "明示書を作ってみる（無料）" }],
-  },
-  {
-    title: "案件別・元請別・ドライバー別の利益",
-    body: "どこで儲かって、どこが薄いかを月ごとに出します。免税ドライバーへの支払で会社が負担する消費税も差し引きます。",
-    planId: "profit",
-    links: [
-      { href: "/demo#profit", label: "デモで見る" },
-      { href: "/tools/invoice-cost", label: "負担を計算する" },
-    ],
-  },
-  {
-    title: "元請の支払通知との突き合わせ",
-    body: "元請から届く支払通知と自社の実績を案件ごとに比べ、差が出たところを一覧にします。",
-    planId: "profit",
-  },
-  {
-    title: "点呼などの記録はオプション",
-    body: "業務前・業務後の点呼、業務記録、事故記録を、ドライバー本人がスマホで記録し、会社が見られる形で作れます。",
-    planId: "records",
-  },
-];
-
-/** 「支払明細パックから」「利益まるごとパック」「オプション」 */
-function planLabel(f: Feature): string {
-  if (OPTIONS.some((o) => o.id === f.planId)) return "オプション";
-  const plan = PLANS.find((p) => p.id === f.planId);
+/** 「支払明細パックから」「利益まるごとパック」（どのパックで使えるか） */
+function packLabel(pack: PackId): string {
+  const plan = PLANS.find((p) => p.id === pack);
   if (!plan) return "";
-  return f.andUp ? `${plan.name}から` : plan.name;
+  // 支払明細パックの機能は、上のパックにも入っている
+  return pack === "payroll" ? `${plan.name}から` : plan.name;
 }
 
-/** デモの架空データで作る、小さな見本（サーバーで 1 回だけ計算する） */
+/** 計算のデモ（ブラウザだけ）の架空データで作る、利益の画面の小さな見本（サーバーで 1 回だけ計算する） */
 function DemoPreview() {
   const data = sampleData();
   const s = summarize(data);
@@ -87,8 +35,8 @@ function DemoPreview() {
   return (
     <figure className="mt-8 rounded-card border border-border bg-card p-4 sm:p-6">
       <figcaption className="flex flex-wrap items-center gap-2">
-        <span className="rounded bg-accent px-2 py-0.5 text-xs font-bold text-accent-foreground">デモの架空データ</span>
-        <span className="text-sm font-bold">{month}分の数字（例）</span>
+        <span className="rounded bg-accent px-2 py-0.5 text-xs font-bold text-accent-foreground">架空のデータ</span>
+        <span className="text-sm font-bold">利益の見え方（{month}分の例）</span>
       </figcaption>
       <dl className="mt-4 grid gap-3 sm:grid-cols-3">
         {kpis.map((k) => (
@@ -146,41 +94,52 @@ function DemoPreview() {
         免税の方の分の消費税の負担。
       </p>
       <Link href="/demo#profit" className="mt-2 inline-flex min-h-11 items-center gap-1 font-bold">
-        デモで全部さわる
+        計算のデモ（ブラウザだけ）で触る
         <ArrowIcon />
       </Link>
     </figure>
   );
 }
 
+const CIRCLED = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨"];
+
 export function Features() {
+  const packOf = (id: string) => SCREENS.find((s) => s.id === id)?.pack ?? "payroll";
   return (
     <Section
       id="dekiru"
-      title="できること"
-      lead={<p>御社の今のやり方に合わせて、必要なものだけを作ります。画面はデモ（架空のデータ）で触れます。</p>}
+      title="ひと月の締めの流れで、できること"
+      lead={
+        <p>
+          製品の画面は、締めの順に並んでいます。上から順に進めれば、その月の締めが終わります。最初の 1〜2 か月は、今の Excel
+          と並べて 1 円まで比べます（並行運用）。
+        </p>
+      }
     >
-      <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {FEATURES.map((f) => (
-          <li key={f.title} className="flex flex-col rounded-card border border-border bg-card p-4 sm:p-5">
-            <p className="text-xs font-bold text-muted-foreground">{planLabel(f)}</p>
-            <h3 className="mt-1 text-lg font-bold leading-snug [word-break:auto-phrase]">{f.title}</h3>
-            <p className="mt-2 flex-1 text-[15px] leading-relaxed">{f.body}</p>
-            {f.links && (
-              <p className="mt-2 flex flex-wrap gap-x-4">
-                {f.links.map((l) => (
-                  <Link key={l.href} href={l.href} className="inline-flex min-h-11 items-center gap-1 text-sm font-bold">
-                    {l.label}
-                    <ArrowIcon />
-                  </Link>
-                ))}
-              </p>
-            )}
+      <ol className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {MONTH_STEPS.map((step, i) => (
+          <li key={step.screenId} className="flex flex-col rounded-card border border-border bg-card p-4 sm:p-5">
+            <p className="text-xs font-bold text-muted-foreground">{packLabel(packOf(step.screenId))}</p>
+            <h3 className="mt-1 flex items-baseline gap-2 text-lg font-bold leading-snug [word-break:auto-phrase]">
+              <span aria-hidden>{CIRCLED[i] ?? `${i + 1}.`}</span>
+              <span>
+                <span className="sr-only">{i + 1}. </span>
+                {step.label}
+              </span>
+            </h3>
+            <p className="mt-2 flex-1 text-[15px] leading-relaxed">{step.body}</p>
+            <Link href={`/product#${step.screenId}`} className="mt-2 inline-flex min-h-11 items-center gap-1 text-sm font-bold">
+              くわしく
+              <span className="sr-only">（{step.label}）</span>
+              <ArrowIcon />
+            </Link>
           </li>
         ))}
-      </ul>
+      </ol>
       <DemoPreview />
-      <NextStep>御社の単価・控除・元請の形で同じように動くかは、30分の相談でお答えします。</NextStep>
+      <NextStep alt={{ href: "/product", label: "製品の画面をすべて見る" }}>
+        御社の単価・控除・元請の形で同じように動くかは、30分の相談でお答えします。
+      </NextStep>
     </Section>
   );
 }
