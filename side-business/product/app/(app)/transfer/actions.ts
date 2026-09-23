@@ -19,13 +19,16 @@ function refresh() {
   revalidatePath("/");
 }
 
-export type CreateTransferState = ActionResult<{ batchId: string; fileName: string; count: number; total: number; excluded: number }> | undefined;
+export type CreateTransferState =
+  | ActionResult<{ batchId: string; fileName: string; count: number; total: number; excluded: number; lateDays: number; bankChanged: number }>
+  | undefined;
 
 const createSchema = z.object({
   month: monthSchema,
   transferDate: dateSchema,
   scope: z.enum(["all", "remaining"]),
   replaceConfirmed: z.literal("on").optional(),
+  bankChangesConfirmed: z.literal("on").optional(),
 });
 
 export async function createTransferAction(_prev: CreateTransferState, form: FormData): Promise<CreateTransferState> {
@@ -36,17 +39,31 @@ export async function createTransferAction(_prev: CreateTransferState, form: For
       transferDate: form.get("transferDate"),
       scope: form.get("scope") ?? "all",
       replaceConfirmed: form.get("replaceConfirmed") ?? undefined,
+      bankChangesConfirmed: form.get("bankChangesConfirmed") ?? undefined,
     });
     const db = await getDb();
     const batch = await createTransferBatch(
       db,
       user.tenantId,
       input.month,
-      { transferDate: input.transferDate, scope: input.scope, replaceConfirmed: input.replaceConfirmed === "on" },
+      {
+        transferDate: input.transferDate,
+        scope: input.scope,
+        replaceConfirmed: input.replaceConfirmed === "on",
+        bankChangesConfirmed: input.bankChangesConfirmed === "on",
+      },
       user.id,
     );
     refresh();
-    return { batchId: batch.id, fileName: batch.fileName, count: batch.count, total: batch.total, excluded: batch.excluded.length };
+    return {
+      batchId: batch.id,
+      fileName: batch.fileName,
+      count: batch.count,
+      total: batch.total,
+      excluded: batch.excluded.length,
+      lateDays: batch.lateDays ?? 0,
+      bankChanged: batch.bankChanged ?? 0,
+    };
   }, "振込データを作りました。下の「ダウンロード」から銀行に出すファイルを保存してください。");
 }
 

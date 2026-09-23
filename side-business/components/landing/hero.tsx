@@ -2,18 +2,39 @@ import Link from "next/link";
 import { makerCopy } from "@/components/kit/maker";
 import { compactYen } from "@/lib/format";
 import { buildPlans, trialPlan } from "@/lib/plans";
-import { SITE } from "@/site.config";
+import { PRODUCT } from "@/site.config";
 import { PrimaryCta } from "./primary-cta";
-import { ArrowIcon, CheckIcon, ctaClass } from "./section";
+import { HERO } from "./product-content";
+import { ArrowIcon, CheckIcon, ctaClass, NewTabNote } from "./section";
 
-/** 3 つの約束。作り手の書き方は SITE.makerIsOperator で変わる */
+/** 4 つの約束。作り手の書き方は SITE.makerIsOperator で変わる */
 function points() {
   const maker = makerCopy();
   return [
-    { title: "今のExcelのルールのまま", body: "単価・控除・端数・元請ごとの締めを、そのまま再現します" },
-    { title: "データもシステムも御社のもの", body: "御社のアカウントに作ります。ソースもお渡しします" },
+    { title: "今の Excel のまま", body: "形を変えずに置くだけ。ファイルの形と名前の表記ゆれを覚えます" },
+    { title: "1 円まで確かめてから", body: "今の Excel の振込額と 1 人ずつ比べ、合ってから本番へ切り替えます" },
+    { title: "データは御社のもの", body: "御社の Vercel と Postgres に置きます。全データをいつでも書き出せます" },
     { title: maker.pointTitle, body: maker.pointBody },
   ];
+}
+
+/** 製品のデモ（別のサイト）へのボタン。URL が無ければ何も出さない */
+export function ProductDemoButton({
+  url = PRODUCT.demoUrl,
+  className,
+  label = "製品のデモを触る",
+}: {
+  url?: string | null;
+  className?: string;
+  label?: string;
+}) {
+  if (!url) return null;
+  return (
+    <a href={url} target="_blank" rel="noopener" className={ctaClass("primary", className)}>
+      {label}
+      <NewTabNote />
+    </a>
+  );
 }
 
 export function Hero() {
@@ -21,19 +42,17 @@ export function Hero() {
   const packs = buildPlans();
   const minMonthly = Math.min(...packs.map((p) => p.monthlyYen));
   const minInitial = Math.min(...packs.map((p) => p.initialYen));
+  const hasDemo = Boolean(PRODUCT.demoUrl);
   return (
     <section aria-labelledby="hero-title" className="pt-2 sm:pt-10">
-      <p className="text-sm font-bold text-muted-foreground">業務委託ドライバーに毎月支払っている、軽貨物・運送会社向け</p>
+      <p className="text-sm font-bold text-muted-foreground">{HERO.eyebrow}</p>
       <h1
         id="hero-title"
-        className="mt-2 max-w-3xl text-[1.75rem] font-bold leading-snug tracking-tight [word-break:auto-phrase] sm:text-[2.6rem] sm:leading-tight"
+        className="mt-2 max-w-3xl text-[1.6rem] font-bold leading-snug tracking-tight [word-break:auto-phrase] sm:text-[2.4rem] sm:leading-tight"
       >
-        {SITE.tagline}
+        {HERO.title}
       </h1>
-      <p className="mt-4 max-w-2xl text-base leading-relaxed sm:text-lg">
-        ドライバーの稼働と単価から、<strong>支払明細のPDF・銀行の振込データ・案件ごとの利益</strong>
-        までを出す仕組みを、今のExcelのルールのまま御社のアカウントに作ります。データもシステムも御社のものです。
-      </p>
+      <p className="mt-4 max-w-2xl text-base leading-relaxed sm:text-lg">{HERO.body}</p>
 
       <Link
         href="/tools/invoice-cost"
@@ -47,27 +66,34 @@ export function Hero() {
       </Link>
 
       <div className="no-print mt-6 max-w-2xl">
-        <PrimaryCta className="sm:min-w-72" />
-        <p className="mt-2 text-sm text-muted-foreground">オンラインで30分・無料。今の締め方を聞かせてください。売り込みはしません。</p>
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+          <ProductDemoButton className="w-full px-5 text-base sm:w-auto sm:min-w-60" />
+          <PrimaryCta label="無料で相談する（30分）" className={hasDemo ? "sm:min-w-60" : "sm:min-w-72"} />
+        </div>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {hasDemo
+            ? "製品のデモは登録なしで触れます（架空の会社で、24時間で消えます）。相談はオンラインで30分・無料。売り込みはしません。"
+            : "オンラインで30分・無料。今の締め方を聞かせてください。売り込みはしません。"}
+        </p>
         <div className="mt-3 grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">
-          <Link href="/demo" className={ctaClass("secondary", "sm:px-5 sm:text-base")}>
-            デモを触る
+          <Link href="/product" className={ctaClass("secondary", "sm:px-5 sm:text-base")}>
+            製品のご紹介
           </Link>
-          <Link href="/tools/invoice-cost" className={ctaClass("secondary", "sm:px-5 sm:text-base")}>
-            負担を計算（無料）
+          <Link href="/demo" className={ctaClass("secondary", "sm:px-5 sm:text-base")}>
+            計算のデモ
           </Link>
         </div>
       </div>
       <p className="mt-4 text-sm leading-relaxed">
         <span className="font-bold">料金（税抜）</span>：
         {trial ? `お試し${compactYen(trial.initialYen)}（本契約で差し引き）／` : ""}
-        作る費用{compactYen(minInitial)}〜＋月額{compactYen(minMonthly)}〜。月額はドライバーが何人でも同じです（サーバー代は別）。
+        初期費用{compactYen(minInitial)}〜＋月額{compactYen(minMonthly)}〜。月額はドライバーが何人でも同じです（サーバー代は別に御社から直接）。
         <a href="#ryokin" className="ml-1 inline-flex min-h-11 items-center underline-offset-2 hover:underline">
           料金を見る
         </a>
       </p>
 
-      <ul className="mt-6 grid gap-3 sm:grid-cols-3">
+      <ul className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {points().map((p) => (
           <li key={p.title} className="flex gap-3 rounded-card border border-border bg-card p-4">
             <CheckIcon className="mt-0.5" />

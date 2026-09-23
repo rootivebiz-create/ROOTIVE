@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq, gte, isNull, lt, lte, or } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, ne, or } from "drizzle-orm";
 import type { Db } from "~/db/client";
 import * as s from "~/db/schema";
 import { UserError } from "~/server/action";
@@ -7,6 +7,7 @@ import { audit } from "~/server/audit";
 import { csvText, type CsvCell } from "~/server/download";
 import type { PdfSource, StatementRow } from "~/server/features/statements";
 import { changesSince, deviceHint } from "~/server/features/statements";
+import { compareMonths, type MonthCompare } from "~/server/features/statements/compare";
 import { cleanBody, groupThreads, type Thread } from "~/server/features/statements/threads";
 import {
   isLineKeyOf,
@@ -14,20 +15,24 @@ import {
   jpDateTime,
   jpMonthLabel,
   jpShortDateTime,
+  linkExpiresAt,
   maskAccount,
   toDriverView,
   type DriverStatementView,
   type MaskedAccount,
 } from "~/server/features/statements/view";
+import { shiftMonth } from "~/server/month";
 import { tooMany } from "~/server/rate-limit";
 import { readSnapshot } from "~/server/statements-core";
-import { verifyStatementLink } from "~/server/tokens";
+import { signStatementLink, verifyStatementLink } from "~/server/tokens";
 
 /**
  * ドライバーの画面（ログインなし）。入口は署名つきのリンクだけ。
  * - 毎回 verifyStatementLink（署名・期限）と、明細の link_nonce が同じかを確かめる（作り直したリンクは通さない）
  * - 画面から来た id は使わない。明細はリンクの中の id からだけ決め、そこから会社（tenant）を決める
  * - 見せるのはその明細と、同じドライバー・同じ会社の明細の数字だけ。会社の利益・売上は出さない
+ * - ほかの月の明細は「締めた月」か「会社がもう送った明細」だけ（作りかけの明細を先に見せない）。
+ *   それぞれのリンクは、ここで明細ごとに署名して作る（リンクの値に別の明細の id を入れて開くことはできない）
  */
 
 export const LINK_UNUSABLE = "このリンクは使えません（期限切れ・作り直し）。会社に新しいリンクをお願いしてください";
@@ -88,14 +93,23 @@ export type PortalData = {
   confirmed: { at: string; version: number } | null;
   /** 前の版だけ確認している（そのあと中身が変わった） */
   confirmedOlder: { at: string; version: number } | null;
-  /** 確認した前の版から、何が変わったか（短い文） */
+  /** 確認した前の版から、何が変わったか（短い文。「前に確認した内容からの変更」） */
   changes: string[];
   threads: Thread[];
   unreadReplies: number;
   account: MaskedAccount | null;
   year: { year: string; rows: AnnualRow[] };
   linkExpiresText: string;
+  /** 先月の明細との比べ（先月の明細が無い・まだ見せられないときは null） */
+  compare: MonthCompare | null;
+  /** 同じ人のほかの月の明細（直近 12 か月。新しい月が上） */
+  others: OtherStatement[];
 };
+
+export type OtherStatement = { month: string; label: string; total: number; payDate: string; href: string; confirmed: boolean };
+
+/** ほかの月の明細を見せる範囲（この明細の月の前後 12 か月） */
+export const OTHER_MONTHS = 12;
 
 export async function loadPortal(db: Db, token: string, now = new Date()): Promise<PortalData | null> {
   const st = await findStatementByToken(db, token, now);
@@ -127,6 +141,7 @@ export async function loadPortal(db: Db, token: string, now = new Date()): Promi
     annualRowsFor(db, st),
   ]);
   const view = toDriverView(readSnapshot(st), st);
+  const { compare, others } = await otherMonthsFor(db, st, view, now);
   const current = confs.find((c) => c.version === st.version);
   const older = confs.filter((c) => c.version < st.version).at(-1);
   const changes = !current && older ? await changesSince(db, tenantId, st, view, older.version) : null;
@@ -147,7 +162,59 @@ export async function loadPortal(db: Db, token: string, now = new Date()): Promi
     account: driverRows[0] ? maskAccount(driverRows[0]) : null,
     year,
     linkExpiresText: check.ok ? jpDateTime(new Date(check.expiresAt * 1000)) : "",
+    compare,
+    others,
   };
+}
+
+// ---------------------------------------------------------------- 先月との比べ・ほかの月の明細
+
+/**
+ * 同じ会社・同じドライバーの、ほかの月の明細（締めた月か、会社が送った明細だけ）。
+ * 先月の明細があれば、振込額と案件ごとの数量を並べる。リンクは明細ごとに、その明細の nonce で署名する。
+ */
+async function otherMonthsFor(db: Db, st: StatementRow, view: DriverStatementView, now: Date): Promise<{ compare: MonthCompare | null; others: OtherStatement[] }> {
+  const from = shiftMonth(st.month, -OTHER_MONTHS);
+  const to = shiftMonth(st.month, OTHER_MONTHS);
+  const rows = await db
+    .select()
+    .from(s.statements)
+    .where(
+      and(
+        eq(s.statements.tenantId, st.tenantId),
+        eq(s.statements.driverId, st.driverId),
+        ne(s.statements.id, st.id),
+        gte(s.statements.month, from),
+        lte(s.statements.month, to),
+      ),
+    )
+    .orderBy(desc(s.statements.month));
+  if (rows.length === 0) return { compare: null, others: [] };
+  const months = [...new Set(rows.map((r) => r.month))];
+  const ids = rows.map((r) => r.id);
+  const [closes, confs] = await Promise.all([
+    db
+      .select({ month: s.monthCloses.month })
+      .from(s.monthCloses)
+      .where(and(eq(s.monthCloses.tenantId, st.tenantId), eq(s.monthCloses.status, "closed"), inArray(s.monthCloses.month, months))),
+    db
+      .select({ statementId: s.statementConfirmations.statementId, version: s.statementConfirmations.version })
+      .from(s.statementConfirmations)
+      .where(and(eq(s.statementConfirmations.tenantId, st.tenantId), inArray(s.statementConfirmations.statementId, ids))),
+  ]);
+  const closed = new Set(closes.map((c) => c.month));
+  const visible = rows.filter((r) => closed.has(r.month) || r.sentAt !== null);
+  const expiresAt = linkExpiresAt(now);
+  const others = visible.map((r) => ({
+    month: r.month,
+    label: jpMonthLabel(r.month),
+    total: r.total,
+    payDate: readSnapshot(r).payDate,
+    href: `/s/${signStatementLink(r.id, r.linkNonce, expiresAt)}`,
+    confirmed: confs.some((c) => c.statementId === r.id && c.version === r.version),
+  }));
+  const prev = visible.find((r) => r.month === shiftMonth(st.month, -1));
+  return { compare: prev ? compareMonths(toDriverView(readSnapshot(prev), prev), view) : null, others };
 }
 
 // ---------------------------------------------------------------- 開いた記録

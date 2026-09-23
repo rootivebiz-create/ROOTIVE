@@ -3,6 +3,7 @@ import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { Db } from "~/db/client";
 import * as s from "~/db/schema";
 import { unresolvedQuestionCount } from "~/server/features/home";
+import { threadAnchor } from "~/server/features/statements/threads";
 import { jpMonthLabel, jpShortDateTime, lineKeyLabel, toDriverView } from "~/server/features/statements/view";
 import { readSnapshot } from "~/server/statements-core";
 
@@ -31,11 +32,6 @@ export function ageText(from: Date, now: Date): string {
 export function excerpt(body: string, max = EXCERPT_MAX): string {
   const one = body.replace(/\s+/g, " ").trim();
   return one.length > max ? `${one.slice(0, max)}…` : one;
-}
-
-/** 明細の画面で、その行のやりとりの場所へ飛ぶための目印 */
-export function threadAnchor(lineKey: string | null): string {
-  return `thread-${lineKey ?? "all"}`;
 }
 
 export type InboxItem = {

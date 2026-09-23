@@ -22,6 +22,21 @@ export type CloseDeps = {
   runWatch?: (db: Db, tenantId: string, month: string) => Promise<WatchIssue[]>;
 };
 
+/** 締めるときの任意の入力 */
+export type CloseOptions = {
+  /** 締める人の役割（赤い指摘が残ったまま締められるのはオーナーだけ） */
+  role?: Role;
+  /** 赤い指摘が残ったまま締めるときの理由（オーナーだけ。10 文字以上。操作の記録に残す） */
+  overrideReason?: string | null;
+  /** この月の締めにかかった分数（任意） */
+  minutesSpent?: number | null;
+};
+
+/** 赤い指摘が残ったまま締めるときの理由の最低の文字数 */
+export const OVERRIDE_REASON_MIN = 10;
+/** 締めにかかった分数の上限（入れ間違いを防ぐ。100 時間） */
+export const MINUTES_MAX = 6000;
+
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])-01$/;
 
 function assertMonth(month: string): void {
@@ -43,6 +58,12 @@ export type CloseChecklist = {
   reopenedAt: Date | null;
   /** 最後に締めを外したときの理由 */
   reopenReason: string | null;
+  /** 締めにかかった分数（締めたときに入れたもの） */
+  minutesSpent: number | null;
+  /** 赤い指摘が残ったままオーナーが締めたときの理由（締めた月だけ） */
+  override: { reason: string; byName: string | null; at: Date; issues: string[] } | null;
+  /** 締められない理由が「見張り番の赤（未確認）」だけか（オーナーなら理由を書いて締められる） */
+  overridable: boolean;
   /** ① 稼働 */
   work: { entries: number; drivers: number; adjustments: number };
   /** ② 明細（締めた月は見ない） */
@@ -176,11 +197,40 @@ export async function loadCloseChecklist(db: Db, tenantId: string, month: string
   const covered = saved.filter((r) => inAnyBatch.has(r.driverId));
 
   const blockers: string[] = [];
-  if (closed) blockers.push("この月はすでに締めてあります");
-  else {
-    if (drafts.length === 0) blockers.push("この月は稼働も調整もありません。取り込みか稼働の入力をしてから締めてください");
-    if (watch.error) blockers.push(watch.error);
+  let hardBlockers = 0;
+  if (closed) {
+    blockers.push("この月はすでに締めてあります");
+    hardBlockers++;
+  } else {
+    if (drafts.length === 0) {
+      blockers.push("この月は稼働も調整もありません。取り込みか稼働の入力をしてから締めてください");
+      hardBlockers++;
+    }
+    if (watch.error) {
+      blockers.push(watch.error);
+      hardBlockers++;
+    }
     if (watch.blocking.length) blockers.push(`見張り番の赤い指摘が ${watch.blocking.length} 件あります。直すか、内容を確かめて「確認済み」にしてください`);
+  }
+
+  // 赤い指摘が残ったまま締めたときの理由（最後に締めたときの記録から）
+  let override: CloseChecklist["override"] = null;
+  if (closed) {
+    const [last] = await db
+      .select({ userId: s.auditLog.userId, detail: s.auditLog.detail, createdAt: s.auditLog.createdAt })
+      .from(s.auditLog)
+      .where(and(eq(s.auditLog.tenantId, tenantId), eq(s.auditLog.action, "month.close"), eq(s.auditLog.entityId, month)))
+      .orderBy(desc(s.auditLog.id))
+      .limit(1);
+    const o = last?.detail?.override as { reason?: unknown; issues?: unknown } | undefined;
+    if (o && typeof o.reason === "string") {
+      override = {
+        reason: o.reason,
+        byName: last.userId ? userName.get(last.userId) ?? null : null,
+        at: last.createdAt,
+        issues: Array.isArray(o.issues) ? o.issues.map((i) => (i && typeof i === "object" && typeof (i as { title?: unknown }).title === "string" ? String((i as { title: string }).title) : "")).filter(Boolean) : [],
+      };
+    }
   }
 
   return {
@@ -190,6 +240,9 @@ export async function loadCloseChecklist(db: Db, tenantId: string, month: string
     closedByName: mc?.closedBy ? userName.get(mc.closedBy) ?? null : null,
     reopenedAt: mc?.reopenedAt ?? null,
     reopenReason: mc?.reopenReason ?? null,
+    minutesSpent: mc?.minutesSpent ?? null,
+    override,
+    overridable: !closed && hardBlockers === 0 && watch.blocking.length > 0,
     work: { entries: workRows.length, drivers: new Set(workRows.map((w) => w.driverId)).size, adjustments: adjRows[0]?.n ?? 0 },
     statements,
     watch,
@@ -224,9 +277,18 @@ export type CloseResult = {
  * 月を締める。順序：締め済みなら断る → 見張り番の赤（未確認）があれば断る → 明細を最新にする →
  * 明細が今の稼働と同じか確かめる → 締める。明細の作り直しと締めは 1 つのトランザクションで行う。
  */
-export async function closeMonth(db: Db, tenantId: string, month: string, userId: string | null, deps: CloseDeps = {}): Promise<CloseResult> {
+export async function closeMonth(
+  db: Db,
+  tenantId: string,
+  month: string,
+  userId: string | null,
+  deps: CloseDeps & CloseOptions = {},
+): Promise<CloseResult> {
   assertMonth(month);
   await getTenant(db, tenantId);
+  const minutes = normalizeMinutes(deps.minutesSpent);
+  const reason = (deps.overrideReason ?? "").trim();
+  if (reason.length > 500) throw new UserError("理由は 500 文字までにしてください");
   if (await isMonthClosed(db, tenantId, month)) throw new UserError("この月はすでに締めてあります");
 
   const runWatch = deps.runWatch ?? defaultRunWatch;
@@ -244,9 +306,17 @@ export async function closeMonth(db: Db, tenantId: string, month: string, userId
       .map((i) => `・${i.title}${i.subjectLabel ? `（${i.subjectLabel}）` : ""}`)
       .join("\n");
     const more = blocking.length > 5 ? `\nほか ${blocking.length - 5} 件` : "";
-    throw new UserError(
-      `見張り番の赤い指摘が ${blocking.length} 件あるため、締めていません。直すか、内容を確かめて「確認済み」にしてから締めてください。\n${list}${more}`,
-    );
+    // オーナーだけは、理由を書けば赤が残ったまま締められる（理由は操作の記録に残る）
+    if (deps.role !== "owner") {
+      throw new UserError(
+        `見張り番の赤い指摘が ${blocking.length} 件あるため、締めていません。直すか、内容を確かめて「確認済み」にしてから締めてください（オーナーは、理由を書いて締めることもできます）。\n${list}${more}`,
+      );
+    }
+    if (reason.length < OVERRIDE_REASON_MIN) {
+      throw new UserError(
+        `見張り番の赤い指摘が ${blocking.length} 件残っています。このまま締めるときは、理由を ${OVERRIDE_REASON_MIN} 文字以上で書いてください（操作の記録に残ります）。\n${list}${more}`,
+      );
+    }
   }
 
   const drafts = buildStatementDrafts(await loadBuildInput(db, tenantId, month));
@@ -267,12 +337,13 @@ export async function closeMonth(db: Db, tenantId: string, month: string, userId
       .from(s.statements)
       .where(and(eq(s.statements.tenantId, tenantId), eq(s.statements.month, month)));
     const now = new Date();
+    // 分数は入れたときだけ書く（入れずに締め直したときは、前の値を残す）
     await t
       .insert(s.monthCloses)
-      .values({ tenantId, month, status: "closed", closedAt: now, closedBy: userId })
+      .values({ tenantId, month, status: "closed", closedAt: now, closedBy: userId, minutesSpent: minutes })
       .onConflictDoUpdate({
         target: [s.monthCloses.tenantId, s.monthCloses.month],
-        set: { status: "closed", closedAt: now, closedBy: userId },
+        set: minutes === null ? { status: "closed", closedAt: now, closedBy: userId } : { status: "closed", closedAt: now, closedBy: userId, minutesSpent: minutes },
       });
     const sum = (k: "subtotal" | "tax" | "deductions" | "withholding" | "total") => rows.reduce((a, r) => a + r[k], 0);
     const out: CloseResult = {
@@ -300,11 +371,32 @@ export async function closeMonth(db: Db, tenantId: string, month: string, userId
         total: out.total,
         acked: issues.filter((i) => i.severity === "red" && i.acked).map((i) => ({ code: i.code, subjectId: i.subjectId })),
         statements: rows.map((r) => ({ id: r.id, driverId: r.driverId, version: r.version, hash: r.hash, total: r.total })),
+        minutesSpent: minutes,
+        // 赤が残ったまま締めた（オーナーだけ）：理由と、そのときの指摘
+        ...(blocking.length
+          ? {
+              override: {
+                reason,
+                issues: blocking.map((i) => ({ code: i.code, subjectId: i.subjectId, title: i.title, subject: i.subjectLabel ?? null })),
+              },
+            }
+          : {}),
       },
     });
     return out;
   });
   return result;
+}
+
+/** 締めにかかった分数（空なら null。1〜6000 の整数だけ） */
+export function normalizeMinutes(value: number | string | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  const text = String(value).normalize("NFKC").trim();
+  if (text === "") return null;
+  if (!/^\d+$/.test(text)) throw new UserError("締めにかかった時間は、分の数（例：90）で入れてください");
+  const n = Number(text);
+  if (n < 1 || n > MINUTES_MAX) throw new UserError(`締めにかかった時間は 1〜${MINUTES_MAX} 分で入れてください`);
+  return n;
 }
 
 // ---------------------------------------------------------------- 締めを外す

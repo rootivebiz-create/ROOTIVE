@@ -70,6 +70,11 @@ export function groupThreads(messages: RawMessage[], view: DriverStatementView):
   return [...map.values()].sort((a, b) => (b.open > 0 ? 1 : 0) - (a.open > 0 ? 1 : 0) || b.lastAtMs - a.lastAtMs);
 }
 
+/** 明細の画面で、その行のやりとりの場所の目印（質問の一覧からここへ飛ぶ。thread-<lineKey>、全体は thread-all） */
+export function threadAnchor(lineKey: string | null): string {
+  return `thread-${lineKey ?? "all"}`;
+}
+
 /** 本文の形をそろえる（前後の空白・3 行以上の空行を詰める）。空か長すぎれば null */
 export function cleanBody(body: string): string | null {
   const v = body.replace(/\r\n?/g, "\n").replace(/\n{3,}/g, "\n\n").trim();

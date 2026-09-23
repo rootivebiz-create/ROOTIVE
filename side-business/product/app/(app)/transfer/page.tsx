@@ -6,9 +6,10 @@ import { Badge, EmptyState, Notice, PageHeader } from "~/components/page";
 import { daysBetween, jstDateTime } from "~/components/close/format";
 import { DeleteBatchButton, ExecutedOnForm } from "~/components/transfer/batch-controls";
 import { CreateTransferForm } from "~/components/transfer/create-form";
+import { TransferReviewSection } from "~/components/transfer/review";
 import { getDb } from "~/db/client";
 import { requirePageUser, roleAtLeast } from "~/server/auth";
-import { loadTransferPlan, type BatchView, type BankFields, type ExcludedRow, type TransferRow } from "~/server/features/transfer";
+import { loadTransferPlan, loadTransferReview, type BatchView, type BankFields, type ExcludedRow, type TransferRow } from "~/server/features/transfer";
 import { monthFromParam, monthLabelJa, monthParam } from "~/server/month";
 
 export const metadata = { title: "振込データ" };
@@ -94,12 +95,15 @@ function BatchCard({
   canEdit,
   zenginReady,
   m,
+  bankMoved = [],
 }: {
   b: BatchView;
   promisedPayDate: string;
   canEdit: boolean;
   zenginReady: boolean;
   m: string;
+  /** 作ったあとに口座が変わった人（いればダウンロードさせない） */
+  bankMoved?: string[];
 }) {
   const lateTransfer = daysBetween(promisedPayDate, b.transferDate);
   const lateExecuted = b.executedOn ? daysBetween(promisedPayDate, b.executedOn) : 0;
@@ -136,7 +140,17 @@ function BatchCard({
         )}
         {lateExecuted > 0 && (
           <p className="text-sm text-danger">
-            約束した支払日（{shortDate(promisedPayDate)}）より {lateExecuted} 日あとに振り込んだ記録です。見張り番の指摘も確かめてください。
+            約束した支払日（{shortDate(promisedPayDate)}）より {lateExecuted} 日あとに振り込んだ記録です（{b.count}人とも {lateExecuted} 日遅れ）。見張り番の指摘も確かめてください。
+          </p>
+        )}
+        {b.executedOn && lateExecuted <= 0 && (
+          <p className="text-sm text-success">
+            期日内：約束した支払日（{shortDate(promisedPayDate)}）までに振り込んだ記録です（{b.count}人）。
+          </p>
+        )}
+        {bankMoved.length > 0 && !b.executedOn && (
+          <p role="alert" className="rounded-lg border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
+            この振込データを作ったあとに、口座が変わった人がいます（{bankMoved.join("、")}）。確かめていない口座に振り込まないよう、ダウンロードを止めています。取り消して作り直してください。
           </p>
         )}
         {b.changed && (
@@ -145,7 +159,7 @@ function BatchCard({
             {b.executedOn ? "振り込んだ額と明細の額が違うおそれがあります。明細を確かめてください。" : "このデータは使わず、取り消して作り直してください。"}
           </p>
         )}
-        {canEdit && !b.changed && (
+        {canEdit && !b.changed && bankMoved.length === 0 && (
           <div className="flex flex-wrap gap-2">
             {zenginReady ? (
               <a href={`/api/transfer/${b.id}?m=${m}`} className={buttonClass("primary")}>
@@ -178,6 +192,9 @@ export default async function TransferPage({ searchParams }: { searchParams: Pro
   const db = await getDb();
   const plan = await loadTransferPlan(db, user.tenantId, month);
   const canEdit = roleAtLeast(user.role, "staff");
+  // 口座の変更などの確かめは、作れる人にだけ出す（閲覧の人には口座を見せない）
+  const review = canEdit ? await loadTransferReview(db, user.tenantId, month, plan) : null;
+  const bankMovedBy = new Map((review?.staleBankBatches ?? []).map((b) => [b.batchId, b.drivers]));
   const zenginReady = plan.requester !== null;
   const remaining = plan.included.filter((r) => r.inBatches.length === 0);
 
@@ -269,6 +286,8 @@ export default async function TransferPage({ searchParams }: { searchParams: Pro
                 )}
               </Card>
 
+              {review && <TransferReviewSection review={review} m={m} />}
+
               <Card>
                 <CreateTransferForm
                   key={month}
@@ -280,6 +299,7 @@ export default async function TransferPage({ searchParams }: { searchParams: Pro
                   all={{ count: plan.included.length, total: plan.total }}
                   remaining={{ count: remaining.length, total: remaining.reduce((a, r) => a + r.amount, 0) }}
                   zenginReady={zenginReady}
+                  bankChanged={{ all: review?.bank.changed.length ?? 0, remaining: review?.changedRemaining ?? 0 }}
                 />
               </Card>
 
@@ -321,7 +341,15 @@ export default async function TransferPage({ searchParams }: { searchParams: Pro
             </p>
             <ul className="space-y-3">
               {plan.batches.map((b) => (
-                <BatchCard key={b.id} b={b} promisedPayDate={plan.promisedPayDate} canEdit={canEdit} zenginReady={zenginReady} m={m} />
+                <BatchCard
+                  key={b.id}
+                  b={b}
+                  promisedPayDate={plan.promisedPayDate}
+                  canEdit={canEdit}
+                  zenginReady={zenginReady}
+                  m={m}
+                  bankMoved={bankMovedBy.get(b.id)}
+                />
               ))}
             </ul>
           </>

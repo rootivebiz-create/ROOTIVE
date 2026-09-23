@@ -1,19 +1,19 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Card, Money, TableWrap, buttonClass } from "@/components/ui";
-import { jpDate } from "@/lib/format";
 import { Notice } from "~/components/page";
+import { CompanyCopyBox } from "~/components/statements/company-copy";
+import { DeemedCheck } from "~/components/statements/deemed-check";
 import { LinkPanel } from "~/components/statements/link-panel";
 import { StatementView } from "~/components/statements/statement-view";
 import { StatusChips } from "~/components/statements/status-chips";
 import { ThreadPanel } from "~/components/statements/thread-panel";
+import { VersionHistory } from "~/components/statements/version-history";
 import { getDb } from "~/db/client";
 import { requirePageUser, roleAtLeast } from "~/server/auth";
 import { getStatementDetail, listMonthStatements, markQuestionsRead, staffLinkToken } from "~/server/features/statements";
 import { requestOrigin } from "~/server/features/statements/request";
 import { jpDateTime, jpMonthLabel, shareLinks, shareMessage, shareSubject } from "~/server/features/statements/view";
-
-const NTA_QA_URL = "https://www.nta.go.jp/taxes/shiraberu/zeimokubetsu/shohi/keigenzeiritsu/pdf/qa/113-3.pdf";
 import { monthParam } from "~/server/month";
 import { isMonthClosed } from "~/server/repo";
 
@@ -75,22 +75,8 @@ export default async function StatementDetailPage({ params }: { params: Promise<
           {detail.status.needsResend ? "リンクをもう一度送って、知らせてください。" : ""}
         </Notice>
       )}
-      {detail.status.key === "deemed" && (
-        <div className="space-y-2 rounded-lg border border-border bg-muted p-3 text-sm" role="status">
-          <p>
-            送ってから {detail.status.deemedDays}日たち、質問はありません。明細の注記（連絡が無ければ確認とみなす）に沿って「みなし確認」と表示しています。扱いは会社と税理士でお決めください。
-          </p>
-          <p className="text-muted-foreground">
-            {detail.terms?.deemedClause
-              ? `取引条件の記録（版 ${detail.terms.version}・${jpDate(detail.terms.issuedOn)}）に、この扱いの条項があります。`
-              : "取引条件の記録に、この扱い（連絡が無ければ確認とみなす）の条項が見つかりません。"}
-            国税庁のインボイス Q&A（問86）は、この方法について相手方の了承を得ることにふれています。了承の記録があるか、確認をおすすめします。
-            <a href={NTA_QA_URL} target="_blank" rel="noopener noreferrer" className="ml-1">
-              国税庁 インボイス Q&A
-            </a>
-          </p>
-        </div>
-      )}
+      {/* 送ってあって、まだ確認されていない明細：みなし確認の 3 つの条件を 1 つずつ見せる */}
+      {(detail.sentAtText || detail.status.key === "deemed") && <DeemedCheck status={detail.status} terms={detail.terms} deemedDays={detail.deemedDays} />}
       {detail.status.needsResend && detail.status.key !== "changed" && (
         <Notice tone="info">送ったあとで中身が変わりました。新しい中身はまだ送っていません。リンクはそのまま使えるので、もう一度送ってください。</Notice>
       )}
@@ -120,6 +106,7 @@ export default async function StatementDetailPage({ params }: { params: Promise<
             </a>
           </div>
           <StatementView view={v} account={detail.account} />
+          <CompanyCopyBox copy={detail.company} taxMethod={detail.taxMethod} />
         </div>
 
         <div className="order-1 min-w-0 space-y-5 lg:order-2">
@@ -209,6 +196,12 @@ export default async function StatementDetailPage({ params }: { params: Promise<
               </TableWrap>
             )}
             <p className="mt-2 text-xs text-muted-foreground">IP は元の値ではなく、ハッシュの先頭だけを残しています。月の全員分は一覧の「確認の記録（CSV）」から出せます。</p>
+          </Card>
+
+          <Card>
+            <h2 className="font-bold">版の履歴</h2>
+            <p className="mt-1 text-xs text-muted-foreground">作り直して中身が変わるたびに版が上がります。前の版の写しは消えずに残ります。</p>
+            <VersionHistory statementId={st.id} items={detail.history} />
           </Card>
         </div>
       </div>

@@ -18,6 +18,7 @@ import {
   dayInMonth,
   dayLabel,
   isBankHoliday,
+  isDateString,
   paymentDeadlineCheck,
   payRuleLabel,
   type DayOfMonth,
@@ -26,7 +27,8 @@ import {
 import type { Rounding } from "@/lib/payroll/types";
 import { payDateFor, type StatementDraft } from "~/server/calc/statement";
 import { BASIS, EFFECTIVE, FIX, SOURCES, WATCH_RULES_AS_OF_MONTH } from "~/server/features/watch/sources";
-import type { IssueDraft, WatchContext, WatchDriver, WatchImpact, WatchSeverity, WatchSubcontract } from "~/server/features/watch/types";
+import type { TermsChange, TermsContent, TermsDeduction } from "~/server/features/terms-content";
+import type { IssueDraft, WatchContext, WatchDriver, WatchImpact, WatchSeverity, WatchSubcontract, WatchTerms } from "~/server/features/watch/types";
 
 // ---------------------------------------------------------------- 小さな部品
 
@@ -219,6 +221,90 @@ export function rateChangedWithoutRecord(ctx: WatchContext): IssueDraft[] {
   return out;
 }
 
+/** 取引条件の違い 1 つを、短い文に（「「宅配」の単価 150円/個 → 155円/個」） */
+export function termsChangeText(c: TermsChange): string {
+  const bearer = (v?: string) => (v === "driver" ? "ドライバー" : v === "company" ? "会社" : (v ?? ""));
+  switch (c.kind) {
+    case "rate":
+      return `「${c.label}」の単価 ${c.before ?? ""} → ${c.after ?? ""}`;
+    case "deduction_added":
+      return `控除「${c.label}」が加わった（${c.after ?? ""}）`;
+    case "deduction_removed":
+      return `控除「${c.label}」が無くなった（${c.before ?? ""}）`;
+    case "deduction_changed":
+      return `控除「${c.label}」 ${c.before ?? ""} → ${c.after ?? ""}`;
+    case "payment":
+      return `支払期日「${c.before ?? ""}」→「${c.after ?? ""}」`;
+    case "fee":
+      return `振込手数料の負担 ${bearer(c.before)} → ${bearer(c.after)}`;
+    default:
+      return c.label;
+  }
+}
+
+/** 記録した控除の式で、この月に引いたとしたらの額（明細と同じ式・同じ端数処理） */
+function recordedDeductionAmount(o: TermsDeduction, d: StatementDraft, mode: Rounding): number {
+  const qty = d.lines.reduce((a, l) => a + l.qty, 0);
+  if (o.kind === "percent") return roundYen(d.subtotal * (o.rate ?? 0), mode);
+  if (o.kind === "per_unit") return roundYen(qty * (o.rate ?? 0), mode);
+  return o.amount ?? 0;
+}
+
+/**
+ * 明示した条件と今の条件の違いで、この月の支払がいくら変わったか（単価の差 × 今月の数量・控除の差）。
+ * 金額の変わらない違い（支払期日の文・手数料の負担）だけなら null
+ */
+export function termsChangeImpact(recorded: TermsContent, current: TermsContent, d: StatementDraft, mode: Rounding = "round"): number | null {
+  let total = 0;
+  let money = false;
+  const before = new Map(recorded.services.map((x) => [x.projectId, x]));
+  for (const cur of current.services) {
+    const old = before.get(cur.projectId);
+    if (!old || old.payRate === cur.payRate) continue;
+    money = true;
+    const line = d.lines.find((l) => l.projectId === cur.projectId);
+    if (line) total += Math.abs(roundYen((cur.payRate - old.payRate) * line.qty, mode));
+  }
+  const oldD = new Map(recorded.deductions.map((x) => [x.ruleId, x]));
+  for (const cur of current.deductions) {
+    const old = oldD.get(cur.ruleId);
+    if (old && old.how === cur.how) continue;
+    money = true;
+    const applied = d.deductions.find((x) => x.ruleId === cur.ruleId);
+    if (!applied) continue;
+    total += old ? Math.abs(applied.amount - recordedDeductionAmount(old, d, mode)) : applied.amount;
+  }
+  return money ? total : null;
+}
+
+export function termsOutdated(ctx: WatchContext): IssueDraft[] {
+  const out: IssueDraft[] = [];
+  const drafts = new Map(ctx.drafts.map((d) => [d.driverId, d]));
+  for (const t of ctx.terms ?? []) {
+    if (!t.recorded || !t.current || t.changes.length === 0) continue;
+    const d = drafts.get(t.driverId);
+    if (!d) continue;
+    const name = driverName(ctx, t.driverId, d.driver.name);
+    const list = t.changes.map(termsChangeText);
+    const shown = list.slice(0, 5).join("、") + (list.length > 5 ? ` ほか ${list.length - 5}件` : "");
+    out.push({
+      code: "terms_outdated",
+      severity: "yellow",
+      subjectId: t.driverId,
+      subjectLabel: name,
+      title: "取引条件を明示したあとで、単価や控除などが変わっています",
+      detail:
+        `取引条件を最後に明示した記録（版 ${t.version}・${jpDate(t.issuedOn)}）と、今の台帳の条件が違います：${shown}。` +
+        "変えた条件は、ドライバーと話し合って合意した記録を残し、あらためて明示することをおすすめします。取引条件の画面で、今の条件の新しい版を作れます。",
+      basis: BASIS.terms,
+      sourceUrl: SOURCES.flQa,
+      fixHref: FIX.terms(t.driverId),
+      impact: impactOf(termsChangeImpact(t.recorded, t.current, d, rounding(ctx)), `条件が変わった分の${monthOf(ctx)}の差額`),
+    });
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------- 2〜4. 支払期日
 
 export function paymentWording(ctx: WatchContext): IssueDraft[] {
@@ -255,6 +341,7 @@ export function paymentWording(ctx: WatchContext): IssueDraft[] {
       severity: "yellow",
       title: `支払期日の書き方に「${[...period, ...start].join("」「")}」があります`,
       detail: `取引条件の支払期日の文言：「${excerpt}」。${parts.join("")}`,
+      impact: impactOf(ctx.drafts.length ? payTotal(ctx.drafts) : null, `${monthOf(ctx)}の支払額の合計（この文言で払う人）`),
     },
   ];
 }
@@ -311,6 +398,33 @@ export function payDeadlineFor(month: string, tenant: WatchContext["tenant"], pa
   };
 }
 
+/** 再委託の 3 項目（再委託であること・元委託の相手・元委託の支払期日）がそろっているか */
+export function hasSubcontractItems(sc: WatchSubcontract | null | undefined): sc is WatchSubcontract & { originalClient: string; originalPayDate: string } {
+  return !!sc && sc.isSubcontract === true && !!sc.originalClient?.trim() && !!sc.originalPayDate?.trim();
+}
+
+/**
+ * 元委託の支払期日を、その月（締める月）の分の日付にする。読めなければ null。
+ * 読める形：「2026-11-30」「2026/11/30」「2026年11月30日」（その日）と、
+ * 「翌月末日」「翌々月10日」「当月25日」「2か月後の末日」（締める月から数える。「毎月20日締め・翌月末日払い」のような文の中でもよい）
+ */
+export function originalPayDateFor(month: string, text: string): string | null {
+  const t = text.normalize("NFKC").replace(/\s/g, "");
+  const exact = /^(\d{4})[-/年](\d{1,2})[-/月](\d{1,2})日?$/.exec(t);
+  if (exact) {
+    const iso = `${exact[1]}-${exact[2].padStart(2, "0")}-${exact[3].padStart(2, "0")}`;
+    return isDateString(iso) ? iso : null;
+  }
+  const rel = /(当月|翌々月|翌月|(\d{1,2})[かヶケカ]月後の?)(末日?|(\d{1,2})日)/.exec(t);
+  if (!rel) return null;
+  const offset = rel[1] === "当月" ? 0 : rel[1] === "翌月" ? 1 : rel[1] === "翌々月" ? 2 : Number(rel[2]);
+  const day = rel[4] ? Number(rel[4]) : null;
+  if (day !== null && (day < 1 || day > 31)) return null;
+  const [y, m] = month.slice(0, 7).split("-").map(Number);
+  const index = y * 12 + (m - 1) + offset;
+  return dayInMonth(Math.floor(index / 12), (index % 12) + 1, day ?? "末");
+}
+
 export function sixtyDays(ctx: WatchContext): IssueDraft[] {
   const payDate = ctx.drafts[0]?.payDate ?? payDateFor(ctx.month, ctx.tenant);
   const dl = payDeadlineFor(ctx.month, ctx.tenant, payDate);
@@ -320,6 +434,68 @@ export function sixtyDays(ctx: WatchContext): IssueDraft[] {
   // 締めた月の写しの支払日が今の設定と違うときは、設定の名前を書かない（写しの日で数える）
   const setting = dl.payDate === payDateFor(ctx.month, ctx.tenant) ? `（${dl.ruleLabel}）` : "（明細に書いた支払日）";
   const head = `${jpMonth(ctx.month)}分（${jpDate(dl.periodStart)}〜${jpDate(dl.periodEnd)}）の支払日は${jpDate(dl.payDate)}${setting}${shifted}です。`;
+
+  // 再委託の特例：取引条件の記録に 3 項目がある人は、元委託の支払期日から 30 日で数える（フリーランス法 第4条第3項）
+  const termsBy = new Map((ctx.terms ?? []).map((t) => [t.driverId, t]));
+  const payees = ctx.drafts.filter((d) => d.total > 0 || d.hasWork);
+  const covered: { name: string; orig: string; limit: string }[] = [];
+  const overSpecial: { name: string; orig: string; limit: string }[] = [];
+  const unreadable: { name: string; text: string }[] = [];
+  const subject: StatementDraft[] = [];
+  for (const d of payees) {
+    const sc = termsBy.get(d.driverId)?.subcontract;
+    if (!hasSubcontractItems(sc)) {
+      subject.push(d);
+      continue;
+    }
+    const orig = originalPayDateFor(ctx.month, sc.originalPayDate);
+    if (!orig) {
+      unreadable.push({ name: d.driver.name, text: sc.originalPayDate });
+      subject.push(d);
+      continue;
+    }
+    const limit = addDays(orig, SUBCONTRACT_DAYS);
+    if (dl.payDateActual <= limit) covered.push({ name: d.driver.name, orig, limit });
+    else {
+      overSpecial.push({ name: d.driver.name, orig, limit });
+      subject.push(d);
+    }
+  }
+  const specialText = (xs: { name: string; orig: string; limit: string }[]) =>
+    xs.map((x) => `${x.name}さん（元委託の支払期日 ${jpDate(x.orig)}・特例の期限 ${jpDate(x.limit)}）`).join("、");
+  const notes: string[] = [];
+  if (covered.length) {
+    notes.push(
+      `${specialText(covered)}は、取引条件の記録に再委託の3項目（再委託であること・元委託の相手・元委託の支払期日）があるので、元委託の支払期日から${SUBCONTRACT_DAYS}日の特例で数え、この指摘の対象から外しています。`,
+    );
+  }
+  if (overSpecial.length) notes.push(`${specialText(overSpecial)}は、再委託の特例で数えても期限を過ぎます。`);
+  if (unreadable.length) {
+    notes.push(
+      `${unreadable.map((x) => `${x.name}さん（「${x.text}」）`).join("、")}は、再委託の記録がありますが、元委託の支払期日を日付として読めないため、60日で数えています。「翌月末日」や「2026-11-30」の形で入れると特例で数えられます。`,
+    );
+  }
+  const note = notes.join("");
+
+  if (payees.length > 0 && subject.length === 0) {
+    // 全員が再委託の特例の中：判定はせず、どう数えたかだけを知らせる
+    return [
+      {
+        ...base,
+        severity: "info",
+        basis: BASIS.subcontract,
+        title: `再委託の特例（元委託の支払期日から${SUBCONTRACT_DAYS}日）で数えています`,
+        detail:
+          head +
+          `60日（2か月）で数えると期限（${jpDate(dl.status === "ng" ? dl.limitFromEnd : dl.limitFromStart)}）を超えますが、` +
+          note +
+          "特例で数えてよいのは、再委託であることと元委託の相手・支払期日を取引条件で明示している場合です。記録の中身の確認をおすすめします。",
+        fixHref: FIX.drivers,
+        impact: impactOf(null, "特例の中で払う見込みです"),
+      },
+    ];
+  }
+  const impact = impactOf(subject.length ? payTotal(subject) : null, `対象の方の${monthOf(ctx)}の支払額の合計${subject.length ? `（${subject.length}人）` : ""}`);
   if (dl.status === "ng") {
     return [
       {
@@ -329,7 +505,9 @@ export function sixtyDays(ctx: WatchContext): IssueDraft[] {
         detail:
           head +
           `締め日（${jpDate(dl.periodEnd)}）から数えた期限の${jpDate(dl.limitFromEnd)}より ${daysBetween(dl.limitFromEnd, dl.payDateActual)}日後です。` +
-          "フリーランス法では、報酬の支払期日は、仕事を受け取った日から60日以内のできるだけ早い日に定めることになっています。支払日の設定の確認をおすすめします。",
+          "フリーランス法では、報酬の支払期日は、仕事を受け取った日から60日以内のできるだけ早い日に定めることになっています。支払日の設定の確認をおすすめします。" +
+          note,
+        impact,
       },
     ];
   }
@@ -341,19 +519,23 @@ export function sixtyDays(ctx: WatchContext): IssueDraft[] {
       detail:
         head +
         `締め期間の最初の日（${jpDate(dl.periodStart)}）から数えた期限の${jpDate(dl.limitFromStart)}より ${daysBetween(dl.limitFromStart, dl.payDateActual)}日後です（締め日から数えれば、期限の${jpDate(dl.limitFromEnd)}までに入ります）。` +
-        "締め日から数えてよいのは、同じ種類の仕事が続き、月ごとに締めてまとめて払うことと、報酬の額（算定方法）を取引条件に書いている場合です。取引条件の記録の確認をおすすめします。",
+        "締め日から数えてよいのは、同じ種類の仕事が続き、月ごとに締めてまとめて払うことと、報酬の額（算定方法）を取引条件に書いている場合です。取引条件の記録の確認をおすすめします。" +
+        note,
+      impact,
     },
   ];
 }
 
-export function paidLate(ctx: WatchContext): IssueDraft[] {
-  const out: IssueDraft[] = [];
-  const statements = byId(ctx.statements);
+type LateBatch = { batch: WatchContext["batches"][number]; late: { name: string; payDate: string; days: number; total: number }[]; payDates: string[]; maxDays: number; total: number; holidayNote: string };
+
+/** 振り込んだ日が明細の支払期日より後の振込データ（振込データごと） */
+function lateBatches(ctx: WatchContext, batches: WatchContext["batches"], statementsList: WatchContext["statements"]): { late: LateBatch[]; paidIds: Set<string> } {
+  const statements = byId(statementsList);
   const paidIds = new Set<string>();
-  const m = monthQuery(ctx);
-  for (const b of ctx.batches) {
+  const out: LateBatch[] = [];
+  for (const b of batches) {
     if (!b.executedOn) continue;
-    const late: { name: string; payDate: string; days: number; total: number }[] = [];
+    const late: LateBatch["late"] = [];
     for (const id of b.statementIds) {
       const st = statements.get(id);
       if (!st) continue;
@@ -364,26 +546,36 @@ export function paidLate(ctx: WatchContext): IssueDraft[] {
     }
     if (!late.length) continue;
     const payDates = [...new Set(late.map((x) => x.payDate))].sort();
-    const maxDays = Math.max(...late.map((x) => x.days));
     // 支払期日が銀行の休みの日（土日・年末年始）なら、そのことも書く（事実だけ。扱いは取引条件しだい）
     const holidays = payDates.filter((d) => isBankHoliday(d));
     const holidayNote = holidays.length
       ? `明細の支払期日（${holidays.map(jpDate).join("・")}）は銀行の休みの日です。休みの日にあたるときの扱いを、取引条件にどう書いているかも確かめてください。`
       : "";
+    out.push({ batch: b, late, payDates, maxDays: Math.max(...late.map((x) => x.days)), total: late.reduce((a, x) => a + x.total, 0), holidayNote });
+  }
+  return { late: out, paidIds };
+}
+
+export function paidLate(ctx: WatchContext): IssueDraft[] {
+  const out: IssueDraft[] = [];
+  const m = monthQuery(ctx);
+  const { late, paidIds } = lateBatches(ctx, ctx.batches, ctx.statements);
+  for (const x of late) {
     out.push({
       code: "paid_late",
       severity: "red",
-      subjectId: b.id,
-      subjectLabel: `振込データ ${b.fileName}`,
+      subjectId: x.batch.id,
+      subjectLabel: `振込データ ${x.batch.fileName}`,
       title: "支払期日より後に振り込んだ記録があります",
       detail:
-        `振り込んだ日の記録は${jpDate(b.executedOn)}で、明細の支払期日（${payDates.map(jpDate).join("・")}）より ${maxDays}日後です。` +
-        `対象：${nameList(late.map((x) => x.name))}（${late.length}人・合計 ${yenText(late.reduce((a, x) => a + x.total, 0))}）。` +
-        holidayNote +
+        `振り込んだ日の記録は${jpDate(x.batch.executedOn!)}で、明細の支払期日（${x.payDates.map(jpDate).join("・")}）より ${x.maxDays}日後です。` +
+        `対象：${nameList(x.late.map((y) => y.name))}（${x.late.length}人・合計 ${yenText(x.total)}）。` +
+        x.holidayNote +
         "振り込んだ日の記録が正しいか確かめてください。記録どおりなら、遅れた事情とドライバーへの連絡を「確認済み」のメモに残すことをおすすめします。",
       basis: BASIS.payDate,
       sourceUrl: SOURCES.flQa,
       fixHref: FIX.transfer(m),
+      impact: impactOf(x.total, "遅れて払った額の合計"),
     });
   }
 
@@ -394,6 +586,7 @@ export function paidLate(ctx: WatchContext): IssueDraft[] {
   const unpaid = payees.filter((p) => !(p.id && paidIds.has(p.id)) && ctx.today > p.payDate);
   if (unpaid.length) {
     const payDates = [...new Set(unpaid.map((p) => p.payDate))].sort();
+    const total = unpaid.reduce((a, p) => a + p.total, 0);
     out.push({
       code: "paid_late",
       severity: "yellow",
@@ -401,14 +594,37 @@ export function paidLate(ctx: WatchContext): IssueDraft[] {
       subjectLabel: `振り込んだ日の記録が無い ${unpaid.length}人`,
       title: "支払期日を過ぎましたが、振り込んだ日の記録がありません",
       detail:
-        `明細の支払期日（${payDates.map(jpDate).join("・")}）を過ぎていますが、${nameList(unpaid.map((p) => driverName(ctx, p.driverId)))}（${unpaid.length}人・合計 ${yenText(unpaid.reduce((a, p) => a + p.total, 0))}）は振り込んだ日の記録がありません。` +
+        `明細の支払期日（${payDates.map(jpDate).join("・")}）を過ぎていますが、${nameList(unpaid.map((p) => driverName(ctx, p.driverId)))}（${unpaid.length}人・合計 ${yenText(total)}）は振り込んだ日の記録がありません。` +
         "振り込んでいれば、振込データの画面で振り込んだ日を入れてください。",
       basis: BASIS.payDate,
       sourceUrl: SOURCES.flQa,
       fixHref: FIX.transfer(m),
+      impact: impactOf(total, "振り込んだ記録が無い額の合計"),
     });
   }
   return out;
+}
+
+/** 前の月の振込が、その月の明細の支払期日より後だった（今月の締めの前に、事情と連絡を確かめてもらう） */
+export function latePaymentPrev(ctx: WatchContext): IssueDraft[] {
+  const prevMonth = addMonths(ctx.month, -1);
+  const { late } = lateBatches(ctx, ctx.prevBatches ?? [], ctx.prevStatements ?? []);
+  return late.map((x) => ({
+    code: "late_payment_prev",
+    severity: "red" as const,
+    subjectId: `prev:${x.batch.id}`,
+    subjectLabel: `${jpMonth(prevMonth)}分の振込データ ${x.batch.fileName}`,
+    title: "前の月の振込が、支払期日より後になっています",
+    detail:
+      `${jpMonth(prevMonth)}分の振込は、振り込んだ日の記録が${jpDate(x.batch.executedOn!)}で、明細の支払期日（${x.payDates.map(jpDate).join("・")}）より ${x.maxDays}日後です。` +
+      `対象：${nameList(x.late.map((y) => y.name))}（${x.late.length}人・合計 ${yenText(x.total)}）。` +
+      x.holidayNote +
+      `記録が正しいか確かめ、遅れた事情とドライバーへの連絡を「確認済み」のメモに残してください。${jpMonth(ctx.month)}分の支払日（${jpDate(ctx.drafts[0]?.payDate ?? payDateFor(ctx.month, ctx.tenant))}）に振り込めるかも確かめておくと安心です。`,
+    basis: BASIS.payDate,
+    sourceUrl: SOURCES.flQa,
+    fixHref: FIX.transfer(prevMonth.slice(0, 7)),
+    impact: impactOf(x.total, "遅れて払った額の合計（前の月）"),
+  }));
 }
 
 // ---------------------------------------------------------------- 5〜7. 差し引きと単価
@@ -421,6 +637,10 @@ function peopleText(items: { name: string; amount: number }[]): string {
   const total = items.reduce((s, x) => s + x.amount, 0);
   if (items.length === 1) return `${items[0].name}さん・${yenText(total)}`;
   return `${items.length}人（${nameList(items.map((x) => x.name))}）・合計 ${yenText(total)}`;
+}
+
+function sumAmounts(items: { amount: number }[]): number {
+  return items.reduce((s, x) => s + x.amount, 0);
 }
 
 /** この月の明細に出ている控除（ルールごと） */
@@ -447,6 +667,7 @@ export function feeDeducted(ctx: WatchContext): IssueDraft[] {
       title: "振込手数料をドライバーの負担にする設定です",
       detail: `会社の設定で、振込手数料を「ドライバーの負担」にしています。${FEE_SENTENCE}会社の負担にする設定の確認をおすすめします。`,
       fixHref: FIX.company(monthQuery(ctx)),
+      impact: impactOf(null, "手数料 × 人数（手数料の額の記録が無いので出せません）"),
     });
   }
   const applied = appliedDeductions(ctx.drafts);
@@ -465,6 +686,7 @@ export function feeDeducted(ctx: WatchContext): IssueDraft[] {
         `控除「${r.name}」で、振込手数料にあたる額を報酬から差し引いています` +
         `${a ? `（${monthOf(ctx)} ${peopleText(a.items)}）` : "（有効なルールです）"}。${FEE_SENTENCE}`,
       fixHref: FIX.rules(monthQuery(ctx), r.driverId),
+      impact: impactOf(a ? sumAmounts(a.items) : null, a ? `差し引いた手数料の合計（税抜・${a.items.length}人）` : `${monthOf(ctx)}はまだ差し引いていません`),
     });
   }
   // ルールが消えていても、明細に残っている分は出す
@@ -477,6 +699,7 @@ export function feeDeducted(ctx: WatchContext): IssueDraft[] {
       title: "振込手数料を報酬から差し引く控除があります",
       detail: `控除「${a.name}」で、振込手数料にあたる額を報酬から差し引いています（${monthOf(ctx)} ${peopleText(a.items)}）。${FEE_SENTENCE}`,
       fixHref: FIX.rules(monthQuery(ctx)),
+      impact: impactOf(sumAmounts(a.items), `差し引いた手数料の合計（税抜・${a.items.length}人）`),
     });
   }
   for (const a of ctx.adjustments) {
@@ -489,6 +712,7 @@ export function feeDeducted(ctx: WatchContext): IssueDraft[] {
       title: "振込手数料を報酬から差し引く調整があります",
       detail: `調整「${a.label}」で ${yenText(-a.amount)} を${name}さんの報酬から差し引いています。${FEE_SENTENCE}`,
       fixHref: FIX.adjustment(monthQuery(ctx), a.id),
+      impact: impactOf(-a.amount, "差し引いた額"),
     });
   }
   return out;
@@ -507,6 +731,7 @@ export function deductionNoAgreement(ctx: WatchContext): IssueDraft[] {
     const fixHref = FIX.rules(monthQuery(ctx), rule?.driverId ?? null);
     const subjectLabel = a.items.length === 1 ? `${name}（${a.items[0].name}）` : `${name}（${a.items.length}人）`;
     const agreed = rule ? rule.agreedInWriting : a.agreedInWriting;
+    const impact = impactOf(sumAmounts(a.items), `控除の合計（税抜・${a.items.length}人）`);
     if (!agreed) {
       out.push({
         ...base,
@@ -519,6 +744,7 @@ export function deductionNoAgreement(ctx: WatchContext): IssueDraft[] {
           "合意の無い差し引きは、報酬の減額にあたるおそれがあります。合意した書面があれば、控除のルールに「書面で合意している」と合意した日を入れてください。" +
           "書面が見つからないときは、払う前に、差し引いてよいものかを確かめることをおすすめします。",
         fixHref,
+        impact,
       });
     } else if (rule && !rule.agreedOn) {
       out.push({
@@ -531,6 +757,7 @@ export function deductionNoAgreement(ctx: WatchContext): IssueDraft[] {
           `控除「${name}」（${who}）は「書面で合意している」になっていますが、合意した日の記録がありません。` +
           "合意がこの月の仕事より前か確かめられるよう、合意した日を入れることをおすすめします。",
         fixHref,
+        impact,
       });
     } else if (rule?.agreedOn && rule.agreedOn > ctx.month) {
       out.push({
@@ -543,6 +770,7 @@ export function deductionNoAgreement(ctx: WatchContext): IssueDraft[] {
           `控除「${name}」（${who}）の合意した日（${jpDate(rule.agreedOn)}）が、この月の初日（${jpDate(ctx.month)}）より後です。` +
           "合意より前の仕事の分まで差し引くと、報酬の減額にあたるおそれがあります。差し引く範囲の確認をおすすめします。",
         fixHref,
+        impact,
       });
     }
   }
@@ -574,6 +802,7 @@ export function deductionNoAgreement(ctx: WatchContext): IssueDraft[] {
         (damage ? "事故や破損などを扱うときは、どんな出来事で、なぜその額なのかの記録を残すことをおすすめします。" : "") +
         (a.amount < 0 ? "根拠の無い差し引きは、報酬の減額にあたるおそれがあります。" : ""),
       fixHref: FIX.adjustment(monthQuery(ctx), a.id),
+      impact: impactOf(Math.abs(a.amount), a.amount < 0 ? "差し引いた額" : "支払う額"),
     });
   }
   return out;
@@ -603,6 +832,7 @@ export function rateDown(ctx: WatchContext): IssueDraft[] {
         basis: BASIS.rateDown,
         sourceUrl: SOURCES.flGuidelines,
         fixHref: overrides.has(`${d.driverId}:${line.projectId}`) ? FIX.rates(d.driverId, line.projectId) : FIX.projects(line.project),
+        impact: impactOf(effect, "下がった分（単価の差 × 今月の数量）"),
       });
     }
   }

@@ -1,0 +1,107 @@
+import { Money, TableWrap } from "@/components/ui";
+import { jpDate } from "@/lib/format";
+import type { CompanyCopy } from "~/server/features/statements/company-copy";
+
+const NTA_TRANSITIONAL_URL = "https://www.nta.go.jp/taxes/shiraberu/zeimokubetsu/shohi/keigenzeiritsu/invoice_2tokurei.htm";
+
+/**
+ * 会社の控え（会社の画面だけ。ドライバーの画面・ドライバーの PDF には出さない）。
+ * 受注の売上・会社の利益と、登録番号の無い方への支払で会社が控除できずに負担する消費税（経過措置）の内訳。
+ * 数字はどれも保存した明細の写しから（画面で計算し直さない）。
+ */
+export function CompanyCopyBox({ copy, taxMethod }: { copy: CompanyCopy; taxMethod: string }) {
+  return (
+    <section className="rounded-card border-2 border-dashed border-border bg-muted p-4 text-sm" aria-label="会社の控え">
+      <h2 className="font-bold">会社の控え（ドライバーには見せません）</h2>
+      <dl className="mt-2 grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1">
+        <dt>受注の売上（税抜）</dt>
+        <dd className="text-right">
+          <Money value={copy.sales} />
+        </dd>
+        <dt>委託料（税抜）</dt>
+        <dd className="text-right">
+          <Money value={-copy.subtotal} />
+        </dd>
+        <dt>控除（会社の売上・税抜）</dt>
+        <dd className="text-right">
+          <Money value={copy.deductionTotal} />
+        </dd>
+        {copy.unregistered && (
+          <>
+            <dt>控除できない消費税（経過措置）</dt>
+            <dd className="text-right">
+              <Money value={-copy.invoiceBurden} />
+            </dd>
+          </>
+        )}
+        <dt className="border-t border-border pt-1 font-bold">この人の分の利益</dt>
+        <dd className="border-t border-border pt-1 text-right font-bold">
+          <Money value={copy.profit} />
+        </dd>
+      </dl>
+
+      {copy.unregistered && (
+        <div className="mt-4 border-t border-border pt-3">
+          <h3 className="font-bold">経過措置の負担（登録番号の無い方への支払）</h3>
+          {taxMethod !== "general" ? (
+            <p className="mt-1">会社の消費税の計算が原則課税ではない設定のため、この負担は 0 円として計算しています（設定は「会社」の画面で変えられます）。</p>
+          ) : (
+            <>
+              <p className="mt-1">
+                この方への支払（税込）のうち、仕入税額控除できるのは
+                {copy.deductibleRatePercent !== null ? ` ${copy.deductibleRatePercent}%` : "経過措置の割合"}
+                （期間の末日で判定）までです。控除できない分 <Money value={copy.invoiceBurden} /> を会社が負担します。
+              </p>
+              {copy.parts.length > 0 && (
+                <>
+                  <p className="mt-2 font-bold">締めの期間が割合の変わる日をまたいでいます</p>
+                  <p className="mt-1 break-words">{copy.partsText}</p>
+                  <TableWrap>
+                    <table className="mt-2 w-full min-w-[18rem] text-sm">
+                      <thead>
+                        <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                          <th className="py-1 pr-2 font-normal">期間（稼働の日）</th>
+                          <th className="py-1 pr-2 text-right font-normal">支払（税込）</th>
+                          <th className="py-1 pr-2 text-right font-normal">控除できる割合</th>
+                          <th className="py-1 text-right font-normal">会社の負担</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {copy.parts.map((p) => (
+                          <tr key={`${p.from}-${p.to}`} className="border-b border-border">
+                            <td className="py-1 pr-2">
+                              {jpDate(p.from)}〜{jpDate(p.to)}
+                            </td>
+                            <td className="py-1 pr-2 text-right">
+                              <Money value={p.base} />
+                            </td>
+                            <td className="num py-1 pr-2 text-right">{p.ratePercent}%</td>
+                            <td className="py-1 text-right">
+                              <Money value={p.burden} />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </TableWrap>
+                </>
+              )}
+              {copy.undatedAcrossStep && (
+                <p className="mt-2 rounded-lg border border-warning/40 bg-warning/10 p-2 font-bold text-warning" role="note">
+                  日付の無い稼働があり、期間の末日の割合で計算しています。稼働の日付を入れると、日ごとの割合で分けて計算できます（見張り番にも出ます）。
+                </p>
+              )}
+              <p className="mt-2 text-xs text-muted-foreground">
+                会社の控えとしての目安です。扱いは税理士にご確認ください（
+                <a href={NTA_TRANSITIONAL_URL} target="_blank" rel="noopener noreferrer">
+                  国税庁 インボイス制度の経過措置
+                </a>
+                ）。
+              </p>
+            </>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}

@@ -20,22 +20,37 @@ type Props = {
   remaining: { count: number; total: number };
   /** 全銀のファイルを出せるか（振込依頼人の設定がそろっているか） */
   zenginReady: boolean;
+  /** 前回の振込から口座が変わった人の数（全員・まだの人だけ）。いれば確かめた印が要る */
+  bankChanged?: { all: number; remaining: number };
 };
 
 /** 振込データを作る（振込指定日を選んで作る。作ったらすぐダウンロードできる） */
-export function CreateTransferForm({ month, defaultDate, promisedPayDate, earlierBatches, executedBatches, all, remaining, zenginReady }: Props) {
+export function CreateTransferForm({
+  month,
+  defaultDate,
+  promisedPayDate,
+  earlierBatches,
+  executedBatches,
+  all,
+  remaining,
+  zenginReady,
+  bankChanged = { all: 0, remaining: 0 },
+}: Props) {
   const [state, action, pending] = useActionState<CreateTransferState, FormData>(createTransferAction, undefined);
   const [date, setDate] = useState(defaultDate);
   const [scope, setScope] = useState<"all" | "remaining">(earlierBatches > 0 ? "remaining" : "all");
   const [confirmed, setConfirmed] = useState(false);
+  const [bankChecked, setBankChecked] = useState(false);
   // 作ったあと（前のデータの数が変わったとき）は「まだの人だけ」に戻す（二重に作らないように）
   const [seenEarlier, setSeenEarlier] = useState(earlierBatches);
   if (seenEarlier !== earlierBatches) {
     setSeenEarlier(earlierBatches);
     setScope(earlierBatches > 0 ? "remaining" : "all");
     setConfirmed(false);
+    setBankChecked(false);
   }
   const target = scope === "all" ? all : remaining;
+  const changedCount = scope === "all" ? bankChanged.all : bankChanged.remaining;
   const m = month.slice(0, 7);
 
   // 選んだ日についての注意（送る前に見せる。最後の判断はサーバーでも行う）
@@ -48,7 +63,8 @@ export function CreateTransferForm({ month, defaultDate, promisedPayDate, earlie
     if (late > 0) notes.push({ tone: "red", text: `約束した支払日（${shortDate(promisedPayDate)}）より ${late} 日あとです。支払が遅れるおそれがあります。` });
     if (date < todayJst()) notes.push({ tone: "yellow", text: "過ぎた日付です。銀行が受け付けないことがあります。" });
   }
-  const blocked = target.count === 0 || (scope === "all" && earlierBatches > 0 && (executedBatches > 0 || !confirmed));
+  const blocked =
+    target.count === 0 || (scope === "all" && earlierBatches > 0 && (executedBatches > 0 || !confirmed)) || (changedCount > 0 && !bankChecked);
   const fe = state && !state.ok ? state.fieldErrors ?? {} : {};
 
   return (
@@ -107,6 +123,22 @@ export function CreateTransferForm({ month, defaultDate, promisedPayDate, earlie
       )}
       {earlierBatches === 0 && <input type="hidden" name="scope" value="all" />}
 
+      {changedCount > 0 && (
+        <label className="flex min-h-11 items-start gap-3 rounded-lg border border-danger/40 bg-danger/10 p-3">
+          <input
+            type="checkbox"
+            name="bankChangesConfirmed"
+            checked={bankChecked}
+            onChange={(e) => setBankChecked(e.target.checked)}
+            className="mt-1 h-5 w-5"
+          />
+          <span className="text-sm text-danger">
+            <span className="font-bold">口座が変わった人を確かめました（{changedCount}人）。</span>
+            上の「前回の振込から口座が変わった人」を見て、ご本人に電話などで口座を確かめました。
+          </span>
+        </label>
+      )}
+
       {state && !state.ok && (
         <p role="alert" className="whitespace-pre-line rounded-lg border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
           {state.error}
@@ -119,6 +151,11 @@ export function CreateTransferForm({ month, defaultDate, promisedPayDate, earlie
             {state.data.fileName}（{state.data.count}人・{yenText(state.data.total)}）
             {state.data.excluded > 0 && `。振込データに入らなかった人が ${state.data.excluded}人います（下の一覧を見てください）`}
           </p>
+          {state.data.lateDays > 0 && (
+            <p className="font-bold text-danger">
+              振込指定日が、明細に書いた支払日（{shortDate(promisedPayDate)}）より {state.data.lateDays} 日あとです。支払が遅れるおそれがあります。
+            </p>
+          )}
           <div className="flex flex-wrap gap-2">
             {zenginReady && (
               <a href={`/api/transfer/${state.data.batchId}?m=${m}`} className={buttonClass("primary")}>

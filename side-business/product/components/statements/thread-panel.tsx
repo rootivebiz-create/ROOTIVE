@@ -4,7 +4,7 @@ import { useActionState, useState } from "react";
 import { Button } from "@/components/ui";
 import { Badge, Notice } from "~/components/page";
 import { replyAction, resolveAction } from "~/app/(app)/statements/actions";
-import type { Thread } from "~/server/features/statements/threads";
+import { threadAnchor, type Thread } from "~/server/features/statements/threads";
 
 const MAX = 1000;
 
@@ -35,7 +35,7 @@ export function ThreadPanel({ statementId, threads, canEdit }: { statementId: st
 function ThreadBox({ statementId, thread: t, canEdit }: { statementId: string; thread: Thread; canEdit: boolean }) {
   const hasDriver = t.messages.some((m) => m.author === "driver");
   return (
-    <section className="rounded-card border border-border bg-card p-3" aria-label={`${t.label}についてのやりとり`}>
+    <section id={threadAnchor(t.lineKey)} className="scroll-mt-4 rounded-card border border-border bg-card p-3" aria-label={`${t.label}についてのやりとり`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="font-bold">{t.label}について</h3>
         {hasDriver && (t.open > 0 ? <Badge tone="red">未解決 {t.open}</Badge> : <Badge tone="green">解決済み</Badge>)}
@@ -63,7 +63,8 @@ function ThreadBox({ statementId, thread: t, canEdit }: { statementId: string; t
   );
 }
 
-function ReplyForm({ statementId, lineKey, placeholder }: { statementId: string; lineKey: string | null; placeholder: string }) {
+/** 返事を書いて送る（明細の画面と、質問の一覧で使う） */
+export function ReplyForm({ statementId, lineKey, placeholder }: { statementId: string; lineKey: string | null; placeholder: string }) {
   const [body, setBody] = useState("");
   const [state, action, pending] = useActionState(async (prev: Awaited<ReturnType<typeof replyAction>> | undefined, fd: FormData) => {
     const r = await replyAction(prev, fd);
@@ -100,7 +101,8 @@ function ReplyForm({ statementId, lineKey, placeholder }: { statementId: string;
   );
 }
 
-function ResolveForm({ statementId, lineKey, resolved }: { statementId: string; lineKey: string | null; resolved: boolean }) {
+/** 解決にする／未解決に戻す（明細の画面と、質問の一覧で使う） */
+export function ResolveForm({ statementId, lineKey, resolved }: { statementId: string; lineKey: string | null; resolved: boolean }) {
   const [state, action, pending] = useActionState(resolveAction, undefined);
   return (
     <form action={action} className="flex flex-wrap items-center gap-2">
