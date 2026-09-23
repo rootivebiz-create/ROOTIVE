@@ -8,12 +8,14 @@ import {
   isRegistrationNo,
   jpDate,
   jpMonth,
+  normalizeMonth,
   parseNonNegative,
   parseYen,
   percentTextToRate,
   periodText,
   qtyText,
   rateToPercentText,
+  readNumberDraft,
   toMMDD,
   unitPrice,
   zenginFileName,
@@ -40,6 +42,20 @@ describe("日付と月", () => {
     expect(periodText("2028-02")).toBe("2028年2月1日〜2月29日");
   });
 
+  it("月の欄を文字で打っても読める（type=month が使えないブラウザ）", () => {
+    expect(normalizeMonth("2026-10")).toBe("2026-10");
+    expect(normalizeMonth("2026/1")).toBe("2026-01");
+    expect(normalizeMonth("2026年11月")).toBe("2026-11");
+    expect(normalizeMonth("２０２６－１２")).toBe("2026-12");
+    expect(normalizeMonth("202610")).toBe("2026-10");
+    expect(normalizeMonth(" 2026 / 10 ")).toBe("2026-10");
+    expect(normalizeMonth("2026-")).toBeNull();
+    expect(normalizeMonth("2026-1x")).toBeNull();
+    expect(normalizeMonth("2026-13")).toBeNull();
+    expect(normalizeMonth("2026-00")).toBeNull();
+    expect(normalizeMonth("")).toBeNull();
+  });
+
   it("振込日の MMDD とファイル名", () => {
     expect(toMMDD("2026-11-25")).toBe("1125");
     expect(toMMDD("2026-11-31")).toBeNull();
@@ -56,6 +72,18 @@ describe("数と率の入力", () => {
     expect(parseYen("15,000")).toBe(15000);
     expect(parseYen("100.5")).toBeNull();
     expect(parseYen("-3")).toBeNull();
+  });
+
+  it("打っている途中の文字：空欄は既定の値、最後の「.」は打ちかけとして読む", () => {
+    expect(readNumberDraft("", parseNonNegative)).toBe(0);
+    expect(readNumberDraft("  ", parseNonNegative, 5)).toBe(5);
+    expect(readNumberDraft("7.", parseNonNegative)).toBe(7);
+    expect(readNumberDraft("７．", parseNonNegative)).toBe(7);
+    expect(readNumberDraft("7.5", parseNonNegative)).toBe(7.5);
+    expect(readNumberDraft("10.", percentTextToRate)).toBe(0.1);
+    expect(readNumberDraft("1..", parseNonNegative)).toBeNull();
+    expect(readNumberDraft("abc", parseNonNegative)).toBeNull();
+    expect(readNumberDraft("100.", parseYen)).toBe(100);
   });
 
   it("% の入力と率の行き来で誤差が出ない", () => {

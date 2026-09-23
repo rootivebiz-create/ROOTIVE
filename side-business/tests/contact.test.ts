@@ -130,6 +130,9 @@ describe("相談フォームの入力を確かめる", () => {
     expect(isHoneypotFilled({ ...valid, website: 1 })).toBe(true);
     expect(isHoneypotFilled(null)).toBe(false);
     expect(errors({ ...valid, website: "x" }).website).toBe("この欄は空のままにしてください");
+    // isHoneypotFilled が「空」とみなすものは、確かめる側でも通す（400 で黙って止まらない）
+    expect(ok({ ...valid, website: "  " }).company).toBe("株式会社テスト運送");
+    expect(ok({ ...valid, website: null }).company).toBe("株式会社テスト運送");
   });
 });
 
@@ -178,7 +181,7 @@ describe("通知の文面", () => {
   it("Webhook：Discord は 2000 文字まで、Slack の特別な記号は無害にする、メンションは効かない", () => {
     const long = formatInquiry({ ...inquiry, message: "あ".repeat(2000) + " <!channel> @everyone" }, receivedAt);
     const p = webhookPayload(long);
-    expect(Array.from(p.content).length).toBeLessThanOrEqual(DISCORD_CONTENT_MAX);
+    expect(p.content.length).toBeLessThanOrEqual(DISCORD_CONTENT_MAX);
     expect(p.content.endsWith("…（長いため途中までです）")).toBe(true);
     expect(p.text).toContain("&lt;!channel&gt;");
     expect(p.text).not.toContain("<!channel>");
@@ -189,10 +192,23 @@ describe("通知の文面", () => {
     expect(short.text).toBe("A &amp; B");
   });
 
-  it("切り詰めは絵文字を割らない", () => {
-    expect(truncateChars("🚚🚚🚚", 2, "…")).toBe("🚚…");
+  it("切り詰めは length で数え、絵文字を割らない", () => {
+    // 🚚 は length 2。上限 3 なら「🚚」＋「…」で 3
+    expect(truncateChars("🚚🚚🚚", 3, "…")).toBe("🚚…");
+    expect(truncateChars("🚚🚚🚚", 2, "…")).toBe("…");
     expect(truncateChars("abc", 3)).toBe("abc");
+    expect(truncateChars("abcd", 3)).toBe("ab…");
     expect(escapeSlack("<a>&")).toBe("&lt;a&gt;&amp;");
+  });
+
+  it("Webhook：絵文字が多くても Discord の上限を length でも超えない", () => {
+    const text = formatInquiry({ ...inquiry, message: "🚚".repeat(1000) }, receivedAt);
+    expect(text.length).toBeGreaterThan(DISCORD_CONTENT_MAX);
+    const p = webhookPayload(text);
+    expect(p.content.length).toBeLessThanOrEqual(DISCORD_CONTENT_MAX);
+    expect(p.content.endsWith("…（長いため途中までです）")).toBe(true);
+    // サロゲートペアの片割れが残っていない
+    expect(p.content).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
   });
 
   it("メールで送るリンク（入力を下書きに入れる）", () => {

@@ -13,7 +13,8 @@ export const metadata: Metadata = {
   title: TITLE,
   description: DESCRIPTION,
   alternates: { canonical: PATH },
-  openGraph: { type: "website", title: TITLE, description: DESCRIPTION, url: PATH },
+  // openGraph はレイアウトの値を丸ごと置きかえるので、locale と siteName もここで入れる
+  openGraph: { type: "website", locale: SITE.locale, siteName: SITE.name, title: TITLE, description: DESCRIPTION, url: PATH },
 };
 
 export default function ContactPage() {
@@ -47,7 +48,7 @@ export default function ContactPage() {
 
       <section aria-labelledby="flow" className="mt-8">
         <h2 id="flow" className="text-lg font-bold">
-          申し込んだあとの流れ
+          相談の流れ
         </h2>
         <ol className="mt-4 space-y-4">
           {steps.map((s, i) => (

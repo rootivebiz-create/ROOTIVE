@@ -186,8 +186,10 @@ export function ContactForm({
       return;
     }
     const message = typeof data.error === "string" ? data.error : CONTACT_TEXT.failed;
-    if (res.status === 400 && data.fieldErrors && typeof data.fieldErrors === "object") {
-      showFieldErrors(data.fieldErrors);
+    // 画面にある欄の誤りなら、その欄に出す（画面に無い欄だけの誤りは、下の枠にまとめて出す）
+    const fieldErrors = data.fieldErrors && typeof data.fieldErrors === "object" ? data.fieldErrors : null;
+    if (res.status === 400 && fieldErrors && FIELD_ORDER.some((f) => fieldErrors[f])) {
+      showFieldErrors(fieldErrors);
       return;
     }
     // 準備中（503）・送信の失敗（502 など）はメールの下書きでも送れるようにする
@@ -233,7 +235,7 @@ export function ContactForm({
         <p className="rounded-lg border border-danger bg-card px-3 py-2 text-sm font-bold text-danger">{CONTACT_TEXT.invalid}</p>
       )}
 
-      <fieldset disabled={sending} className="space-y-5">
+      <fieldset disabled={sending} className="min-w-0 space-y-5">
         <Row id={id("company")} label="会社名" required error={errors.company}>
           <Input
             id={id("company")}
@@ -319,7 +321,7 @@ export function ContactForm({
           </Select>
         </Row>
 
-        <fieldset aria-describedby={errors.topics ? `${id("topics")}-error` : undefined}>
+        <fieldset className="min-w-0" aria-describedby={errors.topics ? `${id("topics")}-error` : undefined}>
           <legend className="flex items-center gap-2 text-sm font-bold">
             相談したいこと
             <Badge required={false} />

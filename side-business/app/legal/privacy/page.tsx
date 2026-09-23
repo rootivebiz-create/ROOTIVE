@@ -11,7 +11,8 @@ export const metadata: Metadata = {
   title: TITLE,
   description: DESCRIPTION,
   alternates: { canonical: PATH },
-  openGraph: { type: "website", title: TITLE, description: DESCRIPTION, url: PATH },
+  // openGraph はレイアウトの値を丸ごと置きかえるので、locale と siteName もここで入れる
+  openGraph: { type: "website", locale: SITE.locale, siteName: SITE.name, title: TITLE, description: DESCRIPTION, url: PATH },
 };
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -114,6 +115,9 @@ export default function PrivacyPage() {
             <li>受け取った内容は、当方だけが見られる場所で管理します。</li>
             <li>使う外部のサービスのアカウントは、当方だけが使えるように管理します。</li>
             <li>必要がなくなった情報は、消します。</li>
+            <li>
+              米国の事業者のサービスを使うため、米国の個人情報の保護の制度（個人情報保護委員会が公表している情報）を確かめたうえで使います。
+            </li>
           </ul>
         </Section>
 
@@ -129,7 +133,9 @@ export default function PrivacyPage() {
             <Link href="/tools/invoice-cost">計算ツール</Link>
             に入れた金額も、画面の中だけで計算し、送信しません。
           </p>
-          <p>デモの内容を消したいときは、ブラウザの「サイトのデータ」を消してください。</p>
+          <p>
+            デモに入れた内容を消したいときは、デモの「設定」にある「サンプルに戻す」を押すか、ブラウザの「サイトのデータ」を消してください。
+          </p>
         </Section>
 
         <Section title="9. Cookie とアクセス解析">
@@ -146,6 +152,7 @@ export default function PrivacyPage() {
             {contactLine}
             からご連絡ください。ご本人であることを確かめたうえで、遅滞なく対応します。
           </p>
+          <p>個人情報の扱いについての苦情やご質問も、同じ連絡先で受け付けます。</p>
         </Section>
 
         <Section title="11. 改定">

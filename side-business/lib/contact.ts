@@ -95,8 +95,12 @@ export const inquirySchema = z.object({
     .max(LIMITS.message, { error: `ご相談の内容は${LIMITS.message}文字までにしてください` })
     .default(""),
   agree: z.literal(true, { error: "プライバシーポリシーへの同意が必要です" }),
-  /** おとりの欄（人には見えない）。入っていたら機械の送信とみなす */
-  website: z.string().max(0, { error: "この欄は空のままにしてください" }).optional(),
+  /** おとりの欄（人には見えない）。入っていたら機械の送信とみなす（空白だけ・null は isHoneypotFilled と同じく空とみなす） */
+  website: z
+    .string()
+    .overwrite((v) => v.trim())
+    .max(0, { error: "この欄は空のままにしてください" })
+    .nullish(),
 });
 
 export type Inquiry = z.output<typeof inquirySchema>;
@@ -163,15 +167,22 @@ export function formatInquiry(inquiry: Inquiry, receivedAt: Date): string {
   ].join("\n");
 }
 
-/** 文字（絵文字を割らない）で数えて切り詰める */
+/**
+ * 長さ（JavaScript の length＝入力欄の maxLength・zod の max と同じ数え方）が max 以下になるように切り詰める。
+ * 絵文字（2 つ分で 1 文字のもの）は途中で割らない。この数え方なら「文字の数」で数える相手の上限にも必ず収まる。
+ */
 export function truncateChars(text: string, max: number, suffix = "…"): string {
-  const chars = Array.from(text);
-  if (chars.length <= max) return text;
-  const keep = Math.max(0, max - Array.from(suffix).length);
-  return chars.slice(0, keep).join("") + suffix;
+  if (text.length <= max) return text;
+  const room = Math.max(0, max - suffix.length);
+  let out = "";
+  for (const ch of text) {
+    if (out.length + ch.length > room) break;
+    out += ch;
+  }
+  return out + suffix;
 }
 
-/** Discord の content の上限（文字） */
+/** Discord の content の上限（文字。数え方が違っても超えないよう、length で数えて切る） */
 export const DISCORD_CONTENT_MAX = 2000;
 
 /** Slack の text で特別な意味を持つ &, <, > を無害にする（<!channel> などで全員に通知させない） */
