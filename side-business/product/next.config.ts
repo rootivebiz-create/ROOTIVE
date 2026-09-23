@@ -23,7 +23,19 @@ const nextConfig: NextConfig = {
     serverActions: { bodySizeLimit: "10mb" },
   },
   async headers() {
-    return [{ source: "/(.*)", headers: securityHeaders }];
+    // ドライバーが開くリンク（明細 /s・取引条件 /t）は検索に出さない・残さない・リンク元を送らない（後に書いたものが勝つ）
+    const privateLink = [
+      { key: "X-Robots-Tag", value: "noindex, nofollow" },
+      { key: "Referrer-Policy", value: "no-referrer" },
+      { key: "Cache-Control", value: "private, no-store" },
+    ];
+    return [
+      { source: "/(.*)", headers: securityHeaders },
+      { source: "/s/:path*", headers: privateLink },
+      { source: "/t/:path*", headers: privateLink },
+      { source: "/api/s/:path*", headers: privateLink },
+      { source: "/api/t/:path*", headers: privateLink },
+    ];
   },
 };
 

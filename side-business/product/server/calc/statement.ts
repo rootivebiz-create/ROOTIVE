@@ -7,6 +7,7 @@ import { calcWithholding, type WithholdingCategory } from "@/lib/engine/withhold
 import { roundYen } from "@/lib/payroll/money";
 import { deductibleRateForExempt, monthEnd, nonDeductibleTax } from "@/lib/payroll/tax";
 import type { Rounding } from "@/lib/payroll/types";
+import { addDays, dayInMonth, type DayOfMonth } from "@/lib/tools/torihiki-joken";
 
 export const TAX_RATE = 0.1;
 
@@ -21,6 +22,8 @@ export type CalcTenant = {
   payMonthOffset: number;
   payDay: number;
   statementNote?: string;
+  /** 明細を送ってから、連絡が無ければ確認とみなすまでの日数（注記の文に入れる。既定 7） */
+  deemedConfirmDays?: number;
 };
 
 export type CalcDriver = {
@@ -32,6 +35,9 @@ export type CalcDriver = {
   isCorporation: boolean;
   withholdingCategory: string;
   active: boolean;
+  /** 委託の開始日・終了日（稼働の無い月の定額を、契約の期間の中だけで引くために使う） */
+  startedOn?: string | null;
+  endOn?: string | null;
 };
 
 export type CalcProject = { id: string; name: string; clientName: string | null; unit: string; billRate: number; payRate: number };
@@ -49,7 +55,7 @@ export type CalcRule = {
   active: boolean;
   sort: number;
 };
-export type CalcWork = { driverId: string; projectId: string; qty: number };
+export type CalcWork = { driverId: string; projectId: string; qty: number; workDate?: string | null };
 export type CalcAdjustment = { driverId: string; label: string; amount: number; taxable: boolean; agreedInWriting: boolean };
 
 export type StatementLine = {
@@ -93,19 +99,82 @@ export type StatementDraft = {
   /** 免税の方への支払で、会社が控除できずに負担する消費税（原則課税のときだけ） */
   invoiceBurden: number;
   deductibleRate: number;
+  /**
+   * 締めの期間が経過措置の段の境目（例：2026-10-01）をまたぐとき、稼働の日ごとに割合を分けた内訳。
+   * またがないときは空。日付の無い稼働は期間の末日の割合で数え、undatedAcrossStep を立てる（見張り番が知らせる）
+   */
+  burdenParts?: { from: string; to: string; rate: number; base: number; burden: number }[];
+  undatedAcrossStep?: boolean;
   hasWork: boolean;
   /** 仕入明細書として使う形か（登録済みの方） */
   isPurchaseStatement: boolean;
   note: string;
 };
 
-const DEFAULT_NOTE =
-  "記載内容に誤りがある場合は、受け取りから7日以内にご連絡ください。ご連絡がない場合は、内容を確認いただいたものとします。";
+/** 明細の注記（送ってから days 日以内に連絡が無ければ確認とみなす。国税庁 インボイス Q&A 問86 の方法に沿った文） */
+export function deemedNote(days = 7): string {
+  return `記載内容に誤りがある場合は、受け取りから${days}日以内にご連絡ください。ご連絡がない場合は、内容を確認いただいたものとします。`;
+}
 
-/** YYYY-MM-01 → 月末の日付 */
-export function periodOf(month: string): { from: string; to: string } {
-  const ym = month.slice(0, 7);
-  return { from: `${ym}-01`, to: monthEnd(ym) };
+export const DEFAULT_NOTE = deemedNote(7);
+
+function toDay(closingDay: number): DayOfMonth {
+  return closingDay >= 1 && closingDay <= 30 ? closingDay : "末";
+}
+
+/**
+ * 締めの期間：前の月の締め日の翌日 〜 その月の締め日（0 と 31 は末日）。
+ * 例：末締め 10 月 → 10/1〜10/31、20 日締め 10 月 → 9/21〜10/20
+ */
+export function periodOf(month: string, closingDay = 0): { from: string; to: string } {
+  const [y, m] = month.slice(0, 7).split("-").map(Number);
+  const prev = m === 1 ? { y: y - 1, m: 12 } : { y, m: m - 1 };
+  const day = toDay(closingDay);
+  return { from: addDays(dayInMonth(prev.y, prev.m, day), 1), to: dayInMonth(y, m, day) };
+}
+
+/**
+ * 免税の方への支払で会社が負担する消費税。期間の中で経過措置の割合が変わるときは、
+ * 稼働の日ごとの金額の割合で税込の額を分け（端数は大きい順に配る）、段ごとに計算して足す。
+ */
+function splitBurden(
+  base: number,
+  rows: { amount: number; date: string | null }[],
+  period: { from: string; to: string },
+): { total: number; parts: NonNullable<StatementDraft["burdenParts"]>; undatedAcrossStep: boolean } {
+  const spans = deductibleRateForExempt(period.from) !== deductibleRateForExempt(period.to);
+  if (!spans) return { total: nonDeductibleTax(base, period.to, TAX_RATE), parts: [], undatedAcrossStep: false };
+  let undatedAcrossStep = false;
+  const buckets = new Map<number, { amount: number; from: string; to: string }>();
+  for (const r of rows) {
+    const inPeriod = r.date && r.date >= period.from && r.date <= period.to ? r.date : null;
+    if (!inPeriod) undatedAcrossStep = true;
+    const date = inPeriod ?? period.to;
+    const rate = deductibleRateForExempt(date);
+    const b = buckets.get(rate);
+    if (b) {
+      b.amount += r.amount;
+      if (date < b.from) b.from = date;
+      if (date > b.to) b.to = date;
+    } else buckets.set(rate, { amount: r.amount, from: date, to: date });
+  }
+  const list = [...buckets.entries()].map(([rate, b]) => ({ rate, ...b })).sort((a, b) => (a.from < b.from ? -1 : 1));
+  const weight = list.reduce((x, b) => x + b.amount, 0);
+  if (list.length <= 1 || weight <= 0) {
+    return { total: nonDeductibleTax(base, list[0]?.to ?? period.to, TAX_RATE), parts: [], undatedAcrossStep };
+  }
+  // 税込の額を、日ごとの金額の割合で分ける（合計がぴったり base になるように、端数は余りの大きい順に 1 円ずつ）
+  const exact = list.map((b) => (base * b.amount) / weight);
+  const shares = exact.map(Math.floor);
+  let rest = base - shares.reduce((x, y) => x + y, 0);
+  const order = exact.map((v, i) => ({ i, frac: v - Math.floor(v) })).sort((a, b) => b.frac - a.frac);
+  for (const o of order) {
+    if (rest <= 0) break;
+    shares[o.i]++;
+    rest--;
+  }
+  const parts = list.map((b, i) => ({ from: b.from, to: b.to, rate: b.rate, base: shares[i], burden: nonDeductibleTax(shares[i], b.to, TAX_RATE) }));
+  return { total: parts.reduce((x, p) => x + p.burden, 0), parts, undatedAcrossStep };
 }
 
 /** 支払日：締めた月から payMonthOffset か月後の payDay 日（0 は末日。月に無い日は末日） */
@@ -147,19 +216,30 @@ export function buildStatementDrafts(input: BuildInput): StatementDraft[] {
   const { month, tenant } = input;
   const projects = new Map(input.projects.map((p) => [p.id, p]));
   const overrides = new Map(input.overrides.map((o) => [`${o.driverId}:${o.projectId}`, o.payRate]));
-  const judgedOn = monthEnd(month.slice(0, 7));
+  const period = periodOf(month, tenant.closingDay);
+  // 経過措置の割合は、期間の末日（日付のある稼働は、その日）で決める
+  const judgedOn = period.to;
   const deductibleRate = deductibleRateForExempt(judgedOn);
   const payDate = payDateFor(month, tenant);
   const out: StatementDraft[] = [];
+  // 稼働が 1 件も無い月は、会社としてこの仕組みで締めていない月（使い始める前など）とみなし、明細を作らない
+  const monthInUse = input.work.some((w) => w.qty > 0);
 
   for (const d of input.drivers) {
     const qtyByProject = new Map<string, number>();
+    const workRows: { projectId: string; qty: number; date: string | null }[] = [];
     for (const w of input.work) {
       if (w.driverId !== d.id || !(w.qty > 0) || !projects.has(w.projectId)) continue;
       qtyByProject.set(w.projectId, Math.round(((qtyByProject.get(w.projectId) ?? 0) + w.qty) * 1e6) / 1e6);
+      workRows.push({ projectId: w.projectId, qty: w.qty, date: w.workDate ?? null });
     }
     const adjustments = input.adjustments.filter((a) => a.driverId === d.id && a.amount !== 0);
-    if (qtyByProject.size === 0 && adjustments.length === 0) continue;
+    const rules = rulesFor(input.rules, d.id);
+    // 稼働が無くても引く定額（車両リースなど）がある人は、契約の期間の中なら明細を作る（引いていることを本人に見せる）
+    const inContract = (!d.startedOn || d.startedOn <= period.to) && (!d.endOn || d.endOn >= period.from);
+    const fixedWithoutWork =
+      monthInUse && d.active && inContract && rules.some((r) => !r.onlyWhenWorked && r.kind === "fixed" && (r.amount ?? 0) !== 0);
+    if (qtyByProject.size === 0 && adjustments.length === 0 && !fixedWithoutWork) continue;
 
     const lines: StatementLine[] = [...qtyByProject.entries()]
       .map(([projectId, qty]) => {
@@ -185,8 +265,8 @@ export function buildStatementDrafts(input: BuildInput): StatementDraft[] {
     const payTax = d.invoiceRegistered || tenant.payTaxToExempt;
     const tax = payTax ? roundYen(subtotal * TAX_RATE, tenant.taxRounding) : 0;
 
-    const deductions: StatementDeduction[] = input.rules
-      .filter((r) => r.active && (r.driverId === null || r.driverId === d.id) && (hasWork || !r.onlyWhenWorked))
+    const deductions: StatementDeduction[] = rules
+      .filter((r) => hasWork || !r.onlyWhenWorked)
       .sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, "ja"))
       .map((r) => {
         const { amount, how } = ruleAmount(r, subtotal, totalQty, tenant.amountRounding);
@@ -207,12 +287,19 @@ export function buildStatementDrafts(input: BuildInput): StatementDraft[] {
     }
 
     const total = subtotal + tax - (deductionTotal + deductionTax) + adjustmentTotal + adjustmentTax - (withholding?.amount ?? 0);
-    const invoiceBurden = tenant.taxMethod === "general" && !d.invoiceRegistered ? nonDeductibleTax(subtotal + tax, judgedOn, TAX_RATE) : 0;
+    const burden =
+      tenant.taxMethod === "general" && !d.invoiceRegistered && subtotal + tax > 0
+        ? splitBurden(
+            subtotal + tax,
+            workRows.map((w) => ({ amount: (overrides.get(`${d.id}:${w.projectId}`) ?? projects.get(w.projectId)!.payRate) * w.qty, date: w.date })),
+            period,
+          )
+        : { total: 0, parts: [], undatedAcrossStep: false };
 
     out.push({
       driverId: d.id,
       month,
-      period: periodOf(month),
+      period,
       payDate,
       company: { name: tenant.name, registrationNo: tenant.registrationNo },
       driver: { name: d.name, code: d.code ?? null, registrationNo: d.invoiceRegistered ? d.registrationNo : null, invoiceRegistered: d.invoiceRegistered },
@@ -229,14 +316,27 @@ export function buildStatementDrafts(input: BuildInput): StatementDraft[] {
       withholding,
       total,
       sales: lines.reduce((s, l) => s + l.sales, 0),
-      invoiceBurden,
+      invoiceBurden: burden.total,
       deductibleRate,
+      burdenParts: burden.parts,
+      undatedAcrossStep: burden.undatedAcrossStep,
       hasWork,
       isPurchaseStatement: d.invoiceRegistered,
-      note: tenant.statementNote?.trim() || DEFAULT_NOTE,
+      note: tenant.statementNote?.trim() || deemedNote(tenant.deemedConfirmDays ?? 7),
     });
   }
   return out.sort((a, b) => a.driver.name.localeCompare(b.driver.name, "ja"));
+}
+
+/**
+ * その人に当てる控除のルール：全員向けと、その人だけのもの。
+ * 同じ名前のルールがあれば、その人だけのものを使う（例：ロイヤリティは全員 10%、佐藤さんだけ 8%）
+ */
+export function rulesFor(rules: CalcRule[], driverId: string): CalcRule[] {
+  const own = rules.filter((r) => r.active && r.driverId === driverId);
+  const ownNames = new Set(own.map((r) => r.name.normalize("NFKC").replace(/\s/g, "")));
+  const common = rules.filter((r) => r.active && r.driverId === null && !ownNames.has(r.name.normalize("NFKC").replace(/\s/g, "")));
+  return [...common, ...own];
 }
 
 /** 会社の利益：売上 − 委託料 ＋ 控除（会社の売上）− 控除できない消費税 */

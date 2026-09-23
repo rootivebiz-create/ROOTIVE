@@ -10,7 +10,7 @@ import { aiConsentHistory, AI_CONSENT_ACTION, setAiConsent, updateCompany } from
 import { createClient, deleteClient, listClients, updateClient } from "~/server/features/settings/clients";
 import { createDriver, deleteDriver, driverReferences, getDriver, listDrivers, setDriverActive, updateDriver } from "~/server/features/settings/drivers";
 import { firstIssue } from "~/server/features/settings/errors";
-import { deemedNote } from "~/server/features/settings/format";
+import { deemedNote, ruleNameKey } from "~/server/features/settings/format";
 import { settingsOverview } from "~/server/features/settings/overview";
 import { createProject, deleteProject, listProjects, setProjectActive, updateProject, usedProjectIds } from "~/server/features/settings/projects";
 import { deleteOverride, listOverrides, upsertOverride } from "~/server/features/settings/rates";
@@ -281,13 +281,36 @@ describe("控除のルール", () => {
     const spare = await createRule(db, A, ruleSchema.parse({ name: "管理費", kind: "fixed", value: "5000" }));
     expect(await failure(setRuleActive(db, A, spare.id, true))).toContain("二重に引かれます");
     await deleteRule(db, A, spare.id);
-    // この人だけのロイヤリティは足せる（全員の分と両方が引かれることは画面で知らせる）
+    // この人だけのロイヤリティは足せる（同じ名前なら、全員の分の代わりになる。次のテスト）
     const personal = await createRule(db, A, ruleSchema.parse({ name: "ロイヤリティ", driverId: endo.id, kind: "percent", value: "2", active: "on" }));
     await deleteRule(db, A, personal.id);
 
     // 別の会社のドライバーだけに当てることはできない
     const bDriver = await driverByCode(B, "D01");
     expect(await failure(createRule(db, A, ruleSchema.parse({ name: "x", driverId: bDriver.id, kind: "fixed", value: "1" })))).toContain("見つかりません");
+  });
+
+  it("この人だけの控除は、同じ名前の全員の控除の代わりになる（佐藤さんだけ 8%）", async () => {
+    const sato = await driverByCode(A, "D08");
+    const royalty = await ruleByName(A, "ロイヤリティ");
+    // 企業配 22日 × 18,000円 = 396,000円。10% なら 39,600円 → 振込 375,540円
+    expect(await totalOf(A, DEMO_MONTH, "D08")).toBe(375540);
+    const own = await createRule(
+      db,
+      A,
+      ruleSchema.parse({ name: "ロイヤリティ ", driverId: sato.id, kind: "percent", value: "8", onlyWhenWorked: "on", taxable: "on", agreedInWriting: "on", agreedOn: "2026-09-01", active: "on", sort: "1" }),
+    );
+    const impact = await ruleImpact(db, A, DEMO_MONTH);
+    // 全員の 10% は 7人・201,460円（241,060 − 39,600）、佐藤さんは 8% で 31,680円
+    expect(impact.get(royalty.id)).toMatchObject({ drivers: 7, total: 201460 });
+    expect(impact.get(own.id)).toMatchObject({ drivers: 1, total: 31680, names: ["佐藤 亮"] });
+    // 396,000 + 39,600 −（31,680 + 15,000）− 消費税 4,668 = 384,252円
+    expect(await totalOf(A, DEMO_MONTH, "D08")).toBe(384252);
+    // 画面が「代わりになる」と出す比べ方は、明細の計算と同じ
+    expect(ruleNameKey(own.name)).toBe(ruleNameKey(royalty.name));
+    expect(ruleNameKey("ろいやりてぃ")).not.toBe(ruleNameKey("ロイヤリティ"));
+    await deleteRule(db, A, own.id);
+    expect(await totalOf(A, DEMO_MONTH, "D08")).toBe(375540);
   });
 
   it("明細に使ったルールは消さない（使わないにする）。別の会社からは変えられない", async () => {
@@ -426,10 +449,11 @@ describe("会社の設定と AI の同意", () => {
       transferFeeBearer: "company",
       capitalYen: 10_000_000,
       deemedConfirmDays: 10,
-      statementNote: "記載内容に誤りがある場合は、受け取りから10日以内にご連絡ください。ご連絡がない場合は、内容を確認いただいたものとします。",
       requester: { accountNumber: "0654321", bankNameKana: "ﾐｽﾞﾎ", branchNameKana: "ﾎﾝﾃﾝ" },
     });
     expect(after.settings.employees).toBeUndefined();
+    // 注記は空なので保存しない（明細が「10日以内」の文を作る）
+    expect(after.settings.statementNote).toBeUndefined();
     expect(changed.payDay).toEqual({ from: 25, to: 20 });
     // 支払日の変更は、これから作る明細の支払日に出る
     const drafts = buildStatementDrafts(await loadBuildInput(db, A, DEMO_MONTH));

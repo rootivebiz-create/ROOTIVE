@@ -209,12 +209,13 @@ describe("会社：締め日と支払日", () => {
     expect(wordingWarnings("毎月末日締め・翌月25日払い", ["まで", "以内"], ["請求書受領"])).toEqual([]);
   });
 
-  it("明細の注記：空か決まった文なら、確認とみなす日数に合わせる", () => {
-    expect(resolveStatementNote(null, 7)).toBeUndefined();
-    expect(resolveStatementNote("", 10)).toBe(deemedNote(10));
-    expect(resolveStatementNote(deemedNote(10), 7)).toBeUndefined();
-    expect(resolveStatementNote(deemedNote(7), 14)).toBe(deemedNote(14));
-    expect(resolveStatementNote("独自の文です", 14)).toBe("独自の文です");
+  it("明細の注記：空か決まった文なら保存せず、確認とみなす日数から明細が文を作る", () => {
+    // 空・決まった文（日数だけ違う）は保存しない。明細の計算が「確認とみなすまでの日数」から文を作る
+    expect(resolveStatementNote(null)).toBeUndefined();
+    expect(resolveStatementNote("")).toBeUndefined();
+    expect(resolveStatementNote(deemedNote(10))).toBeUndefined();
+    expect(resolveStatementNote(` ${deemedNote(7)} `)).toBeUndefined();
+    expect(resolveStatementNote("独自の文です")).toBe("独自の文です");
   });
 });
 

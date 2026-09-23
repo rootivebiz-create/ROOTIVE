@@ -10,7 +10,7 @@ import { ActionButton } from "~/components/settings/form-kit";
 import { getDb } from "~/db/client";
 import { requirePageUser, roleAtLeast } from "~/server/auth";
 import { driverBadges, driverReferences, getDriver } from "~/server/features/settings/drivers";
-import { rateText, ruleValueText, todayJst } from "~/server/features/settings/format";
+import { rateText, ruleNameKey, ruleValueText, todayJst } from "~/server/features/settings/format";
 import { listOverrides } from "~/server/features/settings/rates";
 import { listRules } from "~/server/features/settings/rules";
 import { SOURCES } from "~/server/features/watch/sources";
@@ -32,6 +32,8 @@ export default async function DriverPage({ params, searchParams }: { params: Pro
   const [refs, overrides, rules] = await Promise.all([driverReferences(db, user.tenantId, id), listOverrides(db, user.tenantId, { driverId: id }), listRules(db, user.tenantId)]);
   const own = rules.filter((r) => r.driverId === id);
   const everyone = rules.filter((r) => r.driverId === null && r.active);
+  // 同じ名前の「この人だけ」の控除があれば、全員の控除の代わりにそちらを使う（明細の計算と同じ）
+  const ownNames = new Set(own.filter((r) => r.active).map((r) => ruleNameKey(r.name)));
 
   return (
     <div className="max-w-3xl space-y-6">
@@ -101,7 +103,10 @@ export default async function DriverPage({ params, searchParams }: { params: Pro
           控除
         </h2>
         <p className="text-sm text-muted-foreground">
-          全員に当てる控除：{everyone.length ? everyone.map((r) => `${r.name}（${ruleValueText(r)}）`).join("・") : "ありません"}
+          全員に当てる控除：
+          {everyone.length
+            ? everyone.map((r) => `${r.name}（${ruleValueText(r)}${ownNames.has(ruleNameKey(r.name)) ? "。この人には下の控除を使います" : ""}）`).join("・")
+            : "ありません"}
         </p>
         {own.length === 0 ? (
           <p className="text-sm text-muted-foreground">この人だけの控除はありません。</p>

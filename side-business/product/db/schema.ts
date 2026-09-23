@@ -178,6 +178,8 @@ export const clients = pgTable("clients", {
   /** 元請の締め日（0＝月末） */
   closingDay: integer("closing_day").notNull().default(0),
   notes: text("notes"),
+  /** 取引をやめた元請は無効にする（過去の案件・お支払通知が参照しているので消さない） */
+  active: boolean("active").notNull().default(true),
   createdAt: createdAt(),
 });
 
@@ -298,7 +300,7 @@ export const workEntries = pgTable(
     note: text("note"),
     createdAt: createdAt(),
   },
-  (t) => [index("work_entries_month").on(t.tenantId, t.month)],
+  (t) => [index("work_entries_month").on(t.tenantId, t.month), index("work_entries_batch").on(t.tenantId, t.importBatchId)],
 );
 
 /** その月だけの足し引き（立替の精算・事故の負担 など。消費税の対象外が既定） */

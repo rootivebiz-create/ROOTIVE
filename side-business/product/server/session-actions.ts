@@ -23,11 +23,18 @@ export async function loginAction(_prev: FormState, form: FormData): Promise<For
     return { error: "何度も失敗したので、15 分ほどおいてからお試しください" };
   }
   const db = await getDb();
-  const rows = await db.select().from(s.users).where(and(eq(s.users.email, email), isNull(s.users.disabledAt))).limit(1);
-  const user = rows[0];
+  // 同じメールアドレスが別の会社にもある（まとめて提供するとき）なら、パスワードが合う方に入る
+  const rows = await db.select().from(s.users).where(and(eq(s.users.email, email), isNull(s.users.disabledAt))).limit(10);
+  let user: (typeof rows)[number] | undefined;
+  for (const candidate of rows) {
+    if (await verifyPassword(password, candidate.passwordHash ?? "")) {
+      user = candidate;
+      break;
+    }
+  }
   // 利用者がいなくても同じだけ時間をかける（いるかどうかを探られないように）
-  const ok = await verifyPassword(password, user?.passwordHash ?? "scrypt$16384$8$1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
-  if (!user || !ok) return { error: "メールアドレスかパスワードが違います" };
+  if (rows.length === 0) await verifyPassword(password, "scrypt$16384$8$1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+  if (!user) return { error: "メールアドレスかパスワードが違います" };
   await createSession(user);
   await audit(db, { tenantId: user.tenantId, userId: user.id, action: "login", entity: "user", entityId: user.id });
   redirect("/");
@@ -84,7 +91,16 @@ export async function acceptInviteAction(_prev: FormState, form: FormData): Prom
   const passwordHash = await hashPassword(password);
   let user = existing[0];
   if (user) {
-    [user] = await db.update(s.users).set({ passwordHash, disabledAt: null }).where(eq(s.users.id, user.id)).returning();
+    // 招待の役割に合わせる。ただし、ほかに使えるオーナーがいないオーナーを下げることはしない
+    let role = invite.role;
+    if (user.role === "owner" && role !== "owner") {
+      const owners = await db
+        .select({ id: s.users.id })
+        .from(s.users)
+        .where(and(eq(s.users.tenantId, invite.tenantId), eq(s.users.role, "owner"), isNull(s.users.disabledAt)));
+      if (!owners.some((o) => o.id !== user!.id)) role = "owner";
+    }
+    [user] = await db.update(s.users).set({ passwordHash, disabledAt: null, role }).where(eq(s.users.id, user.id)).returning();
   } else {
     [user] = await db.insert(s.users).values({ tenantId: invite.tenantId, email: invite.email, name: invite.name, role: invite.role, passwordHash }).returning();
   }

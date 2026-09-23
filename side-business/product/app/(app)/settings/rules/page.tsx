@@ -10,7 +10,7 @@ import { RuleForm, type RuleInitial, type RuleKind } from "~/components/settings
 import { getDb } from "~/db/client";
 import { requirePageUser, roleAtLeast } from "~/server/auth";
 import { listDrivers } from "~/server/features/settings/drivers";
-import { rateToPercent, ruleValueText } from "~/server/features/settings/format";
+import { rateToPercent, ruleNameKey, ruleValueText } from "~/server/features/settings/format";
 import { listRules, ruleImpactOfMonth, usedRuleIds, type RuleListItem } from "~/server/features/settings/rules";
 import { DAMAGE_WORDS, FEE_WORDS } from "~/server/features/watch/rules";
 import { SOURCES } from "~/server/features/watch/sources";
@@ -62,6 +62,10 @@ export default async function RulesPage({ searchParams }: { searchParams: Promis
   const driverOptions = drivers.map((d) => ({ id: d.id, name: d.name, code: d.code, active: d.active }));
   const notAgreed = rules.filter((r) => r.active && !r.agreedInWriting).length;
   const others = rules.map((r) => ({ id: r.id, name: r.name, driverId: r.driverId, driverName: r.driverName, active: r.active }));
+  // 同じ名前なら「この人だけ」の控除が「全員」の控除の代わりになる（明細の計算と同じ比べ方）
+  const activeRules = rules.filter((r) => r.active);
+  const ownInstead = (g: RuleListItem) => activeRules.filter((r) => r.driverId && ruleNameKey(r.name) === ruleNameKey(g.name)).map((r) => r.driverName ?? "（不明）");
+  const replacesGlobal = (r: RuleListItem) => !!r.driverId && activeRules.some((g) => g.driverId === null && ruleNameKey(g.name) === ruleNameKey(r.name));
   const m = monthParam(month);
 
   return (
@@ -150,6 +154,10 @@ export default async function RulesPage({ searchParams }: { searchParams: Promis
                     <Badge>{r.onlyWhenWorked ? "稼働がある月だけ" : "稼働が無い月も"}</Badge>
                     <Badge>{r.taxable ? "消費税あり" : "消費税なし"}</Badge>
                   </div>
+                  {r.active && r.driverId === null && ownInstead(r).length > 0 && (
+                    <p className="text-xs text-muted-foreground">{ownInstead(r).join("・")}さんには、この人だけの「{r.name}」を使います（この控除は引きません）。</p>
+                  )}
+                  {r.active && replacesGlobal(r) && <p className="text-xs text-muted-foreground">この人には、全員に当てる「{r.name}」の代わりにこちらを使います。</p>}
                   <p className="text-xs text-muted-foreground">
                     {r.agreedOn ? `合意した日：${jpDate(r.agreedOn)}` : "合意した日：記録なし"}
                     {r.basis && `・根拠：${r.basis}`}

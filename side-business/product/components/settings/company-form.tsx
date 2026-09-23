@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { Input, NumberInput, Select } from "@/components/ui";
 import { jpDate, jpMonth, yenText } from "@/lib/format";
-import { payDateFor } from "~/server/calc/statement";
+import { payDateFor, periodOf } from "~/server/calc/statement";
 import {
   deadlineHint,
   deemedNote,
@@ -81,6 +81,8 @@ export function CompanyForm({ action, initial, canEdit, today, month, periodWord
   const rule = payRuleSentence(closingDay, payMonthOffset, payDay);
   const hint = useMemo(() => deadlineHint(closingDay, payMonthOffset, payDay, today), [closingDay, payMonthOffset, payDay, today]);
   const payDate = payDateFor(month, { payMonthOffset, payDay });
+  // 明細の計算と同じ式で出す（締め日が末日でなければ、前の月の締め日の翌日から）
+  const period = periodOf(month, closingDay);
   const wording = wordingWarnings(terms, periodWords, startWords);
   const daysNum = readNumber(days);
   const dayCount = daysNum !== null && Number.isInteger(daysNum) && daysNum >= 1 && daysNum <= 60 ? daysNum : 7;
@@ -176,11 +178,12 @@ export function CompanyForm({ action, initial, canEdit, today, month, periodWord
           </div>
           <p className="text-base font-bold">{rule}</p>
           <p className="text-sm text-muted-foreground">
-            例：{jpMonth(month)}分の明細に書く支払日は <span className="font-bold text-foreground">{jpDate(payDate)}</span> です。
+            例：{jpMonth(month)}分の明細は、対象期間 <span className="font-bold text-foreground">{jpDate(period.from)}〜{jpDate(period.to)}</span>・支払日{" "}
+            <span className="font-bold text-foreground">{jpDate(payDate)}</span> です。
           </p>
           {closingDay !== 0 && (
             <Callout tone="gray">
-              {closingDay}日締めのときは、前の月の{closingDay}日の翌日から、その月の{closingDay}日までの稼働を「その月の分」として取り込んでください。明細の「対象期間」の欄は、いまは月の1日〜末日で表示されるので、明細を送る前に表示をご確認ください。
+              {closingDay}日締めのときは、この期間（前の月の{closingDay}日の翌日〜その月の{closingDay}日）の稼働を「{jpMonth(month)}分」として取り込んでください。
             </Callout>
           )}
           {hint.status === "error" ? (

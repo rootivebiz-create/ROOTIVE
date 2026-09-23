@@ -99,3 +99,77 @@ describe("支払明細の計算", () => {
     expect(payDateFor("2026-12-01", { payMonthOffset: 2, payDay: 31 })).toBe("2027-02-28");
   });
 });
+
+describe("締めの期間・ルールの上書き・稼働の無い月の定額・経過措置の境目", () => {
+  it("締めの期間は締め日で決まる（末締め・20 日締め・2 月）", async () => {
+    const { periodOf } = await import("~/server/calc/statement");
+    expect(periodOf("2026-10-01")).toEqual({ from: "2026-10-01", to: "2026-10-31" });
+    expect(periodOf("2026-10-01", 20)).toEqual({ from: "2026-09-21", to: "2026-10-20" });
+    expect(periodOf("2027-01-01", 20)).toEqual({ from: "2026-12-21", to: "2027-01-20" });
+    expect(periodOf("2027-03-01", 30)).toEqual({ from: "2027-03-01", to: "2027-03-30" });
+    expect(periodOf("2027-02-01", 31)).toEqual({ from: "2027-02-01", to: "2027-02-28" });
+  });
+
+  it("同じ名前のルールは、その人だけのものを使う（全員 10%・青木さんだけ 8%）", () => {
+    const input = base();
+    input.rules.push({ id: "r9", driverId: "a", name: "ロイヤリティ", kind: "percent", rate: 0.08, amount: null, onlyWhenWorked: true, taxable: true, agreedInWriting: true, active: true, sort: 1 });
+    const aoki = buildStatementDrafts(input).find((d) => d.driverId === "a")!;
+    const roy = aoki.deductions.filter((x) => x.name === "ロイヤリティ");
+    expect(roy).toHaveLength(1);
+    expect(roy[0].amount).toBe(29960); // 374,500 × 8%
+    const ueda = buildStatementDrafts(input).find((d) => d.driverId === "u")!;
+    expect(ueda.deductions.find((x) => x.name === "ロイヤリティ")!.amount).toBe(27600); // 276,000 × 10%
+  });
+
+  it("稼働が無くても引く定額（車両リース）がある人は明細ができ、振込額はマイナスになる", () => {
+    const input = base();
+    input.drivers.push({ id: "e", name: "遠藤 大輔", invoiceRegistered: false, registrationNo: null, isCorporation: false, withholdingCategory: "none", active: true });
+    input.rules.push({ id: "r3", driverId: "e", name: "車両リース", kind: "fixed", rate: null, amount: 32000, onlyWhenWorked: false, taxable: true, agreedInWriting: true, active: true, sort: 3 });
+    const endo = buildStatementDrafts(input).find((d) => d.driverId === "e")!;
+    expect(endo.hasWork).toBe(false);
+    expect(endo.deductions.map((x) => x.name)).toEqual(["車両リース"]);
+    expect(endo.total).toBe(-35200);
+    // 契約の前・終わったあと・辞めた人（無効）・誰も稼働していない月には作らない
+    const none = (mut: (i: BuildInput) => void) => {
+      const i = structuredClone(input);
+      mut(i);
+      return buildStatementDrafts(i).find((d) => d.driverId === "e");
+    };
+    expect(none((i) => (i.drivers[2].startedOn = "2026-11-01"))).toBeUndefined();
+    expect(none((i) => (i.drivers[2].endOn = "2026-09-30"))).toBeUndefined();
+    expect(none((i) => (i.drivers[2].active = false))).toBeUndefined();
+    expect(none((i) => (i.work = []))).toBeUndefined();
+    expect(none((i) => (i.drivers[2].startedOn = "2026-10-15"))).toBeDefined();
+  });
+
+  it("20 日締めで 9/21〜10/20 の期間は、稼働の日で 80% と 70% に分けて会社の負担を出す", () => {
+    const input = base();
+    input.tenant = { ...tenant, closingDay: 20 };
+    input.work = [
+      { driverId: "u", projectId: "p1", qty: 1000, workDate: "2026-09-25" },
+      { driverId: "u", projectId: "p1", qty: 1000, workDate: "2026-10-05" },
+    ];
+    input.adjustments = [];
+    const ueda = buildStatementDrafts(input).find((d) => d.driverId === "u")!;
+    expect(ueda.period).toEqual({ from: "2026-09-21", to: "2026-10-20" });
+    expect(ueda.subtotal + ueda.tax).toBe(330000);
+    expect(ueda.burdenParts).toEqual([
+      { from: "2026-09-25", to: "2026-09-25", rate: 0.8, base: 165000, burden: 3000 },
+      { from: "2026-10-05", to: "2026-10-05", rate: 0.7, base: 165000, burden: 4500 },
+    ]);
+    expect(ueda.invoiceBurden).toBe(7500);
+    expect(ueda.undatedAcrossStep).toBe(false);
+
+    // 日付の無い稼働は期間の末日（70%）で数え、見張り番に知らせる印を立てる
+    input.work = [{ driverId: "u", projectId: "p1", qty: 2000 }];
+    const undated = buildStatementDrafts(input).find((d) => d.driverId === "u")!;
+    expect(undated.invoiceBurden).toBe(9000);
+    expect(undated.undatedAcrossStep).toBe(true);
+
+    // 末締めの月はまたがないので、内訳は出さない
+    input.tenant = tenant;
+    const monthly = buildStatementDrafts(input).find((d) => d.driverId === "u")!;
+    expect(monthly.burdenParts).toEqual([]);
+    expect(monthly.invoiceBurden).toBe(9000);
+  });
+});

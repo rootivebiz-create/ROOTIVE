@@ -32,7 +32,7 @@ export default async function AiConsentPage() {
         </div>
         <p className="text-sm">
           {on
-            ? "取り込んだファイルの列が自動で分からないときだけ、下の範囲で AI に読ませます。"
+            ? "同意の記録があります。AI を使う機能が使えるときは、取り込んだファイルの列が自動で分からないときだけ、下の範囲で AI に読ませます。"
             : "AI には何も送りません。列の対応は、しめ日ラボの中の決まりで推測し、分からないところは画面で選んでもらいます。"}
         </p>
       </Card>
@@ -46,7 +46,7 @@ export default async function AiConsentPage() {
           <li>
             台帳まるごと（ドライバーの一覧・口座・明細）や、銀行の情報（口座番号・振込データ）は<span className="font-bold">送りません</span>。
           </li>
-          <li>送り先は Anthropic 社（AI「Claude」の提供元）です。推測の結果は、必ず画面で人が確かめてから使います。</li>
+          <li>送り先は Anthropic 社（AI「Claude」の提供元）です。推測の結果は、画面で人が確かめてから使います。</li>
           <li>いつでも止められます。止めたあとは送りません。</li>
           <li>同意する・止めるたびに、だれが・いつ変えたかを記録します（下の「変えた記録」）。</li>
         </ul>

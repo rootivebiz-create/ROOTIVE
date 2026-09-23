@@ -522,6 +522,10 @@ export function auditSummary(action: string, detail: Record<string, unknown>): s
       return typeof d.executedOn === "string" ? `振り込んだ日：${d.executedOn}` : "振り込んだ日を消した";
     case "transfer.download":
       return d.format === "csv" ? "振込の一覧（CSV）" : "全銀の振込データ";
+    case "watch.ack":
+      return [typeof d.title === "string" ? d.title : typeof d.code === "string" ? d.code : null, typeof d.subject === "string" ? `（${d.subject}）` : null, typeof d.note === "string" ? `：${d.note}` : null].filter(Boolean).join("") || null;
+    case "watch.unack":
+      return [typeof d.title === "string" ? d.title : typeof d.code === "string" ? d.code : null, typeof d.previousNote === "string" ? `（前のメモ：${d.previousNote}）` : null].filter(Boolean).join("") || null;
     case "work.add":
     case "work.update":
     case "work.delete":

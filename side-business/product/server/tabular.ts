@@ -7,7 +7,8 @@
  */
 import ExcelJS from "exceljs";
 
-export type Sheet = { name: string; rows: string[][] };
+/** truncated：行や列が多すぎて、読んだのが先頭の一部だけのとき */
+export type Sheet = { name: string; rows: string[][]; truncated?: boolean };
 export type ReadResult = { sheets: Sheet[]; encoding: "xlsx" | "utf-8" | "shift_jis" };
 
 export class TableReadError extends Error {}
@@ -30,7 +31,9 @@ export async function readTable(fileName: string, data: ArrayBuffer | Uint8Array
   }
   const { text, encoding } = decodeText(bytes);
   const delimiter = lower.endsWith(".tsv") || (!text.includes(",") && text.includes("\t")) ? "\t" : ",";
-  return { sheets: [{ name: fileName.replace(/\.[^.]+$/, ""), rows: parseCsv(text, delimiter) }], encoding };
+  const rows = parseCsv(text, delimiter);
+  const truncated = rows.length >= MAX_ROWS || rows.some((r) => r.length >= MAX_COLS);
+  return { sheets: [{ name: fileName.replace(/\.[^.]+$/, ""), rows, truncated }], encoding };
 }
 
 function isZip(bytes: Uint8Array): boolean {
@@ -98,14 +101,16 @@ async function readXlsx(bytes: Uint8Array): Promise<Sheet[]> {
     if (ws.state && ws.state !== "visible") return;
     const rows: string[][] = [];
     const last = Math.min(ws.rowCount, MAX_ROWS);
+    let truncated = ws.rowCount > MAX_ROWS;
     for (let r = 1; r <= last; r++) {
       const row = ws.getRow(r);
       const cells: string[] = [];
       const width = Math.min(row.cellCount, MAX_COLS);
+      if (row.cellCount > MAX_COLS) truncated = true;
       for (let c = 1; c <= width; c++) cells.push(cellText(row.getCell(c).value));
       rows.push(cells);
     }
-    sheets.push({ name: ws.name, rows });
+    sheets.push({ name: ws.name, rows, truncated });
   });
   if (sheets.length === 0) throw new TableReadError("Excel の中に表が見つかりませんでした");
   return sheets;

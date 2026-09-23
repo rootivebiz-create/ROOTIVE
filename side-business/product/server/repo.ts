@@ -32,9 +32,18 @@ export async function loadBuildInput(db: Db, tenantId: string, month: string): P
     db.select().from(s.projects).where(eq(s.projects.tenantId, tenantId)),
     db.select().from(s.clients).where(eq(s.clients.tenantId, tenantId)),
     db.select().from(s.rateOverrides).where(eq(s.rateOverrides.tenantId, tenantId)),
-    db.select().from(s.deductionRules).where(eq(s.deductionRules.tenantId, tenantId)),
-    db.select().from(s.workEntries).where(and(eq(s.workEntries.tenantId, tenantId), eq(s.workEntries.month, month))),
-    db.select().from(s.adjustments).where(and(eq(s.adjustments.tenantId, tenantId), eq(s.adjustments.month, month))),
+    // 並びを固定する（同じ中身なら明細のハッシュが変わらないように。調整の行の番号は質問の行とも結びつく）
+    db.select().from(s.deductionRules).where(eq(s.deductionRules.tenantId, tenantId)).orderBy(asc(s.deductionRules.sort), asc(s.deductionRules.createdAt), asc(s.deductionRules.id)),
+    db
+      .select()
+      .from(s.workEntries)
+      .where(and(eq(s.workEntries.tenantId, tenantId), eq(s.workEntries.month, month)))
+      .orderBy(asc(s.workEntries.createdAt), asc(s.workEntries.id)),
+    db
+      .select()
+      .from(s.adjustments)
+      .where(and(eq(s.adjustments.tenantId, tenantId), eq(s.adjustments.month, month)))
+      .orderBy(asc(s.adjustments.createdAt), asc(s.adjustments.id)),
   ]);
   const clientName = new Map(clients.map((c) => [c.id, c.name]));
   return {
@@ -50,6 +59,7 @@ export async function loadBuildInput(db: Db, tenantId: string, month: string): P
       payMonthOffset: t.payMonthOffset,
       payDay: t.payDay,
       statementNote: t.settings?.statementNote,
+      deemedConfirmDays: t.settings?.deemedConfirmDays,
     },
     drivers: drivers.map((d) => ({
       id: d.id,
@@ -60,6 +70,8 @@ export async function loadBuildInput(db: Db, tenantId: string, month: string): P
       isCorporation: d.isCorporation,
       withholdingCategory: d.withholdingCategory,
       active: d.active,
+      startedOn: d.startedOn,
+      endOn: d.endOn,
     })),
     projects: projects.map((p) => ({
       id: p.id,
@@ -83,7 +95,7 @@ export async function loadBuildInput(db: Db, tenantId: string, month: string): P
       active: r.active,
       sort: r.sort,
     })),
-    work: work.map((w) => ({ driverId: w.driverId, projectId: w.projectId, qty: w.qty })),
+    work: work.map((w) => ({ driverId: w.driverId, projectId: w.projectId, qty: w.qty, workDate: w.workDate })),
     adjustments: adjustments.map((a) => ({ driverId: a.driverId, label: a.label, amount: a.amount, taxable: a.taxable, agreedInWriting: a.agreedInWriting })),
   };
 }

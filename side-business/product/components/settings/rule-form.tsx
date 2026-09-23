@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Input, NumberInput, Select } from "@/components/ui";
 import type { Rounding } from "@/lib/payroll/types";
-import { FEE_BEARER_WARNING, looseKey, NO_AGREEMENT_WARNING, percentToRate, readNumber, rulePreview } from "~/server/features/settings/format";
+import { FEE_BEARER_WARNING, looseKey, NO_AGREEMENT_WARNING, percentToRate, readNumber, ruleNameKey, rulePreview } from "~/server/features/settings/format";
 import { Callout, Check, Choice, F, ResultLine, SubmitRow, useFormAction, type FormAction } from "./form-kit";
 
 export type RuleKind = "percent" | "fixed" | "per_unit";
@@ -99,15 +99,18 @@ export function RuleForm({
         rounding,
       )
     : null;
-  // 同じ名前の控除との重なり（全員の控除と、この人だけの控除は両方が引かれる）
+  // 同じ名前の控除との重なり。明細の計算（rulesFor）では、同じ名前なら「この人だけ」のものが「全員」のものの代わりになる。
+  // 名前が少しだけ違う（かなとカナなど）と代わりにならず、両方が引かれる
   const key = looseKey(v.name);
   // 登録済みのものは、いまの「使う・使わない」（画面の外のボタンで変わる）で見る
   const active = initial?.id ? initial.active : v.active;
   const sameName = key && active ? others.filter((o) => o.id !== initial?.id && o.active && looseKey(o.name) === key) : [];
   const scope = v.driverId || null;
   const duplicate = sameName.find((o) => o.driverId === scope);
-  const globalOverlap = scope ? sameName.find((o) => o.driverId === null) : undefined;
-  const personalOverlap = scope ? [] : sameName.filter((o) => o.driverId !== null);
+  const pairs = scope ? sameName.filter((o) => o.driverId === null) : sameName.filter((o) => o.driverId !== null);
+  const replaced = pairs.filter((o) => ruleNameKey(o.name) === ruleNameKey(v.name));
+  const both = pairs.filter((o) => ruleNameKey(o.name) !== ruleNameKey(v.name));
+  const people = (list: typeof pairs) => list.map((o) => o.driverName ?? "（不明）").join("・");
   const valueLabel = v.kind === "percent" ? "率（%）" : v.kind === "per_unit" ? "1 数量あたりの額（円）" : "毎月の額（円）";
 
   return (
@@ -148,13 +151,19 @@ export function RuleForm({
         </F>
       </div>
       {duplicate && <Callout tone="red">同じ名前の控除「{duplicate.name}」（{scope ? "この人だけ" : "全員"}）がすでにあります。二重に引かれないよう、そちらを直してください。</Callout>}
-      {globalOverlap && (
-        <Callout tone="yellow">全員に当てる「{globalOverlap.name}」も、この人に当たります。両方が引かれるので、合わせた額が取引条件どおりか確かめてください。</Callout>
+      {scope && replaced.length > 0 && (
+        <Callout tone="gray">この人には、全員に当てる「{replaced[0].name}」の代わりに、この控除を使います（同じ名前なので、全員の分はこの人からは引きません）。</Callout>
       )}
-      {personalOverlap.length > 0 && (
+      {scope && both.length > 0 && (
         <Callout tone="yellow">
-          「{v.name}」は、{personalOverlap.map((o) => o.driverName ?? "（不明）").join("・")}さんにこの人だけの控除もあります。その人たちには両方が引かれます。
+          全員に当てる「{both[0].name}」と名前が少し違うので、この人には両方が引かれます。全員の分の代わりにするときは、名前を「{both[0].name}」にそろえてください。
         </Callout>
+      )}
+      {!scope && replaced.length > 0 && (
+        <Callout tone="gray">{people(replaced)}さんには同じ名前の「この人だけ」の控除があるので、その人たちにはそちらを使います（この控除は引きません）。</Callout>
+      )}
+      {!scope && both.length > 0 && (
+        <Callout tone="yellow">{people(both)}さんの「この人だけ」の控除は名前が少し違うので、その人たちには両方が引かれます。代わりにするときは、名前をそろえてください。</Callout>
       )}
       {fee.test(v.name) && <Callout tone="red">{FEE_BEARER_WARNING}振込手数料は控除のルールにせず、会社の負担にする設定の確認をおすすめします。</Callout>}
       {damage.test(v.name) && <Callout tone="yellow">事故・破損などの負担を差し引くときは、その都度の根拠（事故の報告・合意書など）を残してください。</Callout>}

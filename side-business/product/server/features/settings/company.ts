@@ -4,7 +4,7 @@ import type { Db } from "~/db/client";
 import * as s from "~/db/schema";
 import { getTenant } from "~/server/repo";
 import { changes } from "./common";
-import { deemedNote, isStandardNote } from "./format";
+import { isStandardNote } from "./format";
 import type { CompanyInput } from "./schemas";
 
 /**
@@ -18,10 +18,13 @@ export async function loadCompany(db: Db, tenantId: string): Promise<CompanyView
   return getTenant(db, tenantId);
 }
 
-/** 明細の注記：空か、日数だけ違う決まった文なら、日数に合わせた文にする（7 日なら空＝明細の既定の文） */
-export function resolveStatementNote(note: string | null, days: number): string | undefined {
+/**
+ * 明細の注記：空か、日数だけ違う決まった文なら保存しない（明細の計算が「確認とみなすまでの日数」から決まった文を作る。
+ * こうすると、日数を変えたときに注記の日数もいっしょに変わる）。独自の文だけを保存する。
+ */
+export function resolveStatementNote(note: string | null): string | undefined {
   const t = (note ?? "").trim();
-  if (!t || isStandardNote(t)) return days === 7 ? undefined : deemedNote(days);
+  if (!t || isStandardNote(t)) return undefined;
   return t;
 }
 
@@ -40,7 +43,7 @@ export async function updateCompany(db: Db, tenantId: string, input: CompanyInpu
   put("capitalYen", input.capitalYen);
   put("employees", input.employees);
   put("deemedConfirmDays", input.deemedConfirmDays);
-  put("statementNote", resolveStatementNote(input.statementNote, input.deemedConfirmDays));
+  put("statementNote", resolveStatementNote(input.statementNote));
   put(
     "requester",
     input.requesterCode

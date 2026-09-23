@@ -103,12 +103,10 @@ export const NO_AGREEMENT_WARNING = "合意の記録が無い控除は、報酬�
 /** 単価を変えたときの注意 */
 export const RATE_CHANGE_HINT = "単価を変えたら取引条件の変更を書面等で明示し、合意の日を残してください。";
 
-/** 明細の注記（何日以内に連絡が無ければ確認とみなすか）。空のときに明細へ入る文と同じ形 */
-export function deemedNote(days: number): string {
-  return `記載内容に誤りがある場合は、受け取りから${days}日以内にご連絡ください。ご連絡がない場合は、内容を確認いただいたものとします。`;
-}
+/** 明細の注記（何日以内に連絡が無ければ確認とみなすか）。明細の計算と同じ文を使う */
+export { deemedNote } from "~/server/calc/statement";
 
-/** 決まった形の注記（日数だけ違う）か。そうなら、保存のときに日数を設定に合わせる */
+/** 決まった形の注記（日数だけ違う）か。そうなら保存しない（明細の計算が「確認とみなすまでの日数」から同じ形の文を作る） */
 export function isStandardNote(text: string): boolean {
   return /^記載内容に誤りがある場合は、受け取りから\d+日以内にご連絡ください。ご連絡がない場合は、内容を確認いただいたものとします。$/.test(text.trim());
 }
@@ -225,6 +223,14 @@ export function rulePreview(
   }
   const x = rule.amount ?? 0;
   return `毎月 ${yenText(x)}${withTax(x)}・${rule.onlyWhenWorked ? "稼働がある月だけ" : "稼働が無い月も"}`;
+}
+
+/**
+ * 控除の名前を比べる形。明細の計算（server/calc/statement.ts の rulesFor）と同じ：NFKC にして空白を外すだけ。
+ * これが同じなら、この人だけの控除が全員の控除の代わりになる（テストで rulesFor と同じ結果になることを確かめる）
+ */
+export function ruleNameKey(name: string): string {
+  return name.normalize("NFKC").replace(/\s/g, "");
 }
 
 /** 控除の中身を 1 行で。「委託料 × 10%」「毎月 15,000円」「数量 × 10円」 */
