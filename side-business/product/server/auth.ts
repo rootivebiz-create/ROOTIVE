@@ -46,7 +46,6 @@ export async function destroySession(): Promise<void> {
 
 /** いまのログイン中の人（いなければ null） */
 export async function currentUser(): Promise<SessionUser | null> {
-  if (process.env.DEMO_MODE === "1") return demoUser();
   const jar = await cookies();
   const token = jar.get(COOKIE)?.value;
   if (!token) return null;
@@ -61,18 +60,10 @@ export async function currentUser(): Promise<SessionUser | null> {
   return u ? { ...u, role: u.role as Role } : null;
 }
 
-/** デモ：ログインなしで、最初の会社のオーナーとして見せる */
-async function demoUser(): Promise<SessionUser | null> {
-  const db = await getDb();
-  const rows = await db.select().from(s.users).where(eq(s.users.role, "owner")).limit(1);
-  const u = rows[0];
-  return u ? { id: u.id, tenantId: u.tenantId, email: u.email, name: u.name, role: "owner" } : null;
-}
-
-/** 画面用：ログインしていなければログイン画面へ。役割が足りなければ「権限がありません」 */
+/** 画面用：ログインしていなければログイン画面へ（デモは自分専用の架空の会社を作る画面へ）。役割が足りなければ「権限がありません」 */
 export async function requirePageUser(need: Role = "viewer"): Promise<SessionUser> {
   const user = await currentUser();
-  if (!user) redirect("/login");
+  if (!user) redirect(process.env.DEMO_MODE === "1" ? "/demo/start" : "/login");
   if (!roleAtLeast(user.role, need)) redirect("/forbidden");
   return user;
 }

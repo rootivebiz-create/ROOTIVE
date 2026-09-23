@@ -10,6 +10,7 @@ export const metadata = { title: "はじめの設定" };
 
 /** 利用者が 1 人もいないときだけ開ける。本番では SETUP_TOKEN（?token=）が要る */
 export default async function SetupPage({ searchParams }: { searchParams: Promise<{ token?: string }> }) {
+  if (process.env.DEMO_MODE === "1") redirect("/demo/start");
   const db = await getDb();
   const [{ n }] = await db.select({ n: count() }).from(s.users);
   if (n > 0) redirect("/login");

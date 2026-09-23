@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "ログイン" };
 
 export default async function LoginPage() {
+  if (process.env.DEMO_MODE === "1") redirect("/demo/start");
   if (await currentUser()) redirect("/");
   return (
     <AuthFrame title="ログイン">

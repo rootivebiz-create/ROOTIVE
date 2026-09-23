@@ -42,6 +42,7 @@ const setupSchema = z.object({
 
 /** 最初の 1 回だけ：会社とオーナーを作る（利用者が 1 人もいないときだけ動く） */
 export async function setupAction(_prev: FormState, form: FormData): Promise<FormState> {
+  if (process.env.DEMO_MODE === "1") return { error: "デモでは使えません" };
   const token = String(form.get("token") ?? "");
   const expected = process.env.SETUP_TOKEN?.trim();
   if (process.env.NODE_ENV === "production" && (!expected || token !== expected)) {

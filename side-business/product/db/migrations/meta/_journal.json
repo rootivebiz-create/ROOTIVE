@@ -43,6 +43,13 @@
       "when": 1790155515325,
       "tag": "0005_statements_guard_version",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790156403918,
+      "tag": "0006_purge_tenant",
+      "breakpoints": true
     }
   ]
 }

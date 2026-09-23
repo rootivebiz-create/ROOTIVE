@@ -1,4 +1,3 @@
-import { count } from "drizzle-orm";
 import type { Db } from "~/db/client";
 import * as s from "~/db/schema";
 import { DEMO_MONTH, DEMO_PREV_MONTH } from "~/server/month";
@@ -135,7 +134,3 @@ export async function seedDemo(db: Db): Promise<{ tenantId: string }> {
 }
 
 /** デモのとき、空なら入れる */
-export async function ensureDemoSeeded(db: Db): Promise<void> {
-  const [{ n }] = await db.select({ n: count() }).from(s.tenants);
-  if (n === 0) await seedDemo(db);
-}

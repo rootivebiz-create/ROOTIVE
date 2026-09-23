@@ -4,7 +4,7 @@
  * - すべての表に tenant_id を持つ。既定はお客様ごとに別々に置く（1 つの DB に 1 社）が、
  *   将来まとめて提供（SaaS）に切り替えても同じ表で動くようにしておく。
  * - 金額は円の整数、単価・数量は小数を含むので numeric（number として扱う）。
- * - 締めた月（month_closes.status = 'closed'）の稼働・調整・明細は DB の引き金（trigger）でも止める（migrations/9999_guards.sql）。
+ * - 締めた月（month_closes.status = 'closed'）の稼働・調整・明細は DB の引き金（trigger）でも止める（migrations/0001・0003・0005・0006）。
  */
 import { sql } from "drizzle-orm";
 import {
@@ -69,6 +69,8 @@ export type TenantSettings = {
   statementNote?: string;
   /** AI の読み取りを使ってよいか（お客様の同意） */
   aiAssistConsent?: boolean;
+  /** デモ用の架空の会社（24 時間で消える） */
+  demo?: boolean;
   /** 取引条件に書いている支払期日の文言（見張り番が「まで」「以内」などを見る） */
   paymentTermsText?: string;
   /** 振込手数料をどちらが持つか（driver は見張り番が必ず指摘する） */

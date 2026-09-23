@@ -12,7 +12,10 @@ export function AppShell({ user, children, demo }: { user: SessionUser; children
     <div className="min-h-dvh">
       {demo && (
         <div className="bg-accent px-4 py-2 text-center text-sm font-bold text-accent-foreground">
-          デモです（架空のデータ）。自由に触ってください。データは定期的に元に戻ります。
+          デモです（架空の会社・架空のデータ）。あなた専用なので自由に触ってください。24 時間で消えます。{" "}
+          <a href="/demo/start" className="underline">
+            最初からやり直す
+          </a>
         </div>
       )}
       <header className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur">
