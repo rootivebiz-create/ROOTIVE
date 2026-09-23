@@ -431,7 +431,7 @@ export const statementVersions = pgTable(
 
 /**
  * 取引条件の記録（フリーランス法 第3条の明示）。版ごとに中身の写しを残し、ドライバーへ署名つきリンクで渡して「受け取りました」を記録する。
- * 最新の版を出した日は drivers.terms_issued_on にも入れる（見張り番が使う）。
+ * drivers.terms_issued_on は「初めて明示した日」（空か、この版の日より後のときだけ入れる。後ろへはずらさない）。
  */
 export const termsRecords = pgTable(
   "terms_records",

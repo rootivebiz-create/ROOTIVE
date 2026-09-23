@@ -10,7 +10,7 @@ import { deductibleRateForExempt, TRANSITIONAL_STEPS } from "@/lib/payroll/tax";
  *
  * 見るもの：app・components・server の .ts / .tsx（テストは除く）の各行で、
  *   ① 0.8・0.7・0.5・0.3 や 80%・70%・50%・30% の数字がコードの部分にあり、
- *   ② 同じ行に税の話（経過措置・控除できる・deductible・invoice・インボイス・免税・transitional）がある
+ *   ② 同じ行に税の話（経過措置・控除できる・deductible・invoice・インボイス・免税・exempt・仕入税額・burden・transitional）がある
  * もの。当たったら「ファイル:行」で知らせる。
  *
  * 認めるもの：
@@ -25,7 +25,7 @@ const DIRS = ["app", "components", "server"];
 /** 経過措置の割合に見える数字（1.05 や 0.75、300% などは除く） */
 const RATE_LITERAL = /(?<![\d.])0\.[3578](?![\d])|(?<![\d.])[3578]0\s*[%％]/;
 /** 税の話をしている行 */
-const TAX_CONTEXT = /経過措置|控除でき|deductible|invoice|インボイス|免税|transitional/i;
+const TAX_CONTEXT = /経過措置|控除でき|deductible|invoice|インボイス|免税|exempt|仕入税額|burden|transitional/i;
 
 const ALLOW: { file: string; contains: string; reason: string }[] = [];
 
@@ -94,6 +94,8 @@ describe("経過措置の割合を直書きしない", () => {
     expect(scanText("x.ts", "const rate = 0.7; // 経過措置")).toHaveLength(1);
     expect(scanText("x.tsx", "<p>経過措置で控除できる割合は 80% です</p>")).toHaveLength(1);
     expect(scanText("x.tsx", "<p>免税の方は70％</p>")).toHaveLength(1);
+    expect(scanText("x.ts", "const EXEMPT_RATE = 0.8;")).toHaveLength(1);
+    expect(scanText("x.ts", "const burden = base * 0.3 / 1.1;")).toHaveLength(1);
     // コメントだけの行は説明（例）なので数えない
     expect(scanText("x.ts", "/** 控除できる割合（0.7 = 70%） */")).toHaveLength(0);
     expect(scanText("x.ts", "  // 経過措置が 70% になる最初の月")).toHaveLength(0);

@@ -28,6 +28,22 @@ export function toHalfNumber(value: string): string {
     .replace(/[ー−‐―]/g, "-");
 }
 
+/**
+ * 資本金・従業員の数の書き方のゆれ（「1,000万円」「3億円」「1.5億」「12人」）を、ただの数の文字にする
+ * （最初の設定の案内と同じように読めるように）。1円未満が出る書き方は、そのまま返して読めない数として止める。
+ */
+export function plainSizeText(value: string | null | undefined, unit: "円" | "人"): string {
+  const v = toHalfNumber(value ?? "");
+  if (!v) return "";
+  if (unit === "人") return v.replace(/人$/, "");
+  const m = /^(\d+)(?:\.(\d+))?(万|億)$/.exec(v);
+  if (!m) return v;
+  const zeros = m[3] === "万" ? 4 : 8;
+  const frac = m[2] ?? "";
+  if (frac.length > zeros) return v;
+  return `${m[1]}${frac.padEnd(zeros, "0")}`.replace(/^0+(?=\d)/, "");
+}
+
 /** 数として読む（空なら null、読めなければ NaN） */
 export function readNumber(value: string | null | undefined): number | null {
   const s = toHalfNumber(value ?? "");

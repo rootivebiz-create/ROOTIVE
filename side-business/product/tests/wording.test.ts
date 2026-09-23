@@ -31,35 +31,57 @@ const FORBIDDEN_PHRASES = [
   "引き下げ",
 ] as const;
 
+/**
+ * 言葉の一覧で書けないもの（正規表現）。名前はテストの知らせに出す。
+ * - SPEC の文面のテストは「適法」そのものを禁じる。ただし「取適法」（法律の略称）は数えない
+ * - 労働者に当たるか・偽装請負かの判断、「調査・監査は大丈夫」のような保証も書かない
+ */
+const FORBIDDEN_PATTERNS: { name: string; re: RegExp; /** 同じ行が一覧のこの言葉で当たっていれば二重に数えない */ sameAs?: string }[] = [
+  { name: "適法（取適法は除く）", re: /(?<!取)適法/, sameAs: "適法です" },
+  { name: "偽装請負", re: /偽装請負/ },
+  { name: "労働者に当たる（判断）", re: /労働者に(当た|あた|該当)/ },
+  { name: "調査・監査は大丈夫（保証）", re: /(調査|監査|検査)[^。]{0,12}大丈夫/ },
+];
+
 /** 安全な使い方として認めるもの（ファイル・言葉・その行に含まれる文・理由） */
 const ALLOW: { file: string; phrase: string; contains: string; reason: string }[] = [
   {
-    file: "components/settings/project-form.tsx",
-    phrase: "単価を下げ",
-    contains: "支払単価を下げようとしています",
-    reason:
-      "単価を下げる操作をしようとしている人への注意（減額のおそれ・合意と明示のすすめ）で、下げることを勧める文ではない。言い換え（「支払単価が今より低くなります」など）を設定の担当に依頼済み",
+    file: "server/features/watch-types.ts",
+    phrase: "適法（取適法は除く）",
+    contains: "適法・違反の判定はしない",
+    reason: "見張り番の型のコメントで「適法・違反の判定はしない」と、判断しないことを書いた否定の文。画面には出ない",
+  },
+  {
+    file: "server/features/reconcile/facts.ts",
+    phrase: "適法（取適法は除く）",
+    contains: "適法・違反などの判断はしない",
+    reason: "突合の純関数のコメントで「適法・違反などの判断はしない」と、判断しないことを書いた否定の文。画面には出ない",
   },
 ];
 
 type Hit = { file: string; line: number; phrase: string; text: string };
 
-/** 言葉の一覧を定義している行か（正規表現の | や、文字の配列で 2 つ以上を並べている） */
+/** 言葉の一覧を定義している行か（正規表現の | や、文字の配列で、一覧の言葉を 2 つ以上並べている） */
 function isListDefinition(line: string, phrases: readonly string[]): boolean {
-  const found = phrases.filter((p) => line.includes(p));
-  if (found.length < 2) return false;
+  const found = phrases.filter((p) => line.includes(p)).length + FORBIDDEN_PATTERNS.filter((p) => p.re.test(line)).length;
+  if (found < 2) return false;
   return /\/[^/]*\|[^/]*\//.test(line) || /["'`][^"'`]*["'`]\s*,\s*["'`]/.test(line);
 }
 
 /** 文字列の中から、言ってはいけない言い方を探す（ファイル名は表示用） */
 function scanText(file: string, text: string, phrases: readonly string[] = FORBIDDEN_PHRASES): Hit[] {
   const hits: Hit[] = [];
+  const allowed = (phrase: string, line: string) => ALLOW.some((a) => a.file === file && a.phrase === phrase && line.includes(a.contains));
   text.split(/\r?\n/).forEach((line, index) => {
     if (isListDefinition(line, phrases)) return;
+    const at = { file, line: index + 1, text: line.trim().slice(0, 120) };
     for (const phrase of phrases) {
-      if (!line.includes(phrase)) continue;
-      const allowed = ALLOW.some((a) => a.file === file && a.phrase === phrase && line.includes(a.contains));
-      if (!allowed) hits.push({ file, line: index + 1, phrase, text: line.trim().slice(0, 120) });
+      if (line.includes(phrase) && !allowed(phrase, line)) hits.push({ ...at, phrase });
+    }
+    for (const p of FORBIDDEN_PATTERNS) {
+      // 「適法です」は上の一覧でも当たるので、同じ行を二重に数えない
+      const counted = p.sameAs !== undefined && hits.some((h) => h.line === at.line && h.phrase === p.sameAs);
+      if (p.re.test(line) && !counted && !allowed(p.name, line)) hits.push({ ...at, phrase: p.name });
     }
   });
   return hits;
@@ -103,17 +125,33 @@ describe("文面の自動チェック（言ってはいけない言い方）", (
     expect(scanText("x.ts", "const NG = /違反です|適法です|問題ありません/;")).toHaveLength(0);
     expect(scanText("x.ts", 'const NG = ["違反です", "適法です"];')).toHaveLength(0);
     // 認めた文は、そのファイルのその文だけ
-    const allowed = "支払単価を下げようとしています。すでに仕事をした分に…";
-    expect(scanText("components/settings/project-form.tsx", allowed)).toHaveLength(0);
+    const allowed = " * 突合の純関数は…適法・違反などの判断はしない。";
+    expect(scanText("server/features/reconcile/facts.ts", allowed)).toHaveLength(0);
     expect(scanText("components/other.tsx", allowed)).toHaveLength(1);
     // 否定の言い方（「〜のおそれがあります」「確認をおすすめします」）は当たらない
     expect(scanText("x.ts", "報酬の減額にあたるおそれがあります。確認をおすすめします。")).toHaveLength(0);
   });
 
+  it("見つけ方の確認（正規表現）：「適法」は当たり「取適法」は当たらない。労働者・偽装請負の判断、調査の保証も当たる", () => {
+    expect(scanText("x.tsx", "<p>この控除は適法かどうか…</p>").map((h) => h.phrase)).toEqual(["適法（取適法は除く）"]);
+    // 「適法です」は 1 回だけ数える
+    expect(scanText("x.tsx", "<p>この控除は適法です</p>")).toHaveLength(1);
+    expect(scanText("x.ts", "取適法の対象になる可能性があります。取適法（中小受託取引適正化法）")).toHaveLength(0);
+    expect(scanText("x.ts", "`この方は労働者に当たります`").map((h) => h.phrase)).toEqual(["労働者に当たる（判断）"]);
+    expect(scanText("x.ts", "`偽装請負のおそれ`").map((h) => h.phrase)).toEqual(["偽装請負"]);
+    expect(scanText("x.ts", "`これで税務調査も大丈夫です`").map((h) => h.phrase)).toEqual(["調査・監査は大丈夫（保証）"]);
+    expect(scanText("x.ts", "`スマホでも大丈夫です`")).toHaveLength(0);
+    // 正規表現で並べた一覧の定義は数えない
+    expect(scanText("x.ts", "const NG = /(?<!取)適法|偽装請負|違反です/;")).toHaveLength(0);
+    // 認めた否定のコメントは、そのファイルのその文だけ
+    expect(scanText("server/features/watch-types.ts", " * 見張り番は…適法・違反の判定はしない。")).toHaveLength(0);
+    expect(scanText("server/features/other.ts", " * 見張り番は…適法・違反の判定はしない。")).toHaveLength(1);
+  });
+
   it("認めた文は、どれも理由が書いてあり、一覧の言葉に対するもの（ファイルから消えたら知らせる）", () => {
     for (const a of ALLOW) {
       expect(a.reason.length, a.file).toBeGreaterThan(20);
-      expect(FORBIDDEN_PHRASES as readonly string[]).toContain(a.phrase);
+      expect([...FORBIDDEN_PHRASES, ...FORBIDDEN_PATTERNS.map((p) => p.name)]).toContain(a.phrase);
       const full = path.join(ROOT, a.file);
       let text = "";
       try {

@@ -66,42 +66,42 @@ function toOffset(n: number): PayMonthOffset {
   return n <= 0 ? 0 : n >= 2 ? 2 : 1;
 }
 
-/**
- * 台帳から、そのドライバーの今の取引条件を組み立てる。
- * 案件は projectIds を渡せばそれ、無ければ「直近 3 か月に稼働した案件」と「その人だけの単価がある案件」。
- * それも無ければ、有効な案件すべて（新しく入る人に渡す場合）。
- */
-export async function buildTermsContent(
-  db: Db,
-  tenantId: string,
-  driverId: string,
-  opts: { projectIds?: string[]; month?: string; defaults?: Partial<Pick<TermsContent, "serviceDescription" | "place" | "receipt" | "other">>; deemed?: boolean } = {},
-): Promise<TermsContent> {
-  const tenant = await getTenant(db, tenantId);
-  const [driver] = await db
-    .select()
-    .from(s.drivers)
-    .where(and(eq(s.drivers.id, driverId), eq(s.drivers.tenantId, tenantId)))
-    .limit(1);
-  if (!driver) throw new Error("ドライバーが見つかりません");
+type BuildOpts = {
+  projectIds?: string[];
+  month?: string;
+  defaults?: Partial<Pick<TermsContent, "serviceDescription" | "place" | "receipt" | "other">>;
+  deemed?: boolean;
+};
 
-  const [projects, clients, overrides, rules] = await Promise.all([
+/** 組み立てに使う台帳（会社ぶんをまとめて 1 回だけ読む） */
+async function loadLedger(db: Db, tenantId: string, driverIds: string[], month?: string) {
+  const since = shiftMonth(month ?? new Date().toISOString().slice(0, 7) + "-01", -2);
+  const [tenant, drivers, projects, clients, overrides, rules, recent] = await Promise.all([
+    getTenant(db, tenantId),
+    db.select().from(s.drivers).where(and(eq(s.drivers.tenantId, tenantId), inArray(s.drivers.id, driverIds))),
     db.select().from(s.projects).where(eq(s.projects.tenantId, tenantId)),
     db.select().from(s.clients).where(eq(s.clients.tenantId, tenantId)),
-    db.select().from(s.rateOverrides).where(and(eq(s.rateOverrides.tenantId, tenantId), eq(s.rateOverrides.driverId, driverId))),
+    db.select().from(s.rateOverrides).where(and(eq(s.rateOverrides.tenantId, tenantId), inArray(s.rateOverrides.driverId, driverIds))),
     db.select().from(s.deductionRules).where(eq(s.deductionRules.tenantId, tenantId)),
+    db
+      .selectDistinct({ driverId: s.workEntries.driverId, projectId: s.workEntries.projectId })
+      .from(s.workEntries)
+      .where(and(eq(s.workEntries.tenantId, tenantId), inArray(s.workEntries.driverId, driverIds), gte(s.workEntries.month, since))),
   ]);
+  return { tenant, drivers, projects, clients, overrides, rules, recent };
+}
+
+function composeTerms(ledger: Awaited<ReturnType<typeof loadLedger>>, driverId: string, opts: BuildOpts): TermsContent {
+  const { tenant, projects, clients, rules } = ledger;
+  const driver = ledger.drivers.find((d) => d.id === driverId);
+  if (!driver) throw new Error("ドライバーが見つかりません");
   const clientName = new Map(clients.map((c) => [c.id, c.name]));
+  const overrides = ledger.overrides.filter((o) => o.driverId === driverId);
   const override = new Map(overrides.map((o) => [o.projectId, o.payRate]));
 
   let ids = opts.projectIds;
   if (!ids || ids.length === 0) {
-    const since = shiftMonth(opts.month ?? new Date().toISOString().slice(0, 7) + "-01", -2);
-    const recent = await db
-      .selectDistinct({ projectId: s.workEntries.projectId })
-      .from(s.workEntries)
-      .where(and(eq(s.workEntries.tenantId, tenantId), eq(s.workEntries.driverId, driverId), gte(s.workEntries.month, since)));
-    const set = new Set([...recent.map((r) => r.projectId), ...overrides.map((o) => o.projectId)]);
+    const set = new Set([...ledger.recent.filter((r) => r.driverId === driverId).map((r) => r.projectId), ...overrides.map((o) => o.projectId)]);
     ids = set.size ? [...set] : projects.filter((p) => p.active).map((p) => p.id);
   }
   const chosen = new Set(ids);
@@ -151,11 +151,43 @@ export async function buildTermsContent(
   };
 }
 
-export type TermsChange = { kind: "rate" | "service_added" | "service_removed" | "deduction_added" | "deduction_removed" | "deduction_changed" | "payment" | "fee"; label: string; before?: string; after?: string };
+/**
+ * 台帳から、そのドライバーの今の取引条件を組み立てる。
+ * 案件は projectIds を渡せばそれ、無ければ「直近 3 か月に稼働した案件」と「その人だけの単価がある案件」。
+ * それも無ければ、有効な案件すべて（新しく入る人に渡す場合）。
+ */
+export async function buildTermsContent(db: Db, tenantId: string, driverId: string, opts: BuildOpts = {}): Promise<TermsContent> {
+  return composeTerms(await loadLedger(db, tenantId, [driverId], opts.month), driverId, opts);
+}
+
+/** 何人ぶんもまとめて組み立てる（一覧の画面・見張り番用。台帳は 1 回だけ読む）。見つからない人は結果に入らない */
+export async function buildTermsContentMany(
+  db: Db,
+  tenantId: string,
+  items: { driverId: string; projectIds?: string[]; deemed?: boolean }[],
+  month?: string,
+): Promise<Map<string, TermsContent>> {
+  const out = new Map<string, TermsContent>();
+  if (items.length === 0) return out;
+  const ledger = await loadLedger(db, tenantId, [...new Set(items.map((i) => i.driverId))], month);
+  const known = new Set(ledger.drivers.map((d) => d.id));
+  for (const i of items) {
+    if (!known.has(i.driverId)) continue;
+    out.set(i.driverId, composeTerms(ledger, i.driverId, { projectIds: i.projectIds, deemed: i.deemed, month }));
+  }
+  return out;
+}
+
+export type TermsChange = {
+  kind: "rate" | "service_added" | "service_removed" | "deduction_added" | "deduction_removed" | "deduction_changed" | "payment" | "fee" | "deemed" | "tax";
+  label: string;
+  before?: string;
+  after?: string;
+};
 
 /**
  * 記録した取引条件と、今の台帳からの取引条件を比べる（純関数）。
- * 単価・控除・支払日・振込手数料の負担が変わっていたら、その一覧を返す（見張り番の「明示のあとに条件が変わった」に使う）。
+ * 単価・控除・支払日・振込手数料の負担・消費税の扱い・みなし確認の日数が変わっていたら、その一覧を返す（見張り番の「明示のあとに条件が変わった」に使う）。
  * 業務の内容・場所などの文は、画面で書き換える前提なので比べない。
  */
 export function compareTermsContent(recorded: TermsContent, current: TermsContent): TermsChange[] {
@@ -177,6 +209,11 @@ export function compareTermsContent(recorded: TermsContent, current: TermsConten
   for (const [id, old] of oldD) if (!curD.has(id)) out.push({ kind: "deduction_removed", label: old.name, before: old.how });
   if (recorded.payment.text !== current.payment.text) out.push({ kind: "payment", label: "支払期日", before: recorded.payment.text, after: current.payment.text });
   if (recorded.feeBearer !== current.feeBearer) out.push({ kind: "fee", label: "振込手数料の負担", before: recorded.feeBearer, after: current.feeBearer });
+  if (recorded.taxNote !== current.taxNote) out.push({ kind: "tax", label: "消費税の扱い", before: recorded.taxNote, after: current.taxNote });
+  // みなし確認の条項：両方にあって文（日数）が違うときだけ（入れる・外すは版を作る人が決める）
+  if (recorded.deemedClause && current.deemedClause && recorded.deemedClause !== current.deemedClause) {
+    out.push({ kind: "deemed", label: "明細のみなし確認の日数", before: recorded.deemedClause, after: current.deemedClause });
+  }
   return out;
 }
 
@@ -189,4 +226,15 @@ export async function latestTermsByDriver(db: Db, tenantId: string, driverIds?: 
   const out = new Map<string, (typeof rows)[number]>();
   for (const r of rows) if (!out.has(r.driverId)) out.set(r.driverId, r);
   return out;
+}
+
+/**
+ * ドライバーごとの「いちばん新しい取引条件の記録に、みなし確認の条項があるか」（会社で絞る）。
+ * 記録の無い人は入らない（＝条項なし）。明細・ホーム・振込の画面が同じ判定に使う
+ */
+export async function deemedClauseMap(db: Db, tenantId: string, driverIds: string[]): Promise<Map<string, boolean>> {
+  const ids = [...new Set(driverIds)];
+  if (ids.length === 0) return new Map();
+  const latest = await latestTermsByDriver(db, tenantId, ids);
+  return new Map([...latest.entries()].map(([driverId, r]) => [driverId, r.deemedClause]));
 }

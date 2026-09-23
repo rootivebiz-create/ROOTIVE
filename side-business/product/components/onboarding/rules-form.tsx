@@ -27,12 +27,12 @@ function templateRows(taken: Set<string>): Row[] {
 }
 
 /** 控除のルール：ひな形から選び、取引条件に書いて合意しているかに印を付ける */
-export function RulesForm({ existing, nextHref }: { existing: string[]; nextHref: string }) {
+export function RulesForm({ existing, nextHref, nextTitle = "取引条件の明示" }: { existing: string[]; nextHref: string; nextTitle?: string }) {
   const [round, setRound] = useState(0);
-  return <RulesFormInner key={round} existing={existing} nextHref={nextHref} onAgain={() => setRound((n) => n + 1)} />;
+  return <RulesFormInner key={round} existing={existing} nextHref={nextHref} nextTitle={nextTitle} onAgain={() => setRound((n) => n + 1)} />;
 }
 
-function RulesFormInner({ existing, nextHref, onAgain }: { existing: string[]; nextHref: string; onAgain: () => void }) {
+function RulesFormInner({ existing, nextHref, nextTitle, onAgain }: { existing: string[]; nextHref: string; nextTitle: string; onAgain: () => void }) {
   const taken = new Set(existing);
   const [rows, setRows] = useState<Row[]>(() => templateRows(taken));
   const [asking, setAsking] = useState(false);
@@ -70,7 +70,7 @@ function RulesFormInner({ existing, nextHref, onAgain }: { existing: string[]; n
         )}
         <div className="flex flex-col gap-2 sm:flex-row">
           <Link href={nextHref} className="inline-flex min-h-11 items-center justify-center rounded-lg bg-primary px-4 text-sm font-bold text-primary-foreground no-underline">
-            次の手順「先月の Excel を取り込む」へ →
+            次の手順「{nextTitle}」へ →
           </Link>
           <Button variant="secondary" onClick={onAgain}>
             続けて足す

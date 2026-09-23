@@ -7,6 +7,7 @@ import { AdjustmentForm } from "~/components/work/adjustment-form";
 import { EntryForm } from "~/components/work/entry-form";
 import { getDb } from "~/db/client";
 import { requirePageUser, roleAtLeast } from "~/server/auth";
+import { loadExportLayout } from "~/server/features/import/export";
 import { loadWorkMonth, type EntryRow } from "~/server/features/import/work";
 import { monthFromParam, monthLabelJa, monthParam } from "~/server/month";
 import { statementsStatus } from "~/server/statements-core";
@@ -33,7 +34,11 @@ export default async function WorkPage({ searchParams }: { searchParams: Promise
   const month = monthFromParam(sp.m);
   const m = monthParam(month);
   const db = await getDb();
-  const [work, status] = await Promise.all([loadWorkMonth(db, user.tenantId, month), statementsStatus(db, user.tenantId, month)]);
+  const [work, status, layout] = await Promise.all([
+    loadWorkMonth(db, user.tenantId, month),
+    statementsStatus(db, user.tenantId, month),
+    loadExportLayout(db, user.tenantId, month),
+  ]);
   const staff = roleAtLeast(user.role, "staff");
   const canEdit = staff && !work.closed;
   const entries = work.groups.flatMap((g) => g.lines.flatMap((l) => l.entries));
@@ -50,13 +55,27 @@ export default async function WorkPage({ searchParams }: { searchParams: Promise
         basePath="/work"
         description="この月の、ドライバーごと・案件ごとの数量と、その月だけの足し引きです。明細はここから計算します。"
         actions={
-          staff ? (
-            <Link href={`/import?m=${m}`} className={buttonClass("secondary")}>
-              Excel から取り込む
-            </Link>
-          ) : undefined
+          <>
+            {work.entryCount > 0 && (
+              <a href={`/api/import/export?m=${m}`} className={buttonClass("secondary")}>
+                Excel に戻す（.xlsx）
+              </a>
+            )}
+            {staff && (
+              <Link href={`/import?m=${m}`} className={buttonClass("secondary")}>
+                Excel から取り込む
+              </Link>
+            )}
+          </>
         }
       />
+      {work.entryCount > 0 && (
+        <p className="-mt-4 text-xs text-muted-foreground">
+          「Excel に戻す」は、
+          {layout.source === "profile" ? `取り込んだ「${layout.fileName}」と同じ列の並び` : "日付・ドライバー・案件・数量・単位・備考の形"}
+          で、この月の稼働を出します（いつでも今の Excel に戻れます）。
+        </p>
+      )}
 
       {sp.saved && SAVED[sp.saved] && <Notice tone="ok">{SAVED[sp.saved]}</Notice>}
       {work.closed && (

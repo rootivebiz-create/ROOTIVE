@@ -9,17 +9,21 @@ import { loadBuildInput } from "~/server/repo";
 import {
   CLIENT_DEACTIVATE_ACTION,
   clientPickerOptions,
+  clientsDoneHref,
+  clientsDoneMessage,
+  createClient,
   deactivateClient,
   deleteClient,
   listClients,
   projectsTurnedOffWith,
+  readClientsDone,
   restorableProjectCount,
   restoreClient,
 } from "~/server/features/settings/clients";
 import { firstIssue } from "~/server/features/settings/errors";
 import { settingsOverview } from "~/server/features/settings/overview";
 import { createProject, setProjectActive, updateProject } from "~/server/features/settings/projects";
-import { projectSchema } from "~/server/features/settings/schemas";
+import { clientSchema, projectSchema } from "~/server/features/settings/schemas";
 import { DEMO_MONTH, seedDemo } from "~/server/seed-demo";
 import { createTestDb } from "./helpers/db";
 
@@ -99,6 +103,9 @@ describe("元請を無効にする・戻す", () => {
     expect((await listClients(db, A, { status: "active" })).map((c) => c.name)).toEqual(["B商事（架空）"]);
     expect((await listClients(db, A, { status: "inactive" })).map((c) => c.name)).toEqual(["A物流（架空）"]);
     expect((await settingsOverview(db, A)).clients).toEqual({ total: 2, active: 1 });
+    // やめた元請と同じ名前で足そうとすると、作り直さずに「戻す」を案内する
+    expect(await failure(createClient(db, A, clientSchema.parse({ name: "Ａ物流（架空）", closingDay: "0" })))).toContain("「戻す」");
+    expect((await listClients(db, A)).length).toBe(2);
     // 別の会社には何も起きていない
     expect((await listClients(db, B, { status: "active" })).map((c) => c.name).sort()).toEqual(["A物流（架空）", "B商事（架空）"]);
   });
@@ -161,5 +168,44 @@ describe("元請を無効にする・戻す", () => {
     const back = await restoreClient(db, A, b.id, { withProjects: true });
     expect(back.projectIds).toEqual([]);
     expect((await clientByName(A, "B商事（架空）")).active).toBe(true);
+  });
+
+  it("やめた元請の案件は、元請を戻すまで「使う」に戻せない。戻したあとは戻せる（別の会社からは触れない）", async () => {
+    const b = await clientByName(A, "B商事（架空）");
+    const r = await deactivateAndRecord(A, b.id, true);
+    expect(r.projectIds).toHaveLength(2);
+    const spot = (await projectsOf(A, b.id)).find((p) => p.name === "スポット便")!;
+    expect(spot.active).toBe(false);
+    expect(await failure(setProjectActive(db, A, spot.id, true))).toContain("取引をやめた");
+    expect((await projectsOf(A, b.id)).find((p) => p.id === spot.id)!.active).toBe(false);
+    // 「使わない」のままにするのは止めない
+    expect((await setProjectActive(db, A, spot.id, false)).after.active).toBe(false);
+    // 別の会社からは見つからない（B の会社の同じ名前の案件もそのまま）
+    expect(await failure(setProjectActive(db, B, spot.id, true))).toContain("見つかりません");
+    const bSpot = (await projectsOf(B, (await clientByName(B, "B商事（架空）")).id)).find((p) => p.name === "スポット便")!;
+    expect(bSpot.active).toBe(true);
+
+    // 元請だけ戻す（案件は戻さない）→ そのあと案件を 1 つずつ「使う」に戻せる
+    await restoreClient(db, A, b.id, { withProjects: false });
+    expect((await setProjectActive(db, A, spot.id, true)).after.active).toBe(true);
+    expect(await aokiTotal(A)).toBe(357_555);
+  });
+
+  it("「取引をやめる」「戻す」のあとの知らせ：URL の値を確かめて読む", () => {
+    const id = "0f8b6c1e-2d3a-4b5c-9d7e-112233445566";
+    const href = clientsDoneHref("off", id, 2);
+    expect(href).toBe(`/settings/clients?done=off&id=${id}&n=2`);
+    const sp = Object.fromEntries(new URL(href, "https://example.invalid").searchParams);
+    const done = readClientsDone(sp)!;
+    expect(done).toEqual({ kind: "off", id, projects: 2 });
+    expect(clientsDoneMessage(done, "B商事（架空）")).toBe(
+      "「B商事（架空）」を取引をやめた元請にしました。案件 2件も「使わない」にしました。下の「無効の元請」に移しています。過去の記録はそのまま残り、「戻す」でいつでも元に戻せます。",
+    );
+    expect(clientsDoneMessage({ kind: "on", id, projects: 0 }, "B商事（架空）")).toBe("「B商事（架空）」を、取引している元請に戻しました。案件の元請を選ぶところにも、また出ます。");
+    // 形が違えば出さない
+    expect(readClientsDone({ done: "x", id, n: "2" })).toBeNull();
+    expect(readClientsDone({ done: "off", id: "not-an-id", n: "2" })).toBeNull();
+    expect(readClientsDone({ done: "on", id, n: "abc" })).toEqual({ kind: "on", id, projects: 0 });
+    expect(clientsDoneHref("on", id, -3)).toContain("n=0");
   });
 });

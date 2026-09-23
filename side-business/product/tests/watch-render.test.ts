@@ -81,7 +81,7 @@ describe("見張り番の画面", () => {
     expect(html).toContain(`href="${SOURCES.flQa}"`);
     expect(html).toContain('rel="noopener noreferrer"');
     // 直す画面は、その人・その控除を開いた状態
-    expect(html).toContain(`href="/settings/drivers/${d04}"`);
+    expect(html).toContain(`href="/terms/${d04}"`);
     expect(html).toContain("直す（ドライバーの設定）");
     expect(html).toContain("直す（控除のルール）");
     expect(html).toContain("直す（人ごとの単価）");
@@ -120,7 +120,7 @@ describe("見張り番の画面", () => {
     expect(html).not.toContain("確認済みを外す");
     expect(html).toContain("確認済みにするのは、事務・オーナーの方です");
     // どの画面も見るだけなら開ける。「直す」とは書かない
-    expect(html).toContain(`href="/settings/drivers/${d04}"`);
+    expect(html).toContain(`href="/terms/${d04}"`);
     expect(html).toContain("見る（ドライバーの設定）");
     expect(html).toContain("見る（稼働と調整）");
     expect(html).toContain("直すのは事務・オーナーの方です");
@@ -160,6 +160,33 @@ describe("見張り番の画面", () => {
     expect(html).toContain("2026年10月にも同じ指摘を確認済みにしています");
     expect(html).toContain("契約書の支払期日は翌月25日</textarea>");
     expect(html).toContain("前の月のメモを下書きに入れています");
+    // 前の月に確認済みにしたお知らせは、翌月は灰色の 1 行にたたむ（開くと中身と、前の月のメモを下書きにした欄）
+    expect(html).toContain("2026年10月に確認済み");
+    expect(html).toContain("お知らせ・支払期日の文言が入っていません（取引条件の支払期日の文言）");
+    expect(html).toContain("この月の分も、中身が同じか確かめて確認済みにしてください。");
+    expect(html).toContain("灰色の 1 行にたたんでいます");
+  });
+
+  it("前の月に確認済みにした赤は、翌月もたたまない（締めを止めるので、カードのまま出す）", async () => {
+    const staff = users.find((u) => u.role === "staff")!;
+    const [uniform] = await state.db!.select().from(s.deductionRules).where(and(eq(s.deductionRules.tenantId, tenantId), eq(s.deductionRules.name, "制服代")));
+    // 11 月も木村さんが稼働して制服代を引く
+    const d07 = await driverIdOf("D07");
+    const [takuhai] = await state.db!.select().from(s.projects).where(and(eq(s.projects.tenantId, tenantId), eq(s.projects.name, "宅配（個建て）")));
+    const [w] = await state.db!.insert(s.workEntries).values({ tenantId, month: "2026-11-01", driverId: d07, projectId: takuhai.id, qty: 300 }).returning();
+    await ackWatchIssue(state.db!, tenantId, { month: DEMO_MONTH, code: "deduction_no_agreement", subjectId: uniform.id, note: "制服代の購入の合意書を確認した" }, staff.id);
+    try {
+      as("staff");
+      const html = await render("2026-11");
+      expect(html).toContain("2026年10月にも同じ指摘を確認済みにしています：「制服代の購入の合意書を確認した」");
+      // 灰色の 1 行にたたんだのは、前の月に確認済みにしたお知らせ（支払期日の文言）だけ
+      expect(html.match(/2026年10月に確認済み<\/span>/g)).toHaveLength(1);
+      expect(html).toContain("書面で合意した記録が無い控除があります");
+      expect(html).toContain("締めを止める指摘が");
+    } finally {
+      await state.db!.delete(s.watchAcks).where(and(eq(s.watchAcks.tenantId, tenantId), eq(s.watchAcks.subjectId, uniform.id)));
+      await state.db!.delete(s.workEntries).where(eq(s.workEntries.id, w.id));
+    }
   });
 
   it("稼働の無い月：取り込みへの案内を出す", async () => {

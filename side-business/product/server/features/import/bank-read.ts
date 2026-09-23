@@ -90,6 +90,10 @@ export function findBankHeader(rows: string[][]): { row: number; cols: Partial<R
   return null;
 }
 
+/** 振込データに入る長さ（半角）：名義 30・銀行名と支店名 15 */
+const HOLDER_MAX = 30;
+const NAME_MAX = 15;
+
 const digitsOnly = (v: string) => v.normalize("NFKC").replace(/[\s-－ー‐]/g, "");
 
 function accountTypeOf(raw: string): AccountType | null | "blank" {
@@ -137,6 +141,17 @@ export function readBankTable(rows: string[][]): { rows: BankInputRow[]; headerR
     const holder = holderRaw ? toZenginKana(holderRaw) : null;
     if (!holderRaw) problems.push("口座名義（カナ）が空です");
     else if (holder && holder.invalid.length) problems.push(`口座名義に使えない文字があります（${[...new Set(holder.invalid)].join("")}）。カナで入れてください`);
+    // 振込データに入る名義は半角 30 文字まで（設定の画面と同じ決まり。黙って切ると、銀行で名義が合わなくなる）
+    else if (holder && holder.value.length > HOLDER_MAX)
+      problems.push(`口座名義は振込データに入るのが半角 ${HOLDER_MAX} 文字までです（いまは ${holder.value.length} 文字）。「株式会社」は「ｶ)」のように略して入れてください`);
+    for (const [k, label] of [
+      ["bankName", "銀行名"],
+      ["branchName", "支店名"],
+    ] as const) {
+      const v = cell(r, k);
+      const z = v ? toZenginKana(v) : null;
+      if (z && z.invalid.length === 0 && z.value.length > NAME_MAX) notes.push(`${label}「${v}」は半角 ${NAME_MAX} 文字を超えるので入れません（コードで振り込めます。名前は設定の画面で直せます）`);
+    }
     out.push({
       where: `${i + 1} 行目`,
       name,
@@ -262,7 +277,11 @@ function padNumber(v: string): string {
 
 /** 台帳に書く値：コード・種目・番号はファイルのまま。名前（カナ）は、読みが同じなら台帳の書き方を残す */
 function nextFields(input: BankInputRow, before: BankFields): BankFields {
-  const usable = (v: string) => !!v && toZenginKana(v).invalid.length === 0;
+  // 銀行名・支店名は、振込データに使える文字で 15 文字までのときだけ入れる（漢字の名前・長すぎる名前は、コードが同じなら今の名前を残す）
+  const usable = (v: string) => {
+    const z = v ? toZenginKana(v) : null;
+    return !!z && z.invalid.length === 0 && !!z.value && z.value.length <= NAME_MAX;
+  };
   const sameBank = before.bankCode === input.bankCode;
   const sameBranch = sameBank && before.branchCode === input.branchCode;
   return {

@@ -5,10 +5,12 @@ import { jpToday } from "@/lib/format";
 import { Badge } from "~/components/page";
 import { DiffAmount } from "~/components/reconcile/bits";
 import { PrintButton } from "~/components/reconcile/forms";
+import { FoundMoneyCard } from "~/components/reconcile/found-money";
 import { getDb } from "~/db/client";
 import { requirePageUser } from "~/server/auth";
-import { loadReport, reportRange, type ReportCell } from "~/server/features/reconcile";
+import { foundMoneyFromReport, loadReport, reportRange, type ReportCell } from "~/server/features/reconcile";
 import { amountText, formulaText, KIND_LABEL, STATUS_LABEL, STATUS_TONE, WAIT_ALERT_DAYS, waitingDays } from "~/server/features/reconcile/labels";
+import { closingDayText, periodText } from "~/server/features/reconcile/period";
 import { monthFromParam, monthLabelJa, monthParam } from "~/server/month";
 
 export const metadata: Metadata = { title: "元請の支払通知の突合レポート" };
@@ -37,6 +39,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
   const missing = report.cells.filter((c) => !c.notice);
   const detailed = withNotice.filter((c) => c.items.length > 0 || c.facts.length > 0 || c.zeroRate.length > 0);
   const now = new Date();
+  const found = foundMoneyFromReport(report, now);
   const dateText = (d: Date) => d.toLocaleDateString("ja-JP", { timeZone: "Asia/Tokyo" });
 
   return (
@@ -85,37 +88,21 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
         </p>
       </Card>
 
-      <div className="report-card mt-4 grid gap-3 sm:grid-cols-3">
-        <Card>
-          <p className="text-sm text-muted-foreground">受け取りが少ない可能性</p>
-          <p className="mt-1 text-2xl font-bold">
-            <Money value={report.totals.short} className={report.totals.short > 0 ? "text-danger" : ""} />
-          </p>
-          <p className="text-xs text-muted-foreground">{report.totals.shortCount}件（未対応・問い合わせ済み）</p>
-        </Card>
-        <Card>
-          <p className="text-sm text-muted-foreground">受け取りが多い可能性</p>
-          <p className="mt-1 text-2xl font-bold">
-            <Money value={report.totals.over} />
-          </p>
-          <p className="text-xs text-muted-foreground">{report.totals.overCount}件</p>
-        </Card>
-        <Card>
-          <p className="text-sm text-muted-foreground">突き合わせたお支払通知</p>
-          <p className="mt-1 text-2xl font-bold">{report.totals.notices}通</p>
-          <p className="text-xs text-muted-foreground">{missing.length > 0 ? `お支払通知の無い月 ${missing.length}件` : "記録のある月はすべて突き合わせ済み"}</p>
-        </Card>
-      </div>
-      {report.totals.recoveredCount > 0 && (
-        <Card className="report-card mt-3">
-          <p className="text-sm">
-            取り戻せた額（確定）：<Money value={report.totals.recovered} className="font-bold" />
-            <span className="ml-1 text-xs text-muted-foreground">
-              （「解決」にして額を入れた {report.totals.recoveredCount}件の合計。上の「可能性」の額とは足していません）
-            </span>
-          </p>
-        </Card>
-      )}
+      <FoundMoneyCard
+        className="report-card mt-4"
+        title={`見つけたお金（${period}分）`}
+        found={found}
+        over={report.totals.over}
+        overCount={report.totals.overCount}
+        scope={`${report.totals.notices}通のお支払通知`}
+        showMonths
+      />
+      <Card className="report-card mt-3">
+        <p className="text-sm">
+          突き合わせたお支払通知：<span className="font-bold">{report.totals.notices}通</span>
+          <span className="ml-2 text-xs text-muted-foreground">{missing.length > 0 ? `お支払通知の無い月 ${missing.length}件（下にまとめています）` : "記録のある月はすべて突き合わせ済み"}</span>
+        </p>
+      </Card>
 
       <section className="report-card mt-6">
         <h2 className="text-lg font-bold">元請 × 月のまとめ</h2>
@@ -155,6 +142,13 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
               </Link>
             )}
           </h2>
+          {c.period?.differs && (
+            <p className={`mt-1 text-xs ${c.period.mode === "closing" ? "text-muted-foreground" : "text-warning"}`}>
+              {c.period.mode === "closing"
+                ? `※ 締め日 毎月${closingDayText(c.period.closingDay)}：${periodText(c.period)} の稼働で比べています。`
+                : `※ 締め日が違うため月単位で比べています（稼働に日付がありません。当社の記録は ${periodText(c.period)} の分）。`}
+            </p>
+          )}
           {c.stale && <p className="mt-1 text-xs text-warning">※ 保存してある突き合わせの結果と、今の記録が違います。ここでは今の記録で計算しています（結果の画面で「突き合わせ直す」を押すと、そろいます）。</p>}
           {c.zeroRate.length > 0 && (
             <p className="mt-1 text-xs text-danger">※ 受注単価が 0 円の案件があります（{c.zeroRate.join("・")}）。この案件の当社の記録は 0 円で数えているため、差は正しくありません。</p>
@@ -221,6 +215,11 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
               <li key={`${c.clientId}:${c.month}:missing`} className="flex flex-wrap justify-between gap-2 border-b border-border py-1">
                 <span>
                   {c.clientName}　{monthLabelJa(c.month)}分
+                  {c.period?.differs && (
+                    <span className={`block text-xs ${c.period.mode === "closing" ? "text-muted-foreground" : "text-warning"}`}>
+                      {c.period.mode === "closing" ? `締め日 毎月${closingDayText(c.period.closingDay)}：${periodText(c.period)} の稼働` : "締め日が違うため月単位で比べています（稼働に日付がありません）"}
+                    </span>
+                  )}
                 </span>
                 <span>
                   当社の記録 <Money value={c.ourTotal} />
@@ -233,7 +232,9 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
 
       <footer className="mt-8 border-t border-border pt-3 text-xs text-muted-foreground">
         <p>
-          当社の記録は、しめ日ラボに入っている稼働の数量と、案件の受注単価（税抜。締めた月は締めたときの明細の写しの単価）から計算しています。お支払通知の金額は、取り込んだファイルの税抜の金額です（消費税・振込手数料の行は除いています）。
+          当社の記録は、しめ日ラボに入っている稼働の数量と、案件の受注単価（税抜。締めた月は締めたときの明細の写しの単価）から計算しています。
+          元請の締め日が月末でないときは、日付のある稼働から、その締めの期間の分を数えています（日付が無いときは当社の月で比べ、その旨を書いています）。
+          見つけたお金の「確定」は「解決」にして取り戻せた額を入れた差の合計、「見込み」はまだ片付いていない差のうち受け取りが少ない可能性の額の合計で、2 つは足していません。お支払通知の金額は、取り込んだファイルの税抜の金額です（消費税・振込手数料の行は除いています）。
           数量も単価も同じで、端数の扱いだけで 1 円ほど違うものは、差に数えていません。
           数量と単価の両方が違う差は、数量の差（当社の単価で計算）と単価の差（お支払通知の数量で計算）に分けて出しています。2 つを足すと差の全体になります。
         </p>

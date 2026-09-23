@@ -12,6 +12,9 @@ import { changePasswordAction, signOutOthersAction } from "./actions";
 
 export const metadata = { title: "自分のアカウント" };
 
+/** ログイン中の端末は、新しいものから（いまの端末を先頭に）この数まで出す */
+const SHOWN_SESSIONS = 10;
+
 /** 自分のアカウント（どの役割の人も）：パスワードを変える・ほかの端末からログアウト・最近のログイン */
 export default async function AccountPage() {
   const user = await requirePageUser("viewer");
@@ -57,7 +60,7 @@ export default async function AccountPage() {
         description="スマホ・パソコンなど、いまログインしている所です。心当たりのない所があれば、ほかの端末からログアウトして、パスワードを変えてください。"
       >
         <ul className="space-y-2">
-          {a.sessions.map((x, i) => (
+          {a.sessions.slice(0, SHOWN_SESSIONS).map((x, i) => (
             <li key={i} className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-border p-3 text-sm">
               <span>{jstDateTimeText(x.createdAt)} にログイン</span>
               {x.current && <Badge tone="green">この端末</Badge>}
@@ -65,6 +68,7 @@ export default async function AccountPage() {
             </li>
           ))}
         </ul>
+        {a.sessions.length > SHOWN_SESSIONS && <p className="text-sm text-muted-foreground">ほかに {a.sessions.length - SHOWN_SESSIONS}か所 あります（古いものは省いています）。</p>}
         {demo ? null : others > 0 ? (
           <ActionButton
             action={signOutOthersAction}

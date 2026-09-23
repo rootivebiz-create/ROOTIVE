@@ -5,7 +5,7 @@ import { getDb } from "~/db/client";
 import { runAction, UserError, type ActionResult } from "~/server/action";
 import { audit } from "~/server/audit";
 import { createInvite, requireUser } from "~/server/auth";
-import { importTenantData, previewTenantImport, type ImportSummary } from "~/server/features/export-all";
+import { assertRestoreHost, importTenantData, previewTenantImport, type ImportSummary } from "~/server/features/export-all";
 import { requestOrigin } from "~/server/features/statements/request";
 
 /** 全データの画面の Server Action（オーナーだけ。中身は server/features/export-all.ts） */
@@ -37,6 +37,8 @@ export async function restoreAction(_prev: RestoreState, form: FormData): Promis
       if (process.env.DEMO_MODE === "1") throw new UserError("デモでは読み戻しは使えません（書き出しは試せます）");
       const bytes = await fileBytes(form);
       const db = await getDb();
+      // ほかの会社が入っている場所では使わない（移した先の新しい場所だけ）
+      await assertRestoreHost(db, user.tenantId);
       if (mode === "check") {
         const summary = await previewTenantImport(db, bytes);
         return { mode, summary, invites: [] };

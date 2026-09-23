@@ -72,8 +72,11 @@ export type WatchStatement = { id: string; driverId: string; total: number; payD
 
 export type WatchBatch = { id: string; fileName: string; transferDate: string; executedOn: string | null; statementIds: string[] };
 
-/** この月の、日付のある稼働の行（同じ日・同じ案件の重なりを見るため） */
-export type WatchWorkRow = { driverId: string; projectId: string; workDate: string; qty: number };
+/**
+ * この月の、日付のある稼働の行（同じ日・同じ案件の重なりを見るため）。
+ * batchId は取り込みの束（手で入れた行は null。分からないときは書かない＝別々の出どころとして扱う）
+ */
+export type WatchWorkRow = { driverId: string; projectId: string; workDate: string; qty: number; batchId?: string | null };
 
 /** まだ解決にしていない、ドライバーからの明細の質問（1 件ずつ） */
 export type WatchQuestion = {
@@ -143,6 +146,8 @@ export type WatchContext = {
   prevBatches?: WatchBatch[];
   /** この月に明細がある人の、いちばん新しい取引条件の記録 */
   terms?: WatchTerms[];
+  /** この月に反映した稼働の Excel にあった、振込手数料の列（控除のルールにはしていない） */
+  feeColumns?: { batchId: string; fileName: string; columns: string[] }[];
 };
 
 /**

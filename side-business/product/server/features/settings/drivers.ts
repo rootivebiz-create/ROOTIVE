@@ -161,7 +161,14 @@ export async function updateDriver(db: Db, tenantId: string, id: string, input: 
     .where(and(eq(s.drivers.tenantId, tenantId), eq(s.drivers.id, id)))
     .returning();
   if (!after) throw new UserError("そのドライバーは見つかりません。一覧から開き直してください");
-  return { before, after, changed: changes(before, next, KEYS) };
+  return { before, after, changed: maskAccount(changes(before, next, KEYS)) };
+}
+
+/** 操作の記録（消せない表）に口座番号を残さない：下 3 桁だけにする（キーはそのまま。振込の画面が変わったことを読む） */
+function maskAccount(changed: Record<string, { from: unknown; to: unknown }>) {
+  const tail = (v: unknown) => (typeof v === "string" && v ? `…${v.slice(-3)}` : v);
+  if (changed.accountNumber) changed.accountNumber = { from: tail(changed.accountNumber.from), to: tail(changed.accountNumber.to) };
+  return changed;
 }
 
 /** 無効にする・有効に戻す（記録はそのまま残る） */

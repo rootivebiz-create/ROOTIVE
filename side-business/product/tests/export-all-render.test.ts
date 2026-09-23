@@ -143,9 +143,41 @@ describe("全データの画面・書き出し・読み戻し", () => {
     const [log] = await target.db.select().from(s.auditLog).where(and(eq(s.auditLog.tenantId, hostTenant), eq(s.auditLog.action, "data.import")));
     expect(log.detail).toMatchObject({ restoredTenantId: tenantId, versions: 8 });
     expect(await target.db.select().from(s.drivers).where(eq(s.drivers.tenantId, hostTenant))).toHaveLength(8);
-    // 2 回目は読み込まない
+    // 2 回目は読み込まない（ほかの会社が入った場所では、画面からの読み戻しは使えない）
     const again = await restoreAction(undefined, form({ file, mode: "check" }));
     expect(again?.ok).toBe(false);
-    expect(again && !again.ok && again.error).toContain("すでにこの場所にあります");
+    expect(again && !again.ok && again.error).toContain("すでにほかの会社のデータがあります");
+    const againApply = await restoreAction(undefined, form({ file, mode: "apply", confirm: "on" }));
+    expect(againApply?.ok).toBe(false);
+    expect(await target.db.select().from(s.tenants)).toHaveLength(2);
+  });
+
+  it("読み戻し：何社も入っている場所（まとめて提供しているところ）では、お客様の画面から会社を増やせない", async () => {
+    const { restoreAction } = await import("~/app/(app)/data/actions");
+    const { assertRestoreHost, previewTenantImport } = await import("~/server/features/export-all");
+    const shared = await createTestDb();
+    try {
+      state.db = shared.db;
+      const { tenantId: a } = await seedDemo(shared.db);
+      await seedDemo(shared.db);
+      const ownerA = (await shared.db.select().from(s.users).where(eq(s.users.tenantId, a))).find((u) => u.role === "owner")!;
+      state.user = { id: ownerA.id, tenantId: a, email: ownerA.email, name: ownerA.name, role: "owner" };
+      const file = new File([zip.slice().buffer as ArrayBuffer], "export.zip", { type: "application/zip" });
+      const res = await restoreAction(undefined, form({ file, mode: "check" }));
+      expect(res).toMatchObject({ ok: false });
+      expect(res && !res.ok && res.error).toContain("すでにほかの会社のデータがあります");
+      await expect(assertRestoreHost(shared.db, a)).rejects.toThrow("ほかの会社");
+      // 画面でも、読み戻しの欄の代わりに理由を出す
+      const { default: DataPage } = await import("~/app/(app)/data/page");
+      const page = text(renderToString((await DataPage()) as ReactElement));
+      expect(page).toContain("すでにほかの会社のデータがあります");
+      expect(page).not.toContain("中身を確かめる（まだ読み込みません）");
+      // 中身の確かめそのもの（運営者が使う入口）は、この場所でも読める
+      expect((await previewTenantImport(shared.db, zip)).tenantId).toBe(tenantId);
+      expect(await shared.db.select().from(s.tenants)).toHaveLength(2);
+    } finally {
+      state.db = target.db;
+      await shared.client.close();
+    }
   });
 });

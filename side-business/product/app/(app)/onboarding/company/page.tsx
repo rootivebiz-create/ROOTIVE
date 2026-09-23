@@ -5,7 +5,7 @@ import { Notice } from "~/components/page";
 import { getDb } from "~/db/client";
 import { requirePageUser } from "~/server/auth";
 import { loadCompanyForm, loadOnboarding } from "~/server/features/onboarding";
-import { payRuleText, TAX_METHODS } from "~/server/features/onboarding/company";
+import { payRuleText, SIZE_REASON, TAX_METHODS } from "~/server/features/onboarding/company";
 
 export const metadata = { title: "最初の設定：会社の基本" };
 
@@ -44,6 +44,8 @@ export default async function OnboardingCompanyPage() {
               registrationNo: c.registrationNo,
               taxMethod: c.taxMethod,
               paymentTermsText: c.paymentTermsText,
+              capitalYen: c.capitalYen,
+              employees: c.employees,
             }}
           />
         </Card>
@@ -75,7 +77,16 @@ export default async function OnboardingCompanyPage() {
                 <dt className="text-muted-foreground">取引条件の支払期日の文言</dt>
                 <dd className="font-bold">{c.paymentTermsText ?? "入っていません"}</dd>
               </div>
+              <div>
+                <dt className="text-muted-foreground">資本金</dt>
+                <dd className="num font-bold">{c.capitalYen === null ? "入っていません" : `${c.capitalYen.toLocaleString("ja-JP")}円`}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">常時使用する従業員の数</dt>
+                <dd className="num font-bold">{c.employees === null ? "入っていません" : `${c.employees.toLocaleString("ja-JP")}人`}</dd>
+              </div>
             </dl>
+            <p className="mt-2 text-xs text-muted-foreground">資本金と従業員の数は、{SIZE_REASON}。</p>
           </Card>
         </div>
       )}

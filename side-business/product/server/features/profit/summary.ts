@@ -301,3 +301,65 @@ export function futureBurden(drafts: StatementDraft[], month: string, taxMethod:
     steps,
   };
 }
+
+// ---------------------------------------------------------------- 期間の途中で経過措置の割合が変わる月（日ごとに分けた内訳）
+
+export type BurdenSplitPart = {
+  /** その割合の稼働の最初と最後の日（分けた人たちの中で） */
+  from: string;
+  to: string;
+  /** 控除できる割合（日付つきの表から。明細の burdenParts のまま） */
+  rate: number;
+  /** その割合で数えた支払（委託料 ＋ 消費税相当額） */
+  base: number;
+  /** 会社の負担 */
+  burden: number;
+  /** その割合の稼働があった人 */
+  people: number;
+};
+
+export type BurdenSplit = {
+  /** 期間の途中で割合が変わり、日ごとに分けて数えた人 */
+  people: number;
+  /** 割合ごとの合計（日付の早い順） */
+  parts: BurdenSplitPart[];
+  /** 分けて数えた人の負担の合計（明細の invoiceBurden の合計と同じ） */
+  total: number;
+  /** 期間が割合の境目をまたぐのに、日付の無い稼働があった人（期間の末日の割合で数えている） */
+  undated: { driverId: string; name: string }[];
+};
+
+/**
+ * 明細の burdenParts（締めの期間が経過措置の段の境目をまたぐとき、稼働の日ごとに分けた内訳）を、割合ごとにまとめる。
+ * 計算はしない（明細の数字を足すだけ）。またがない月は parts も undated も空。
+ */
+export function burdenSplit(drafts: StatementDraft[]): BurdenSplit {
+  const byRate = new Map<number, BurdenSplitPart>();
+  let people = 0;
+  let total = 0;
+  for (const d of drafts) {
+    const parts = d.burdenParts ?? [];
+    if (parts.length === 0) continue;
+    people++;
+    total += d.invoiceBurden;
+    const seen = new Set<number>();
+    for (const p of parts) {
+      const cur = byRate.get(p.rate);
+      if (cur) {
+        cur.base += p.base;
+        cur.burden += p.burden;
+        if (p.from < cur.from) cur.from = p.from;
+        if (p.to > cur.to) cur.to = p.to;
+      } else byRate.set(p.rate, { from: p.from, to: p.to, rate: p.rate, base: p.base, burden: p.burden, people: 0 });
+      if (!seen.has(p.rate)) {
+        seen.add(p.rate);
+        byRate.get(p.rate)!.people++;
+      }
+    }
+  }
+  const undated = drafts
+    .filter((d) => d.undatedAcrossStep)
+    .map((d) => ({ driverId: d.driverId, name: d.driver.name }))
+    .sort((a, b) => a.name.localeCompare(b.name, "ja"));
+  return { people, parts: [...byRate.values()].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : b.rate - a.rate)), total, undated };
+}

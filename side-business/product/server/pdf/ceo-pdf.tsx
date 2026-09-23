@@ -64,8 +64,12 @@ const st = StyleSheet.create({
   box: { width: "49%", borderWidth: 1, borderColor: LINE, borderRadius: 4, padding: 6 },
   boxTitle: { fontSize: 9, fontWeight: 700, marginBottom: 2, lineHeight: 1.3 },
   big: { fontSize: 11.5, fontWeight: 700, lineHeight: 1.3 },
+  foundRow: { flexDirection: "row", justifyContent: "space-between", gap: 4, borderBottomWidth: 0.6, borderBottomColor: LINE, paddingVertical: 1.5 },
+  foundLabel: { flex: 1, paddingRight: 4 },
   note: { marginTop: 10, fontSize: 7.2, color: MUTED },
-  footer: { position: "absolute", bottom: 14, left: 32, right: 32, flexDirection: "row", justifyContent: "space-between", fontSize: 7, color: MUTED },
+  footerLeft: { position: "absolute", bottom: 14, left: 32, fontSize: 7, color: MUTED },
+  // render で描く字は、ページの行の高さを引き継ぐと描かれないことがあるので lineHeight: 0（ほかの PDF と同じ）
+  footerRight: { position: "absolute", bottom: 14, left: 32, right: 32, fontSize: 7, lineHeight: 0, color: MUTED, textAlign: "right" },
 });
 
 function Kpi({ label, value, sub, tone }: { label: string; value: string; sub: string; tone?: "red" }) {
@@ -111,6 +115,7 @@ function CeoPage({ sheet, generatedAt }: { sheet: CeoSheet; generatedAt: Date })
   const max = Math.max(1, ...sheet.trend.map((p) => Math.abs(p.profit)));
   const b = sheet.burden;
   const r = sheet.reconcile;
+  const f = sheet.found;
   const w = sheet.watch;
   const c = sheet.confirm;
   const monthText = jpMonth(sheet.month);
@@ -172,35 +177,43 @@ function CeoPage({ sheet, generatedAt }: { sheet: CeoSheet; generatedAt: Date })
             <View>
               <T>
                 登録の無い方 {b.people}人への支払で、控除できずに会社が負担する消費税：
-                <T style={{ fontWeight: 700 }}>今月 {en(b.current?.monthly ?? t.burden)}</T>
+                <T style={{ fontWeight: 700 }}>今月 {en(t.burden)}</T>
               </T>
               {b.next ? (
                 <T>
-                  {jpMonth(b.next.from)}からは 月 {en(b.next.monthly)}（{signedYen(b.next.diffMonthly)}）。同じ稼働が続いた場合の目安です。
+                  {jpMonth(b.next.from)}からは 月 {en(b.next.monthly)}（今の段階より {signedYen(b.next.diffMonthly)}）。同じ稼働が続いた場合の目安です。
                 </T>
               ) : (
                 <T>経過措置の期間が終わり、これより先の段階はありません。</T>
               )}
+              {sheet.split.people > 0 ? (
+                <T style={st.small}>締めの期間の途中で割合が変わるため、日付のある {sheet.split.people}人は稼働の日ごとに分けて数えています。</T>
+              ) : null}
+              {sheet.split.undated.length > 0 ? (
+                <T style={st.small}>日付の無い稼働の {sheet.split.undated.length}人は、期間の末日の割合で数えています。</T>
+              ) : null}
             </View>
           )}
         </View>
 
         <View style={st.box} wrap={false}>
-          <T style={st.boxTitle}>元請の支払通知との突合</T>
+          <T style={st.boxTitle}>見つけたお金（元請の支払通知との突合）</T>
           {r.error ? (
             <T>{r.error}</T>
           ) : r.notices === 0 ? (
             <T>この月の支払通知はまだ取り込んでいません。</T>
-          ) : r.count === 0 ? (
-            <T>まだ片付いていない差の記録はありません（支払通知 {r.notices}件）。</T>
           ) : (
             <View>
-              <T style={[st.big, r.net < 0 ? { color: RED } : {}]}>
-                {r.count}件・合計 {signedYen(r.net)}
-              </T>
-              {r.shortCount > 0 ? <T>支払通知が当社の記録より少ない：{r.shortCount}件・{en(r.short)}</T> : null}
-              {r.overCount > 0 ? <T>支払通知が当社の記録より多い：{r.overCount}件・{en(r.over)}</T> : null}
-              <T style={st.small}>未対応と問い合わせ済みの差の合計です（突合の画面と同じ数え方）。</T>
+              <View style={st.foundRow}>
+                <T style={st.foundLabel}>確定（取り戻せた額）</T>
+                <T style={{ fontWeight: 700 }}>{f.confirmedCount > 0 ? `${en(f.confirmed)}（${f.confirmedCount}件）` : "まだありません"}</T>
+              </View>
+              <View style={st.foundRow}>
+                <T style={st.foundLabel}>見込み（まだ片付いていない、通知が少ない差）</T>
+                <T style={{ fontWeight: 700, color: f.estimated > 0 ? RED : INK }}>{f.estimatedCount > 0 ? `${en(f.estimated)}（${f.estimatedCount}件）` : "ありません"}</T>
+              </View>
+              {r.overCount > 0 ? <T>支払通知が当社の記録より多い差：{r.overCount}件・{en(r.over)}</T> : null}
+              <T style={st.small}>確定と見込みは別の数です（足し合わせていません）。差は未対応と問い合わせ済みのもので、突合の画面と同じ数え方です。</T>
             </View>
           )}
           {!r.error && r.unread > 0 ? <T style={st.small}>行を読み取れていない支払通知が {r.unread}件あります。突合の画面で列を選び直してください。</T> : null}
@@ -260,12 +273,11 @@ function CeoPage({ sheet, generatedAt }: { sheet: CeoSheet; generatedAt: Date })
         </Link>
       </View>
 
-      <View style={st.footer} fixed>
-        <T>
-          しめ日ラボ　{sheet.companyName}　{monthText}分
-        </T>
-        <T>1 / 1</T>
-      </View>
+      {/* 下の帯（1 枚に収める作りだが、もしはみ出しても本当のページ数を出す。render は Text に直接 fixed を付けないと描かれない） */}
+      <T style={st.footerLeft} fixed>
+        しめ日ラボ　{sheet.companyName}　{monthText}分
+      </T>
+      <T style={st.footerRight} fixed render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} />
     </Page>
   );
 }

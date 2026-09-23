@@ -7,6 +7,8 @@ import { getDb } from "~/db/client";
 import { runAction, UserError, type ActionResult } from "~/server/action";
 import { audit } from "~/server/audit";
 import { requireUser } from "~/server/auth";
+import { adoptDeductionProposal } from "~/server/features/import/adopt";
+import { guessText } from "~/server/features/import/deductions";
 import { idSchema, monthInputSchema, quickDriverSchema, quickProjectSchema, roleSchema } from "~/server/features/import/schemas";
 import {
   applyBatch,
@@ -216,15 +218,17 @@ export async function applyAction(_prev: State, form: FormData): Promise<State> 
     const batchId = batchIdSchema.parse(text(form, "batchId"));
     const mode = z.enum(["replace", "replaceAll", "add"], { error: "入れ替え方を選んでください" }).parse(text(form, "mode"));
     const confirmDuplicates = text(form, "confirmDuplicates") === "on";
+    // 「取り消して入れ直す」（同じファイルが反映済みのときだけ出るボタン）
+    const reapply = text(form, "reapply") === "1";
     const db = await getDb();
-    const result = await applyBatch(db, user.tenantId, user, batchId, { mode, confirmDuplicates });
+    const result = await applyBatch(db, user.tenantId, user, batchId, { mode, confirmDuplicates, reapply });
     await audit(db, {
       tenantId: user.tenantId,
       userId: user.id,
-      action: "import.apply",
+      action: reapply ? "import.reapply" : "import.apply",
       entity: "import_batch",
       entityId: batchId,
-      detail: { mode, confirmDuplicates, ...result },
+      detail: { mode: reapply ? "replace" : mode, confirmDuplicates, ...result },
     });
     refresh(batchId);
     return batchId;
@@ -283,4 +287,54 @@ export async function deleteProfileAction(_prev: State, form: FormData): Promise
     });
     refresh();
   }, "読み方を忘れました。次に同じ形のファイルを置くと、読み方を推測し直します");
+}
+
+/** 控除の提案を採用する（合意の記録が無いルールとして作る → 見張り番が知らせる） */
+export async function adoptRuleAction(_prev: State, form: FormData): Promise<State> {
+  let message = "";
+  const res = await runAction(async () => {
+    const user = await requireUser("staff");
+    const batchId = batchIdSchema.parse(text(form, "batchId"));
+    const col = z.coerce.number().int().min(0).max(500).parse(text(form, "col"));
+    const withExceptions = text(form, "withExceptions") === "on";
+    // 全員向けは登録済みで、合わない人の「その人だけのルール」だけを作る
+    const exceptionsOnly = text(form, "exceptionsOnly") === "1";
+    const db = await getDb();
+    const { proposal, created } = await adoptDeductionProposal(db, user.tenantId, batchId, { col, withExceptions: withExceptions || exceptionsOnly, exceptionsOnly });
+    for (const r of created) {
+      await audit(db, {
+        tenantId: user.tenantId,
+        userId: user.id,
+        action: "deduction_rule.create",
+        entity: "deduction_rule",
+        entityId: r.id,
+        detail: {
+          name: r.name,
+          source: "import",
+          batchId,
+          column: proposal.header,
+          driverName: r.driverName,
+          after: {
+            driverId: r.driverId,
+            kind: r.kind,
+            rate: r.rate,
+            amount: r.amount,
+            onlyWhenWorked: r.onlyWhenWorked,
+            taxable: r.taxable,
+            agreedInWriting: r.agreedInWriting,
+            basis: r.basis,
+          },
+        },
+      });
+    }
+    if (exceptionsOnly) {
+      message = `「${proposal.existing?.name ?? proposal.name}」のその人だけの式を作りました（${created.map((r) => r.driverName).join("・")}）。書面の合意の記録がまだ無いので、取引条件の記録に入れて、合意した日を入れてください`;
+    } else {
+      const own = created.length - 1;
+      message = `控除「${proposal.name}」（${guessText(proposal.inference!.guess)}）を作りました${own > 0 ? `。その人だけの式も ${own} 人ぶん作りました` : ""}。書面の合意の記録がまだ無いので、取引条件の記録に入れて、合意した日を入れてください`;
+    }
+    revalidatePath("/", "layout");
+    revalidatePath(`/import/${batchId}`);
+  });
+  return res.ok ? { ...res, message } : res;
 }

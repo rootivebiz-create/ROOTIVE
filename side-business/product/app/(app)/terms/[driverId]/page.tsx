@@ -103,9 +103,21 @@ export default async function TermsDriverPage({ params }: { params: Promise<{ dr
           </a>
         </p>
       )}
+      {detail.warnings.contractWording && (
+        <p role="alert" className="rounded-lg border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
+          会社の設定の「支払期日の文言」（契約書などに書いている文：「{detail.warnings.contractWording.text}」）に「{detail.warnings.contractWording.words.join("」「")}」が入っています。
+          公正取引委員会の Q&A は、「〜まで」「〜以内」を具体的な支払期日と認めていません。この明示書には、台帳から作った具体的な支払期日（{detail.current.payment.text}）が入りますが、契約書などの文言が食い違っていないかの確認をおすすめします。
+          <Link href="/settings/company" className="mx-1">
+            設定 → 会社
+          </Link>
+          <a href={TERMS_SOURCES.flQa} target="_blank" rel="noopener noreferrer" className="ml-1">
+            出典
+          </a>
+        </p>
+      )}
       {detail.warnings.feeByDriver && (
         <p role="alert" className="rounded-lg border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
-          振込手数料をドライバーが負担する設定です。報酬から振込手数料を差し引く扱いは、報酬の減額にあたるおそれがあります（フリーランス法 第5条・取引適正化法）。
+          振込手数料をドライバーが負担する設定です。報酬から振込手数料を差し引く扱いは、報酬の減額にあたるおそれがあります（フリーランス法 第5条・中小受託取引適正化法）。
           <Link href="/settings/company" className="mx-1">
             設定 → 会社
           </Link>
@@ -115,7 +127,7 @@ export default async function TermsDriverPage({ params }: { params: Promise<{ dr
           </a>
           ・
           <a href={TERMS_SOURCES.toritekiLeaflet} target="_blank" rel="noopener noreferrer" className="ml-1">
-            取引適正化法のリーフレット
+            中小受託取引適正化法のリーフレット
           </a>
         </p>
       )}
@@ -130,7 +142,7 @@ export default async function TermsDriverPage({ params }: { params: Promise<{ dr
 
       {detail.changes.length > 0 && latest && (
         <Card className="border-warning/60">
-          <h2 className="font-bold text-warning">条件が変わっています（版 {latest.version} を明示したあとに台帳が変わりました）</h2>
+          <h2 className="font-bold text-warning">条件が変わっています（版 {latest.version} を明示したあとに、台帳や稼働が変わりました）</h2>
           <ul className="mt-2 space-y-1 text-sm">
             {detail.changes.map((c, i) => (
               <li key={i} className="break-words">

@@ -18,9 +18,11 @@ function Mark({ ok }: { ok: boolean }) {
  * 「みなし確認」の 3 つの条件を 1 つずつ見せる（会社の画面）。1 つでも欠けていれば未確認のまま。
  * ドライバーが今の版を確認していれば出さない。
  */
-export function DeemedCheck({ status, terms, deemedDays }: { status: StatementStatus; terms: Terms; deemedDays: number }) {
+export function DeemedCheck({ status, terms, deemedDays, sentOn = null }: { status: StatementStatus; terms: Terms; deemedDays: number; sentOn?: string | null }) {
   if (status.key === "confirmed") return null;
   const c = status.deemedCheck;
+  // 条項のある取引条件を、明細を送ったあとで渡している（送った時点で合意があったかは、記録を見て確かめてもらう）
+  const clauseAfterSent = !!terms?.deemedClause && !!sentOn && c.sent && terms.issuedOn > sentOn;
   const daysText = !c.sent
     ? "今の中身をまだ送っていません"
     : c.daysPassed
@@ -73,6 +75,11 @@ export function DeemedCheck({ status, terms, deemedDays }: { status: StatementSt
           </span>
         </li>
       </ul>
+      {clauseAfterSent && terms && sentOn && (
+        <p role="note" className="mt-3 rounded-lg border border-warning/40 bg-warning/10 p-3">
+          条項のある取引条件の記録（{jpDate(terms.issuedOn)}）は、この明細を送った日（{jpDate(sentOn)}）より後に渡したものです。送った時点で、連絡が無ければ確認とみなすことに合意があったか、前の取引条件の記録で確認をおすすめします。
+        </p>
+      )}
       {status.key === "deemed" && (
         <p className="mt-3">
           3 つがそろったため「みなし確認」と表示しています。明細の注記と取引条件に沿った状態の表示で、扱いは会社と税理士でお決めください。

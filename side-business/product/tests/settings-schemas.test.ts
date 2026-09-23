@@ -180,6 +180,17 @@ describe("数の入力（全角・カンマ）", () => {
     expect(c.deemedConfirmDays).toBe(7);
     expect(errors(companySchema.safeParse({ ...companyBase, deemedConfirmDays: "0" })).deemedConfirmDays).toContain("1 以上");
   });
+
+  it("資本金は「1,000万円」「3億円」、従業員は「12人」の書き方でも読む（最初の設定の案内と同じ）。1円未満になる書き方は止める", () => {
+    const c = companySchema.parse({ ...companyBase, capitalYen: "１，０００万円", employees: "３００人" });
+    expect(c.capitalYen).toBe(10_000_000);
+    expect(c.employees).toBe(300);
+    expect(companySchema.parse({ ...companyBase, capitalYen: "3億円" }).capitalYen).toBe(300_000_000);
+    expect(companySchema.parse({ ...companyBase, capitalYen: "1.5億" }).capitalYen).toBe(150_000_000);
+    expect(companySchema.parse({ ...companyBase, capitalYen: "" }).capitalYen).toBeNull();
+    expect(errors(companySchema.safeParse({ ...companyBase, capitalYen: "0.00001万円" })).capitalYen).toBeTruthy();
+    expect(errors(companySchema.safeParse({ ...companyBase, capitalYen: "たくさん" })).capitalYen).toBeTruthy();
+  });
 });
 
 describe("会社：締め日と支払日", () => {

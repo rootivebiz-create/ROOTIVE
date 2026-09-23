@@ -116,6 +116,16 @@ function buildItems(c: CloseChecklist, m: string, canEdit: boolean, isOwner = fa
                   {i.subjectLabel && <span className="ml-1 font-normal text-foreground">（{i.subjectLabel}）</span>}
                 </p>
                 <p className="text-muted-foreground">{i.detail}</p>
+                {(i.impact || i.asOf) && (
+                  <p className="text-xs text-muted-foreground">
+                    {i.impact && (
+                      <>
+                        影響額：{i.impact.yen === null ? "—" : `${i.impact.yen.toLocaleString("ja-JP")}円`}（{i.impact.label}）
+                      </>
+                    )}
+                    {i.asOf && <>　{i.asOf}時点の情報</>}
+                  </p>
+                )}
                 <Link href={i.fixHref ?? `/watch?m=${m}`} className="inline-flex min-h-11 items-center">
                   {i.fixHref ? "直す画面へ" : "見張り番で確かめる"} →
                 </Link>

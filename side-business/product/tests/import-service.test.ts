@@ -92,10 +92,11 @@ describe("取り込み：見本のファイルを反映する", () => {
     expect(v2.summary.mappingFrom).toBe("profile");
     expect(v2.preview!.modes.replace.removeBatches.map((b) => b.id)).toEqual([id]);
     expect(v2.preview!.modes.replace.duplicates).toEqual([]);
-    // 足すなら「同じファイル」で止まる
-    await expect(applyBatch(db, tenantId, user, again.id, { mode: "add", confirmDuplicates: true })).rejects.toThrow("倍");
-    // 入れ替えれば倍にならない
-    await applyBatch(db, tenantId, user, again.id, { mode: "replace", confirmDuplicates: false });
+    // 同じファイルは、どのやり方でも「同じファイルがすでに反映されています」で止まる
+    await expect(applyBatch(db, tenantId, user, again.id, { mode: "add", confirmDuplicates: true })).rejects.toThrow("同じファイルがすでに反映されています");
+    await expect(applyBatch(db, tenantId, user, again.id, { mode: "replace", confirmDuplicates: false })).rejects.toThrow("¥2,410,600 多く払うおそれ");
+    // 「取り消して入れ直す」なら倍にならない
+    await applyBatch(db, tenantId, user, again.id, { mode: "replace", confirmDuplicates: false, reapply: true });
     expect(await monthWork(db, tenantId)).toHaveLength(11);
     expect(await totals(db, tenantId)).toEqual(before);
     const history = await listBatches(db, tenantId, DEMO_MONTH);

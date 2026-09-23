@@ -157,7 +157,8 @@ describe("全データの書き出しと読み戻し（PGlite の往復）", () 
   it("ZIP：表ごとの CSV（UTF-8 BOM・見出しつき）・manifest.json（版・件数）・明細の全部の版・README", async () => {
     expect(manifest.format).toBe("shimebi-lab-export");
     expect(manifest.schemaVersion).toBe(schemaVersion());
-    expect(manifest.schemaVersion).toBe("0010_clients_active_batch_index");
+    // 最後のマイグレーションの名前（例：0010_clients_active_batch_index）
+    expect(manifest.schemaVersion).toMatch(/^\d{4}_[a-z0-9_]+$/);
     expect(manifest.tenantId).toBe(tenantId);
     expect(manifest.exportedAt).toBe(NOW.toISOString());
     for (const t of EXPORT_TABLES) {
@@ -185,6 +186,8 @@ describe("全データの書き出しと読み戻し（PGlite の往復）", () 
     }
     expect(files["README.txt"]).toContain("csv/work_entries.csv");
     expect(files["README.txt"]).toContain("引用符の無い空欄は「値なし」");
+    // 書き出した日時は日本時間でも書く（2026-11-30T03:00Z → 12:00）
+    expect(files["README.txt"]).toContain("書き出した日時：2026-11-30 12:00（日本時間）");
     // 目録のハッシュは、ファイルの中身と同じ
     for (const [name, hash] of Object.entries(manifest.files)) expect(sha(strToU8(files[name])), name).toBe(hash);
   });

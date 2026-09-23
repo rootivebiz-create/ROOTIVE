@@ -72,9 +72,34 @@ export type HomeStatus = {
   totals: { drivers: number; total: number; source: "calc" | "saved" };
   /** 今月の会社の利益 */
   profit: { sales: number; subtotal: number; profit: number; source: "calc" | "snapshot" };
-  /** 元請との突合（まだ解決していない差） */
-  reconcile: { notices: number; items: number; openItems: number; openDiff: number; short: number; over: number };
+  /**
+   * 元請との突合（突合の画面と同じ読み方：差は今の記録で出し、状態は保存したもの。まだ突き合わせていない通知も数える）。
+   * items は差の数（片付いたものも含む）、openItems・short・over は未対応と問い合わせ済みの差。
+   * unread は行を読み取れていない（比べられない）支払通知の数。error は突合を読めなかったとき
+   */
+  reconcile: { notices: number; items: number; openItems: number; openDiff: number; short: number; over: number; unread: number; error: string | null };
   /** ドライバーからの、まだ解決していない質問 */
   questions: { count: number; items: { statementId: string; driverName: string; body: string; createdAt: Date }[] };
   onboarding: OnboardingProgress;
+  /**
+   * 見つけたお金（この月の元請の支払通知との突合）。確定と見込みは別の数で、足し合わせない（SPEC P1-1.2・親切の約束 社長 2）
+   * - confirmed：「解決」にして取り戻せた額を入れた差の合計（確定。reconciliation_items.recovered_amount）
+   * - estimated：未対応・問い合わせ済みの差のうち、支払通知が当社の記録より少ない差の額の合計（見込み。まだ決まったお金ではない）
+   * 利益の画面・社長の 1 枚と同じ関数（foundFromCells）で数える
+   */
+  found: { confirmed: number; confirmedCount: number; estimated: number; estimatedCount: number };
+  /**
+   * 免税の方への支払で、会社がかぶる消費税（インボイスの経過措置）。
+   * current は今月の額（明細の invoiceBurden の合計）、next は次の段階からの月の目安（同じ稼働が続いた場合）
+   */
+  burden: {
+    affected: boolean;
+    people: number;
+    current: number;
+    next: { from: string; label: string; monthly: number; diffMonthly: number } | null;
+  };
+  /** 取引条件の明示：この月に稼働した人のうち、明示した記録（明示書か、明示した日）が見つからない人 */
+  terms: { worked: number; missing: { driverId: string; name: string }[] };
+  /** 本番に切り替えた月（YYYY-MM-01。まだ Excel と並べているなら null） */
+  golive: string | null;
 };

@@ -5,7 +5,7 @@ import { z } from "zod";
 import { getDb } from "~/db/client";
 import { runAction, UserError, type ActionResult } from "~/server/action";
 import { requireUser } from "~/server/auth";
-import { closeMonth, MINUTES_MAX, OVERRIDE_REASON_MIN, reopenMonth, REOPEN_REASON_MIN } from "~/server/features/close";
+import { closeMonth, MINUTES_MAX, normalizeMinutes, OVERRIDE_REASON_MIN, reopenMonth, REOPEN_REASON_MIN } from "~/server/features/close";
 
 /** 締めの画面の Server Action（薄い包み。中身は server/features/close.ts） */
 
@@ -20,11 +20,21 @@ export type CloseState = ActionResult<{ drivers: number; total: number }> | unde
 
 const closeSchema = z.object({
   month: monthSchema,
-  // 全角の数字でも受け取る。空なら入れない
+  // 全角の数字・「1,200」・「90分」でも受け取る。空なら入れない（読み方は normalizeMinutes と同じ）
   minutesSpent: z
     .string()
-    .transform((v) => v.normalize("NFKC").trim())
-    .refine((v) => v === "" || (/^\d+$/.test(v) && Number(v) >= 1 && Number(v) <= MINUTES_MAX), `締めにかかった時間は 1〜${MINUTES_MAX} の分の数で入れてください（空でもかまいません）`),
+    .refine(
+      (v) => {
+        try {
+          normalizeMinutes(v);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      `締めにかかった時間は 1〜${MINUTES_MAX} の分の数で入れてください（空でもかまいません）`,
+    )
+    .transform((v) => normalizeMinutes(v)),
   overrideReason: z.string().trim().max(500, "理由は 500 文字までにしてください"),
 });
 
@@ -44,7 +54,7 @@ export async function closeMonthAction(_prev: CloseState, form: FormData): Promi
     const result = await closeMonth(db, user.tenantId, input.month, user.id, {
       role: user.role,
       overrideReason: input.overrideReason || null,
-      minutesSpent: input.minutesSpent ? Number(input.minutesSpent) : null,
+      minutesSpent: input.minutesSpent,
     });
     refresh();
     return { drivers: result.drivers, total: result.total };

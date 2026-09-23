@@ -8,7 +8,7 @@ import type { Db } from "~/db/client";
 import * as s from "~/db/schema";
 import type { SessionUser } from "~/server/auth";
 import { audit } from "~/server/audit";
-import { createTransferBatch, deleteTransferBatch, setTransferExecutedOn } from "~/server/features/transfer";
+import { createTransferBatch, deleteTransferBatch, loadTransferReview, setTransferExecutedOn } from "~/server/features/transfer";
 import { DEMO_MONTH, seedDemo } from "~/server/seed-demo";
 import { generateStatements } from "~/server/statements-core";
 import { createTestDb } from "./helpers/db";
@@ -102,8 +102,13 @@ describe("振込の画面：作る前に確かめること", () => {
 
     // 取り消して作り直すときも、取り消したデータと比べて「変わった人」を出し、確かめる欄を出す
     await deleteTransferBatch(db, tenantId, batch.id, staff.id);
-    const again = text(await render("2026-10"));
+    const againHtml = await render("2026-10");
+    const again = text(againHtml);
     expect(again).toContain("上田 健（D03）");
+    // 確かめた印には、画面で見た「変わった人と口座」の値を添えて送る（見たあとにまた変わったらサーバーが断る）
+    const key = /name="bankReviewKey" value="([0-9a-f]{24})"/.exec(againHtml)?.[1];
+    expect(key).toBeTruthy();
+    expect(key).toBe((await loadTransferReview(db, tenantId, DEMO_MONTH)).bankKeys.all);
     expect(again).toContain("に作った振込データ・あとで取り消したもの");
     expect(again).toContain("口座が変わった人を確かめました（1人）");
     await expect(createTransferBatch(db, tenantId, DEMO_MONTH, { transferDate: "2026-11-25", scope: "all" }, staff.id)).rejects.toThrow("口座が変わった人が 1人");

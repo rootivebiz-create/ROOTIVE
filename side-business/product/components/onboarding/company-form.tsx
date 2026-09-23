@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { startTransition, useActionState, useState, type FormEvent } from "react";
-import { Button, Field, Input, Select } from "@/components/ui";
+import { Button, Field, Input, NumberInput, Select } from "@/components/ui";
 import { saveCompanyAction, type CompanyState } from "~/app/(app)/onboarding/actions";
-import { CLOSING_CHOICES, dayText, deadlineHint, OFFSET_LABEL, PAY_DAY_CHOICES, payRuleText, TAX_METHODS } from "~/server/features/onboarding/company";
+import { CLOSING_CHOICES, dayText, deadlineHint, OFFSET_LABEL, PAY_DAY_CHOICES, payRuleText, SIZE_REASON, TAX_METHODS } from "~/server/features/onboarding/company";
 
 const SOURCES = {
   toriteki: "https://www.jftc.go.jp/file/toriteki_leaflet.pdf",
+  toritekiOverview: "https://www.jftc.go.jp/toriteki/toritekigaiyo/gaiyo.html",
   flQa: "https://www.jftc.go.jp/fllaw_limited/fllaw_qa.html",
   registry: "https://www.invoice-kohyo.nta.go.jp/",
 };
@@ -20,6 +21,8 @@ export type CompanyInitial = {
   registrationNo: string | null;
   taxMethod: string;
   paymentTermsText: string | null;
+  capitalYen?: number | null;
+  employees?: number | null;
 };
 
 /** 項目の下の誤り（赤）。Field の hint は灰色なので、誤りは別に出す */
@@ -41,6 +44,8 @@ export function CompanyForm({ initial, today }: { initial: CompanyInitial; today
   const [regNo, setRegNo] = useState(initial.registrationNo ?? "");
   const [tax, setTax] = useState(TAX_METHODS.some((t) => t.value === initial.taxMethod) ? initial.taxMethod : "general");
   const [terms, setTerms] = useState(initial.paymentTermsText ?? "");
+  const [capital, setCapital] = useState(typeof initial.capitalYen === "number" ? initial.capitalYen.toLocaleString("ja-JP") : "");
+  const [employees, setEmployees] = useState(typeof initial.employees === "number" ? String(initial.employees) : "");
   const fe = state && !state.ok ? (state.fieldErrors ?? {}) : {};
 
   const rule = payRuleText(Number(closingDay), Number(offset), Number(payDay));
@@ -191,6 +196,46 @@ export function CompanyForm({ initial, today }: { initial: CompanyInitial; today
             </label>
           ))}
           <p className="text-xs text-muted-foreground">どちらか分からないときは、顧問の税理士さんに確かめてください。あとで設定から変えられます。</p>
+        </div>
+      </fieldset>
+
+      <fieldset className="space-y-3">
+        <legend className="text-lg font-bold">会社の大きさ（任意）</legend>
+        <p className="text-sm text-muted-foreground">
+          {SIZE_REASON}（
+          <a href={SOURCES.toritekiOverview} target="_blank" rel="noopener noreferrer">
+            公正取引委員会 取適法の概要
+          </a>
+          ）。分からなければ空のままで構いません。あとで設定の「会社」から入れられます。
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <Field label="資本金（円）" hint="例：10,000,000 または 1000万。個人事業の方は空のまま">
+              <NumberInput
+                name="capitalYen"
+                value={capital}
+                onChange={(e) => setCapital(e.target.value)}
+                placeholder="10,000,000"
+                maxLength={40}
+                aria-invalid={fe.capitalYen ? true : undefined}
+              />
+            </Field>
+            <FieldError text={fe.capitalYen} />
+          </div>
+          <div>
+            <Field label="常時使用する従業員の数（人）" hint="会社が雇っている人の数。数え方に迷うときは、顧問の社労士・弁護士に確かめてください">
+              <NumberInput
+                name="employees"
+                value={employees}
+                onChange={(e) => setEmployees(e.target.value)}
+                placeholder="12"
+                inputMode="numeric"
+                maxLength={20}
+                aria-invalid={fe.employees ? true : undefined}
+              />
+            </Field>
+            <FieldError text={fe.employees} />
+          </div>
         </div>
       </fieldset>
 

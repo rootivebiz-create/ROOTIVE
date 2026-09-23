@@ -50,12 +50,19 @@ export function isUnsettled(status: string): boolean {
 /** 問い合わせてから、この日数を過ぎても返事が無ければ「返事待ち n 日」を目立たせる */
 export const WAIT_ALERT_DAYS = 14;
 
-/** 問い合わせてから何日たったか（問い合わせ済みでなければ null） */
+/** 日本時間の日付の通し番号（日をまたいだ数を数えるため） */
+const JST_OFFSET = 9 * 3600000;
+const jstDayNo = (ms: number) => Math.floor((ms + JST_OFFSET) / 86400000);
+
+/**
+ * 問い合わせてから何日たったか（問い合わせ済みでなければ null）。
+ * 日本時間の暦の日で数える（10/31 に問い合わせたら、11/14 は時刻に関係なく 14 日）
+ */
 export function waitingDays(status: string, askedAt: Date | string | null | undefined, now: Date = new Date()): number | null {
   if (status !== "asked" || !askedAt) return null;
   const t = typeof askedAt === "string" ? new Date(askedAt) : askedAt;
   if (Number.isNaN(t.getTime())) return null;
-  return Math.max(0, Math.floor((now.getTime() - t.getTime()) / 86400000));
+  return Math.max(0, jstDayNo(now.getTime()) - jstDayNo(t.getTime()));
 }
 
 /** 「返事待ち n日」の印の色：14 日を過ぎたら黄色（それまでは灰色で、日数だけ見せる） */
@@ -117,6 +124,26 @@ export function dateJa(date: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(date);
   if (!m) return date;
   return `${Number(m[1])}年${Number(m[2])}月${Number(m[3])}日`;
+}
+
+/**
+ * 元請の締めの期間（画面の部品からも使えるように、ほかのモジュールを読まない）。
+ * server/calc/statement の periodOf と同じ決め方：前の月の締め日の翌日 〜 その月の締め日（0・31 以上は末日。短い月は末日に寄せる）。
+ * 締め日が月末なら null（暦の月と同じなので、書き添えることが無い）
+ */
+export function closingSpan(month: string, closingDay: number): { from: string; to: string } | null {
+  const m = /^(\d{4})-(\d{2})/.exec(month);
+  if (!m || !(closingDay >= 1 && closingDay <= 30)) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const last = (yy: number, mm: number) => new Date(Date.UTC(yy, mm, 0)).getUTCDate();
+  const iso = (yy: number, mm: number, dd: number) => `${yy}-${String(mm).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
+  const py = mo === 1 ? y - 1 : y;
+  const pm = mo === 1 ? 12 : mo - 1;
+  const prevClose = Math.min(closingDay, last(py, pm));
+  const from = prevClose === last(py, pm) ? iso(y, mo, 1) : iso(py, pm, prevClose + 1);
+  const to = iso(y, mo, Math.min(closingDay, last(y, mo)));
+  return { from, to };
 }
 
 /** YYYY-MM(-01) → 2026年10月 */

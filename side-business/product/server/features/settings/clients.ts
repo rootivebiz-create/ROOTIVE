@@ -5,6 +5,7 @@ import * as s from "~/db/schema";
 import { UserError } from "~/server/action";
 import { changes, countWhere, findNameConflict } from "./common";
 import { fieldError } from "./errors";
+import { looseKey } from "./format";
 import type { ClientInput } from "./schemas";
 
 /**
@@ -59,7 +60,7 @@ export async function getClient(db: Db, tenantId: string, id: string): Promise<C
 
 async function others(db: Db, tenantId: string, exceptId?: string) {
   return db
-    .select({ id: s.clients.id, name: s.clients.name, aliases: s.clients.aliases })
+    .select({ id: s.clients.id, name: s.clients.name, aliases: s.clients.aliases, active: s.clients.active })
     .from(s.clients)
     .where(exceptId ? and(eq(s.clients.tenantId, tenantId), ne(s.clients.id, exceptId)) : eq(s.clients.tenantId, tenantId));
 }
@@ -67,7 +68,13 @@ async function others(db: Db, tenantId: string, exceptId?: string) {
 const KEYS = ["name", "aliases", "closingDay", "notes"] as const;
 
 export async function createClient(db: Db, tenantId: string, input: ClientInput): Promise<ClientRow> {
-  const conflict = findNameConflict(input, await others(db, tenantId), "元請");
+  const all = await others(db, tenantId);
+  // 取引をやめた元請と同じ名前なら、作り直さずに「戻す」を案内する（過去の案件・支払通知がそちらに付いているため）
+  const stopped = all.find((o) => !o.active && looseKey(o.name) === looseKey(input.name));
+  if (stopped) {
+    throw fieldError("name", `「${stopped.name}」は、取引をやめた元請として残っています。また取引するときは、下の「無効の元請」から「戻す」を押してください`);
+  }
+  const conflict = findNameConflict(input, all, "元請");
   if (conflict) throw fieldError(conflict.field, conflict.message);
   const [row] = await db
     .insert(s.clients)
@@ -89,6 +96,29 @@ export async function updateClient(db: Db, tenantId: string, id: string, input: 
     .returning();
   if (!after) throw new UserError("その元請は見つかりません。一覧から開き直してください");
   return { before, after, changed: changes(before, next, KEYS) };
+}
+
+/** 「取引をやめる」「戻す」のあとの知らせ（URL の ?done=off|on&id=…&n=案件の数）。元請が一覧の間を移るので、上に出す */
+export type ClientsDone = { kind: "on" | "off"; id: string; projects: number };
+
+export function clientsDoneHref(kind: "on" | "off", id: string, projects: number): string {
+  const qs = new URLSearchParams({ done: kind, id, n: String(Math.max(0, Math.trunc(projects))) });
+  return `/settings/clients?${qs.toString()}`;
+}
+
+/** URL の値を読む（形が違えば null。id がこの会社の元請かは、画面が一覧から探して確かめる） */
+export function readClientsDone(sp: { done?: string; id?: string; n?: string }): ClientsDone | null {
+  if (sp.done !== "on" && sp.done !== "off") return null;
+  if (!sp.id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sp.id)) return null;
+  const n = /^\d{1,4}$/.test(sp.n ?? "") ? Number(sp.n) : 0;
+  return { kind: sp.done, id: sp.id, projects: n };
+}
+
+export function clientsDoneMessage(done: ClientsDone, name: string): string {
+  if (done.kind === "on") {
+    return `「${name}」を、取引している元請に戻しました。${done.projects ? `案件 ${done.projects}件も「使う」に戻しました。` : ""}案件の元請を選ぶところにも、また出ます。`;
+  }
+  return `「${name}」を取引をやめた元請にしました。${done.projects ? `案件 ${done.projects}件も「使わない」にしました。` : ""}下の「無効の元請」に移しています。過去の記録はそのまま残り、「戻す」でいつでも元に戻せます。`;
 }
 
 /** 取引をやめたときに一緒に「使わない」にした案件（戻すときに、その案件だけを戻す）。操作の記録に残す名前 */

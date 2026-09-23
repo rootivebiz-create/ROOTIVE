@@ -4,7 +4,7 @@ import type { Db } from "~/db/client";
 import * as s from "~/db/schema";
 import type { Rounding } from "@/lib/payroll/types";
 import { buildStatementDrafts, type StatementDraft } from "~/server/calc/statement";
-import { buildTermsContent, compareTermsContent, latestTermsByDriver, type TermsContent } from "~/server/features/terms-content";
+import { buildTermsContentMany, compareTermsContent, latestTermsByDriver, type TermsContent } from "~/server/features/terms-content";
 import { questionLine, readTermsContent } from "~/server/features/watch/rules";
 import type { WatchBatch, WatchContext, WatchDriver, WatchQuestion, WatchStatement, WatchTerms } from "~/server/features/watch/types";
 import { shiftMonth } from "~/server/month";
@@ -96,29 +96,32 @@ function batchRowsOf(rows: (typeof s.transferBatches.$inferSelect)[], saved: Sav
 async function termsOf(db: Db, tenantId: string, month: string, driverIds: string[], compare: boolean): Promise<WatchTerms[]> {
   if (!driverIds.length) return [];
   const latest = await latestTermsByDriver(db, tenantId, driverIds);
-  return Promise.all(
-    [...latest].map(async ([driverId, r]): Promise<WatchTerms> => {
-      const recorded = readTermsContent(r.content);
-      let current: TermsContent | null = null;
-      if (recorded && compare) {
-        try {
-          current = await buildTermsContent(db, tenantId, driverId, { projectIds: recorded.services.map((x) => x.projectId), month, deemed: r.deemedClause });
-        } catch (error) {
-          // 比べられないときは「古い」と言わない（見張り番は止めない）
-          console.error("watch terms compare failed", error instanceof Error ? error.message : error);
-        }
-      }
-      return {
-        driverId,
-        version: r.version,
-        issuedOn: r.issuedOn,
-        recorded,
-        current,
-        changes: recorded && current ? compareTermsContent(recorded, current) : [],
-        subcontract: r.subcontract ?? null,
-      };
-    }),
-  );
+  const recordedBy = new Map([...latest].map(([driverId, r]) => [driverId, readTermsContent(r.content)]));
+  // 今の台帳からの中身は、まとめて 1 回で組み立てる（比べられないときは「古い」と言わない。見張り番は止めない）
+  let currentBy = new Map<string, TermsContent>();
+  if (compare) {
+    const items = [...latest]
+      .filter(([driverId]) => recordedBy.get(driverId))
+      .map(([driverId, r]) => ({ driverId, projectIds: recordedBy.get(driverId)!.services.map((x) => x.projectId), deemed: r.deemedClause }));
+    try {
+      currentBy = await buildTermsContentMany(db, tenantId, items, month);
+    } catch (error) {
+      console.error("watch terms compare failed", error instanceof Error ? error.message : error);
+    }
+  }
+  return [...latest].map(([driverId, r]): WatchTerms => {
+    const recorded = recordedBy.get(driverId) ?? null;
+    const current = currentBy.get(driverId) ?? null;
+    return {
+      driverId,
+      version: r.version,
+      issuedOn: r.issuedOn,
+      recorded,
+      current,
+      changes: recorded && current ? compareTermsContent(recorded, current) : [],
+      subcontract: r.subcontract ?? null,
+    };
+  });
 }
 
 async function savedStatements(db: Db, tenantId: string, month: string): Promise<SavedRow[]> {
@@ -174,7 +177,13 @@ export async function loadWatchContext(db: Db, tenantId: string, month: string, 
     closed ? Promise.resolve(null) : statementsStatus(db, tenantId, month),
     // 日付のある稼働の行（同じ日・同じ案件の重なりを見る）
     db
-      .select({ driverId: s.workEntries.driverId, projectId: s.workEntries.projectId, workDate: s.workEntries.workDate, qty: s.workEntries.qty })
+      .select({
+        driverId: s.workEntries.driverId,
+        projectId: s.workEntries.projectId,
+        workDate: s.workEntries.workDate,
+        qty: s.workEntries.qty,
+        batchId: s.workEntries.importBatchId,
+      })
       .from(s.workEntries)
       .where(and(eq(s.workEntries.tenantId, tenantId), eq(s.workEntries.month, month), isNotNull(s.workEntries.workDate), gt(s.workEntries.qty, 0))),
     // この月の明細への、まだ解決にしていないドライバーの質問
@@ -196,6 +205,14 @@ export async function loadWatchContext(db: Db, tenantId: string, month: string, 
       .from(s.transferBatches)
       .where(and(eq(s.transferBatches.tenantId, tenantId), eq(s.transferBatches.month, prevMonth))),
   ]);
+  // この月に反映した稼働の取り込みのうち、Excel に振込手数料の列があったもの
+  const feeColumnRows = await db
+    .select({ id: s.importBatches.id, fileName: s.importBatches.fileName, columns: sql<string[] | null>`${s.importBatches.summary}->'applied'->'feeColumns'` })
+    .from(s.importBatches)
+    .where(and(eq(s.importBatches.tenantId, tenantId), eq(s.importBatches.month, month), eq(s.importBatches.kind, "work"), eq(s.importBatches.status, "applied")));
+  const feeColumns = feeColumnRows
+    .map((r) => ({ batchId: r.id, fileName: r.fileName, columns: Array.isArray(r.columns) ? r.columns.filter((c): c is string => typeof c === "string") : [] }))
+    .filter((r) => r.columns.length > 0);
   // 取引条件の記録（この月に明細がある人だけ）。今の台帳と比べるのは、まだ締めていない月だけ（締めた月は見るだけ）
   const termsRows = await termsOf(db, tenantId, month, drafts.map((d) => d.driverId), !closed);
 
@@ -232,6 +249,7 @@ export async function loadWatchContext(db: Db, tenantId: string, month: string, 
     },
     drafts,
     prevDrafts,
+    feeColumns,
     drivers: drivers.map((d) => {
       const t = termsBy.get(d.id);
       return {

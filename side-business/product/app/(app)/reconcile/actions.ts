@@ -35,6 +35,9 @@ const monthSchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "月を選んで
 
 function revalidateAll(): void {
   revalidatePath("/reconcile", "layout");
+  // ホームと利益の画面も「見つけたお金」（確定・見込み）を出すので、あわせて読み直させる
+  revalidatePath("/");
+  revalidatePath("/profit");
 }
 
 // ---------------------------------------------------------------- 取り込み

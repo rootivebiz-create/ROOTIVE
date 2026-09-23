@@ -137,7 +137,12 @@ export async function monthAckDetails(db: Db, tenantId: string, month: string): 
   return new Map(acks.map((a) => [ackKey(a.code, a.subjectId), { note: a.note, byName: a.ackedBy ? userName.get(a.ackedBy) ?? null : null, at: a.createdAt }]));
 }
 
-export type PreviousAck = { month: string; note: string | null };
+export type PreviousAck = {
+  month: string;
+  note: string | null;
+  /** 別の種類の指摘から引き継いだとき、その種類（例：前の月の paid_late → 今月の late_payment_prev） */
+  fromCode?: string;
+};
 
 /**
  * 前の月（12 か月前まで）に、同じ種類・同じ対象を確認済みにしたメモ（いちばん新しいもの）。
@@ -150,9 +155,15 @@ export async function previousAcks(db: Db, tenantId: string, month: string): Pro
     .where(and(eq(s.watchAcks.tenantId, tenantId), lt(s.watchAcks.month, month), gte(s.watchAcks.month, shiftMonth(month, -12))))
     .orderBy(desc(s.watchAcks.month));
   const out = new Map<string, PreviousAck>();
+  const prevMonth = shiftMonth(month, -1);
   for (const r of rows) {
     const key = ackKey(r.code, r.subjectId);
     if (!out.has(key)) out.set(key, { month: r.month, note: r.note });
+    // 前の月に「支払期日より後に振り込んだ」を確認済みにしていれば、今月の「前の月の振込の遅れ」の下書きにする（同じ振込の話）
+    if (r.code === "paid_late" && r.month === prevMonth) {
+      const carried = ackKey("late_payment_prev", `prev:${r.subjectId}`);
+      if (!out.has(carried)) out.set(carried, { month: r.month, note: r.note, fromCode: r.code });
+    }
   }
   return out;
 }

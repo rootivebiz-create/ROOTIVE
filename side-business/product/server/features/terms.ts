@@ -14,7 +14,10 @@ import {
   readSubcontract,
   readTermsContent,
   shortTermsHash,
+  notExtra,
+  termsExtraChanges,
   termsHash,
+  unlistedWorkText,
   type StoredTermsContent,
   type TermsDocument,
   type TermsSubcontract,
@@ -66,6 +69,18 @@ function toOffset(n: number): PayMonthOffset {
 
 function monthOf(now: Date): string {
   return `${todayJst(now).slice(0, 7)}-01`;
+}
+
+/** 会社の設定の支払期日の文言に「まで」「以内」があれば、その言葉と文 */
+function contractWordingOf(text: string | null | undefined): { words: string[]; text: string } | null {
+  const t = (text ?? "").trim();
+  const words = paymentWordingProblem(t);
+  return words.length ? { words, text: t.length > 80 ? `${t.slice(0, 80)}…` : t } : null;
+}
+
+/** 今日までの日付ならそのまま、先の日付や空なら null */
+function pastOrToday(date: string | null | undefined, today: string): string | null {
+  return date && date <= today ? date : null;
 }
 
 /** 少しずつ並べて処理する（DB につなぐ数を増やしすぎない） */
@@ -186,6 +201,36 @@ async function currentFor(db: Db, tenantId: string, driverId: string, recorded: 
   });
 }
 
+/** 稼働した案件（その人・その案件の、いちばん最近に稼働した月） */
+type WorkedProject = { projectId: string; name: string; last: string };
+
+/**
+ * 明示したあとに変わったこと：
+ * 台帳の単価・控除・支払期日・振込手数料（compareTermsContent。見張り番と同じ比べ方）＋ みなし確認の日数・消費税の扱い ＋
+ * 明示書に無い案件の稼働（明示した月から後・直近 3 か月）。比べられないときは空（画面は止めない）
+ */
+async function changesSince(
+  db: Db,
+  tenantId: string,
+  driverId: string,
+  recorded: StoredTermsContent,
+  issuedOn: string,
+  month: string,
+  worked: WorkedProject[],
+): Promise<string[]> {
+  let out: string[] = [];
+  try {
+    const current = await currentFor(db, tenantId, driverId, recorded, month);
+    out = [...compareTermsContent(recorded, current).filter(notExtra).map(changeText), ...termsExtraChanges(recorded, current)];
+  } catch (error) {
+    console.error("terms compare failed", error instanceof Error ? error.message : error);
+  }
+  const listed = new Set(recorded.services.map((x) => x.projectId));
+  const from = `${issuedOn.slice(0, 7)}-01`;
+  for (const w of worked) if (!listed.has(w.projectId) && w.last >= from) out.push(unlistedWorkText(w.name, w.last));
+  return out;
+}
+
 // ---------------------------------------------------------------- 一覧
 
 export type TermsLatest = {
@@ -214,7 +259,7 @@ export type TermsListRow = {
   latest: TermsLatest | null;
   versions: number;
   status: TermsStatusKey;
-  /** 明示したあとに台帳で変わったこと（単価・控除・支払期日・振込手数料） */
+  /** 明示したあとに台帳で変わったこと（単価・控除・支払期日・振込手数料・みなし確認の日数・消費税の扱い・明示書に無い案件の稼働） */
   changes: string[];
 };
 
@@ -262,7 +307,7 @@ export function countTermsRows(rows: TermsListRow[]): TermsListCounts {
 export async function listTerms(db: Db, tenantId: string, now = new Date()): Promise<{ rows: TermsListRow[]; counts: TermsListCounts }> {
   const month = monthOf(now);
   const since = shiftMonth(month, -2);
-  const [drivers, latest, versionCounts, work] = await Promise.all([
+  const [drivers, latest, versionCounts, work, projects] = await Promise.all([
     db
       .select()
       .from(s.drivers)
@@ -274,20 +319,33 @@ export async function listTerms(db: Db, tenantId: string, now = new Date()): Pro
       .from(s.termsRecords)
       .where(eq(s.termsRecords.tenantId, tenantId))
       .groupBy(s.termsRecords.driverId),
+    // 数量が 0 の行（取り込んだ空の行）は稼働に数えない
     db
-      .select({ driverId: s.workEntries.driverId, last: sql<string>`max(${s.workEntries.month})::text` })
+      .select({ driverId: s.workEntries.driverId, projectId: s.workEntries.projectId, last: sql<string>`max(${s.workEntries.month})::text` })
       .from(s.workEntries)
-      .where(eq(s.workEntries.tenantId, tenantId))
-      .groupBy(s.workEntries.driverId),
+      .where(and(eq(s.workEntries.tenantId, tenantId), gt(s.workEntries.qty, 0)))
+      .groupBy(s.workEntries.driverId, s.workEntries.projectId),
+    db.select({ id: s.projects.id, name: s.projects.name }).from(s.projects).where(eq(s.projects.tenantId, tenantId)),
   ]);
   const nVersions = new Map(versionCounts.map((v) => [v.driverId, Number(v.n)]));
-  const lastWork = new Map(work.map((w) => [w.driverId, w.last ? w.last.slice(0, 10) : null]));
+  const projectName = new Map(projects.map((p) => [p.id, p.name]));
+  const lastWork = new Map<string, string>();
+  const recentByDriver = new Map<string, WorkedProject[]>();
+  for (const w of work) {
+    if (!w.last) continue;
+    const last = w.last.slice(0, 10);
+    if (!lastWork.has(w.driverId) || last > lastWork.get(w.driverId)!) lastWork.set(w.driverId, last);
+    if (last >= since) {
+      const list = recentByDriver.get(w.driverId) ?? [];
+      list.push({ projectId: w.projectId, name: projectName.get(w.projectId) ?? "（名前の無い案件）", last });
+      recentByDriver.set(w.driverId, list);
+    }
+  }
 
   const rows = await mapLimit(drivers, 6, async (d): Promise<TermsListRow> => {
     const rec = latest.get(d.id) ?? null;
     const content = rec ? readTermsContent(rec.content) : null;
-    let changes: string[] = [];
-    if (content) changes = compareTermsContent(content, await currentFor(db, tenantId, d.id, content, month)).map(changeText);
+    const changes = content && rec ? await changesSince(db, tenantId, d.id, content, rec.issuedOn, month, recentByDriver.get(d.id) ?? []) : [];
     const last = lastWork.get(d.id) ?? null;
     return {
       driverId: d.id,
@@ -378,6 +436,8 @@ export type TermsDriverDetail = {
   warnings: {
     /** 支払期日の文に入っている「まで」「以内」 */
     paymentWords: string[];
+    /** 会社の設定の「支払期日の文言」（契約書などに書いている文）に入っている「まで」「以内」と、その文 */
+    contractWording: { words: string[]; text: string } | null;
     feeByDriver: boolean;
     /** 支払日の決め方で、受け取りから 60 日を超える月があるか（ok 以外のときだけ） */
     deadline: { status: "caution" | "ng"; maxDaysFromStart: number; maxDaysFromEnd: number } | null;
@@ -402,7 +462,7 @@ export async function loadTermsDriver(db: Db, tenantId: string, driverId: string
     db
       .select({ projectId: s.workEntries.projectId, first: sql<string>`min(${s.workEntries.month})::text`, last: sql<string>`max(${s.workEntries.month})::text` })
       .from(s.workEntries)
-      .where(and(eq(s.workEntries.tenantId, tenantId), eq(s.workEntries.driverId, driver.id)))
+      .where(and(eq(s.workEntries.tenantId, tenantId), eq(s.workEntries.driverId, driver.id), gt(s.workEntries.qty, 0)))
       .groupBy(s.workEntries.projectId),
   ]);
   const company = { name: tenant.name, registrationNo: tenant.registrationNo };
@@ -455,10 +515,18 @@ export async function loadTermsDriver(db: Db, tenantId: string, driverId: string
       recent: recentIds.has(p.id),
     }));
   const known = new Set(choices.map((c) => c.id));
+  const projectName = new Map(projects.map((p) => [p.id, p.name]));
+  const recentWork: WorkedProject[] = work
+    .filter((w) => w.last && w.last.slice(0, 10) >= since)
+    .map((w) => ({ projectId: w.projectId, name: projectName.get(w.projectId) ?? "（名前の無い案件）", last: w.last.slice(0, 10) }));
+  // 明示書に無いのに、明示したあとで稼働した案件（新しい版では、はじめから選んでおく）
+  const unlisted = latest && latestContent ? recentWork.filter((w) => !inLatest.has(w.projectId) && w.last >= `${latest.issuedOn.slice(0, 7)}-01`) : [];
 
-  // 今の台帳から作るとどうなるか（最新の版があれば同じ案件で。無ければ直近の稼働などから）
+  // 今の台帳から作るとどうなるか（最新の版があれば同じ案件＋明示書に無い稼働の案件で。無ければ直近の稼働などから）
   const current = await composeContent(db, tenantId, driver.id, {
-    projectIds: latestContent ? latestContent.services.map((x) => x.projectId).filter((id) => known.has(id)) : undefined,
+    projectIds: latestContent
+      ? [...new Set([...latestContent.services.map((x) => x.projectId), ...unlisted.map((w) => w.projectId)])].filter((id) => known.has(id))
+      : undefined,
     serviceDescription: latestContent?.serviceDescription || undefined,
     place: latestContent?.place ?? "",
     receipt: latestContent?.receipt || undefined,
@@ -466,7 +534,7 @@ export async function loadTermsDriver(db: Db, tenantId: string, driverId: string
     deemed: true,
     month,
   });
-  const changes = latestContent ? compareTermsContent(latestContent, await currentFor(db, tenantId, driver.id, latestContent, month)).map(changeText) : [];
+  const changes = latest && latestContent ? await changesSince(db, tenantId, driver.id, latestContent, latest.issuedOn, month, recentWork) : [];
 
   const firstWork = work.reduce<string | null>((m, w) => (w.first && (!m || w.first < m) ? w.first.slice(0, 10) : m), null);
   const lastWork = work.reduce<string | null>((m, w) => (w.last && (!m || w.last > m) ? w.last.slice(0, 10) : m), null);
@@ -494,7 +562,8 @@ export async function loadTermsDriver(db: Db, tenantId: string, driverId: string
         place: DEFAULT_PLACE,
         periodFrom: driver.startedOn ?? driver.termsIssuedOn ?? today,
         periodTo: driver.endOn ?? "",
-        commissionedOn: driver.startedOn ?? driver.termsIssuedOn ?? "",
+        // 委託した日は今日より後にできない（これから始める人は、空＝明示した日と同じ）
+        commissionedOn: pastOrToday(driver.startedOn ?? driver.termsIssuedOn, today) ?? "",
         receipt: current.receipt,
         other: "",
         deemed: false,
@@ -538,6 +607,7 @@ export async function loadTermsDriver(db: Db, tenantId: string, driverId: string
     initial,
     warnings: {
       paymentWords: paymentWordingProblem(current.payment.text),
+      contractWording: contractWordingOf(tenant.settings?.paymentTermsText),
       feeByDriver: current.feeBearer === "driver",
       deadline:
         deadline.error === null && deadline.status !== "ok"
@@ -593,13 +663,13 @@ async function saveVersion(
       .limit(1);
     if (opts.onlyIfNone && last) return null;
     const lastVersion = last?.version ?? 0;
-    if (opts.baseVersion !== undefined && opts.baseVersion !== null && opts.baseVersion !== lastVersion) throw new UserError(TERMS_RACE);
 
     const values = { content: v.content as unknown as Record<string, unknown>, subcontract: v.subcontract, documentName: v.documentName, issuedOn: v.issuedOn };
-    // 押し直し・二重送信で同じ中身の版が並ばないように
+    // 押し直し・二重送信で同じ中身の版が並ばないように（先に保存した版と同じ中身なら、画面が古くてもその版を返す）
     if (last && last.deemedClause === v.deemed && termsHash(last) === termsHash(values)) {
       return { recordId: last.id, version: last.version, created: false, firstIssuedOnSet: false };
     }
+    if (opts.baseVersion !== undefined && opts.baseVersion !== null && opts.baseVersion !== lastVersion) throw new UserError(TERMS_RACE);
     const [row] = await tx
       .insert(s.termsRecords)
       .values({
@@ -709,7 +779,7 @@ export async function previewBulkTerms(db: Db, tenantId: string, now = new Date(
     db
       .selectDistinct({ driverId: s.workEntries.driverId })
       .from(s.workEntries)
-      .where(and(eq(s.workEntries.tenantId, tenantId), gte(s.workEntries.month, since))),
+      .where(and(eq(s.workEntries.tenantId, tenantId), gte(s.workEntries.month, since), gt(s.workEntries.qty, 0))),
   ]);
   const has = new Set(withRecords.map((r) => r.driverId));
   const worked = new Set(recent.map((r) => r.driverId));
@@ -732,30 +802,45 @@ export async function bulkCreateTerms(db: Db, tenantId: string, actor: TermsActo
   const month = monthOf(now);
   const result: BulkTermsResult = { created: [], skipped: [] };
   for (const d of drivers) {
-    const driver = await driverOf(db, tenantId, d.id);
-    if (!driver) continue;
-    const content = await composeContent(db, tenantId, d.id, {
-      place: input.place,
-      deemed: input.deemed,
-      periodFrom: driver.startedOn ?? driver.termsIssuedOn ?? input.issuedOn,
-      periodTo: driver.endOn,
-      commissionedOn: driver.startedOn ?? driver.termsIssuedOn ?? null,
-      month,
-    });
-    if (content.services.length === 0) {
-      result.skipped.push({ driverId: d.id, name: d.name, reason: "案件が 1 つも無いため、報酬の額を書けません（設定 → 案件で登録してください）" });
-      continue;
+    // 1 人でうまくいかなくても、ほかの人は作る（作れなかった人と理由は結果に出す）
+    try {
+      const driver = await driverOf(db, tenantId, d.id);
+      if (!driver) {
+        result.skipped.push({ driverId: d.id, name: d.name, reason: "ドライバーが見つかりません（消されたか、ほかの人が変えました）" });
+        continue;
+      }
+      const periodFrom = driver.startedOn ?? driver.termsIssuedOn ?? input.issuedOn;
+      const content = await composeContent(db, tenantId, d.id, {
+        place: input.place,
+        deemed: input.deemed,
+        periodFrom,
+        // 終わりの日が始まりより前になっている台帳は、終わりを書かない（1 人ずつの画面で直せる）
+        periodTo: driver.endOn && driver.endOn >= periodFrom ? driver.endOn : null,
+        commissionedOn: pastOrToday(driver.startedOn ?? driver.termsIssuedOn, input.issuedOn),
+        month,
+      });
+      if (content.services.length === 0) {
+        result.skipped.push({ driverId: d.id, name: d.name, reason: "案件が 1 つも無いため、報酬の額を書けません（設定 → 案件で登録してください）" });
+        continue;
+      }
+      const saved = await saveVersion(
+        db,
+        tenantId,
+        actor,
+        d.id,
+        { content, subcontract: null, documentName: null, issuedOn: input.issuedOn, deemed: input.deemed },
+        { onlyIfNone: true, source: "bulk", now },
+      );
+      if (!saved) result.skipped.push({ driverId: d.id, name: d.name, reason: "ほかの人が先に作りました" });
+      else result.created.push({ driverId: d.id, name: d.name, recordId: saved.recordId, version: saved.version });
+    } catch (error) {
+      console.error("terms bulk create failed", error instanceof Error ? error.message : error);
+      result.skipped.push({
+        driverId: d.id,
+        name: d.name,
+        reason: error instanceof UserError ? error.message : "保存できませんでした。少し時間をおいて、1 人ずつの画面から作ってください",
+      });
     }
-    const saved = await saveVersion(
-      db,
-      tenantId,
-      actor,
-      d.id,
-      { content, subcontract: null, documentName: null, issuedOn: input.issuedOn, deemed: input.deemed },
-      { onlyIfNone: true, source: "bulk", now },
-    );
-    if (!saved) result.skipped.push({ driverId: d.id, name: d.name, reason: "ほかの人が先に作りました" });
-    else result.created.push({ driverId: d.id, name: d.name, recordId: saved.recordId, version: saved.version });
   }
   await audit(db, {
     tenantId,

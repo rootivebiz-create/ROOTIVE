@@ -99,8 +99,9 @@ function ownRule(kind: RuleGuess["kind"], o: DeductionObservation): RuleGuess | 
 /**
  * 控除の列の値から式を読み取る。見た人の半分以上（2 人以上）に合う式が無ければ、理由を返す。
  * 優先：定額 → 率 → 数量 × 単価（同じ人数に合うなら、簡単な式を選ぶ）
+ * hint：Excel の数式から読んだ式（=E5*0.1 など）。値と照らして、ほかの式と同じ人数以上に合うときだけ使う（0.5% きざみでない率も読める）
  */
-export function inferDeductionRule(observations: DeductionObservation[]): InferenceResult {
+export function inferDeductionRule(observations: DeductionObservation[], hint?: RuleGuess | null): InferenceResult {
   const obs = observations.filter((o) => Number.isFinite(o.value));
   const withValue = obs.filter((o) => Math.abs(o.value) > 0);
   if (withValue.length === 0) return { inference: null, reason: "額が入っている人がいません" };
@@ -119,8 +120,12 @@ export function inferDeductionRule(observations: DeductionObservation[]): Infere
     obs,
   );
   const ranked = [fixed, percent, perUnit].filter((x): x is { guess: RuleGuess; n: number } => !!x && x.n > 0 && !(x.guess.kind !== "fixed" && x.guess.rate <= 0));
-  const top = ranked.reduce<{ guess: RuleGuess; n: number } | null>((a, b) => (!a || b.n > a.n ? b : a), null);
+  let top = ranked.reduce<{ guess: RuleGuess; n: number } | null>((a, b) => (!a || b.n > a.n ? b : a), null);
   const need = Math.max(2, Math.ceil(obs.length / 2));
+  if (hint && !(hint.kind !== "fixed" && hint.rate <= 0)) {
+    const n = obs.filter((o) => fits(hint, o)).length;
+    if (n >= need && (!top || n >= top.n)) top = { guess: hint, n };
+  }
   if (!top || top.n < need) {
     return { inference: null, reason: "人ごとに額が違い、全員に合う決まった式が見つかりませんでした" };
   }
@@ -156,8 +161,9 @@ export function guessText(g: RuleGuess): string {
 }
 
 export function formatRate(rate: number): string {
-  const v = Math.round(rate * 1000) / 10;
-  return `${Number.isInteger(v) ? v.toFixed(0) : v.toFixed(1)}%`;
+  // 10% ・ 8.5% ・ 8.33%（Excel の数式から読んだ半端な率も、丸めずに見せる）
+  const v = Math.round(rate * 10000) / 100;
+  return `${v.toLocaleString("ja-JP", { maximumFractionDigits: 2 })}%`;
 }
 
 export function sameGuess(a: RuleGuess, b: RuleGuess): boolean {

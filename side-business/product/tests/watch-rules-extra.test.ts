@@ -8,17 +8,24 @@ import {
   dedPenalty,
   dedWithoutWork,
   deductionMeasure,
+  deductionNoAgreement,
   duplicateRows,
   evaluateRules,
   EXEMPT_CUT_SENTENCE,
   exemptOnlyCut,
+  FEE_SENTENCE,
+  FEE_SENTENCE_EARLY,
+  feeDeducted,
   hasSubcontractItems,
   latePaymentPrev,
   openQuestions,
   originalPayDateFor,
   paidLate,
+  PAYOUT_SWING_RATIO,
+  payoutSwing,
   PENALTY_SENTENCE,
   questionLine,
+  rateDown,
   RULES,
   readTermsContent,
   sixtyDays,
@@ -203,6 +210,132 @@ describe("取引条件の記録が古い（terms_outdated）", () => {
     // 影響額はその人の今月の支払額（15,000 ＋ 1,500）
     expect(i.impact).toEqual({ yen: 16500, label: "青木 翔太さんの2026年10月分の支払額" });
   });
+
+  it("稼働が無く差し引きだけの人（振込額がマイナス）は、マイナスの円ではなく差し引いた額を影響額にする", () => {
+    const none = driver("d4", "遠藤 大輔", { termsFirstIssuedOn: null, termsLatestIssuedOn: null, invoiceRegistered: false, registrationNo: null });
+    const lease = rule({ id: "r3", driverId: "d4", name: "車両リース", amount: 32000, onlyWhenWorked: false });
+    const d = drafts(NOV, [aoki, none], [["d1", "p1", 100]], { rules: [lease] }).filter((x) => x.driverId === "d4");
+    expect(d[0].total).toBe(-35200);
+    const [i] = termsMissing(ctx({ month: NOV, drivers: [none], drafts: d }));
+    expect(i.severity).toBe("red");
+    expect(i.impact).toEqual({ yen: 35200, label: "遠藤 大輔さんの2026年11月分に差し引いた額（振込額は マイナス 35,200円）" });
+  });
+
+  it("記録にあった控除が今は無い：記録どおりなら引いていた額を差額にする（稼働した月だけの控除は、稼働が無ければ 0）", () => {
+    const d = drafts(OCT, [aoki], work)[0];
+    // 記録には管理費 15,000円（稼働した月だけ）。今の台帳には無い
+    expect(termsChangeImpact(terms(), terms({ deductions: [] }), d)).toBe(15000);
+    const idle = { ...d, hasWork: false, lines: [], subtotal: 0 };
+    expect(termsChangeImpact(terms(), terms({ deductions: [] }), idle)).toBe(0);
+    const [i] = termsOutdated(ctx({ drivers: [aoki], drafts: [d], terms: [termsRow("d1", terms(), terms({ deductions: [] }))] }));
+    expect(i.detail).toContain("控除「管理費」が無くなった（毎月 15,000円（稼働した月だけ））");
+    expect(i.impact?.yen).toBe(15000);
+  });
+});
+
+describe("単価が下がった（rate_down）：合意した日の記録で赤と黄を分ける", () => {
+  const work: WorkRow[] = [["d1", "p1", 1000]];
+  const prev = drafts(SEP, [aoki], work);
+  // 10 月は人ごとの単価 145 円（1,000個で 5,000円 下がる）
+  const cur = drafts(OCT, [aoki], work, { overrides: [{ driverId: "d1", projectId: "p1", payRate: 145 }] });
+  const override = (agreedOn: string | null, payRate = 145) => ({ id: "o1", driverId: "d1", projectId: "p1", payRate, agreedOn, updatedOn: "2026-09-20" });
+
+  it("合意した日の記録が無い → 赤（締めを止める）。影響額は 5円 × 1,000個 = 5,000円", () => {
+    const [i] = rateDown(ctx({ drivers: [aoki], drafts: cur, prevDrafts: prev, overrides: [override(null)] }));
+    expect(i).toMatchObject({ code: "rate_down", severity: "red", subjectId: "d1:p1", title: "単価が下がっていますが、合意した日の記録がありません", fixHref: FIX.rates("d1", "p1") });
+    expect(i.detail).toContain("150円 から 145円");
+    expect(i.detail).toContain("この単価で合意した日の記録が見つかりません");
+    expect(i.detail).toContain("報酬の減額にあたるおそれがあります");
+    expect(i.impact).toEqual({ yen: 5000, label: "下がった分（単価の差 × この月の数量）" });
+    // 合意した日が締めの期間の初日（10/1）より後 → 赤
+    const [late] = rateDown(ctx({ drivers: [aoki], drafts: cur, prevDrafts: prev, overrides: [override("2026-10-15")] }));
+    expect(late.severity).toBe("red");
+    expect(late.detail).toContain("この単価で合意した日の記録（2026年10月15日）が、2026年10月分の締めの期間の初日（2026年10月1日）より後です");
+    // 今の人ごとの単価（140 円）がこの月の単価（145 円）と違えば、その合意の日は使わない
+    expect(rateDown(ctx({ drivers: [aoki], drafts: cur, prevDrafts: prev, overrides: [override("2026-09-20", 140)] }))[0].severity).toBe("red");
+    // 期間の初日より後に作った取引条件の記録は、合意の代わりにならない
+    const later = termsRow("d1", terms({ services: [{ projectId: "p1", name: "宅配", client: null, unit: "個", payRate: 145 }] }), null, { issuedOn: "2026-10-05" });
+    expect(rateDown(ctx({ drivers: [aoki], drafts: cur, prevDrafts: prev, terms: [later] }))[0].severity).toBe("red");
+  });
+
+  it("期間の初日までに合意した日がある、または新しい単価を書いた取引条件の記録がある → 黄（協議した記録の確認）", () => {
+    const [agreed] = rateDown(ctx({ drivers: [aoki], drafts: cur, prevDrafts: prev, overrides: [override("2026-10-01")] }));
+    expect(agreed).toMatchObject({ severity: "yellow", title: "前月より単価が下がっています" });
+    expect(agreed.detail).toContain("協議した記録を確認してください。この単価で合意した日の記録：2026年10月1日。");
+    const noticed = termsRow("d1", terms({ services: [{ projectId: "p1", name: "宅配", client: null, unit: "個", payRate: 145 }] }), null, { issuedOn: "2026-09-25" });
+    const [n] = rateDown(ctx({ drivers: [aoki], drafts: cur, prevDrafts: prev, terms: [noticed] }));
+    expect(n.severity).toBe("yellow");
+    expect(n.detail).toContain("取引条件の記録（版 2・2026年9月25日）に、この単価が書いてあります");
+    expect(n.impact?.yen).toBe(5000);
+    // 上がった・同じ → 出ない
+    expect(rateDown(ctx({ drivers: [aoki], drafts: drafts(OCT, [aoki], work), prevDrafts: prev }))).toHaveLength(0);
+  });
+});
+
+describe("振込手数料（fee_deducted）：2026年1月1日より前の月は「確認をおすすめ」に弱める", () => {
+  const settings = { transferFeeBearer: "driver" as const };
+  it("2025年12月分 → 黄（弱めた言い方）。2026年1月分 → 赤（合意があっても）", () => {
+    const [dec] = feeDeducted(ctx({ month: "2025-12-01", today: "2025-12-31", tenant: { ...TENANT, settings } }));
+    expect(dec).toMatchObject({ code: "fee_deducted", severity: "yellow", subjectId: "tenant" });
+    expect(dec.detail).toContain(FEE_SENTENCE_EARLY);
+    expect(dec.detail).not.toContain("合意があっても");
+    const [jan] = feeDeducted(ctx({ month: "2026-01-01", today: "2026-01-31", tenant: { ...TENANT, settings } }));
+    expect(jan).toMatchObject({ severity: "red" });
+    expect(jan.detail).toContain(FEE_SENTENCE);
+    // 会社の負担にしていれば出ない
+    expect(feeDeducted(ctx({ month: "2025-12-01", tenant: { ...TENANT, settings: { transferFeeBearer: "company" } } }))).toHaveLength(0);
+  });
+});
+
+describe("控除の合意の日（deduction_no_agreement）：締めの期間の初日と比べる", () => {
+  it("20日締めの 10 月分（9/21〜）で、合意が 9/25 → 黄（期間の途中）。9/21 → 出ない", () => {
+    const tenant20 = { ...CALC_TENANT, closingDay: 20 };
+    const d = drafts(OCT, [aoki], [["d1", "p1", 100]], { tenant: tenant20, rules: [rule({ id: "r1", name: "管理費", amount: 5000 })] });
+    expect(d[0].period.from).toBe("2026-09-21");
+    const agreed = (agreedOn: string) => [{ id: "r1", name: "管理費", driverId: null, kind: "fixed", agreedInWriting: true, agreedOn, basis: "契約書", active: true }];
+    const c = (agreedOn: string) => ctx({ tenant: { ...TENANT, closingDay: 20 }, drivers: [aoki], drafts: d, rules: agreed(agreedOn) });
+    const [i] = deductionNoAgreement(c("2026-09-25"));
+    expect(i).toMatchObject({ severity: "yellow", title: "控除の合意が、この月の途中です", impact: { yen: 5000 } });
+    expect(i.detail).toContain("合意した日（2026年9月25日）が、2026年10月分の締めの期間の初日（2026年9月21日）より後です");
+    expect(deductionNoAgreement(c("2026-09-21"))).toHaveLength(0);
+  });
+});
+
+describe("振込額の急な変化（payout_swing）", () => {
+  const refund = (amount: number) => ({ driverId: "d1", label: "燃料代の精算", amount, taxable: false, agreedInWriting: true });
+  // 前の月：100個 × 150円 ＋ 消費税 1,500円 = 16,500円
+  const prev = drafts(SEP, [aoki], [["d1", "p1", 100]]);
+
+  it("数量は同じで、調整で振込額が 16,500 → 10,500円（−36%）→ 黄。影響額は差の 6,000円", () => {
+    const cur = drafts(OCT, [aoki], [["d1", "p1", 100]], { adjustments: [refund(-6000)] });
+    const [i] = payoutSwing(ctx({ drivers: [aoki], drafts: cur, prevDrafts: prev }));
+    expect(i).toMatchObject({ code: "payout_swing", severity: "yellow", subjectId: "d1", title: "前の月より振込額が大きく減っています", fixHref: "/work?m=2026-10" });
+    expect(i.detail).toContain("16,500円 から 10,500円");
+    expect(i.detail).toContain("−36%");
+    expect(i.detail).toContain("調整 0円 → マイナス 6,000円");
+    expect(i.impact).toEqual({ yen: 6000, label: "振込額の前の月との差" });
+    // 増えたときも出る（＋40%）
+    const up = drafts(OCT, [aoki], [["d1", "p1", 100]], { adjustments: [refund(6600)] });
+    expect(payoutSwing(ctx({ drivers: [aoki], drafts: up, prevDrafts: prev }))[0]).toMatchObject({ title: "前の月より振込額が大きく増えています", impact: { yen: 6600 } });
+  });
+
+  it("ちょうど 30%・数量の急な変化で出ている人・稼働の無い月・マイナスの人・前の月の明細が無い人 → 出ない", () => {
+    expect(PAYOUT_SWING_RATIO).toBe(0.3);
+    // 16,500 × 30% = 4,950円 減っても、30% を超えないので出ない
+    const edge = drafts(OCT, [aoki], [["d1", "p1", 100]], { adjustments: [refund(-4950)] });
+    expect(payoutSwing(ctx({ drivers: [aoki], drafts: edge, prevDrafts: prev }))).toHaveLength(0);
+    // 数量が 100 → 200（＋100%）は qty_jump が出すので重ねない
+    const qty = drafts(OCT, [aoki], [["d1", "p1", 200]]);
+    expect(payoutSwing(ctx({ drivers: [aoki], drafts: qty, prevDrafts: prev }))).toHaveLength(0);
+    // 振込額がマイナス（negative_total が赤で出す）
+    const minus = drafts(OCT, [aoki], [["d1", "p1", 100]], { adjustments: [refund(-20000)] });
+    expect(payoutSwing(ctx({ drivers: [aoki], drafts: minus, prevDrafts: prev }))).toHaveLength(0);
+    // 前の月の明細が無い・今月の稼働が無い
+    const cur = drafts(OCT, [aoki], [["d1", "p1", 100]], { adjustments: [refund(-6000)] });
+    expect(payoutSwing(ctx({ drivers: [aoki], drafts: cur, prevDrafts: [] }))).toHaveLength(0);
+    const idle = drafts(OCT, [aoki], [], { adjustments: [refund(3000)] });
+    expect(payoutSwing(ctx({ drivers: [aoki], drafts: idle, prevDrafts: prev }))).toHaveLength(0);
+  });
 });
 
 describe("控除の追加・増額（ded_new_or_up）", () => {
@@ -286,7 +419,7 @@ describe("登録の無い方だけ単価が下がった（exempt_only_cut）", (
     expect(EXEMPT_CUT_SENTENCE).toBe("登録の無い方だけ単価が下がっています。取引の条件を協議した記録を確認してください。");
     expect(i.detail).toContain("上田 健さん（150円 → 140円）");
     expect(i.detail).toContain("登録のある 1人（青木 翔太）は下がっていません");
-    expect(i.impact).toEqual({ yen: 8000, label: "下がった分（単価の差 × 今月の数量）" });
+    expect(i.impact).toEqual({ yen: 8000, label: "下がった分（単価の差 × この月の数量）" });
     // 報酬を下げる話はしない・判定もしない
     expect(i.detail).not.toMatch(FORBIDDEN);
   });
@@ -394,6 +527,30 @@ describe("稼働の重なり（duplicate_rows）", () => {
     expect(duplicateRows(ctx({ drivers: [aoki, inoue], drafts: d, workRows: rows }))).toHaveLength(0);
     expect(duplicateRows(ctx({ drafts: d }))).toHaveLength(0);
   });
+
+  it("出どころで重さを分ける：1 つのファイルで数量の違う行（便ごと）は黄、別々の取り込み・同じ数量・手入力の重なりは赤", () => {
+    const row = (qty: number, batchId: string | null, date = "2026-10-05") => ({ driverId: "d1", projectId: "p1", workDate: date, qty, batchId });
+    const run = (rows: ReturnType<typeof row>[]) =>
+      duplicateRows(ctx({ drivers: [aoki], drafts: drafts(OCT, [aoki], rows.map((r) => ["d1", "p1", r.qty, r.workDate] as WorkRow)), workRows: rows }));
+    // 1 つのファイルの中の 1 便 100個・2 便 50個 → 黄。二重に書いた行なら 50個 × 150円 = 7,500円 の払いすぎ
+    const [split] = run([row(100, "b1"), row(50, "b1")]);
+    expect(split).toMatchObject({ code: "duplicate_rows", severity: "yellow", title: "同じ日・同じ案件の行が、1 つのファイルの中で分かれています" });
+    expect(split.detail).toContain("便や時間帯で行を分けているなら、そのままで構いません");
+    expect(split.detail).toContain("払いすぎは 7,500円");
+    expect(split.impact).toEqual({ yen: 7500, label: "二重に書いた行なら払いすぎになる額" });
+    // 同じファイルでも同じ数量が並ぶ → 赤（二重の記入のおそれ）
+    expect(run([row(100, "b1"), row(100, "b1")])[0]).toMatchObject({ severity: "red", impact: { yen: 15000, label: "重なっている分の支払" } });
+    // 別々の取り込みから同じ日の行 → 赤（数量が違っても）
+    expect(run([row(100, "b1"), row(50, "b2")])[0]).toMatchObject({ severity: "red", impact: { yen: 7500 } });
+    // 取り込み ＋ 手入力、手入力 2 行 → 赤
+    expect(run([row(100, "b1"), row(50, null)])[0].severity).toBe("red");
+    expect(run([row(100, null), row(50, null)])[0].severity).toBe("red");
+    // 1 人に黄の日と赤の日があれば、まとめて赤。赤の日（10/9）を先に書き、影響額は両方の合計（50個 ＋ 100個 分）
+    const [mixed] = run([row(100, "b1"), row(50, "b1"), row(100, "b1", "2026-10-09"), row(100, "b2", "2026-10-09")]);
+    expect(mixed.severity).toBe("red");
+    expect(mixed.detail.indexOf("2026年10月9日")).toBeLessThan(mixed.detail.indexOf("2026年10月5日"));
+    expect(mixed.impact?.yen).toBe(22500);
+  });
 });
 
 describe("明細への質問（open_questions）", () => {
@@ -418,9 +575,23 @@ describe("明細への質問（open_questions）", () => {
     expect(fixLink(i.fixHref!, { role: "staff", closed: true })).toMatchObject({ text: "返事をする（明細のやりとり）", canFix: true });
     expect(fixLink(i.fixHref!, { role: "viewer", closed: false }).text).toBe("見る（明細のやりとり）");
     expect(ackAllowed("open_questions", true)).toBe(true);
-    // 明細全体への質問だけなら、影響額は出せない
+    // 明細全体への質問だけで、明細の振込額が分からなければ、影響額は出せない
     const [whole] = openQuestions(ctx({ drivers: [aoki], questions: [q(null, "2026-10-31")] }));
     expect(whole.impact).toEqual({ yen: null, label: "明細全体への質問のため出せません" });
+  });
+
+  it("明細全体への質問は、その明細の振込額を影響額にする（行の質問と重ねて足さない）。振込額が 0 円以下なら行の金額", () => {
+    const q = (lineKey: string | null) => ({ statementId: "s1", driverId: "d1", lineKey, askedOn: "2026-10-30", line: questionLine(d, lineKey) });
+    const statements = [{ id: "s1", driverId: "d1", total: d.total, payDate: d.payDate }];
+    // 15,000 ＋ 1,500 − 5,000 − 500 ＋ 3,300 = 14,300円
+    expect(d.total).toBe(14300);
+    const [whole] = openQuestions(ctx({ drivers: [aoki], statements, questions: [q(null), q("p1")] }));
+    expect(whole.impact).toEqual({ yen: 14300, label: "振込額（明細全体への質問があるため）" });
+    // 他の明細（別の id）の振込額は使わない
+    const [other] = openQuestions(ctx({ drivers: [aoki], statements: [{ ...statements[0], id: "s9" }], questions: [q(null), q("p1")] }));
+    expect(other.impact).toEqual({ yen: 15000, label: "質問の行の金額" });
+    const [zero] = openQuestions(ctx({ drivers: [aoki], statements: [{ ...statements[0], total: -100 }], questions: [q(null), q("r1")] }));
+    expect(zero.impact).toEqual({ yen: 5000, label: "質問の行の金額" });
   });
 
   it("未解決の質問が無い → 出ない", () => {
@@ -519,7 +690,7 @@ describe("影響額・時点・並べ方（ルール全体）", () => {
   });
 
   it("あとから足したルールも一覧にあり、どれも陽性の記録で出る。文面に言ってはいけないことが無く、影響額と時点が付く", () => {
-    const newCodes = ["terms_outdated", "ded_new_or_up", "ded_penalty", "exempt_only_cut", "ded_without_work", "transitional_span", "transitional_next", "duplicate_rows", "open_questions", "late_payment_prev"];
+    const newCodes = ["terms_outdated", "ded_new_or_up", "ded_penalty", "exempt_only_cut", "ded_without_work", "transitional_span", "transitional_next", "duplicate_rows", "open_questions", "late_payment_prev", "payout_swing"];
     expect(RULES.map((r) => r.doc.code)).toEqual(expect.arrayContaining(newCodes));
     for (const r of RULES) {
       expect(r.doc.asOf, r.doc.code).toMatch(/^\d{4}-\d{2}$/);
@@ -553,7 +724,13 @@ describe("影響額・時点・並べ方（ルール全体）", () => {
     const c2 = ctx({ month: NOV, drivers: all, drafts: drafts(NOV, all, [["d1", "p1", 100]], { rules: [lease] }) });
     const c3 = ctx({ month: SEP, drafts: drafts(SEP, [ueda], [["d2", "p1", 1000]]) });
     const c4 = ctx({ tenant: { ...TENANT, closingDay: 20 }, drafts: drafts(OCT, [ueda], [["d2", "p1", 1000]], { tenant: { ...CALC_TENANT, closingDay: 20 } }) });
-    const issues = [c1, c2, c3, c4].flatMap((c) => evaluateRules(c));
+    // 振込額だけが大きく動いた（調整）
+    const c5 = ctx({
+      drivers: [aoki],
+      drafts: drafts(OCT, [aoki], [["d1", "p1", 100]], { adjustments: [{ driverId: "d1", label: "燃料代の精算", amount: -6000, taxable: false, agreedInWriting: true }] }),
+      prevDrafts: drafts(SEP, [aoki], [["d1", "p1", 100]]),
+    });
+    const issues = [c1, c2, c3, c4, c5].flatMap((c) => evaluateRules(c));
     const codes = new Set(issues.map((i) => i.code));
     for (const code of newCodes) expect(codes, code).toContain(code);
     for (const i of issues) {

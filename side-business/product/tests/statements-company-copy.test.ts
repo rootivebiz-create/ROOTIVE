@@ -183,6 +183,14 @@ describe("出す所・出さない所", () => {
     expect(detail.taxMethod).toBe("simplified");
   });
 
+  it("明細を作ったあとで会社の設定を原則課税以外に変えた：写しの数字（8,280 円）を出し、作ったときの設定だと書く", async () => {
+    await db.update(s.tenants).set({ taxMethod: "simplified" }).where(eq(s.tenants.id, tenantId));
+    const h = await detailHtml((await statementOf("D03")).st.id);
+    expect(h).toContain("¥8,280");
+    expect(h).toContain("下の数字は、明細を作ったときの設定（原則課税）で計算したものです");
+    expect(h).not.toContain("この負担は 0 円として計算しています");
+  });
+
   it("ドライバーの画面・ドライバーの PDF には出ない", async () => {
     await spanningSetup();
     const { st } = await statementOf("D03");

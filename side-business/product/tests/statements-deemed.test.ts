@@ -8,6 +8,7 @@ import type { Db } from "~/db/client";
 import * as s from "~/db/schema";
 import type { SessionUser } from "~/server/auth";
 import { confirmationRecordRows, deemedClauseMap, getStatementDetail, listMonthStatements } from "~/server/features/statements";
+import { jstDateString } from "~/server/features/statements/view";
 import { resetRateLimit } from "~/server/rate-limit";
 import { DEMO_MONTH, seedDemo } from "~/server/seed-demo";
 import { generateStatements } from "~/server/statements-core";
@@ -49,6 +50,12 @@ vi.mock("next/navigation", () => ({
 
 const DAY = 86_400_000;
 const BLOCKED = "取引条件にみなし確認の条項がありません（";
+
+/** 2026-10-05 → 2026年10月5日（画面の日付の書き方） */
+function jpDateText(date: string): string {
+  const [y, m, d] = date.split("-").map(Number);
+  return `${y}年${m}月${d}日`;
+}
 
 let db: Db;
 let client: PGlite;
@@ -165,5 +172,21 @@ describe("みなし確認の 3 つの条件", () => {
     expect(await deemedClauseMap(db, tenantId, [bDriver.id])).toEqual(new Map());
     expect(await deemedClauseMap(db, b.tenantId, [bDriver.id])).toEqual(new Map([[bDriver.id, true]]));
     expect(await deemedClauseMap(db, tenantId, [])).toEqual(new Map());
+  });
+
+  it("条項のある取引条件を、明細を送ったあとで渡したとき：状態は条件どおり。画面で送った日より後だと知らせる", async () => {
+    const { st, driver } = await statementOf("D01");
+    await sentEightDaysAgo(st.id);
+    const sentOn = jstDateString((await statementOf("D01")).st.sentAt!);
+    const issuedOn = jstDateString(new Date());
+    await db.insert(s.termsRecords).values({ tenantId, driverId: driver.id, version: 1, issuedOn, content: {}, deemedClause: true });
+    expect((await getStatementDetail(db, tenantId, st.id))!.status.key).toBe("deemed");
+    const h = await detail(st.id);
+    expect(h).toContain(`条項のある取引条件の記録（${jpDateText(issuedOn)}）は、この明細を送った日（${jpDateText(sentOn)}）より後に渡したものです`);
+    expect(h).toContain("前の取引条件の記録で確認をおすすめします");
+
+    // 送る前に渡してあれば、この注意は出さない
+    await db.update(s.termsRecords).set({ issuedOn: sentOn }).where(eq(s.termsRecords.driverId, driver.id));
+    expect(await detail(st.id)).not.toContain("より後に渡したものです");
   });
 });

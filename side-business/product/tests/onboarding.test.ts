@@ -215,7 +215,7 @@ describe("最初の設定（DB）", () => {
     // 新しい会社（何も入っていない）
     const [fresh] = await db.insert(s.tenants).values({ name: "はじめて運送（架空）" }).returning();
     let p = await loadOnboarding(db, fresh.id);
-    expect(p).toMatchObject({ doneCount: 0, total: 6, complete: false, minutesLeft: 55 });
+    expect(p).toMatchObject({ doneCount: 0, total: 7, complete: false, minutesLeft: 65 });
     expect(p.next?.key).toBe("company");
 
     await setOnboardingStep(db, fresh.id, "company", "skipped", null);
@@ -240,7 +240,7 @@ describe("最初の設定（DB）", () => {
     // デモの会社は変わらない
     const demo = await loadOnboarding(db, tenantId);
     expect(demo.doneCount).toBe(5);
-    expect(demo.next?.key).toBe("parallel");
+    expect(demo.next?.key).toBe("terms");
     await client.close();
   });
 

@@ -5,7 +5,7 @@ import { jstDateTime } from "~/components/close/format";
 import { RestoreForm } from "~/components/data/restore-form";
 import { getDb } from "~/db/client";
 import { requirePageUser } from "~/server/auth";
-import { loadDataOverview, schemaVersion } from "~/server/features/export-all";
+import { loadDataOverview, restoreHostProblem, schemaVersion } from "~/server/features/export-all";
 import { EXPORT_TABLES } from "~/server/features/export-all/tables";
 import { monthLabelJa } from "~/server/month";
 
@@ -18,7 +18,8 @@ export const metadata = { title: "全データの書き出し" };
 export default async function DataPage() {
   const user = await requirePageUser("owner");
   const db = await getDb();
-  const o = await loadDataOverview(db, user.tenantId);
+  const demo = process.env.DEMO_MODE === "1";
+  const [o, restoreProblem] = await Promise.all([loadDataOverview(db, user.tenantId), demo ? null : restoreHostProblem(db, user.tenantId)]);
 
   return (
     <div className="space-y-8">
@@ -85,13 +86,17 @@ export default async function DataPage() {
             別の場所のしめ日ラボで書き出した ZIP を、ここに新しい会社として読み込みます。いま使っている会社のデータは変わりません。
           </p>
           <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-            <li>同じ会社がすでにこの場所にあるときは読み込みません（二重になるのを防ぐため）。</li>
+            <li>
+              読み込めるのは、ほかの会社が入っていない場所（移した先で「最初の設定」をして、会社を 1 つだけ作ったところ）です。同じ会社がすでにある場所には読み込みません（二重になるのを防ぐため）。
+            </li>
             <li>書き出したあとに中身が書き換えられた ZIP や、ほかの会社の行が混ざった ZIP は読み込みません。</li>
             <li>読み込んだあと、表ごとの行数と、明細のすべての版のハッシュが書き出したときと同じかを確かめます。違えば、何も書き込みません。</li>
             <li>締めた月は締めたまま、操作の記録もそのまま移ります。パスワードは移らないので、読み込んだ会社のオーナーへの招待のリンクを作ります。</li>
           </ul>
-          {process.env.DEMO_MODE === "1" ? (
+          {demo ? (
             <p className="rounded-lg border border-border bg-muted p-3 text-sm">デモでは読み戻しは使えません。書き出しは試せます。</p>
+          ) : restoreProblem ? (
+            <p className="rounded-lg border border-border bg-muted p-3 text-sm">{restoreProblem}</p>
           ) : (
             <RestoreForm />
           )}

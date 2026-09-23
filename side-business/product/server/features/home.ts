@@ -5,7 +5,13 @@ import * as s from "~/db/schema";
 import { UserError } from "~/server/action";
 import { buildStatementDrafts, payDateFor, profitOf, type StatementDraft } from "~/server/calc/statement";
 import { loadOnboarding } from "~/server/features/onboarding";
+import { byKana, driverTermsFlags } from "~/server/features/onboarding/terms";
+import { goLiveFrom } from "~/server/features/parallel/gate";
+import { foundFromCells } from "~/server/features/profit";
+import { futureBurden } from "~/server/features/profit/summary";
+import { loadReport as defaultLoadReport, type Report } from "~/server/features/reconcile";
 import { deemedDaysOf, statementStatus } from "~/server/features/statements/status";
+import { deemedClauseMap } from "~/server/features/terms-content";
 import { loadTransferPlan } from "~/server/features/transfer";
 import { runWatch as defaultRunWatch } from "~/server/features/watch";
 import type { WatchIssue } from "~/server/features/watch-types";
@@ -24,8 +30,36 @@ export * from "~/server/features/home/steps";
 export type HomeDeps = {
   /** 見張り番（テストでは差し替える） */
   runWatch?: (db: Db, tenantId: string, month: string) => Promise<WatchIssue[]>;
+  /** 突合のまとめ（テストでは差し替える） */
+  loadReport?: (db: Db, tenantId: string, from: string, to: string) => Promise<Pick<Report, "cells">>;
   now?: Date;
 };
+
+const RECONCILE_ERROR = "突合の結果を読めませんでした。元請との突合の画面で確かめてください。";
+
+/**
+ * 突合のセル（その月の支払通知のあるもの）から、ホームの「突合」と「見つけたお金」を出す（純関数）。
+ * 突合の画面・利益の画面・社長の 1 枚と同じ数え方（差は今の記録で出し、状態は保存したもの）。見つけたお金は foundFromCells そのもの
+ */
+export function homeReconcileFromCells(cells: Pick<Report, "cells">["cells"], month: string): { reconcile: HomeStatus["reconcile"]; found: HomeStatus["found"] } {
+  const own = cells.filter((c) => c.notice && c.month === month);
+  const f = foundFromCells(own, month);
+  const short = own.reduce((a, c) => a + c.short, 0);
+  const over = own.reduce((a, c) => a + c.over, 0);
+  return {
+    reconcile: {
+      notices: own.length,
+      items: own.reduce((a, c) => a + c.items.length, 0),
+      openItems: own.reduce((a, c) => a + c.open + c.asked, 0),
+      openDiff: over - short,
+      short,
+      over,
+      unread: own.filter((c) => c.notice!.lineCount === 0).length,
+      error: null,
+    },
+    found: { confirmed: f.confirmed, confirmedCount: f.confirmedCount, estimated: f.estimated, estimatedCount: f.estimatedCount },
+  };
+}
 
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])-01$/;
 
@@ -35,14 +69,16 @@ export async function loadHomeStatus(db: Db, tenantId: string, month: string, de
   const runWatch = deps.runWatch ?? defaultRunWatch;
   const now = deps.now ?? new Date();
 
-  const [closeRows, workRows, [adjCount], batches, saved, plan, notices, onboarding] = await Promise.all([
+  // 取引条件の明示の記録があるか（ホームで足す問い合わせはこれ 1 つ。最初の設定の案内も同じ結果を使う）
+  const termsFlagsP = driverTermsFlags(db, tenantId);
+  const [closeRows, workRows, [adjCount], batches, saved, plan, notices, onboarding, termsFlags] = await Promise.all([
     db
       .select()
       .from(s.monthCloses)
       .where(and(eq(s.monthCloses.tenantId, tenantId), eq(s.monthCloses.month, month)))
       .limit(1),
     db
-      .select({ driverId: s.workEntries.driverId })
+      .select({ driverId: s.workEntries.driverId, qty: s.workEntries.qty })
       .from(s.workEntries)
       .where(and(eq(s.workEntries.tenantId, tenantId), eq(s.workEntries.month, month))),
     db
@@ -67,8 +103,17 @@ export async function loadHomeStatus(db: Db, tenantId: string, month: string, de
       .select({ id: s.paymentNotices.id })
       .from(s.paymentNotices)
       .where(and(eq(s.paymentNotices.tenantId, tenantId), eq(s.paymentNotices.month, month))),
-    loadOnboarding(db, tenantId),
+    loadOnboarding(db, tenantId, { onboarding: tenant.onboarding, termsFlags: termsFlagsP }),
+    termsFlagsP,
   ]);
+  // 突合は重いので、支払通知がある月だけ、ほかの読み出し（見張り番・明細）と同時に始める（失敗してもホームは開く）
+  const reportP =
+    notices.length > 0
+      ? (deps.loadReport ?? defaultLoadReport)(db, tenantId, month, month).then(
+          (report) => ({ report, error: null }),
+          (error: unknown) => ({ report: null, error }),
+        )
+      : null;
   const mc = closeRows[0];
   const closed = mc?.status === "closed";
   let closedByName: string | null = null;
@@ -140,6 +185,8 @@ export async function loadHomeStatus(db: Db, tenantId: string, month: string, de
       ])
     : [[], []];
   const deemedDays = deemedDaysOf(tenant.settings);
+  // みなし確認は、取引条件にその条項がある人だけ（明細の画面と同じ判定）
+  const clauses = await deemedClauseMap(db, tenantId, saved.map((r) => r.driverId));
   const statuses = saved.map((r) =>
     statementStatus(
       {
@@ -149,6 +196,7 @@ export async function loadHomeStatus(db: Db, tenantId: string, month: string, de
         updatedAt: r.updatedAt,
         confirmations: confs.filter((c) => c.statementId === r.id),
         driverMessages: msgs.filter((x) => x.statementId === r.id),
+        deemedClause: clauses.get(r.driverId) === true,
       },
       now,
       deemedDays,
@@ -164,19 +212,33 @@ export async function loadHomeStatus(db: Db, tenantId: string, month: string, de
   const transfers = plan.batches;
   const notInBatch = plan.included.filter((r) => r.inBatches.length === 0);
 
-  // 突合：まだ解決していない差（open・asked）
-  const noticeIds = notices.map((n) => n.id);
-  const items = noticeIds.length
-    ? await db
-        .select({ diff: s.reconciliationItems.diff, status: s.reconciliationItems.status })
-        .from(s.reconciliationItems)
-        .where(and(eq(s.reconciliationItems.tenantId, tenantId), inArray(s.reconciliationItems.noticeId, noticeIds)))
-    : [];
-  const openItems = items.filter((i) => i.status === "open" || i.status === "asked");
+  // 突合と見つけたお金：この月に支払通知があるときだけ、突合の画面と同じ読み方（loadReport）で数える。
+  // まだ「突き合わせる」を押していなくても、突合の画面・利益の画面と同じ額になる。確定と見込みは足し合わせない
+  let rec: { reconcile: HomeStatus["reconcile"]; found: HomeStatus["found"] } = {
+    reconcile: { notices: 0, items: 0, openItems: 0, openDiff: 0, short: 0, over: 0, unread: 0, error: null },
+    found: { confirmed: 0, confirmedCount: 0, estimated: 0, estimatedCount: 0 },
+  };
+  if (reportP) {
+    const { report, error } = await reportP;
+    if (report) rec = homeReconcileFromCells(report.cells, month);
+    else {
+      console.error("home: reconcile failed", error instanceof Error ? error.message : error);
+      rec = { ...rec, reconcile: { ...rec.reconcile, notices: notices.length, error: RECONCILE_ERROR } };
+    }
+  }
 
   // 金額（締めた月は保存した写し、開いている月は今の計算）
   const useSaved = closed && saved.length > 0;
   const money = useSaved ? saved.map((r) => readSnapshot(r)) : drafts;
+  // 免税の方への支払で会社がかぶる消費税：今月は明細の額、次の段階は利益の画面と同じ目安の出し方
+  const future = futureBurden(money, month, tenant.taxMethod);
+
+  // 取引条件の明示：この月に稼働した人（数量が 1 以上）のうち、記録が見つからない人
+  const workedIds = new Set(workRows.filter((r) => r.qty > 0).map((r) => r.driverId));
+  const termsMissing = termsFlags
+    .filter((d) => workedIds.has(d.id) && !d.hasTerms)
+    .sort(byKana)
+    .map((d) => ({ driverId: d.id, name: d.name }));
 
   return {
     month,
@@ -228,14 +290,7 @@ export async function loadHomeStatus(db: Db, tenantId: string, month: string, de
       profit: money.reduce((a, d) => a + profitOf(d), 0),
       source: useSaved ? "snapshot" : "calc",
     },
-    reconcile: {
-      notices: notices.length,
-      items: items.length,
-      openItems: openItems.length,
-      openDiff: openItems.reduce((a, i) => a + i.diff, 0),
-      short: openItems.filter((i) => i.diff < 0).reduce((a, i) => a - i.diff, 0),
-      over: openItems.filter((i) => i.diff > 0).reduce((a, i) => a + i.diff, 0),
-    },
+    reconcile: rec.reconcile,
     questions: {
       count: openMsgs.length,
       items: openMsgs.slice(0, 3).map((x) => ({
@@ -246,6 +301,15 @@ export async function loadHomeStatus(db: Db, tenantId: string, month: string, de
       })),
     },
     onboarding,
+    found: rec.found,
+    burden: {
+      affected: future.affected,
+      people: future.people,
+      current: money.reduce((a, d) => a + d.invoiceBurden, 0),
+      next: future.next ? { from: future.next.from, label: future.next.label, monthly: future.next.monthly, diffMonthly: future.next.diffMonthly } : null,
+    },
+    terms: { worked: workedIds.size, missing: termsMissing },
+    golive: goLiveFrom(tenant.onboarding),
   };
 }
 

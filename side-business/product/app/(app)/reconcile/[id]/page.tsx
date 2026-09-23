@@ -6,7 +6,7 @@ import { yen } from "@/lib/payroll/money";
 import { Badge, Notice, PageHeader } from "~/components/page";
 import { ColumnsForm } from "~/components/reconcile/columns-form";
 import { DiffAmount, Pair, Section } from "~/components/reconcile/bits";
-import { DeleteNoticeForm, DriverMappingForm, LineMappingForm, NoticeMetaForm, RerunButton } from "~/components/reconcile/forms";
+import { DeleteNoticeForm, DriverMappingForm, LineMappingForm, NoticeMetaForm, ReplaceNoticeForm, RerunButton } from "~/components/reconcile/forms";
 import { ItemCard } from "~/components/reconcile/item-card";
 import { getDb } from "~/db/client";
 import { UserError } from "~/server/action";
@@ -14,6 +14,7 @@ import { requirePageUser, roleAtLeast } from "~/server/auth";
 import { loadNoticeView, runReconcile, type NoticeView } from "~/server/features/reconcile";
 import { COLUMN_ROLES, ROLE_LABEL } from "~/server/features/reconcile/roles";
 import { amountText, dateJa, formulaText, isUnsettled, qtyUnitText } from "~/server/features/reconcile/labels";
+import { periodNotes, periodText } from "~/server/features/reconcile/period";
 import { monthLabelJa, monthParam } from "~/server/month";
 
 export const metadata: Metadata = { title: "突合の結果" };
@@ -55,7 +56,9 @@ export default async function NoticePage({ params, searchParams }: { params: Pro
   const currentItems = view.display.filter((i) => i.current);
   const historyItems = view.display.filter((i) => !i.current);
   const matched = live.projects.filter((p) => p.diff === 0 || p.roundingOnly);
-  const closingDay = view.client?.closingDay ?? 0;
+  // 元請の締め日が当社と違うとき：締めの期間で比べた（日付つきの稼働）か、日付が無く月単位で比べたか
+  const periodInfo = periodNotes(view.period, clientName);
+  const closingSpan = view.period.differs && view.period.mode === "closing" ? `${periodText(view.period)}の` : "";
   const driverDiffs = live.drivers?.filter((d) => d.theirQty === null || Math.abs(d.theirQty - d.ourQty) > 1e-6) ?? [];
   const unknownGroups = view.lineGroups.filter((g) => g.role === "unknown");
   const unknownDrivers = view.driverGroups.filter((g) => !g.driverId && !g.remembered);
@@ -80,7 +83,7 @@ export default async function NoticePage({ params, searchParams }: { params: Pro
           </>
         }
         actions={
-          unsettled.length > 0 ? (
+          unsettled.length > 0 && !noLines ? (
             <Link href={`/reconcile/${notice.id}/letter`} className={buttonClass("primary")}>
               問い合わせ文を作る
             </Link>
@@ -120,7 +123,11 @@ export default async function NoticePage({ params, searchParams }: { params: Pro
               <ColumnsForm noticeId={notice.id} rows={view.batch.rows.slice(0, 300)} headerIndex={view.batch.headerIndex} columns={view.batch.columns} />
             </div>
           )}
-          {!view.batch && <p className="mt-2 text-sm text-muted-foreground">読み取ったファイルの記録が無いため、列を選び直せません。一覧の画面から、ファイルを上げ直してください。</p>}
+          {!view.batch && (
+            <p className="mt-2 text-sm text-muted-foreground">
+              読み取ったファイルの記録が無いため、列を選び直せません。{canEdit ? "下の「上げ直す」から、ファイルを上げ直してください。" : "事務の方に、ファイルを上げ直してもらってください。"}
+            </p>
+          )}
         </Card>
       ) : (
         <>
@@ -144,7 +151,7 @@ export default async function NoticePage({ params, searchParams }: { params: Pro
           </div>
           <Card className="mt-3">
             <div className="divide-y divide-border">
-              <Pair label={view.snapshotRates ? "当社の記録（稼働の数量 × 締めたときの受注単価）" : "当社の記録（稼働の数量 × 受注単価）"}>
+              <Pair label={`当社の記録（${closingSpan}稼働の数量 × ${view.snapshotRates ? "締めたときの" : ""}受注単価）`}>
                 <Money value={live.ourTotal} />
               </Pair>
               <Pair label="お支払通知（突き合わせの対象）">
@@ -201,7 +208,7 @@ export default async function NoticePage({ params, searchParams }: { params: Pro
         </Section>
       )}
 
-      {!noLines && (live.chargeWarnings.length > 0 || unknownGroups.length > 0 || (view.batch?.warnings.length ?? 0) > 0 || live.zeroRateProjects.length > 0 || closingDay !== 0) && (
+      {!noLines && (live.chargeWarnings.length > 0 || unknownGroups.length > 0 || (view.batch?.warnings.length ?? 0) > 0 || live.zeroRateProjects.length > 0 || periodInfo.length > 0) && (
         <div className="mt-4 space-y-2">
           {live.zeroRateProjects.length > 0 && (
             <p className="rounded-lg border border-danger/40 bg-danger/10 p-3 text-sm">
@@ -219,11 +226,12 @@ export default async function NoticePage({ params, searchParams }: { params: Pro
               )}
             </p>
           )}
-          {closingDay !== 0 && (
-            <p className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm">
-              {clientName}の締め日は毎月{closingDay}日です。当社の記録は暦の月（1日〜末日）の稼働で数えているため、締めの期間の違いで差が出ることがあります。差が大きいときは、期間の違いでないか先に確かめてください。
-            </p>
-          )}
+          {periodInfo.map((n) => (
+            <div key={n.title} className={n.tone === "warn" ? "rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm" : "rounded-lg border border-border bg-muted p-3 text-sm"}>
+              <p className="font-bold">{n.title}</p>
+              <p className="mt-1">{n.body}</p>
+            </div>
+          ))}
           {view.batch?.warnings.map((w) => (
             <p key={w} className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm">
               {w}
@@ -261,7 +269,7 @@ export default async function NoticePage({ params, searchParams }: { params: Pro
           ) : (
             <ul className="space-y-3">
               {currentItems.map((it) => (
-                <li key={it.id ?? it.key}>
+                <li key={it.id ?? it.key} id={it.id ? `item-${it.id}` : undefined} className="scroll-mt-28">
                   <ItemCard item={it} canEdit={canEdit && !view.stale} />
                 </li>
               ))}
@@ -277,7 +285,7 @@ export default async function NoticePage({ params, searchParams }: { params: Pro
         >
           <ul className="space-y-3">
             {historyItems.map((it) => (
-              <li key={it.id ?? it.key}>
+              <li key={it.id ?? it.key} id={it.id ? `item-${it.id}` : undefined} className="scroll-mt-28">
                 <ItemCard item={it} canEdit={canEdit && !view.stale} />
               </li>
             ))}
@@ -495,9 +503,16 @@ export default async function NoticePage({ params, searchParams }: { params: Pro
 
       {canEdit && (
         <Section title="上げ直す・削除する">
-          <p className="mb-3 text-sm text-muted-foreground">
-            元請から直したお支払通知が届いたら、<Link href={`/reconcile?m=${m}`}>一覧の画面</Link>で「すでにあれば入れ替える」にチェックを入れて上げ直してください。問い合わせの状態とメモは残ります。
-          </p>
+          {view.client ? (
+            <Card className="mb-3">
+              <p className="mb-3 text-sm text-muted-foreground">元請から直したお支払通知が届いたら、ここで上げ直してください。同じ差の扱い・メモ・取り戻せた額は残ります。</p>
+              <ReplaceNoticeForm clientId={view.client.id} clientName={view.client.name} month={m} monthText={monthLabelJa(notice.month)} />
+            </Card>
+          ) : (
+            <p className="mb-3 text-sm text-muted-foreground">
+              このお支払通知の元請は削除されています。直したお支払通知は、<Link href={`/reconcile?m=${m}`}>一覧の画面</Link>で元請を選んで上げてください。
+            </p>
+          )}
           <DeleteNoticeForm noticeId={notice.id} itemCount={view.items.length} />
         </Section>
       )}

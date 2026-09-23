@@ -394,6 +394,23 @@ async function tenantExists(db: Db, tenantId: string): Promise<boolean> {
   return rowsOf(res).length > 0;
 }
 
+/**
+ * 画面からの読み戻しは、移した先の新しい場所（会社が、読み込む人の会社 1 つだけのところ）でだけ使う。
+ * 何社も入っている場所（まとめて提供しているところ）で、お客様が会社を増やせないようにする。
+ * 運営者がまとめて移すときは、importTenantData を直接呼ぶ。
+ */
+export async function restoreHostProblem(db: Db, hostTenantId: string): Promise<string | null> {
+  const [row] = rowsOf(await db.execute(sql`select count(*)::int as n from "tenants" where "id" <> ${hostTenantId}`));
+  return Number(row?.n ?? 0) > 0
+    ? "この場所には、すでにほかの会社のデータがあります。読み戻しは、移した先の新しい場所（最初の設定で会社を 1 つだけ作ったところ）で行ってください。前に読み込んだ会社があるときは、そのとき作った招待のリンクから入れます。"
+    : null;
+}
+
+export async function assertRestoreHost(db: Db, hostTenantId: string): Promise<void> {
+  const problem = await restoreHostProblem(db, hostTenantId);
+  if (problem) throw new UserError(problem);
+}
+
 /** 読み込む前の確かめ（DB には書かない）。読み込めないときは UserError */
 export async function previewTenantImport(db: Db, bytes: Uint8Array): Promise<ImportSummary> {
   const parsed = readTenantExport(bytes);

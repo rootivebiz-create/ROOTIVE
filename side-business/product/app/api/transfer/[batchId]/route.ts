@@ -26,7 +26,8 @@ function problemPage(message: string, status: number, month?: string): Response 
 export async function GET(request: Request, { params }: { params: Promise<{ batchId: string }> }): Promise<Response> {
   let user;
   try {
-    user = await requireUser("staff");
+    // ダウンロードは読むだけ（持ち出しの記録だけ書く）。デモの「保存できない」設定でも出せるようにする
+    user = await requireUser("staff", { readOnly: true });
   } catch (error) {
     if (error instanceof AuthError) return problemPage(error.message, 403);
     throw error;

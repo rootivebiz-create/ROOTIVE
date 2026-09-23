@@ -305,7 +305,7 @@ export function TermsForm({
       </Section>
 
       <Section title="明示した日">
-        <F label="明示した日（ドライバーに渡す日）" error={fe.issuedOn} hint="今日送るなら今日のまま。あとの日付にはできません。台帳の「最初に明示した日」は、今より前の日付のときだけ動きます">
+        <F label="明示した日（ドライバーに渡す日）" error={fe.issuedOn} hint="今日送るなら今日のまま。あとの日付にはできません。台帳の「最初に明示した日」は、空のときか、この日付のほうが前のときだけ動きます">
           <Input type="date" name="issuedOn" defaultValue={initial.issuedOn} max={today} required />
         </F>
       </Section>

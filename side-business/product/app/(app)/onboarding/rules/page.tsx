@@ -5,7 +5,7 @@ import { NextStepLink, StepHeader } from "~/components/onboarding/step-header";
 import { Badge } from "~/components/page";
 import { getDb } from "~/db/client";
 import { requirePageUser } from "~/server/auth";
-import { listRuleNames, loadOnboarding } from "~/server/features/onboarding";
+import { listRuleNames, loadOnboarding, ONBOARDING_STEPS } from "~/server/features/onboarding";
 import { ruleValueText, type RuleKind } from "~/server/features/onboarding/rules";
 import { monthFromParam, monthParam } from "~/server/month";
 
@@ -16,6 +16,9 @@ export default async function OnboardingRulesPage() {
   const user = await requirePageUser("staff");
   const db = await getDb();
   const [rules, progress] = await Promise.all([listRuleNames(db, user.tenantId), loadOnboarding(db, user.tenantId)]);
+  // 次の手順（控除のルールの次は「取引条件の明示」。取り込み・比べ合わせは先月の分を開く）
+  const next = ONBOARDING_STEPS[ONBOARDING_STEPS.findIndex((s) => s.key === "rules") + 1];
+  const nextHref = !next ? "/onboarding" : next.withMonth ? `${next.path}?m=${monthParam(monthFromParam(undefined))}` : next.path;
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -45,7 +48,7 @@ export default async function OnboardingRulesPage() {
           </ul>
         </Card>
       )}
-      <RulesForm existing={rules.filter((r) => r.forAll).map((r) => r.name)} nextHref={`/import?m=${monthParam(monthFromParam(undefined))}`} />
+      <RulesForm existing={rules.filter((r) => r.forAll).map((r) => r.name)} nextHref={nextHref} nextTitle={next?.title ?? "最初の設定"} />
       <div className="mt-8 space-y-2 text-sm text-muted-foreground">
         <p>
           根拠：取引条件に書いていない控除は、フリーランス法 第5条（報酬の減額の禁止）にあたるおそれがあります（

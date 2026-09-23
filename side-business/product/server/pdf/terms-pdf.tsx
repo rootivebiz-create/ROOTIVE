@@ -44,7 +44,10 @@ const st = StyleSheet.create({
   // 下の 2 行：ひな形の注意／会社・相手・版・ページ。
   // render で書く文字は、ページの行の高さを引き継ぐと消える（@react-pdf/renderer 4.9）ので、行の高さを 0（指定なし）に戻す
   footerNote: { position: "absolute", bottom: 32, left: 40, right: 40, fontSize: 7.5, lineHeight: 1.3, color: MUTED },
-  footer: { position: "absolute", bottom: 18, left: 40, right: 40, fontSize: 7.5, lineHeight: 0, color: MUTED, textAlign: "right" },
+  footer: { position: "absolute", bottom: 18, left: 40, right: 40, flexDirection: "row", alignItems: "flex-end" },
+  footerText: { fontSize: 7.5, lineHeight: 1.3, color: MUTED },
+  footerLeft: { flex: 1, paddingRight: 12, textAlign: "right" },
+  footerPage: { width: 48, alignItems: "flex-end" },
 });
 
 const COLS = [st.c0, st.c1, st.c2, st.c3];
@@ -128,11 +131,16 @@ function TermsPages({ source, generatedAt }: { source: TermsPdfSource; generated
       <Text style={st.footerNote} fixed>
         {TEMPLATE_NOTE}
       </Text>
-      <Text
-        style={st.footer}
-        fixed
-        render={({ pageNumber, totalPages }) => `${d.company.name}　${d.driver.name} 様　版 ${d.version}　${pageNumber} / ${totalPages}`}
-      />
+      {/* ページ番号：文字の要素に render を付けると、描き直すたびに行の高さが掛け算されてページの外へ押し出される（react-pdf の動き）。
+          外側の枠で render し、毎回新しい文字の要素を返す（明細の PDF と同じ作り） */}
+      <View style={st.footer} fixed>
+        <Text style={[st.footerText, st.footerLeft]}>{`${d.company.name}　${d.driver.name} 様　版 ${d.version}`}</Text>
+        <View style={st.footerPage} render={(p) => {
+            // View の render にも totalPages は渡る（型にだけ無い）
+            const { pageNumber, totalPages } = p as { pageNumber: number; totalPages?: number };
+            return <Text style={st.footerText}>{totalPages ? `${pageNumber} / ${totalPages}` : `${pageNumber}`}</Text>;
+          }} />
+      </View>
     </Page>
   );
 }

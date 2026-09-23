@@ -125,6 +125,8 @@ export type DraftSummary = {
   file: { name: string; size: number; hash: string; encoding: string; uploadedAt: string; sample?: boolean };
   sheets: StoredSheet[];
   sheetIndex: number;
+  /** Excel に残っていた控除らしい数式（シートの名前 → 番地 → 数式。例：{"10月": {"G5": "=E5*0.1"}}）。控除の提案の手がかり */
+  formulas?: Record<string, Record<string, string>>;
   /** ファイルの形の目印（同じ形なら同じ値。日付の列の数の違いは無視） */
   signature: string;
   mapping: WorkMapping;
@@ -149,6 +151,8 @@ export type DraftSummary = {
     reappliedFrom?: string[];
     /** ファイルの振込額の列（今の Excel の振込額）を、並行運用の比べ合わせに入れた結果 */
     payouts?: PayoutSaved;
+    /** ファイルにあった振込手数料の列の見出し（控除のルールにはしない。見張り番が読めるように残す） */
+    feeColumns?: string[];
   };
   discarded?: { at: string; by: string | null; reason: "undo" | "replaced" | "cancel"; replacedBy?: string };
 };

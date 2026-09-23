@@ -6,7 +6,8 @@ import * as s from "~/db/schema";
 import { buildStatementDrafts } from "~/server/calc/statement";
 import { buildTermsContent } from "~/server/features/terms-content";
 import { runWatch, watchMonth, type WatchIssueEx } from "~/server/features/watch";
-import { ackWatchIssue } from "~/server/features/watch/acks";
+import { ackKey } from "~/server/features/watch";
+import { ackWatchIssue, previousAcks } from "~/server/features/watch/acks";
 import { SOURCES } from "~/server/features/watch/sources";
 import { loadBuildInput } from "~/server/repo";
 import { DEMO_MONTH, DEMO_PREV_MONTH, seedDemo } from "~/server/seed-demo";
@@ -21,7 +22,7 @@ import { createTestDb } from "./helpers/db";
 const TODAY = "2026-10-31";
 const NOV = "2026-11-01";
 const FORBIDDEN = /(?<!取)適法|違反です|違反はありません|問題ありません|対応済み|完全対応|防げます|大丈夫|必ず合う|ミスゼロ|完全自動|補助金|単価を下げ|引き下げ|偽装請負|労働者に当た/;
-const NEW_CODES = ["terms_outdated", "ded_new_or_up", "ded_penalty", "exempt_only_cut", "ded_without_work", "transitional_span", "transitional_next", "duplicate_rows", "open_questions", "late_payment_prev"];
+const NEW_CODES = ["terms_outdated", "ded_new_or_up", "ded_penalty", "exempt_only_cut", "ded_without_work", "transitional_span", "transitional_next", "duplicate_rows", "open_questions", "late_payment_prev", "payout_swing"];
 
 async function idsOf(db: Db, tenantId: string) {
   const drivers = await db.select().from(s.drivers).where(eq(s.drivers.tenantId, tenantId));
@@ -181,6 +182,35 @@ describe("見張り番の続き：記録を足したときに出る指摘", () =
     expect(find(await run(), "duplicate_rows")).toHaveLength(0);
   });
 
+  it("青木さん（D01）の宅配：1 つのファイルで同じ日に 30個・20個 → 黄（二重なら 20個 × 150円 = 3,000円）。別のファイルからも同じ日の行が来ると赤", async () => {
+    const [b1, b2] = await db
+      .insert(s.importBatches)
+      .values([
+        { tenantId, month: DEMO_MONTH, fileName: "A物流_10月_1便2便.xlsx", status: "applied" },
+        { tenantId, month: DEMO_MONTH, fileName: "A物流_10月_追加.xlsx", status: "applied" },
+      ])
+      .returning();
+    const takuhai = P["宅配（個建て）"];
+    await db.insert(s.workEntries).values([
+      { tenantId, month: DEMO_MONTH, driverId: D.D01, projectId: takuhai, qty: 30, workDate: "2026-10-07", importBatchId: b1.id },
+      { tenantId, month: DEMO_MONTH, driverId: D.D01, projectId: takuhai, qty: 20, workDate: "2026-10-07", importBatchId: b1.id },
+    ]);
+    const [split] = find(await run(), "duplicate_rows", D.D01);
+    expect(split).toMatchObject({ severity: "yellow", blocksClose: false, subjectLabel: "青木 翔太" });
+    expect(split.detail).toContain("2026年10月7日 宅配（個建て） 2行（30個・20個）");
+    expect(split.impact).toEqual({ yen: 3000, label: "二重に書いた行なら払いすぎになる額" });
+    // 別のファイルから同じ日の行 → 赤（締めを止める）。重なり 20個 ＋ 30個 = 50個 × 150円
+    await db.insert(s.workEntries).values({ tenantId, month: DEMO_MONTH, driverId: D.D01, projectId: takuhai, qty: 30, workDate: "2026-10-07", importBatchId: b2.id });
+    const [double] = find(await run(), "duplicate_rows", D.D01);
+    expect(double).toMatchObject({ severity: "red", blocksClose: true });
+    expect(double.impact).toEqual({ yen: 7500, label: "重なっている分の支払" });
+    // 他社には出ない
+    expect(find(await runWatch(db, otherTenantId, DEMO_MONTH, { today: TODAY }), "duplicate_rows")).toHaveLength(0);
+    await db.delete(s.workEntries).where(and(eq(s.workEntries.tenantId, tenantId), eq(s.workEntries.workDate, "2026-10-07")));
+    await db.delete(s.importBatches).where(and(eq(s.importBatches.tenantId, tenantId), eq(s.importBatches.month, DEMO_MONTH)));
+    expect(find(await run(), "duplicate_rows")).toHaveLength(0);
+  });
+
   it("上田さん（D03）の宅配の行への質問が未解決 → 黄（行の金額 276,000円）。解決にすると出ない。締めたあとも確認済みにできる", async () => {
     await generateStatements(db, tenantId, DEMO_MONTH);
     const [st] = await db.select().from(s.statements).where(and(eq(s.statements.tenantId, tenantId), eq(s.statements.month, DEMO_MONTH), eq(s.statements.driverId, D.D03)));
@@ -216,6 +246,15 @@ describe("見張り番の続き：記録を足したときに出る指摘", () =
     expect(i.impact).toEqual({ yen: 357555, label: "遅れて払った額の合計（前の月）" });
     // 他社の振込データ・明細は見ない（他社の 11 月には出ない）
     expect(find(await runWatch(db, otherTenantId, NOV, { today: "2026-11-30" }), "late_payment_prev")).toHaveLength(0);
+    // 10 月の見張り番で「支払期日より後に振り込んだ」を確認済みにしていれば、そのメモが 11 月の下書きになる（同じ振込の話）
+    const note = "振込の予約を忘れていた。本人に電話でおわびした";
+    await ackWatchIssue(db, tenantId, { month: DEMO_MONTH, code: "paid_late", subjectId: batch.id, note }, null, { today: "2026-11-30" });
+    const drafts = await previousAcks(db, tenantId, NOV);
+    expect(drafts.get(ackKey("late_payment_prev", `prev:${batch.id}`))).toEqual({ month: DEMO_MONTH, note, fromCode: "paid_late" });
+    // 下書きにするだけで、11 月の赤は確認済みにならない（締めを止めたまま）
+    expect(find(await run(NOV, "2026-11-30"), "late_payment_prev")[0]).toMatchObject({ acked: false, blocksClose: true });
+    expect((await previousAcks(db, otherTenantId, NOV)).size).toBe(0);
+    await db.delete(s.watchAcks).where(and(eq(s.watchAcks.tenantId, tenantId), eq(s.watchAcks.code, "paid_late")));
     await db.delete(s.transferBatches).where(eq(s.transferBatches.id, batch.id));
   });
 
@@ -321,12 +360,18 @@ describe("見張り番の続き：記録を足したときに出る指摘", () =
     const month = await watchMonth(db, tenantId, DEMO_MONTH, { today: "2026-11-03" });
     expect(month.closed).toBe(true);
     const [q] = find(month.issues, "open_questions", D.D07);
-    expect(q.impact).toEqual({ yen: null, label: "明細全体への質問のため出せません" });
+    // 明細全体への質問は、その明細の振込額（木村さん 34,430円）を影響額にする
+    const [saved] = await db.select().from(s.statements).where(eq(s.statements.id, st.id));
+    expect(saved.total).toBe(34430);
+    expect(q.impact).toEqual({ yen: 34430, label: "振込額（明細全体への質問があるため）" });
     const acked = await ackWatchIssue(db, tenantId, { month: DEMO_MONTH, code: "open_questions", subjectId: D.D07, note: "電話で振込日を伝えた" }, null, { today: "2026-11-03" });
     expect(acked.acked).toBe(true);
     // 操作の記録に、確認した指摘の影響額とルールの時点も残る
-    const [log] = await db.select().from(s.auditLog).where(and(eq(s.auditLog.tenantId, tenantId), eq(s.auditLog.action, "watch.ack")));
-    expect(log.detail).toMatchObject({ code: "open_questions", subjectId: D.D07, impactYen: null, impactLabel: "明細全体への質問のため出せません", ruleAsOf: "2026年9月" });
+    const [log] = await db
+      .select()
+      .from(s.auditLog)
+      .where(and(eq(s.auditLog.tenantId, tenantId), eq(s.auditLog.action, "watch.ack"), eq(s.auditLog.entityId, `open_questions:${D.D07}`)));
+    expect(log.detail).toMatchObject({ code: "open_questions", subjectId: D.D07, impactYen: 34430, impactLabel: "振込額（明細全体への質問があるため）", ruleAsOf: "2026年9月" });
     // 他社の確認済みには混ざらない
     expect((await runWatch(db, otherTenantId, DEMO_MONTH, { today: "2026-11-03" })).every((i) => !i.acked)).toBe(true);
   });

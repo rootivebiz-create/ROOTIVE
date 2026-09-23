@@ -234,6 +234,50 @@ describe("ほかの月の明細", () => {
     expect(oct.others).toHaveLength(1);
     expect((await findStatementByToken(db, tokenFromHref(oct.others[0].href)))?.id).toBe(sep.id);
   });
+
+  it("間違った相手に送ったとき：「ほかの月も作り直す」で、先にたどって残ったほかの月のリンクも使えなくなる", async () => {
+    await makeSeptember();
+    const b = await seedDemo(db);
+    await generateStatements(db, b.tenantId, DEMO_MONTH);
+    const { st: oct } = await statementOf("D01");
+    await markStatementSent(db, tenantId, oct.id, null, "line");
+    const octToken = staffLinkToken(oct).token;
+    // 受け取った人が、10 月のページから 9 月へたどってリンクを手元に残した
+    const sepToken = tokenFromHref((await loadPortal(db, octToken))!.others[0].href);
+    const { st: sepBefore } = await statementOf("D01", tenantId, DEMO_PREV_MONTH);
+    const ueda = (await statementOf("D03")).st;
+    const bAoki = (await statementOf("D01", b.tenantId)).st;
+
+    // 10 月だけ作り直すと、9 月のリンクは使えるまま（だから画面では「ほかの月も」を最初から選んでおく）
+    await recreateStatementLink(db, tenantId, oct.id, null);
+    expect(await findStatementByToken(db, octToken)).toBeNull();
+    expect((await findStatementByToken(db, sepToken))?.id).toBe(sepBefore.id);
+
+    // ほかの月も作り直す：9 月（締め済み）のリンクも使えなくなる。送った記録は 9 月には残る
+    const r = await recreateStatementLink(db, tenantId, oct.id, null, { allMonths: true });
+    expect(r.otherMonths).toBe(1);
+    expect(await findStatementByToken(db, sepToken)).toBeNull();
+    const { st: sepAfter } = await statementOf("D01", tenantId, DEMO_PREV_MONTH);
+    expect(sepAfter.linkNonce).not.toBe(sepBefore.linkNonce);
+    expect(sepAfter.sentAt?.getTime() ?? null).toBe(sepBefore.sentAt?.getTime() ?? null);
+    expect(sepAfter.total).toBe(338_415);
+    // 新しい 10 月のリンクからは、9 月へ今までどおり行ける
+    const fresh = (await loadPortal(db, await tokenOf("D01")))!;
+    expect(fresh.others.map((o) => [o.label, o.total])).toEqual([["2026年9月", 338_415]]);
+    expect((await findStatementByToken(db, tokenFromHref(fresh.others[0].href)))?.id).toBe(sepBefore.id);
+    // ほかの人・他社の明細のリンクは変えない
+    expect((await statementOf("D03")).st.linkNonce).toBe(ueda.linkNonce);
+    expect((await statementOf("D01", b.tenantId)).st.linkNonce).toBe(bAoki.linkNonce);
+    // 操作の記録に、作り直したほかの月が残る
+    const logs = await db
+      .select()
+      .from(s.auditLog)
+      .where(and(eq(s.auditLog.tenantId, tenantId), eq(s.auditLog.action, "statement.relink")));
+    expect(logs.map((l) => (l.detail as { otherMonths?: string[] }).otherMonths)).toContainEqual(["2026-09"]);
+    // 他社の明細の id では作り直せない
+    await expect(recreateStatementLink(db, tenantId, bAoki.id, null, { allMonths: true })).rejects.toThrow("見つかりません");
+    expect((await statementOf("D01", b.tenantId)).st.linkNonce).toBe(bAoki.linkNonce);
+  });
 });
 
 describe("画面 /s/[token]", () => {

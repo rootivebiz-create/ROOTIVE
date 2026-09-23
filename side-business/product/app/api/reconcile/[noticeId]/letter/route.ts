@@ -65,6 +65,9 @@ async function handle(req: Request, noticeId: string, form: URLSearchParams | Fo
     if (error instanceof UserError) return problemPage(error.message, 404, "/reconcile");
     throw error;
   }
+  if (source.unreadable) {
+    return problemPage("お支払通知の行を読み取れていないため、数字を比べられません。結果の画面で列を選ぶか、ファイルを上げ直してから作ってください。", 400, `/reconcile/${noticeId}`);
+  }
   const wanted = form.getAll("items").filter((v): v is string => typeof v === "string" && v.length > 0);
   const chosen = pickLetterItems(source.items, wanted);
   if (chosen.length === 0) {
@@ -86,7 +89,7 @@ async function handle(req: Request, noticeId: string, form: URLSearchParams | Fo
       offerRecords: form.get("offer") !== "0",
       period: source.period,
     },
-    { body: allowBody ? textField(form, "body", 20000) : null },
+    { body: allowBody ? textField(form, "body", 20000) : null, ourSpan: source.ourSpan },
   );
   try {
     const bytes = await renderLetterPdf(doc);

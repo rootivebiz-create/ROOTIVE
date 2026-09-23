@@ -9,7 +9,10 @@ import { randomToken, sha256 } from "~/server/tokens";
 export type Role = "owner" | "staff" | "viewer";
 export type SessionUser = { id: string; tenantId: string; email: string; name: string; role: Role };
 
-const COOKIE = "shimebi_sid";
+import { SESSION_COOKIE } from "~/server/session-cookie";
+
+export { SESSION_COOKIE };
+const COOKIE = SESSION_COOKIE;
 const SESSION_DAYS = 14;
 
 /** 役割の強さ（数が大きいほど多くできる） */

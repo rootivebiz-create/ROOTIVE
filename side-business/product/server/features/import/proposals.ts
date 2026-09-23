@@ -4,9 +4,10 @@
  * - 控除の列から読み取った式の提案（採用すると、合意の記録が無いルールとして作る）
  * - 振込手数料の列（控除のルールにはしない。知らせるだけ）
  */
-import { baseName } from "./detect";
+import { baseName, colLetter } from "./detect";
+import { parseDeductionFormula } from "./formula-read";
 import { CATEGORY_LABEL, findMoneyColumns, perDriverValues, readPayout, type DeductionCategory, type PayoutRead } from "./columns";
-import { inferDeductionRule, sameGuess, type Inference, type RuleGuess } from "./deductions";
+import { formatRate, inferDeductionRule, sameGuess, type Inference, type RuleGuess } from "./deductions";
 import type { WorkMapping } from "./types";
 
 export type ExistingRule = { id: string; driverId: string | null; name: string; kind: string; rate: number | null; amount: number | null; active: boolean; agreedInWriting: boolean };
@@ -31,6 +32,20 @@ export type DeductionProposal = {
   sameAsExisting: boolean;
   /** その人だけのルールにできる人（合わなかった人のうち、その人だけの式で説明できる人） */
   exceptionRules: { driverId: string; name: string; guess: RuleGuess; hasOwnRule: boolean }[];
+  /** Excel に残っていた数式（=E5*0.1 など）から読んだこと。used：値とも合って、その式を提案に使った */
+  formula: FormulaHint | null;
+};
+
+export type FormulaHint = {
+  /** 例に出す数式（いちばん多い形のうち、最初の行のもの） */
+  sample: string;
+  /** 掛けている列の見出し */
+  refHeader: string;
+  /** 数式の式（委託料 × 率 か、数量 × 単価） */
+  guess: RuleGuess;
+  /** その形の数式が入っていた行の数 */
+  rows: number;
+  used: boolean;
 };
 
 export type MoneyExtras = {
@@ -39,12 +54,58 @@ export type MoneyExtras = {
   proposals: DeductionProposal[];
   /** 率の元にした委託料：ファイルの列（委託料・報酬）か、明細と同じ計算 */
   base: { from: "column" | "calc"; header: string | null };
+  /** 会社の金額の端数の処理（Excel の端数と違えば知らせる） */
+  rounding: string;
 };
 
 export type DriverBase = { driverId: string; subtotal: number; qty: number };
 
 function looseKey(v: string): string {
   return v.normalize("NFKC").replace(/\s/g, "").toLowerCase();
+}
+
+/**
+ * 控除の列の数式から、いちばん多い形（掛けている列と数）を読む。同じ行を掛けている数式だけを見る。
+ * 数量の列を掛けていれば「数量 × 単価」、それ以外（委託料・金額の列）なら「委託料 × 率」の手がかりにする。
+ * 2 行以上、かつ数式が入っていた行の半分以上が同じ形のときだけ。
+ */
+export function formulaHintFor(
+  col: number,
+  resolved: { rowNo: number }[],
+  formulas: Record<string, string> | undefined,
+  header: string[],
+  roles: string[],
+): Omit<FormulaHint, "used"> | null {
+  if (!formulas) return null;
+  const rowNos = [...new Set(resolved.map((r) => r.rowNo))];
+  const groups = new Map<string, { guess: RuleGuess; refCol: number; sample: string; rows: number }>();
+  let seen = 0;
+  for (const rowNo of rowNos) {
+    const text = formulas[`${colLetter(col)}${rowNo}`];
+    if (!text) continue;
+    seen++;
+    const f = parseDeductionFormula(text);
+    if (!f || f.row !== rowNo || f.col === col) continue;
+    const role = roles[f.col] ?? "ignore";
+    // 人ごとに案件・日付が横に並ぶ表の 1 つの列を掛けている式は、ルールで表せない
+    if (role === "value") continue;
+    const guess: RuleGuess = role === "qty" ? { kind: "per_unit", rate: f.factor } : { kind: "percent", rate: f.factor };
+    const key = `${guess.kind}:${f.factor}:${f.col}`;
+    const g = groups.get(key) ?? { guess, refCol: f.col, sample: text, rows: 0 };
+    g.rows++;
+    groups.set(key, g);
+  }
+  const top = [...groups.values()].sort((a, b) => b.rows - a.rows)[0];
+  if (!top || top.rows < 2 || top.rows * 2 < seen) return null;
+  return { sample: top.sample, refHeader: (header[top.refCol] ?? "").trim() || `${colLetter(top.refCol)}列`, guess: top.guess, rows: top.rows };
+}
+
+/** 数式の式を短い言葉で（「F列「委託料」の 10%」） */
+export function formulaText(h: Pick<FormulaHint, "refHeader" | "guess">): string {
+  const g = h.guess;
+  if (g.kind === "percent") return `「${h.refHeader}」× ${formatRate(g.rate)}`;
+  if (g.kind === "per_unit") return `「${h.refHeader}」× ${g.rate.toLocaleString("ja-JP", { maximumFractionDigits: 4 })}円`;
+  return `${Math.round(g.amount).toLocaleString("ja-JP")}円`;
 }
 
 function ruleGuessOf(r: ExistingRule): RuleGuess | null {
@@ -65,6 +126,9 @@ export function moneyExtras(input: {
   names: Map<string, string>;
   bases: DriverBase[];
   rules: ExistingRule[];
+  rounding?: string;
+  /** Excel に残っていた数式（番地 → 数式）。無ければ値だけで読む */
+  formulas?: Record<string, string>;
 }): MoneyExtras {
   const { rows, mapping, header, resolved, names } = input;
   const cols = findMoneyColumns(header, mapping.roles);
@@ -90,7 +154,8 @@ export function moneyExtras(input: {
       base: baseOf(id),
       qty: calc.get(id)?.qty ?? 0,
     }));
-    const res = inferDeductionRule(obs);
+    const hint = formulaHintFor(c.col, resolved, input.formulas, header, mapping.roles);
+    const res = inferDeductionRule(obs, hint?.guess);
     const name = (baseName(c.header).replace(/[（(]?円[）)]?$/, "").trim() || c.header).slice(0, 40);
     const existing = input.rules.find((r) => r.active && r.driverId === null && looseKey(r.name) === looseKey(name)) ?? null;
     const existingGuess = existing ? ruleGuessOf(existing) : null;
@@ -111,7 +176,8 @@ export function moneyExtras(input: {
       exceptionRules: (res.inference?.outliers ?? [])
         .filter((o): o is typeof o & { own: RuleGuess } => o.own !== null)
         .map((o) => ({ driverId: o.driverId, name: o.name, guess: o.own, hasOwnRule: own.has(o.driverId) })),
+      formula: hint ? { ...hint, used: !!res.inference && sameGuess(res.inference.guess, hint.guess) } : null,
     });
   }
-  return { payout, fees, proposals, base: { from: baseRead ? "column" : "calc", header: baseCol?.header ?? null } };
+  return { payout, fees, proposals, base: { from: baseRead ? "column" : "calc", header: baseCol?.header ?? null }, rounding: input.rounding ?? "round" };
 }

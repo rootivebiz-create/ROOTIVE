@@ -133,23 +133,50 @@ function RecreateLink({ statementId }: { statementId: string }) {
           リンクを作り直す
         </Button>
       ) : (
-        <form action={action} className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm">
-          <input type="hidden" name="id" value={statementId} />
-          <p className="font-bold text-warning">今までのリンクは使えなくなります</p>
-          <p className="mt-1">
-            間違った相手に送ったとき・リンクが人に知られたときに使います。送った・開いた記録は外れます（確認の記録は残ります）。作り直したら、新しいリンクを送り直してください。
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Button type="submit" disabled={pending}>
-              {pending ? "作り直しています…" : "作り直す"}
-            </Button>
-            <Button variant="secondary" onClick={() => setOpen(false)} disabled={pending}>
-              やめる
-            </Button>
-          </div>
-        </form>
+        <RecreateConfirm statementId={statementId} action={action} pending={pending} onCancel={() => setOpen(false)} />
       )}
       {state && <div className="mt-2">{state.ok ? <Notice tone="ok">{state.message}</Notice> : <Notice tone="error">{state.error}</Notice>}</div>}
     </div>
+  );
+}
+
+/** 作り直す前の確かめ（何が起きるかを書き、ほかの月のリンクも作り直すかを選ぶ。最初から選んである） */
+export function RecreateConfirm({
+  statementId,
+  action,
+  pending,
+  onCancel,
+}: {
+  statementId: string;
+  action: (form: FormData) => void;
+  pending: boolean;
+  onCancel: () => void;
+}) {
+  return (
+    <form action={action} className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm">
+      <input type="hidden" name="id" value={statementId} />
+      <p className="font-bold text-warning">今までのリンクは使えなくなります</p>
+      <p className="mt-1">
+        間違った相手に送ったとき・リンクが人に知られたときに使います。送った・開いた記録は外れます（確認の記録は残ります）。作り直したら、新しいリンクを送り直してください。
+      </p>
+      {/* ドライバーの画面からは同じ人のほかの月の明細へも行けるので、漏れたときはそちらも作り直す */}
+      <label className="mt-2 flex min-h-11 cursor-pointer items-start gap-2">
+        <input type="checkbox" name="allMonths" value="1" defaultChecked className="mt-1 h-5 w-5 shrink-0" />
+        <span>
+          この人のほかの月の明細のリンクも作り直す（おすすめ）
+          <span className="block text-xs text-muted-foreground">
+            明細のページからは、同じ人のほかの月の明細も開けます。外すと、先に開かれたほかの月のリンクは使えるままです。ほかの月の送った記録はそのまま残り、新しいリンクのページから今までどおり開けます。
+          </span>
+        </span>
+      </label>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button type="submit" disabled={pending}>
+          {pending ? "作り直しています…" : "作り直す"}
+        </Button>
+        <Button variant="secondary" onClick={onCancel} disabled={pending}>
+          やめる
+        </Button>
+      </div>
+    </form>
   );
 }

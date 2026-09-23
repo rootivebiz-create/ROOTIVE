@@ -68,7 +68,8 @@ export default async function WatchPage({ searchParams }: { searchParams: Promis
 
   const { issues, closed, hasWork } = result;
   const counts = countIssues(issues);
-  const groups = groupBySeverity(issues);
+  // 前の月に確認済みにした黄・お知らせ（灰色の 1 行にたたむもの）は、まだ見ていない指摘のあとに並べる
+  const groups = groupBySeverity(issues, (i) => i.severity !== "red" && previous.has(ackKey(i.code, i.subjectId)));
 
   return (
     <div className="space-y-8">
@@ -76,7 +77,7 @@ export default async function WatchPage({ searchParams }: { searchParams: Promis
 
       {closed && (
         <Notice tone="info">
-          {label}は締め済みです。見るだけで、確認済みの印は変えられません。ただし「支払期日より後に振り込んだ」など、締めたあとに入れた振込の記録から出た指摘は、事情をメモに残して確認済みにできます。
+          {label}は締め済みです。見るだけで、確認済みの印は変えられません。ただし、締めたあとに入れた振込の記録から出た指摘（支払期日より後に振り込んだ など）と、ドライバーからの明細への質問は、事情をメモに残して確認済みにできます。
         </Notice>
       )}
       {!canEdit && <Notice tone="info">確認済みにするのは、事務・オーナーの方です。この画面では、指摘と確認済みのメモを見られます。</Notice>}
@@ -107,6 +108,7 @@ export default async function WatchPage({ searchParams }: { searchParams: Promis
                 <p className="text-sm text-muted-foreground">
                   {closed ? (SECTION[sev].closedLead ?? SECTION[sev].lead) : SECTION[sev].lead}
                   {groups[sev].length > 1 && "同じ重さの中は、影響額の大きい順です。"}
+                  {sev !== "red" && groups[sev].some((i) => i.acked || previous.has(ackKey(i.code, i.subjectId))) && "確認済みのもの（前の月に確認済みにしたものを含む）は、灰色の 1 行にたたんでいます。"}
                 </p>
               </div>
               <ul className="space-y-3">
@@ -195,7 +197,7 @@ function RulesHelp() {
       <div className="space-y-3 border-t border-border p-4 text-sm">
         <p className="text-muted-foreground">
           {WATCH_RULES_AS_OF}時点の法令・公的な資料をもとにしています。記録にあること（日付・金額・名前・設定）だけを見て、「〜のおそれがあります」「確認をおすすめします」までをお知らせします。
-          影響額は、その指摘に関わる今月の金額（支払額・差し引いた額・下がった分など）です。出せないものは「—」にしています。同じお金が複数の指摘に数えられることがあるので、足し合わせないでください。
+          影響額は、その指摘に関わるその月の金額（支払額・差し引いた額・下がった分など。前の月の振込の遅れは前の月の額、経過措置の次の段は見込み）です。出せないものは「—」にしています。同じお金が複数の指摘に数えられることがあるので、足し合わせないでください。
         </p>
         <ul className="space-y-2">
           {RULES.map((r) => (

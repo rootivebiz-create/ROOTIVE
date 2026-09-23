@@ -25,4 +25,8 @@ export type WatchIssue = {
   ackNote?: string | null;
   /** 締めを止めるか（red で、まだ確認済みにしていないもの） */
   blocksClose: boolean;
+  /** 影響額（円。出せないものは null とその理由）。指摘どうしで重なることがあるので足し合わせない */
+  impact?: { yen: number | null; label: string };
+  /** ルールの前提にした情報の時点（例：「2026年9月」） */
+  asOf?: string;
 };

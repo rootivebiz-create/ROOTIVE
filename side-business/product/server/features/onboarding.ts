@@ -18,6 +18,7 @@ import {
 import { normalizeName } from "~/server/names";
 import { parseProjectRows, type ProjectDraft, type ProjectPreview, type ProjectRowInput } from "~/server/features/onboarding/projects-parse";
 import { checkRule, type RuleDraft, type RuleInput } from "~/server/features/onboarding/rules";
+import { byKana, driverTermsFlags, type DriverTermsFlag } from "~/server/features/onboarding/terms";
 import {
   finishRecord,
   onboardingProgress,
@@ -37,21 +38,36 @@ export * from "~/server/features/onboarding/steps";
 
 // ---------------------------------------------------------------- 進み具合
 
-export async function loadOnboarding(db: Db, tenantId: string): Promise<OnboardingProgress> {
-  const tenant = await getTenant(db, tenantId);
-  const [[drivers], [projects], [rules], [work], [parallel]] = await Promise.all([
+/**
+ * すでに読んだものを渡すと、読み直さない（ホームが使う。同じ会社のものだけを渡すこと）。
+ * - onboarding：tenants.onboarding
+ * - termsFlags：driverTermsFlags(db, tenantId) の結果（まだ読み終わっていなければ Promise のまま）
+ */
+export type OnboardingPreloaded = {
+  onboarding?: Record<string, string> | null;
+  termsFlags?: DriverTermsFlag[] | Promise<DriverTermsFlag[]>;
+};
+
+export async function loadOnboarding(db: Db, tenantId: string, pre: OnboardingPreloaded = {}): Promise<OnboardingProgress> {
+  const record = pre.onboarding !== undefined ? pre.onboarding : (await getTenant(db, tenantId)).onboarding;
+  const [[drivers], [projects], [rules], [work], [parallel], terms] = await Promise.all([
     db.select({ n: count() }).from(s.drivers).where(eq(s.drivers.tenantId, tenantId)),
     db.select({ n: count() }).from(s.projects).where(eq(s.projects.tenantId, tenantId)),
     db.select({ n: count() }).from(s.deductionRules).where(eq(s.deductionRules.tenantId, tenantId)),
     db.select({ n: count() }).from(s.workEntries).where(eq(s.workEntries.tenantId, tenantId)),
     db.select({ n: count() }).from(s.parallelChecks).where(eq(s.parallelChecks.tenantId, tenantId)),
+    pre.termsFlags ?? driverTermsFlags(db, tenantId),
   ]);
-  return onboardingProgress(tenant.onboarding, {
+  // 取引条件の明示：有効な人の全員に記録があれば済み（辞めた人は数えない）
+  const active = terms.filter((d) => d.active);
+  return onboardingProgress(record, {
     drivers: drivers?.n ?? 0,
     projects: projects?.n ?? 0,
     rules: rules?.n ?? 0,
     workEntries: work?.n ?? 0,
     parallelChecks: parallel?.n ?? 0,
+    activeDrivers: active.length,
+    driversWithoutTerms: active.filter((d) => !d.hasTerms).sort(byKana).map((d) => d.name),
   });
 }
 
@@ -90,6 +106,9 @@ export type CompanyForm = {
   registrationNo: string | null;
   taxMethod: string;
   paymentTermsText: string | null;
+  /** 資本金（円）・常時使用する従業員の数（取適法の対象かの目安。入っていなければ null） */
+  capitalYen: number | null;
+  employees: number | null;
   owners: string[];
 };
 
@@ -108,6 +127,8 @@ export async function loadCompanyForm(db: Db, tenantId: string): Promise<Company
     registrationNo: t.registrationNo,
     taxMethod: t.taxMethod,
     paymentTermsText: t.settings?.paymentTermsText ?? null,
+    capitalYen: typeof t.settings?.capitalYen === "number" ? t.settings.capitalYen : null,
+    employees: typeof t.settings?.employees === "number" ? t.settings.employees : null,
     owners: owners.map((o) => o.name),
   };
 }
@@ -118,6 +139,13 @@ export async function saveCompanyBasics(db: Db, tenantId: string, input: Company
   const settings: s.TenantSettings = { ...(t.settings ?? {}), transferFeeBearer: input.transferFeeBearer };
   if (input.paymentTermsText) settings.paymentTermsText = input.paymentTermsText;
   else delete settings.paymentTermsText;
+  // 資本金・従業員の数は、聞いたときだけ書く（空にしたら消す。設定の画面と同じ鍵）
+  for (const key of ["capitalYen", "employees"] as const) {
+    const v = input[key];
+    if (v === undefined) continue;
+    if (v === null) delete settings[key];
+    else settings[key] = v;
+  }
   const before = {
     closingDay: t.closingDay,
     payMonthOffset: t.payMonthOffset,
@@ -126,6 +154,8 @@ export async function saveCompanyBasics(db: Db, tenantId: string, input: Company
     taxMethod: t.taxMethod,
     transferFeeBearer: t.settings?.transferFeeBearer ?? null,
     paymentTermsText: t.settings?.paymentTermsText ?? null,
+    capitalYen: t.settings?.capitalYen ?? null,
+    employees: t.settings?.employees ?? null,
   };
   await db
     .update(s.tenants)
@@ -284,7 +314,11 @@ export async function createDrivers(db: Db, tenantId: string, drafts: unknown[],
 
 async function existingClientsAndProjects(db: Db, tenantId: string) {
   const [clients, projects] = await Promise.all([
-    db.select({ id: s.clients.id, name: s.clients.name, aliases: s.clients.aliases }).from(s.clients).where(eq(s.clients.tenantId, tenantId)),
+    // 取引をやめた元請には案件をつながない（設定で戻してから使う）
+    db
+      .select({ id: s.clients.id, name: s.clients.name, aliases: s.clients.aliases })
+      .from(s.clients)
+      .where(and(eq(s.clients.tenantId, tenantId), eq(s.clients.active, true))),
     db
       .select({ id: s.projects.id, name: s.projects.name, clientId: s.projects.clientId, aliases: s.projects.aliases })
       .from(s.projects)
@@ -419,8 +453,11 @@ export async function listRuleNames(db: Db, tenantId: string): Promise<{ name: s
 }
 
 /** 完了の画面に出す数 */
-export async function onboardingCounts(db: Db, tenantId: string): Promise<{ drivers: number; withBank: number; registered: number; clients: number; projects: number; rules: number }> {
-  const [drivers, [clients], [projects], [rules]] = await Promise.all([
+export async function onboardingCounts(
+  db: Db,
+  tenantId: string,
+): Promise<{ drivers: number; withBank: number; registered: number; withTerms: number; clients: number; projects: number; rules: number }> {
+  const [drivers, [clients], [projects], [rules], terms] = await Promise.all([
     db
       .select({ accountNumber: s.drivers.accountNumber, invoiceRegistered: s.drivers.invoiceRegistered })
       .from(s.drivers)
@@ -428,11 +465,14 @@ export async function onboardingCounts(db: Db, tenantId: string): Promise<{ driv
     db.select({ n: count() }).from(s.clients).where(eq(s.clients.tenantId, tenantId)),
     db.select({ n: count() }).from(s.projects).where(eq(s.projects.tenantId, tenantId)),
     db.select({ n: count() }).from(s.deductionRules).where(eq(s.deductionRules.tenantId, tenantId)),
+    driverTermsFlags(db, tenantId),
   ]);
   return {
     drivers: drivers.length,
     withBank: drivers.filter((d) => d.accountNumber).length,
     registered: drivers.filter((d) => d.invoiceRegistered).length,
+    // 取引条件を明示した記録（明示書か、明示した日）がある有効な人
+    withTerms: terms.filter((d) => d.active && d.hasTerms).length,
     clients: clients?.n ?? 0,
     projects: projects?.n ?? 0,
     rules: rules?.n ?? 0,

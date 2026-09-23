@@ -57,7 +57,9 @@ describe("突合の画面（デモ）", () => {
     const out = text(html(await ReconcilePage({ searchParams: Promise.resolve({}) })));
     expect(out).toContain("元請との突合");
     expect(out).toContain("2026年10月");
-    expect(out).toContain("受け取りが少ない可能性：¥91,700");
+    expect(out).toContain("受け取りが少ない可能性（見込み）¥91,700");
+    expect(out).toContain("取り戻せた額（確定）¥0");
+    expect(out).toContain("確定と見込みは、足し合わせていません");
     expect(out).toContain("A物流（架空）");
     expect(out).toContain("B商事（架空）");
     expect(out).toContain("お支払通知 未登録");
@@ -208,7 +210,7 @@ describe("突合の画面（デモ）", () => {
       expect(saved).toEqual([]);
 
       const list = text(html(await ReconcilePage({ searchParams: Promise.resolve({}) })));
-      expect(list).toContain("受け取りが少ない可能性：¥91,700");
+      expect(list).toContain("受け取りが少ない可能性（見込み）¥91,700");
       expect(list).not.toContain("取り込んで突き合わせる");
       expect(list).not.toContain("見本のファイルで試す");
 

@@ -3,10 +3,9 @@ import { Card } from "@/components/ui";
 import { Badge } from "~/components/page";
 import { DiffAmount, Pair } from "~/components/reconcile/bits";
 import { ItemStatusForm } from "~/components/reconcile/forms";
+import { StatusTimeline } from "~/components/reconcile/timeline";
 import type { ItemView } from "~/server/features/reconcile";
-import { amountText, formulaText, KIND_HELP, KIND_LABEL, qtyUnitText, STATUS_LABEL, STATUS_TONE, WAIT_ALERT_DAYS, waitingDays } from "~/server/features/reconcile/labels";
-
-const dateText = (d: Date) => d.toLocaleDateString("ja-JP", { timeZone: "Asia/Tokyo", month: "numeric", day: "numeric" });
+import { amountText, formulaText, KIND_HELP, KIND_LABEL, qtyUnitText, STATUS_LABEL, STATUS_TONE, waitingDays, waitingTone } from "~/server/features/reconcile/labels";
 
 function ourSide(it: ItemView): string {
   if (it.kind === "extra") return "対応する案件がありません";
@@ -29,7 +28,7 @@ export function ItemCard({ item, canEdit, now = new Date() }: { item: ItemView; 
           <div className="flex flex-wrap items-center gap-1.5">
             <Badge tone={item.diff < 0 ? "red" : "yellow"}>{KIND_LABEL[item.kind]}</Badge>
             <Badge tone={STATUS_TONE[item.status]}>{STATUS_LABEL[item.status]}</Badge>
-            {waiting !== null && waiting >= WAIT_ALERT_DAYS && <Badge tone="yellow">返事待ち {waiting}日</Badge>}
+            {waiting !== null && <Badge tone={waitingTone(waiting)}>返事待ち {waiting}日</Badge>}
             {item.kind === "extra" && (item.confirmedExtra ? <Badge tone="gray">追加の料金</Badge> : <Badge tone="gray">未確認の行</Badge>)}
           </div>
           <p className="mt-2 break-words text-base font-bold">
@@ -45,10 +44,8 @@ export function ItemCard({ item, canEdit, now = new Date() }: { item: ItemView; 
       <div className="mt-2 divide-y divide-border">
         <Pair label="当社の記録">{ourSide(item)}</Pair>
         <Pair label="お支払通知">{theirSide(item)}</Pair>
-        {item.askedAt && item.status !== "open" && <Pair label="問い合わせた日">{dateText(item.askedAt)}{waiting !== null ? `（${waiting}日前）` : ""}</Pair>}
-        {item.resolvedAt && !["open", "asked"].includes(item.status) && <Pair label={item.status === "accepted" ? "了承した日" : "解決した日"}>{dateText(item.resolvedAt)}</Pair>}
-        {item.status === "resolved" && item.recoveredAmount !== null && <Pair label="取り戻せた額">{amountText(item.recoveredAmount)}</Pair>}
       </div>
+      <StatusTimeline item={item} now={now} />
       <p className="mt-2 text-xs text-muted-foreground">
         {item.split
           ? item.kind === "qty"

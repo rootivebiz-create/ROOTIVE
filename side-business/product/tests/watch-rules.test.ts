@@ -333,7 +333,7 @@ describe("取適法の目安", () => {
 });
 
 describe("インボイス", () => {
-  it("登録ありで番号が無い → 黄（影響額はその人の税額）。確かめた日が 180 日以内 → 出ない、181 日前 → お知らせ", () => {
+  it("登録ありで番号が無い → 黄（影響額はその人の税額）。確かめた日が 180 日以内 → 出ない、181 日前 → 黄（SPEC の REG_NO_UNCHECKED）", () => {
     expect(REGISTRATION_CHECK_DAYS).toBe(180);
     const noNumber = driver("d1", "青木 翔太", { registrationNo: null });
     const d = drafts(OCT, [noNumber], [["d1", "p1", 10]]);
@@ -346,7 +346,7 @@ describe("インボイス", () => {
     expect(invoiceNumber(ctx({ drivers: [fresh], drafts: d }))).toHaveLength(0);
     const old = driver("d1", "青木 翔太", { registrationCheckedOn: "2026-05-03" });
     const [info] = invoiceNumber(ctx({ drivers: [old], drafts: d }));
-    expect(info).toMatchObject({ severity: "info", sourceUrl: SOURCES.invoiceRegistry });
+    expect(info).toMatchObject({ severity: "yellow", sourceUrl: SOURCES.invoiceRegistry });
     expect(info.detail).toContain("180日より前です");
   });
 

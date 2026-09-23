@@ -6,6 +6,7 @@ import { UserError } from "~/server/action";
 import { audit } from "~/server/audit";
 import { buildStatementDrafts } from "~/server/calc/statement";
 import { explainDiff, parallelSummary, partsOf, type DiffParts, type Explanation, type ParallelSummary } from "~/server/features/parallel/explain";
+import { goLiveFrom, goLiveGate, type GoLiveGate } from "~/server/features/parallel/gate";
 import { readAmountTable, rowsFromText, type AmountTable } from "~/server/features/parallel/paste";
 import { monthLabelJa, shiftMonth } from "~/server/month";
 import { getTenant, isMonthClosed, loadBuildInput } from "~/server/repo";
@@ -13,6 +14,7 @@ import { readSnapshot, snapshotHash } from "~/server/statements-core";
 import { readTable, TableReadError } from "~/server/tabular";
 
 export * from "~/server/features/parallel/explain";
+export * from "~/server/features/parallel/gate";
 export type { AmountRow, AmountTable } from "~/server/features/parallel/paste";
 
 /**
@@ -169,33 +171,76 @@ export async function parallelHistory(
 /** しめ日ラボだけで締め始めた月（まだなら null）。tenants.onboarding.golive に入れる */
 export async function goLiveMonth(db: Db, tenantId: string): Promise<string | null> {
   const t = await getTenant(db, tenantId);
-  const v = t.onboarding?.golive;
-  return typeof v === "string" && MONTH_RE.test(v) ? v : null;
+  return goLiveFrom(t.onboarding);
 }
 
 /**
  * 「Excel をやめて、しめ日ラボで締める」を記録する（オーナーが決める。役割は Server Action で確かめる）。
- * その月に比べた人が全員「一致」か「理由のメモあり」でないと記録しない。
+ * その月に比べた人が全員「一致」か「理由のメモあり」でないと記録しない（画面と同じ goLiveGate で決める）。
+ * 操作の記録には、差のあった人と、そのメモ（どちらに合わせたか）も残す（あとで経緯が分かるように）。
  */
 export async function goLive(db: Db, tenantId: string, month: string, userId?: string | null): Promise<void> {
   assertMonth(month);
   const v = await loadParallel(db, tenantId, month);
   if (v.summary.compared === 0) throw new UserError(`${monthLabelJa(month)}分は、まだ Excel の額を入れていません。比べてから切り替えてください`);
-  if (!v.summary.allExplained) {
-    throw new UserError(`差があって、理由のメモがまだ無い人が ${v.summary.unexplained}人います。どちらに合わせるかを決めてメモに残してから切り替えてください`);
+  const history = await parallelHistory(db, tenantId, month, 3, v);
+  const gate = goLiveGate(v.rows, history.streak);
+  if (!gate.ready) {
+    const names = gate.missingNotes.slice(0, 3).map((m) => `${m.name}さん`).join("・");
+    throw new UserError(
+      `差があって、理由のメモがまだ無い人が ${gate.missingNotes.length}人います（${names}${gate.missingNotes.length > 3 ? " ほか" : ""}）。どちらに合わせるかを決めてメモに残してから切り替えてください`,
+    );
   }
   const t = await getTenant(db, tenantId);
   const next = { ...(t.onboarding ?? {}), parallel: "done", golive: month };
   await db.update(s.tenants).set({ onboarding: next }).where(eq(s.tenants.id, tenantId));
-  const history = await parallelHistory(db, tenantId, month);
   await audit(db, {
     tenantId,
     userId,
     action: "parallel.golive",
     entity: "month",
     entityId: month,
-    detail: { compared: v.summary.compared, matched: v.summary.matched, explained: v.summary.different, streak: history.streak },
+    detail: {
+      compared: v.summary.compared,
+      matched: v.summary.matched,
+      explained: v.summary.different,
+      streak: history.streak,
+      was: goLiveFrom(t.onboarding),
+      notEntered: gate.notEntered.length,
+      diffTotal: v.summary.diffTotal,
+      notes: gate.explained.map((e) => ({ driverId: e.driverId, name: e.name, diff: e.diff, note: e.note })),
+    },
   });
+}
+
+// ---------------------------------------------------------------- 並行運用レポート（画面・印刷・PDF で同じ中身）
+
+export type ParallelReport = {
+  companyName: string;
+  month: string;
+  view: ParallelView;
+  history: { months: MonthCheck[]; streak: number };
+  golive: string | null;
+  gate: GoLiveGate;
+  /** 比べた人の振込額の合計（しめ日ラボ・Excel） */
+  totals: { ours: number; excel: number };
+};
+
+/** 並行運用レポートの中身（Excel と比べる画面・印刷用の報告・PDF が同じこの関数から作る） */
+export async function loadParallelReport(db: Db, tenantId: string, month: string): Promise<ParallelReport> {
+  assertMonth(month);
+  const [tenant, view] = await Promise.all([getTenant(db, tenantId), loadParallel(db, tenantId, month)]);
+  const history = await parallelHistory(db, tenantId, month, 3, view);
+  const compared = view.rows.filter((r) => r.excelTotal !== null);
+  return {
+    companyName: tenant.name,
+    month,
+    view,
+    history,
+    golive: goLiveFrom(tenant.onboarding),
+    gate: goLiveGate(view.rows, history.streak),
+    totals: { ours: compared.reduce((a, r) => a + (r.ours ?? 0), 0), excel: compared.reduce((a, r) => a + (r.excelTotal ?? 0), 0) },
+  };
 }
 
 /** 切り替えの記録を取り消す（Excel との並行に戻す） */

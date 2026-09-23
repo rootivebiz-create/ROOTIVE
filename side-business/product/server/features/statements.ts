@@ -1,11 +1,11 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, ne } from "drizzle-orm";
 import type { Db } from "~/db/client";
 import * as s from "~/db/schema";
 import { UserError } from "~/server/action";
 import { audit } from "~/server/audit";
-import { latestTermsByDriver } from "~/server/features/terms-content";
+import { deemedClauseMap, latestTermsByDriver } from "~/server/features/terms-content";
 import { companyCopy, type CompanyCopy } from "~/server/features/statements/company-copy";
 import { describeChanges } from "~/server/features/statements/diff";
 import { buildVersionHistory, type VersionHistoryItem } from "~/server/features/statements/history";
@@ -99,16 +99,8 @@ function statusOf(st: StatementRow, confs: ConfRow[], msgs: MsgRow[], now: Date,
   );
 }
 
-/**
- * ドライバーごとの「いちばん新しい取引条件の記録に、みなし確認の条項があるか」（会社で絞る）。
- * 記録の無い人は入らない（＝条項なし）。ホームなど、状態を数えるほかの画面からも使う
- */
-export async function deemedClauseMap(db: Db, tenantId: string, driverIds: string[]): Promise<Map<string, boolean>> {
-  const ids = [...new Set(driverIds)];
-  if (ids.length === 0) return new Map();
-  const latest = await latestTermsByDriver(db, tenantId, ids);
-  return new Map([...latest.entries()].map(([driverId, r]) => [driverId, r.deemedClause]));
-}
+/** ドライバーごとの「いちばん新しい取引条件の記録に、みなし確認の条項があるか」（terms-content にある。ここからも使える） */
+export { deemedClauseMap };
 
 // ---------------------------------------------------------------- 一覧
 
@@ -440,23 +432,51 @@ export async function markStatementSent(db: Db, tenantId: string, id: string, us
   return { sentAt: refresh ? sentAt : st.sentAt };
 }
 
-/** リンクを作り直す：今までのリンクはすべて使えなくなる。送った・開いた記録は外す（確認の記録は残す） */
-export async function recreateStatementLink(db: Db, tenantId: string, id: string, userId: string | null) {
+/**
+ * リンクを作り直す：今までのリンクはすべて使えなくなる。送った・開いた記録は外す（確認の記録は残す）。
+ *
+ * ドライバーの画面からは、同じ人のほかの月の明細へも行ける（そのつど新しいリンクを作って出す）。
+ * そのため、間違った相手に送った・人に知られたときは、ほかの月の明細のリンクも作り直さないと、
+ * 先にたどって手元に残ったリンクで見られてしまう。allMonths のときは、同じ人のすべての明細のリンクを作り直す
+ * （ほかの月は、送った・開いた記録はそのまま。新しいリンクの画面から、今までどおりたどれる）。
+ */
+export async function recreateStatementLink(db: Db, tenantId: string, id: string, userId: string | null, opts: { allMonths?: boolean } = {}) {
   const st = await requireStatement(db, tenantId, id);
   const nonce = randomBytes(16).toString("hex");
   await db
     .update(s.statements)
     .set({ linkNonce: nonce, sentAt: null, viewedAt: null })
     .where(and(eq(s.statements.id, st.id), eq(s.statements.tenantId, tenantId)));
+  const others: { id: string; month: string }[] = [];
+  if (opts.allMonths) {
+    const rows = await db
+      .select({ id: s.statements.id, month: s.statements.month })
+      .from(s.statements)
+      .where(and(eq(s.statements.tenantId, tenantId), eq(s.statements.driverId, st.driverId), ne(s.statements.id, st.id)));
+    // 明細ごとに別の値にする（1 つのリンクの値から、ほかの月のリンクを作れないように）
+    for (const r of rows) {
+      await db
+        .update(s.statements)
+        .set({ linkNonce: randomBytes(16).toString("hex") })
+        .where(and(eq(s.statements.id, r.id), eq(s.statements.tenantId, tenantId)));
+      others.push(r);
+    }
+  }
   await audit(db, {
     tenantId,
     userId,
     action: "statement.relink",
     entity: "statement",
     entityId: st.id,
-    detail: { month: st.month, driverId: st.driverId, previousSentAt: st.sentAt?.toISOString() ?? null, previousViewedAt: st.viewedAt?.toISOString() ?? null },
+    detail: {
+      month: st.month,
+      driverId: st.driverId,
+      previousSentAt: st.sentAt?.toISOString() ?? null,
+      previousViewedAt: st.viewedAt?.toISOString() ?? null,
+      otherMonths: others.map((o) => o.month.slice(0, 7)).sort(),
+    },
   });
-  return { linkNonce: nonce };
+  return { linkNonce: nonce, otherMonths: others.length };
 }
 
 // ---------------------------------------------------------------- 質問への返事・解決・既読

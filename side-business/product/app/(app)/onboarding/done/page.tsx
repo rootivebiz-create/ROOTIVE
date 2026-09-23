@@ -29,7 +29,7 @@ export default async function OnboardingDonePage() {
             <dt className="text-muted-foreground">ドライバー</dt>
             <dd className="text-xl font-bold">{counts.drivers}人</dd>
             <dd className="text-xs text-muted-foreground">
-              口座あり {counts.withBank}人・インボイス登録 {counts.registered}人
+              口座あり {counts.withBank}人・インボイス登録 {counts.registered}人・取引条件の記録あり {counts.withTerms}人
             </dd>
           </div>
           <div>
@@ -48,6 +48,14 @@ export default async function OnboardingDonePage() {
         {counts.drivers > counts.withBank && (
           <p className="mt-3 text-sm">
             口座が入っていない人が {counts.drivers - counts.withBank}人います。振込データを作る前に、設定のドライバーから入れてください（入れないうちは、振込データに入りません）。
+          </p>
+        )}
+        {counts.drivers > counts.withTerms && (
+          <p className="mt-2 text-sm">
+            取引条件を明示した記録（明示書か、明示した日）が見つからない人が {counts.drivers - counts.withTerms}人います。
+            <Link href="/terms" className="ml-1 inline-flex min-h-11 items-center">
+              取引条件の明示を開く →
+            </Link>
           </p>
         )}
       </Card>

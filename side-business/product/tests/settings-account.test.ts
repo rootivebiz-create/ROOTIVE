@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { PGlite } from "@electric-sql/pglite";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -11,6 +13,7 @@ import {
   passwordChangeSchema,
   recentLogins,
   RECENT_LOGINS,
+  SESSION_COOKIE,
   sessionIdFromToken,
   signOutOtherSessions,
 } from "~/server/features/settings/account";
@@ -90,6 +93,12 @@ describe("自分のアカウント", () => {
     expect(sessionIdFromToken("")).toBeNull();
   });
 
+  it("クッキーの名前は、ログインの仕組み（server/auth.ts）と同じ（違うと「ほかの端末から」でこの端末も切れてしまう）", () => {
+    const src = readFileSync(join(__dirname, "..", "server", "auth.ts"), "utf8");
+    const declared = /const (?:SESSION_)?COOKIE\s*=\s*"([^"]+)"/.exec(src)?.[1];
+    expect(declared).toBe(SESSION_COOKIE);
+  });
+
   it("パスワードの最低の長さは passwordProblem とそろっている", () => {
     expect(passwordProblem("x".repeat(PASSWORD_MIN - 1))).not.toBeNull();
     expect(passwordProblem("x".repeat(PASSWORD_MIN))).toBeNull();
@@ -145,6 +154,18 @@ describe("自分のアカウント", () => {
     expect(await signOutOtherSessions(db, A, staffA.id, sessionIdFromToken("a-current"))).toBe(0);
     expect(await sessionIds(staffA.id)).toEqual([sha256("a-current")]);
     expect(await sessionIds(ownerA.id)).toEqual([sha256("a-owner")]);
+  });
+
+  it("いまの端末が分からない（クッキーが無い・ほかの人のもの）ときは、ほかの端末からのログアウトを止める（この端末まで切らない）", async () => {
+    await addSession(staffA, "a-laptop");
+    const before = await sessionIds(staffA.id);
+    expect(await failure(signOutOtherSessions(db, A, staffA.id, null))).toContain("この端末のログインが確かめられませんでした");
+    expect(await failure(signOutOtherSessions(db, A, staffA.id, sessionIdFromToken("no-such-cookie")))).toContain("確かめられませんでした");
+    // 同じ会社のオーナーの端末を「いまの端末」と言っても通らない
+    expect(await failure(signOutOtherSessions(db, A, staffA.id, sessionIdFromToken("a-owner")))).toContain("確かめられませんでした");
+    expect(await sessionIds(staffA.id)).toEqual(before);
+    expect(await signOutOtherSessions(db, A, staffA.id, sessionIdFromToken("a-current"))).toBe(1);
+    expect(await sessionIds(staffA.id)).toEqual([sha256("a-current")]);
   });
 
   it("まだパスワードが決まっていない人（招待を受ける前）は、ここでは決められない", async () => {

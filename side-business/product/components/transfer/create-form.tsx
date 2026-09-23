@@ -22,6 +22,8 @@ type Props = {
   zenginReady: boolean;
   /** 前回の振込から口座が変わった人の数（全員・まだの人だけ）。いれば確かめた印が要る */
   bankChanged?: { all: number; remaining: number };
+  /** 確かめた印に添えて送る値（画面を開いたあとに口座がまた変わったら、サーバーが断る） */
+  bankKeys?: { all: string; remaining: string };
 };
 
 /** 振込データを作る（振込指定日を選んで作る。作ったらすぐダウンロードできる） */
@@ -35,6 +37,7 @@ export function CreateTransferForm({
   remaining,
   zenginReady,
   bankChanged = { all: 0, remaining: 0 },
+  bankKeys = { all: "", remaining: "" },
 }: Props) {
   const [state, action, pending] = useActionState<CreateTransferState, FormData>(createTransferAction, undefined);
   const [date, setDate] = useState(defaultDate);
@@ -51,6 +54,7 @@ export function CreateTransferForm({
   }
   const target = scope === "all" ? all : remaining;
   const changedCount = scope === "all" ? bankChanged.all : bankChanged.remaining;
+  const reviewKey = scope === "all" ? bankKeys.all : bankKeys.remaining;
   const m = month.slice(0, 7);
 
   // 選んだ日についての注意（送る前に見せる。最後の判断はサーバーでも行う）
@@ -123,6 +127,7 @@ export function CreateTransferForm({
       )}
       {earlierBatches === 0 && <input type="hidden" name="scope" value="all" />}
 
+      {changedCount > 0 && <input type="hidden" name="bankReviewKey" value={reviewKey} />}
       {changedCount > 0 && (
         <label className="flex min-h-11 items-start gap-3 rounded-lg border border-danger/40 bg-danger/10 p-3">
           <input

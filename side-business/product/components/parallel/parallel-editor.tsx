@@ -233,7 +233,7 @@ export function ParallelEditor({ month, rows, otherDrivers }: { month: string; r
             const explanations = diff === null ? [] : explainDiff(r.parts, diff);
             const changed = dirty.includes(r);
             return (
-              <li key={r.driverId} className={`rounded-card border bg-card p-3 ${diff !== null && diff !== 0 ? "border-warning/60" : "border-border"}`}>
+              <li key={r.driverId} id={`row-${r.driverId}`} className={`scroll-mt-24 rounded-card border bg-card p-3 ${diff !== null && diff !== 0 ? "border-warning/60" : "border-border"}`}>
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="min-w-0 flex-1 font-bold">
                     {r.name}
@@ -273,6 +273,9 @@ export function ParallelEditor({ month, rows, otherDrivers }: { month: string; r
                   <span className="text-muted-foreground">メモ（どちらに合わせたか など。Excel の額と一緒に保存します）</span>
                   <Input value={v.note} onChange={(e) => set(r.driverId, { note: e.target.value })} maxLength={200} placeholder="例：Excel の端数を切り捨てに直した" />
                 </label>
+                {diff !== null && diff !== 0 && !v.note.trim() && (
+                  <p className="mt-1 text-xs text-warning">差の理由のメモがまだありません。本番に切り替える前に、どちらに合わせるかを書いてください。</p>
+                )}
               </li>
             );
           })}

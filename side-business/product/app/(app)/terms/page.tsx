@@ -70,7 +70,7 @@ export default async function TermsPage({ searchParams }: { searchParams: Promis
           )}
           {counts.changed > 0 && (
             <Notice tone="info">
-              明示したあとで単価・控除・支払期日などが変わった人が {counts.changed}人います。新しい版を作って送ってください（前の版はそのまま残ります）。
+              明示したあとで単価・控除・支払期日などが変わったか、明示書に無い案件で稼働した人が {counts.changed}人います。新しい版を作って送ってください（前の版はそのまま残ります）。
             </Notice>
           )}
 
@@ -90,7 +90,13 @@ export default async function TermsPage({ searchParams }: { searchParams: Promis
           {shown.length === 0 ? (
             <EmptyState title="当てはまる人はいません">
               <p>
-                {filter === "none" ? "全員に明示書があります。" : filter === "changed" ? "明示したあとで条件が変わった人はいません。" : "全員が最新の版を受け取っています。"}
+                {filter === "none"
+                  ? "全員に明示書があります。"
+                  : filter === "changed"
+                    ? "明示したあとで条件が変わった人はいません。"
+                    : counts.none > 0
+                      ? "明示書がある人は、全員が最新の版を受け取っています（明示書がまだ無い人は「未作成」で見られます）。"
+                      : "全員が最新の版を受け取っています。"}
                 <Link href="/terms" className="ml-1">
                   すべての人を見る
                 </Link>

@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import * as s from "~/db/schema";
 import { closeMonth } from "~/server/features/close";
+import { runReconcile } from "~/server/features/reconcile";
 import { homeView, loadHomeStatus, type HomeStatus } from "~/server/features/home";
 import { createTransferBatch, setTransferExecutedOn } from "~/server/features/transfer";
 import type { WatchIssue } from "~/server/features/watch-types";
@@ -196,12 +197,19 @@ describe("ホーム（今月の締め）", () => {
       { tenantId, statementId: aoki.statements.id, author: "driver", body: "解決済みの質問", resolvedAt: new Date() },
       { tenantId, statementId: aoki.statements.id, author: "staff", body: "確かめます" },
     ]);
+    // 突合：企業配の通知を 62日（当社 61日）にして、通知が多い差（+22,000円）も作る。夜間便の差は「解決」（回収額なし）
     const [notice] = await db.select().from(s.paymentNotices).where(eq(s.paymentNotices.tenantId, tenantId));
-    await db.insert(s.reconciliationItems).values([
-      { tenantId, noticeId: notice.id, label: "宅配（個建て）", kind: "qty", ourAmount: 877_800, theirAmount: 858_800, diff: -19_000 },
-      { tenantId, noticeId: notice.id, label: "夜間便", kind: "price", ourAmount: 240_000, theirAmount: 230_000, diff: -10_000, status: "resolved" },
-      { tenantId, noticeId: notice.id, label: "企業配（日当）", kind: "qty", ourAmount: 1_342_000, theirAmount: 1_364_000, diff: 22_000, status: "asked" },
-    ]);
+    await db
+      .update(s.paymentNoticeLines)
+      .set({ qty: 62, amount: 1_364_000 })
+      .where(and(eq(s.paymentNoticeLines.tenantId, tenantId), eq(s.paymentNoticeLines.noticeId, notice.id), eq(s.paymentNoticeLines.rawProject, "企業配")));
+    await runReconcile(db, tenantId, notice.id);
+    const recItems = await db.select().from(s.reconciliationItems).where(eq(s.reconciliationItems.tenantId, tenantId));
+    expect(recItems.map((i) => i.diff).sort((a, b) => a - b)).toEqual([-81_700, -10_000, 22_000]);
+    const nightItem = recItems.find((i) => i.diff === -10_000)!;
+    const kigyoItem = recItems.find((i) => i.diff === 22_000)!;
+    await db.update(s.reconciliationItems).set({ status: "resolved", note: "単価の改定を確認" }).where(and(eq(s.reconciliationItems.id, nightItem.id), eq(s.reconciliationItems.tenantId, tenantId)));
+    await db.update(s.reconciliationItems).set({ status: "asked", askedAt: new Date() }).where(and(eq(s.reconciliationItems.id, kigyoItem.id), eq(s.reconciliationItems.tenantId, tenantId)));
     await db.insert(s.importBatches).values([
       { tenantId, month: DEMO_MONTH, fileName: "10月_稼働.xlsx", status: "applied", rowCount: 11, createdAt: new Date("2026-11-02T01:00:00Z") },
       { tenantId, month: DEMO_MONTH, fileName: "10月_追加.xlsx", status: "draft", rowCount: 2, createdAt: new Date("2026-11-03T01:00:00Z") },
@@ -212,7 +220,8 @@ describe("ホーム（今月の締め）", () => {
     expect(st.questions.count).toBe(1);
     expect(st.questions.items[0]).toMatchObject({ statementId: aoki.statements.id, driverName: "青木 翔太" });
     expect(st.statements.openQuestions).toBe(1);
-    expect(st.reconcile).toEqual({ notices: 1, items: 3, openItems: 2, openDiff: 3_000, short: 19_000, over: 22_000 });
+    expect(st.reconcile).toEqual({ notices: 1, items: 3, openItems: 2, openDiff: -59_700, short: 81_700, over: 22_000, unread: 0, error: null });
+    expect(st.found).toEqual({ confirmed: 0, confirmedCount: 0, estimated: 81_700, estimatedCount: 1 });
     expect(st.work.latestBatch).toMatchObject({ fileName: "10月_稼働.xlsx", status: "applied" });
     expect(st.work.openDrafts).toHaveLength(1);
     expect(view(st).steps[2].lines).toContain("ドライバーからの、まだ解決していない質問が 1 件あります。");
@@ -221,7 +230,7 @@ describe("ホーム（今月の締め）", () => {
     const other = await loadHomeStatus(db, otherId, DEMO_MONTH, quiet);
     expect(other.statements).toMatchObject({ saved: 0, missing: 8 });
     expect(other.questions.count).toBe(0);
-    expect(other.reconcile).toMatchObject({ notices: 1, items: 0, openItems: 0 });
+    expect(other.reconcile).toMatchObject({ notices: 1, items: 2, openItems: 2, short: 91_700, over: 0 });
     expect(other.work.latestBatch).toBeNull();
     expect(view(other).next?.label).toBe("明細を作る（8人）");
 
@@ -239,12 +248,13 @@ describe("ホーム（今月の締め）", () => {
     await client.close();
   });
 
-  it("最初の設定の案内：デモは 6 つのうち 5 つ済み（控除はデータがあるので済み）。次は Excel と比べる", async () => {
+  it("最初の設定の案内：デモは 7 つのうち 5 つ済み（控除はデータがあるので済み）。次は取引条件の明示（遠藤さんの記録が無い）", async () => {
     const { db, client } = await createTestDb();
     const { tenantId } = await seedDemo(db);
     const st = await loadHomeStatus(db, tenantId, DEMO_MONTH, quiet);
-    expect(st.onboarding).toMatchObject({ doneCount: 5, total: 6, complete: false });
-    expect(st.onboarding.next?.key).toBe("parallel");
+    expect(st.onboarding).toMatchObject({ doneCount: 5, total: 7, complete: false });
+    expect(st.onboarding.next?.key).toBe("terms");
+    expect(st.onboarding.steps.find((x) => x.def.key === "terms")?.pending).toContain("遠藤 大輔さん");
     expect(st.onboarding.steps.find((x) => x.def.key === "rules")).toMatchObject({ state: "auto", note: "控除のルール 4 件" });
     await client.close();
   });

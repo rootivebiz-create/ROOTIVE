@@ -27,9 +27,11 @@ import {
   trimSheet,
   type ProfileLike,
 } from "./detect";
-import { readPayout, type PayoutRead } from "./columns";
+import { findMoneyColumns, readPayout, type PayoutRead } from "./columns";
+import { readFormulaCells } from "./formulas";
 import { emptyParse, parseWithMapping } from "./parse";
-import { moneyExtras, type DeductionProposal, type MoneyExtras } from "./proposals";
+import { looksLikeZengin } from "./zengin-read";
+import { moneyExtras, type MoneyExtras } from "./proposals";
 import {
   compareWithPrev,
   registrableDrivers,
@@ -183,6 +185,10 @@ export async function createDraftFromFile(
   const fileName = input.fileName.trim().slice(0, 200) || "ファイル";
   const problem = fileProblem(fileName, input.bytes.byteLength);
   if (problem) throw new UserError(problem);
+  // 銀行に出す振込ファイル（全銀）は稼働の表ではない。口座の取り込みへ案内する
+  if (looksLikeZengin(input.bytes)) {
+    throw new UserError("これは銀行の振込ファイル（全銀の形）のようです。ドライバーの口座を台帳に入れるなら、取り込みの画面の「口座の一覧を取り込む」から置いてください");
+  }
 
   let read;
   try {
@@ -228,6 +234,18 @@ export async function createDraftFromFile(
 
   // 置いたファイルそのもののハッシュ（同じファイルの二重の取り込みを見つける）
   const fileHash = createHash("sha256").update(input.bytes).digest("hex");
+  // Excel に残っている控除らしい数式（=E5*0.1 など）。控除の提案の手がかりにする（読めなくても取り込みは続ける）
+  let formulas: DraftSummary["formulas"];
+  if (read.encoding === "xlsx") {
+    try {
+      const found = await readFormulaCells(input.bytes);
+      const names = new Set(stored.map((sh) => sh.name));
+      const kept = Object.fromEntries(Object.entries(found).filter(([name]) => names.has(name)));
+      if (Object.keys(kept).length > 0) formulas = kept;
+    } catch (error) {
+      console.error("import formulas failed", error instanceof Error ? error.message : error);
+    }
+  }
   const summary: DraftSummary = {
     v: 1,
     file: {
@@ -240,6 +258,7 @@ export async function createDraftFromFile(
     },
     sheets: stored,
     sheetIndex,
+    ...(formulas ? { formulas } : {}),
     sheetFrom: byMonth ? "month" : "rows",
     signature: shapeSignature(header),
     mapping,
@@ -524,11 +543,12 @@ export async function resolveName(db: Db, tenantId: string, batchId: string, inp
     if (same) throw new UserError(`「${same.name}」はもう台帳にあります。上の候補から選んでください（選ぶと、この書き方を覚えます）`);
     if (input.clientId) {
       const c = await db
-        .select({ id: s.clients.id })
+        .select({ id: s.clients.id, active: s.clients.active, name: s.clients.name })
         .from(s.clients)
         .where(and(eq(s.clients.id, input.clientId), eq(s.clients.tenantId, tenantId)))
         .limit(1);
       if (!c[0]) throw new UserError("選んだ元請が見つかりません");
+      if (!c[0].active) throw new UserError(`「${c[0].name}」は取引をやめた元請です。設定で戻してから選んでください`);
     }
     const [p] = await db
       .insert(s.projects)
@@ -620,10 +640,20 @@ type AppliedBatchLite = {
   createdAt: Date;
   signature: string | null;
   hash: string | null;
+  /** 選んだシートの番号（同じブックでも、別のシートなら別のファイルとして扱う） */
+  sheetIndex: number | null;
   mappingProfileId: string | null;
   appliedAt: string | null;
   appliedBy: string | null;
 };
+
+/**
+ * 同じファイルか：中身のハッシュが同じで、同じシートを読んだもの。
+ * 元請ごとにシートを分けたブック（A物流・B商事）を、シートを替えて 2 回取り込むのは二重ではない。
+ */
+function isSameFile(b: { hash: string | null; sheetIndex: number | null }, summary: DraftSummary): boolean {
+  return !!b.hash && b.hash === summary.file.hash && (b.sheetIndex ?? 0) === summary.sheetIndex;
+}
 
 /** 同じファイル（ハッシュが同じ）が、この月にもう反映されている */
 export type SameFileInfo = {
@@ -745,12 +775,14 @@ async function sameFileOf(
   known: Known,
   input: BuildInput,
 ): Promise<{ info: SameFileInfo; ids: Set<string> } | null> {
-  const same = applied.filter((b) => b.id !== batchId && !!b.hash && b.hash === summary.file.hash);
+  const same = applied.filter((b) => b.id !== batchId && isSameFile(b, summary));
   if (same.length === 0) return null;
   const when = (b: AppliedBatchLite) => b.appliedAt ?? b.createdAt.toISOString();
   const latest = [...same].sort((a, b) => when(b).localeCompare(when(a)))[0];
   const ids = new Set(same.map((b) => b.id));
   const theirs = entries.filter((e) => e.importBatchId && ids.has(e.importBatchId));
+  // 前の取り込みの稼働を「稼働と調整」でみな消してあれば、入れても二重にはならない（止めない。入れ替えとして扱う）
+  if (theirs.length === 0) return null;
   const dups = findDuplicates(resolved, theirs, known, () => latest.fileName, input);
   return {
     info: {
@@ -846,6 +878,7 @@ async function appliedBatches(db: Db, tenantId: string, month: string): Promise<
       createdAt: s.importBatches.createdAt,
       signature: sql<string | null>`${s.importBatches.summary}->>'signature'`,
       hash: sql<string | null>`coalesce(${s.importBatches.fileHash}, ${s.importBatches.summary}->'file'->>'hash')`,
+      sheetIndex: sql<number | null>`(${s.importBatches.summary}->>'sheetIndex')::int`,
       mappingProfileId: s.importBatches.mappingProfileId,
       appliedAt: sql<string | null>`${s.importBatches.summary}->'applied'->>'at'`,
       appliedBy: sql<string | null>`${s.importBatches.summary}->'applied'->>'by'`,
@@ -878,7 +911,7 @@ function removalFor(
       b.id !== selfId && (force.has(b.id) || b.signature === summary.signature || (!!summary.profileId && b.mappingProfileId === summary.profileId)),
   );
   const overlaps = (b: AppliedBatchLite) =>
-    force.has(b.id) || b.hash === summary.file.hash || entries.some((e) => e.importBatchId === b.id && newPairs.has(entryKey(e)));
+    force.has(b.id) || isSameFile(b, summary) || entries.some((e) => e.importBatchId === b.id && newPairs.has(entryKey(e)));
   const same = shape.filter(overlaps);
   const ids = new Set(same.map((b) => b.id));
   return { removed: entries.filter((e) => e.importBatchId && ids.has(e.importBatchId)), batches: same, kept: shape.filter((b) => !ids.has(b.id)) };
@@ -910,7 +943,8 @@ function modeOption(
     keptSameShape: kept.map((b) => b.fileName),
     duplicates,
     duplicateYen: duplicates.reduce((a, d) => a + d.yen, 0),
-    sameFileApplied: mode === "add" && applied.some((b) => b.id !== batchId && b.hash === summary.file.hash),
+    // 同じファイルの前の取り込みの稼働が残っているときだけ（みな消してあれば、足しても倍にならない）
+    sameFileApplied: mode === "add" && applied.some((b) => b.id !== batchId && isSameFile(b, summary) && entries.some((e) => e.importBatchId === b.id)),
   };
 }
 
@@ -968,7 +1002,7 @@ export async function loadDraftView(db: Db, tenantId: string, batchId: string, o
       appliedBatches(db, tenantId, batch.month),
       loadBuildInput(db, tenantId, batch.month),
       monthEntries(db, tenantId, shiftMonth(batch.month, -1)),
-      sameHashOtherMonths(db, tenantId, batch.month, summary.file.hash),
+      sameHashOtherMonths(db, tenantId, batch.month, summary.file.hash, summary.sheetIndex),
     ]);
     sameFileOtherMonths = others;
     const resolved = computed.resolution.resolved;
@@ -1034,7 +1068,10 @@ export async function loadDraftView(db: Db, tenantId: string, batchId: string, o
         header: computed.header,
         resolved,
         names: new Map(known.drivers.map((d) => [d.id, d.name])),
-        bases: afterDrafts.map((d) => ({ driverId: d.driverId, subtotal: d.subtotal, qty: d.lines.reduce((a, l) => a + l.qty, 0) })),
+        // 率の元はこのファイルの分だけ（Excel はファイルの中の数で控除を計算しているため。入れ替え方にも左右されない）
+        bases: buildStatementDrafts({ ...input, work: resolved.map((r) => ({ driverId: r.driverId, projectId: r.projectId, qty: r.qty, workDate: r.date })) }).map(
+          (d) => ({ driverId: d.driverId, subtotal: d.subtotal, qty: d.lines.reduce((a, l) => a + l.qty, 0) }),
+        ),
         rules: input.rules.map((r) => ({
           id: r.id,
           driverId: r.driverId,
@@ -1045,6 +1082,8 @@ export async function loadDraftView(db: Db, tenantId: string, batchId: string, o
           active: r.active,
           agreedInWriting: r.agreedInWriting,
         })),
+        rounding: input.tenant.amountRounding,
+        formulas: summary.formulas?.[summary.sheets[summary.sheetIndex]?.name ?? ""],
       });
     }
   } else {
@@ -1093,8 +1132,8 @@ export async function loadDraftView(db: Db, tenantId: string, batchId: string, o
   };
 }
 
-/** 同じファイルが、ほかの月に反映されていないか（月の選び間違いに気づくため） */
-async function sameHashOtherMonths(db: Db, tenantId: string, month: string, hash: string): Promise<DraftView["sameFileOtherMonths"]> {
+/** 同じファイル（同じシート）が、ほかの月に反映されていないか（月の選び間違いに気づくため。月ごとにシートを足すブックは、シートが違えば別） */
+async function sameHashOtherMonths(db: Db, tenantId: string, month: string, hash: string, sheetIndex: number): Promise<DraftView["sameFileOtherMonths"]> {
   if (!hash) return [];
   const rows = await db
     .select({ batchId: s.importBatches.id, month: s.importBatches.month, fileName: s.importBatches.fileName })
@@ -1106,6 +1145,7 @@ async function sameHashOtherMonths(db: Db, tenantId: string, month: string, hash
         eq(s.importBatches.status, "applied"),
         ne(s.importBatches.month, month),
         or(eq(s.importBatches.fileHash, hash), sql`${s.importBatches.summary}->'file'->>'hash' = ${hash}`),
+        sql`coalesce((${s.importBatches.summary}->>'sheetIndex')::int, 0) = ${sheetIndex}`,
       ),
     )
     .orderBy(desc(s.importBatches.createdAt))
@@ -1263,11 +1303,15 @@ export async function applyBatch(
     // 「次から同じ読み方で読む」を外していなければ、この形を覚える（来月は置いて反映するだけ）
     if (summary.remember !== false) summary.profileId = await upsertProfile(t, tenantId, summary, header);
     summary.stats = statsOf(computed, known);
+    const feeColumns = findMoneyColumns(header, summary.mapping.roles)
+      .filter((c) => c.kind === "fee")
+      .map((c) => c.header);
     summary.applied = {
       at: now,
       by: user.id,
       mode,
       ...(same ? { reappliedFrom: [...same.ids] } : {}),
+      ...(feeColumns.length ? { feeColumns } : {}),
       entries: values.length,
       replacedBatchIds: batches.map((b) => b.id),
       removed: removed.map<RestoreEntry>((e) => ({
@@ -1473,9 +1517,13 @@ export async function listOpenDrafts(db: Db, tenantId: string): Promise<BatchRow
   return withNames(db, tenantId, rows);
 }
 
-/** 元請の一覧（案件を新しく登録するときに選ぶ） */
+/** 元請の一覧（案件を新しく登録するときに選ぶ。取引をやめた元請は出さない） */
 export async function listClients(db: Db, tenantId: string): Promise<{ id: string; name: string }[]> {
-  return db.select({ id: s.clients.id, name: s.clients.name }).from(s.clients).where(eq(s.clients.tenantId, tenantId)).orderBy(asc(s.clients.name));
+  return db
+    .select({ id: s.clients.id, name: s.clients.name })
+    .from(s.clients)
+    .where(and(eq(s.clients.tenantId, tenantId), eq(s.clients.active, true)))
+    .orderBy(asc(s.clients.name));
 }
 
 export async function listProfiles(db: Db, tenantId: string) {

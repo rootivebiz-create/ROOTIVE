@@ -27,9 +27,9 @@ export function AppShell({ user, children, demo }: { user: SessionUser; children
             <span className="whitespace-nowrap text-[15px]">しめ日ラボ</span>
           </Link>
           <div className="ml-auto flex items-center gap-2 text-sm">
-            <span className="hidden text-muted-foreground sm:inline">
+            <Link href="/settings/account" className="hidden text-muted-foreground no-underline hover:underline sm:inline" title="自分のアカウント（パスワードを変える）">
               {user.name}（{ROLE_LABEL[user.role]}）
-            </span>
+            </Link>
             {!demo && (
               <form action="/logout" method="post">
                 <button type="submit" className="min-h-11 rounded-md px-2 text-foreground hover:bg-muted">

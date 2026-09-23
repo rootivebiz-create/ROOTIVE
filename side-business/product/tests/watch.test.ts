@@ -85,7 +85,7 @@ describe("見張り番：架空の会社の 2026年10月", () => {
     expect(i).toMatchObject({ severity: "red", subjectLabel: "遠藤 大輔", acked: false, blocksClose: true, basis: "フリーランス法 第3条（取引条件の明示）", sourceUrl: SOURCES.flQa });
     expect(i.detail).toContain("2026年10月分の支払額は 294,800円です");
     // 直す画面は、その人の設定を開いた状態
-    expect(i.fixHref).toBe(`/settings/drivers/${ids.D04}`);
+    expect(i.fixHref).toBe(`/terms/${ids.D04}`);
     // 明示の記録がある人は出ない
     expect(find(issues, "terms_missing", ids.D01)).toHaveLength(0);
   });
@@ -427,7 +427,7 @@ describe("見張り番：記録を変えたときの指摘", () => {
     const issues = await run();
     expect(find(issues, "invoice_number", ids.D01)[0]).toMatchObject({ severity: "yellow", title: "登録番号の形が正しくありません" });
     const check = find(issues, "invoice_number", "registration_check")[0];
-    expect(check.severity).toBe("info");
+    expect(check.severity).toBe("yellow");
     expect(check.detail).toContain("3人");
     expect(check.detail).not.toContain("井上 美咲");
     expect(check.sourceUrl).toBe(SOURCES.invoiceRegistry);

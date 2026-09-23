@@ -17,6 +17,7 @@ import {
   setTransferExecutedOn,
   stampDiff,
   bankStamp,
+  bankReviewKey,
   type BankFields,
 } from "~/server/features/transfer";
 import { DEMO_MONTH, seedDemo } from "~/server/seed-demo";
@@ -152,7 +153,40 @@ describe("前回の振込から口座が変わった人", () => {
     );
     expect(await db.select().from(s.transferBatches).where(and(eq(s.transferBatches.tenantId, tenantId), eq(s.transferBatches.month, NOV)))).toHaveLength(0);
 
-    const batch = await createTransferBatch(db, tenantId, NOV, { transferDate: "2026-12-25", scope: "all", bankChangesConfirmed: true }, staffId);
+    // 画面で見た「変わった人と口座」に、確かめた印を結びつける。見たあとにまた口座が変わったら作らない
+    const seen = await loadTransferReview(db, tenantId, NOV);
+    expect(seen.bankKeys.all).toMatch(/^[0-9a-f]{24}$/);
+    expect(seen.bankKeys.remaining).toBe(seen.bankKeys.all);
+    const okada = await driverOf(db, tenantId, "D05");
+    const holderBefore = okada.holderKana;
+    await db.update(s.drivers).set({ holderKana: "オカダ タクマ" }).where(eq(s.drivers.id, okada.id));
+    // 口座の一覧の取り込みで変えた記録（取り込みの機能が残す形）
+    await audit(db, {
+      tenantId,
+      userId: staffId,
+      action: "driver.update",
+      entity: "driver",
+      entityId: okada.id,
+      detail: { name: okada.name, changed: { holderKana: { from: holderBefore, to: "オカダ タクマ" } }, source: "import.bank", fileName: "口座一覧.csv" },
+    });
+    await expect(
+      createTransferBatch(db, tenantId, NOV, { transferDate: "2026-12-25", scope: "all", bankChangesConfirmed: true, bankReviewKey: seen.bankKeys.all }, staffId),
+    ).rejects.toThrow(/さらに変わっています[\s\S]*岡田 拓也（口座名義）/);
+    expect(await db.select().from(s.transferBatches).where(and(eq(s.transferBatches.tenantId, tenantId), eq(s.transferBatches.month, NOV)))).toHaveLength(0);
+    const again = await loadTransferReview(db, tenantId, NOV);
+    expect(again.bankKeys.all).not.toBe(seen.bankKeys.all);
+    const okadaChange = again.bank.changed.find((c) => c.driverCode === "D05")!;
+    expect(okadaChange.edits[0]).toMatchObject({ userName: "デモ 事務", fields: ["口座名義"], via: "口座の一覧の取り込み（口座一覧.csv）" });
+    // 値は、変わった人の一覧（口座の目印）から同じように作り直せる
+    expect(bankReviewKey(again.bank.changed)).toBe(again.bankKeys.all);
+
+    const batch = await createTransferBatch(
+      db,
+      tenantId,
+      NOV,
+      { transferDate: "2026-12-25", scope: "all", bankChangesConfirmed: true, bankReviewKey: again.bankKeys.all },
+      staffId,
+    );
     expect(batch.count).toBe(4);
     expect(batch.bankChanged).toBe(2);
     const [log] = await db
@@ -173,6 +207,10 @@ describe("前回の振込から口座が変わった人", () => {
     expect(review.staleBankBatches).toEqual([{ batchId, drivers: ["青木 翔太"] }]);
     expect(review.bank.changed.map((c) => c.driverCode)).toEqual(["D01"]);
     await expect(buildTransferFile(db, tenantId, batchId)).rejects.toThrow("口座が変わった人がいます（青木 翔太）");
+    // 振り込んだ記録がある 10 月のデータは、いまの口座で出し直さない（取り消せないので、取り消しは勧めない）
+    const october = (await loadTransferPlan(db, tenantId, DEMO_MONTH)).batches[0];
+    expect(october.executedOn).toBe("2026-11-25");
+    await expect(buildTransferFile(db, tenantId, october.id)).rejects.toThrow("振り込んだ記録があるデータなので、いまの口座では出し直しません");
     await db.update(s.drivers).set({ accountNumber: "1234567" }).where(eq(s.drivers.id, d01.id));
     expect((await buildTransferFile(db, tenantId, batchId)).records).toHaveLength(1 + 4 + 2);
     // 振り込んだ日が入っている 10 月のデータは、口座が変わっても「止める」対象にしない（もう振り込んである）

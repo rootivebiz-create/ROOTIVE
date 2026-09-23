@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { getDb } from "~/db/client";
 import { runAction, type ActionResult } from "~/server/action";
 import { audit } from "~/server/audit";
@@ -8,6 +9,7 @@ import { requireUser } from "~/server/auth";
 import {
   CLIENT_ACTIVATE_ACTION,
   CLIENT_DEACTIVATE_ACTION,
+  clientsDoneHref,
   createClient,
   deactivateClient,
   deleteClient,
@@ -61,9 +63,11 @@ export async function setClientActiveAction(_prev: State, form: FormData): Promi
   const active = form.get("active") === "1";
   const withProjects = checkbox.parse(String(form.get("withProjects") ?? ""));
   let projects = 0;
+  let clientId = "";
   const result = await runAction(async () => {
     const user = await requireUser("staff");
     const id = idOf(form);
+    clientId = id;
     const db = await getDb();
     const r = active ? await restoreClient(db, user.tenantId, id, { withProjects }) : await deactivateClient(db, user.tenantId, id, { withProjects });
     projects = r.projectIds.length;
@@ -79,8 +83,6 @@ export async function setClientActiveAction(_prev: State, form: FormData): Promi
     revalidatePath("/", "layout");
   });
   if (!result.ok) return result;
-  const message = active
-    ? `元請を戻しました。${projects ? `案件 ${projects}件も「使う」に戻しました。` : ""}`
-    : `取引をやめた元請にしました。${projects ? `案件 ${projects}件も「使わない」にしました。` : ""}過去の記録はそのまま残り、「戻す」でいつでも元に戻せます。`;
-  return { ...result, message };
+  // 元請は「取引している」と「無効の元請」の間を移るので、押した場所の知らせは消えてしまう。上の知らせで結果を伝える
+  redirect(clientsDoneHref(active ? "on" : "off", clientId, projects));
 }

@@ -78,9 +78,14 @@ function ExcludedList({ rows, m }: { rows: ExcludedRow[]; m: string }) {
                 明細を確かめる →
               </Link>
             ) : (
-              <Link href={`/settings/drivers/${r.driverId}`} className="inline-flex min-h-11 items-center text-sm">
-                {r.driverName}さんの設定で口座を{r.reason === "no_bank" ? "入れる" : "直す"} →
-              </Link>
+              <>
+                <Link href={`/settings/drivers/${r.driverId}`} className="mr-4 inline-flex min-h-11 items-center text-sm">
+                  {r.driverName}さんの設定で口座を{r.reason === "no_bank" ? "入れる" : "直す"} →
+                </Link>
+                <Link href={`/import?m=${m}&kind=bank`} className="inline-flex min-h-11 items-center text-sm">
+                  口座の一覧・先月の振込ファイルから取り込む →
+                </Link>
+              </>
             )}
           </p>
         </li>
@@ -300,6 +305,7 @@ export default async function TransferPage({ searchParams }: { searchParams: Pro
                   remaining={{ count: remaining.length, total: remaining.reduce((a, r) => a + r.amount, 0) }}
                   zenginReady={zenginReady}
                   bankChanged={{ all: review?.bank.changed.length ?? 0, remaining: review?.changedRemaining ?? 0 }}
+                  bankKeys={review?.bankKeys}
                 />
               </Card>
 

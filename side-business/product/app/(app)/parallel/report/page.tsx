@@ -1,12 +1,11 @@
 import Link from "next/link";
-import { Money, TableWrap } from "@/components/ui";
+import { Money, TableWrap, buttonClass } from "@/components/ui";
 import { jpToday } from "@/lib/format";
 import { PrintButton } from "~/components/parallel/print-button";
 import { getDb } from "~/db/client";
 import { requirePageUser } from "~/server/auth";
-import { goLiveMonth, loadParallel, parallelHistory } from "~/server/features/parallel";
+import { GOLIVE_STREAK_TARGET, loadParallelReport } from "~/server/features/parallel";
 import { monthFromParam, monthLabelJa, monthParam } from "~/server/month";
-import { getTenant } from "~/server/repo";
 
 export const metadata = { title: "並行運用の比べ合わせ" };
 
@@ -28,12 +27,13 @@ export default async function ParallelReportPage({ searchParams }: { searchParam
   const month = monthFromParam((await searchParams).m);
   const m = monthParam(month);
   const db = await getDb();
-  const [v, tenant, golive] = await Promise.all([loadParallel(db, user.tenantId, month), getTenant(db, user.tenantId), goLiveMonth(db, user.tenantId)]);
-  const history = await parallelHistory(db, user.tenantId, month, 3, v);
+  // 画面・PDF と同じ中身（loadParallelReport）から作る
+  const report = await loadParallelReport(db, user.tenantId, month);
+  const { view: v, golive, history, gate } = report;
   const compared = v.rows.filter((r) => r.excelTotal !== null);
   const notCompared = v.rows.filter((r) => r.excelTotal === null);
-  const oursTotal = compared.reduce((a, r) => a + (r.ours ?? 0), 0);
-  const excelTotal = compared.reduce((a, r) => a + (r.excelTotal ?? 0), 0);
+  const oursTotal = report.totals.ours;
+  const excelTotal = report.totals.excel;
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -42,7 +42,12 @@ export default async function ParallelReportPage({ searchParams }: { searchParam
         <Link href={`/parallel?m=${m}`} className="inline-flex min-h-11 items-center text-sm">
           ← Excel と比べる へ戻る
         </Link>
-        <div className="sm:ml-auto">
+        <div className="flex flex-col gap-2 sm:ml-auto sm:flex-row">
+          {compared.length > 0 && (
+            <a href={`/api/parallel/pdf?m=${m}`} className={buttonClass("secondary", "w-full sm:w-auto")}>
+              PDF（A4 1 枚）をダウンロード
+            </a>
+          )}
           <PrintButton />
         </div>
       </div>
@@ -50,7 +55,7 @@ export default async function ParallelReportPage({ searchParams }: { searchParam
       <article className="space-y-4 rounded-card border border-border bg-card p-4 sm:p-6">
         {/* 印刷の指定がアプリの header を消すので、ここは div にする */}
         <div className="space-y-1">
-          <p className="text-sm text-muted-foreground">{tenant.name}</p>
+          <p className="text-sm text-muted-foreground">{report.companyName}</p>
           <h1 className="text-2xl font-bold">並行運用の比べ合わせ（{monthLabelJa(month)}分）</h1>
           <p className="text-sm text-muted-foreground">作成日：{jpToday()}</p>
         </div>
@@ -64,7 +69,7 @@ export default async function ParallelReportPage({ searchParams }: { searchParam
           )}
           {v.summary.different > 0 && (
             <p className="text-sm">
-              差のある {v.summary.different}人：しめ日ラボの方が多い <Money value={v.summary.oursHigher} />／Excel の方が多い <Money value={v.summary.excelHigher} />
+              差のある {v.summary.different}人：払い不足の可能性（Excel の方が少ない） <Money value={v.summary.oursHigher} />／払いすぎの可能性（Excel の方が多い） <Money value={v.summary.excelHigher} />
               {v.summary.unexplained > 0 ? `（理由のメモがまだ無い人 ${v.summary.unexplained}人）` : "（全員に理由のメモあり）"}
             </p>
           )}
@@ -74,9 +79,22 @@ export default async function ParallelReportPage({ searchParams }: { searchParam
             {history.months
               .map((h) => `${monthLabelJa(h.month)}分 ${h.state === "ok" ? "一致・説明済み" : h.state === "diff" ? `${h.compared}人中 ${h.matched}人が一致` : "比べていません"}`)
               .join("／")}
-            。続けて一致（または説明済み）の月は {history.streak} か月です。
+            。続けて一致（または説明済み）の月は {history.streak} か月です（目安は {GOLIVE_STREAK_TARGET}〜3 か月）。
           </p>
-          {golive && <p className="text-sm font-bold">{monthLabelJa(golive)}分から、しめ日ラボで締めています。</p>}
+          {golive ? (
+            <p className="text-sm font-bold">{monthLabelJa(golive)}分から、しめ日ラボで締めています。</p>
+          ) : gate.ready ? (
+            <p className="text-sm font-bold">本番に切り替える条件（比べた人が全員一致か、差のある人全員に理由のメモがある）がそろっています。</p>
+          ) : (
+            <div className="text-sm">
+              <p className="font-bold">本番に切り替える前に、次のことが残っています。</p>
+              <ul className="list-disc pl-5">
+                {gate.blockers.map((b) => (
+                  <li key={b}>{b}</li>
+                ))}
+              </ul>
+            </div>
+          )}
         </section>
 
         {compared.length === 0 ? (
@@ -122,6 +140,9 @@ export default async function ParallelReportPage({ searchParams }: { searchParam
         <section className="space-y-1 border-t border-border pt-3 text-sm">
           <p className="font-bold">これからの進め方</p>
           <p>2〜3 か月、しめ日ラボと Excel の両方で締めて、差が 0 になったら Excel をやめてください。差が出た月は、どちらの計算に合わせるかを取引条件をもとに決めて、メモに残しておくと、あとで経緯が分かります。</p>
+          <p className="text-xs text-muted-foreground">
+            「払い不足・払いすぎの可能性」は、しめ日ラボの計算（登録した単価・控除・端数の設定）を基準にしたときの見え方です。どちらの計算が取引条件に合っているかは、会社で確かめてください。
+          </p>
           <p className="text-xs text-muted-foreground">
             「理由の見当」は、差の額が明細の部品（消費税・控除・調整・源泉徴収・端数）と同じ額か、ある行の数量・単価の違いで説明できるかを探したものです。当てはまっても別の理由のことがあります。しめ日ラボの額は
             {v.closed ? "締めた月の明細" : "保存した明細（無ければ今の稼働から出した見込み）"}です。

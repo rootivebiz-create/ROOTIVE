@@ -238,6 +238,12 @@ export function jpDateTime(date: Date): string {
   return `${p.y}年${p.m}月${p.d}日 ${p.hh}:${String(p.mm).padStart(2, "0")}`;
 }
 
+/** 日本時間の日付（YYYY-MM-DD）。取引条件の日付（issued_on）と比べるときに使う */
+export function jstDateString(date: Date): string {
+  const p = jstParts(date);
+  return `${p.y}-${String(p.m).padStart(2, "0")}-${String(p.d).padStart(2, "0")}`;
+}
+
 /** 2026-10-01 → 2026年10月 */
 export function jpMonthLabel(month: string): string {
   const [y, m] = month.slice(0, 7).split("-").map(Number);

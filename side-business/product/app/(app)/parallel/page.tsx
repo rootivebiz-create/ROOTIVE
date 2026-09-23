@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { Card, Money, buttonClass } from "@/components/ui";
 import { Badge, EmptyState, Notice, PageHeader } from "~/components/page";
+import { GateStatus } from "~/components/parallel/gate-status";
 import { GoLiveButton, UndoGoLiveButton } from "~/components/parallel/go-live";
 import { ParallelEditor } from "~/components/parallel/parallel-editor";
 import { ResultList } from "~/components/parallel/result-list";
 import { getDb } from "~/db/client";
 import { requirePageUser, roleAtLeast } from "~/server/auth";
-import { goLiveMonth, loadParallel, parallelHistory } from "~/server/features/parallel";
+import { GOLIVE_STREAK_TARGET, loadParallelReport } from "~/server/features/parallel";
 import { monthFromParam, monthLabelJa, monthParam } from "~/server/month";
 
 export const metadata = { title: "Excel と比べる" };
@@ -20,8 +21,8 @@ export default async function ParallelPage({ searchParams }: { searchParams: Pro
   const month = monthFromParam((await searchParams).m);
   const m = monthParam(month);
   const db = await getDb();
-  const [v, golive] = await Promise.all([loadParallel(db, user.tenantId, month), goLiveMonth(db, user.tenantId)]);
-  const history = await parallelHistory(db, user.tenantId, month, 3, v);
+  // 画面・印刷用の報告・PDF は同じ中身（loadParallelReport）から作る
+  const { view: v, golive, history, gate } = await loadParallelReport(db, user.tenantId, month);
   const canEdit = roleAtLeast(user.role, "staff");
   const isOwner = user.role === "owner";
   const staleCount = v.rows.filter((r) => r.stale).length;
@@ -37,9 +38,14 @@ export default async function ParallelPage({ searchParams }: { searchParams: Pro
         description="今の Excel で出した振込額を入れると、しめ日ラボの振込額と 1 人ずつ比べます。差があれば、理由の見当を出します。"
         actions={
           v.summary.compared > 0 ? (
-            <Link href={`/parallel/report?m=${m}`} className={buttonClass("secondary")}>
-              印刷用の報告
-            </Link>
+            <>
+              <a href={`/api/parallel/pdf?m=${m}`} className={buttonClass("primary")}>
+                並行運用レポート（PDF）
+              </a>
+              <Link href={`/parallel/report?m=${m}`} className={buttonClass("secondary")}>
+                印刷用の報告
+              </Link>
+            </>
           ) : undefined
         }
       />
@@ -75,8 +81,8 @@ export default async function ParallelPage({ searchParams }: { searchParams: Pro
             )}
             {v.summary.different > 0 && (
               <p className="mt-1 text-sm">
-                差の合計（しめ日ラボ − Excel）<Money value={v.summary.diffTotal} className="font-bold" />：しめ日ラボの方が多い <Money value={v.summary.oursHigher} />／Excel の方が多い{" "}
-                <Money value={v.summary.excelHigher} />
+                差の合計（しめ日ラボ − Excel）<Money value={v.summary.diffTotal} className="font-bold" />：払い不足の可能性（Excel の方が少ない）{" "}
+                <Money value={v.summary.oursHigher} />／払いすぎの可能性（Excel の方が多い） <Money value={v.summary.excelHigher} />
                 {v.summary.unexplained > 0 ? `。理由のメモがまだ無い人 ${v.summary.unexplained}人` : "。差のある人には、全員理由のメモがあります"}
               </p>
             )}
@@ -152,17 +158,18 @@ export default async function ParallelPage({ searchParams }: { searchParams: Pro
           </ul>
           <p className="mt-2 text-sm">
             この月から続けて一致（または差の理由を説明済み）の月：<span className="font-bold">{history.streak} か月</span>
-            {history.streak >= 2 ? "。目安の 2〜3 か月に届いています。" : "。2〜3 か月続いたら、Excel をやめる目安です。"}
+            {history.streak >= GOLIVE_STREAK_TARGET ? "。目安の 2〜3 か月に届いています。" : "。2〜3 か月続いたら、Excel をやめる目安です。"}
           </p>
-          <div className="mt-3">
+          <div className="mt-3 space-y-3">
+            <GateStatus gate={gate} golive={golive} />
             {golive ? (
               isOwner ? (
                 <UndoGoLiveButton />
               ) : null
             ) : isOwner ? (
-              <GoLiveButton month={month} monthLabel={monthLabelJa(month)} ready={v.summary.allExplained} streak={history.streak} />
+              <GoLiveButton month={month} monthLabel={monthLabelJa(month)} gate={gate} />
             ) : (
-              <p className="text-sm text-muted-foreground">Excel をやめるかは、オーナーの方が決めます（この画面から記録できます）。</p>
+              <p className="text-sm text-muted-foreground">Excel をやめるかは、オーナーの方が決めます（この画面から記録できます）。{gate.missingNotes.length > 0 && canEdit ? "差の理由のメモは、上の表から入れられます。" : ""}</p>
             )}
           </div>
         </Card>
@@ -170,6 +177,7 @@ export default async function ParallelPage({ searchParams }: { searchParams: Pro
 
       <div className="mt-8 space-y-1 text-xs text-muted-foreground">
         <p>「理由の見当」は、差の額が明細のどの部品（消費税・控除・調整・源泉徴収・端数）と同じ額か、ある行の数量・単価の違いで説明できるかを探したものです。当てはまっても、ほかの理由のことがあります。</p>
+        <p>「払い不足・払いすぎの可能性」は、しめ日ラボの計算（登録した単価・控除・端数の設定）を基準にしたときの見え方です。</p>
         <p>どちらの計算に合わせるかは、取引条件をもとに会社で決めてください。消費税の扱いは、顧問の税理士さんに確かめると安心です。</p>
       </div>
     </div>

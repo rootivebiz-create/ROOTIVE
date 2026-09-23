@@ -343,7 +343,10 @@ function scopeProjectIds(clientId: string | null, projects: { id: string; client
   return ids;
 }
 
-/** 突き合わせ（元請の締め日が当社と違い、稼働に日付があれば、元請の締めの期間の稼働で比べる） */
+/**
+ * 突き合わせ（元請の締め日が当社と違い、稼働に日付があれば、元請の締めの期間の稼働で比べる）。
+ * 受注単価は、お支払通知の月の単価（締めた月なら、その月の明細の写しの単価）で数える
+ */
 function compareWithPeriod(ctx: NoticeContext, resolved: ResolvedLine[]): { result: CompareResult; period: ComparePeriod } {
   const { work, period } = selectPeriodWork({
     month: ctx.notice.month,
@@ -558,7 +561,20 @@ export async function importNotice(db: Db, tenantId: string, userId: string | nu
   assertMonth(input.month);
   const client = await getClient(db, tenantId, input.clientId);
   if (!client.active) {
-    throw new UserError(`${client.name}は「取引をやめた元請」になっています。お支払通知を上げるときは、設定の「元請」で有効に戻してください。これまでのお支払通知は、そのまま見られます。`);
+    // 取引をやめた元請：新しい月の通知は上げない。すでにある月の通知を、直したものに入れ替えるのはよい
+    // （取引をやめたあとで、前の月の直したお支払通知が届くことがあるため。結果の画面の「上げ直す」から）
+    const had = input.replace
+      ? await db
+          .select({ id: s.paymentNotices.id })
+          .from(s.paymentNotices)
+          .where(and(eq(s.paymentNotices.tenantId, tenantId), eq(s.paymentNotices.clientId, client.id), eq(s.paymentNotices.month, input.month)))
+          .limit(1)
+      : [];
+    if (had.length === 0) {
+      throw new UserError(
+        `${client.name}は「取引をやめた元請」になっています。新しい月のお支払通知を上げるときは、設定の「元請」で有効に戻してください。これまでのお支払通知は、そのまま見られます（直したお支払通知は、その結果の画面の「上げ直す」から入れ替えられます）。`,
+      );
+    }
   }
   const tenant = await getTenant(db, tenantId);
   if (input.bytes.byteLength === 0) throw new UserError("ファイルが空です。元請から届いたファイルを選んでください");
@@ -944,7 +960,9 @@ export async function setItemStatus(db: Db, tenantId: string, userId: string | n
   if (input.status === "open") {
     Object.assign(values, { askedAt: null, resolvedAt: null });
   } else if (input.status === "asked") {
-    Object.assign(values, { askedAt: item.askedAt ?? now, resolvedAt: null });
+    // 未対応から問い合わせるときは今日から数える（突き合わせ直して未対応に戻った差の、前の問い合わせの日は使わない）。
+    // 問い合わせ済みのまま・解決から戻したときは、前の問い合わせの日を残す
+    Object.assign(values, { askedAt: item.status === "open" ? now : (item.askedAt ?? now), resolvedAt: null });
   } else {
     Object.assign(values, { resolvedAt: same && item.resolvedAt ? item.resolvedAt : now });
   }
@@ -1375,7 +1393,7 @@ export async function listMonth(
   tenantId: string,
   month: string,
   now: Date = new Date(),
-): Promise<{ rows: MonthClientRow[]; clients: { id: string; name: string; active: boolean }[]; found: FoundMoney }> {
+): Promise<{ rows: MonthClientRow[]; clients: { id: string; name: string; active: boolean; closingDay: number }[]; found: FoundMoney }> {
   assertMonth(month);
   const report = await loadReport(db, tenantId, month, month, { includeEmpty: true });
   const rows: MonthClientRow[] = report.cells.map((c) => ({
@@ -1465,7 +1483,8 @@ export type ReportCell = {
 
 export type Report = {
   tenantName: string;
-  clients: { id: string; name: string; active: boolean }[];
+  /** closingDay：元請の締め日（0＝月末） */
+  clients: { id: string; name: string; active: boolean; closingDay: number }[];
   from: string;
   to: string;
   months: string[];
@@ -1655,7 +1674,8 @@ export async function loadReport(db: Db, tenantId: string, from: string, to: str
       const items: ReportItem[] = nLines.length === 0 ? [] : [...liveItems, ...history];
       const unsettled = items.filter((i) => isUnsettled(i.status));
       const d = sumDiffs(unsettled);
-      const rec = recoveredOf(items);
+      // 取り戻せた額（確定）は保存した記録から数える。直したファイルの列が読めず行が 0 のあいだも、確定したお金は消さない
+      const rec = recoveredOf(saved);
       const stale =
         nLines.length > 0 &&
         (result.items.some((it) => savedByKey.get(it.key)?.diff !== it.diff) ||
@@ -1698,7 +1718,7 @@ export async function loadReport(db: Db, tenantId: string, from: string, to: str
   const withNotice = cells.filter((x) => x.notice);
   return {
     tenantName: tenant.name,
-    clients: clients.map((c) => ({ id: c.id, name: c.name, active: c.active })),
+    clients: clients.map((c) => ({ id: c.id, name: c.name, active: c.active, closingDay: c.closingDay })),
     from,
     to,
     months,
@@ -1850,13 +1870,18 @@ export type LetterSource = {
   items: LetterSourceItem[];
   /** 元請の締めの期間で比べたときだけ、その期間（本文と表に書く） */
   period: { from: string; to: string } | null;
+  /** お支払通知の行を読み取れていない（列が分からない）。このときは問い合わせる差を出さない（前のファイルの数字で送らないように） */
+  unreadable: boolean;
+  /** 元請の締め日が違うのに、稼働に日付が無く当社の月で比べたとき、当社の記録の期間（PDF の表の注記に書く） */
+  ourSpan: { from: string; to: string } | null;
 };
 
 /** 問い合わせ文の材料（画面の文面と PDF で同じものを使う） */
 export async function loadLetterSource(db: Db, tenantId: string, noticeId: string): Promise<LetterSource> {
   const view = await loadNoticeView(db, tenantId, noticeId);
+  const unreadable = view.lineGroups.length === 0;
   // 保存した結果が古いときも、文面は今の記録の数字で作る（「問い合わせ済み」にするのは突き合わせ直してから）
-  const items: LetterSourceItem[] = view.display
+  const items: LetterSourceItem[] = (unreadable ? [] : view.display)
     .filter((i) => isUnsettled(i.status) && i.diff !== 0)
     .map((i) => ({
       id: i.id ?? i.key,
@@ -1878,5 +1903,7 @@ export async function loadLetterSource(db: Db, tenantId: string, noticeId: strin
     clientName: view.client?.name ?? "元請",
     items,
     period: view.period.mode === "closing" && view.period.differs ? { from: view.period.from, to: view.period.to } : null,
+    unreadable,
+    ourSpan: view.period.differs && view.period.fallback ? { from: view.period.from, to: view.period.to } : null,
   };
 }

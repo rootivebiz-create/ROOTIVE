@@ -60,6 +60,12 @@ describe("締め：オーナーが理由を書いて締める・締めにかか�
     expect(() => normalizeMinutes("0")).toThrow("1〜6000");
     expect(() => normalizeMinutes("6001")).toThrow("1〜6000");
     expect(() => normalizeMinutes("1.5")).toThrow("分の数");
+    // 「1,200」「90分」「９０ 分」も受け取る
+    expect(normalizeMinutes("1,200")).toBe(1200);
+    expect(normalizeMinutes("90分")).toBe(90);
+    expect(normalizeMinutes("９０ 分")).toBe(90);
+    expect(() => normalizeMinutes("分")).not.toThrow();
+    expect(normalizeMinutes("分")).toBeNull();
   });
 
   it("赤（未確認）だけが止めているときは「オーナーなら理由を書いて締められる」", async () => {

@@ -40,7 +40,8 @@ const DEDUCTION_WORDS: [DeductionCategory, RegExp][] = [
 
 /** 見出しの言葉から、金額の列の種類を当てる（当たらなければ null） */
 export function classifyMoneyHeader(header: string): Classified | null {
-  const h = normalizeHeader(header);
+  // 「ロイヤリティ（10%）」のように見出しに率を書き添えた列は、額の列として読む（率だけの列「ロイヤリティ率」「%」は除く）
+  const h = normalizeHeader(header).replace(/\d+(?:\.\d+)?%/g, "");
   if (!h) return null;
   // 率・単価・合計の列、消費税の列は、額の列ではない
   if (/率|単価|%|％|消費税|^税$|控除合?計|控除額計|差引計/.test(h)) return null;

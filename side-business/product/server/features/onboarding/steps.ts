@@ -8,7 +8,7 @@
  * - finished：「案内を終える」を押した（残りの手順があってもホームの案内を出さない）
  */
 
-export type OnboardingKey = "company" | "drivers" | "projects" | "rules" | "import" | "parallel";
+export type OnboardingKey = "company" | "drivers" | "projects" | "rules" | "terms" | "import" | "parallel";
 export type StepMark = "done" | "skipped";
 export type StepState = "done" | "skipped" | "auto" | "todo";
 
@@ -29,12 +29,20 @@ export type OnboardingStepDef = {
 };
 
 export const ONBOARDING_STEPS: OnboardingStepDef[] = [
-  { key: "company", no: 1, title: "会社の基本", minutes: 5, summary: "締め日・支払日・振込手数料・インボイスの登録番号・消費税の計算方法", path: "/onboarding/company", ownerOnly: true },
+  { key: "company", no: 1, title: "会社の基本", minutes: 5, summary: "締め日・支払日・振込手数料・インボイスの登録番号・消費税の計算方法（会社の大きさは任意）", path: "/onboarding/company", ownerOnly: true },
   { key: "drivers", no: 2, title: "ドライバー", minutes: 10, summary: "Excel の名簿を貼り付けるか、ファイルを置くだけで、まとめて登録します", path: "/onboarding/drivers" },
   { key: "projects", no: 3, title: "元請と案件", minutes: 10, summary: "元請の名前・案件・単位・受注単価・支払単価を、表に書くように入れます", path: "/onboarding/projects" },
   { key: "rules", no: 4, title: "控除のルール", minutes: 5, summary: "ロイヤリティ・管理費など、毎月の支払から引くものを決めます", path: "/onboarding/rules" },
-  { key: "import", no: 5, title: "先月の Excel を取り込む", minutes: 15, summary: "今お使いの稼働の Excel を、形を変えずにそのまま置きます", path: "/import", withMonth: true },
-  { key: "parallel", no: 6, title: "Excel と比べる", minutes: 10, summary: "先月の振込額が、今の Excel と同じになるかを確かめます", path: "/parallel", withMonth: true },
+  {
+    key: "terms",
+    no: 5,
+    title: "取引条件の明示",
+    minutes: 10,
+    summary: "仕事の内容・報酬・支払日・引くものを書いた明示書を、登録した台帳からまとめて作ります（紙で渡している人は、渡した日を記録します）",
+    path: "/terms",
+  },
+  { key: "import", no: 6, title: "先月の Excel を取り込む", minutes: 15, summary: "今お使いの稼働の Excel を、形を変えずにそのまま置きます", path: "/import", withMonth: true },
+  { key: "parallel", no: 7, title: "Excel と比べる", minutes: 10, summary: "先月の振込額が、今の Excel と同じになるかを確かめます", path: "/parallel", withMonth: true },
 ];
 
 export const ONBOARDING_KEYS = ONBOARDING_STEPS.map((s) => s.key);
@@ -52,13 +60,21 @@ export type OnboardingFacts = {
   workEntries: number;
   /** Excel と比べた記録（どの月でも） */
   parallelChecks: number;
+  /**
+   * 有効なドライバーの人数と、そのうち取引条件を明示した記録（明示書・明示した日）が見つからない人の名前。
+   * 渡さなければ（古い呼び出し）取引条件の手順はデータから決めない
+   */
+  activeDrivers?: number;
+  driversWithoutTerms?: string[];
 };
 
 export type OnboardingStepView = {
   def: OnboardingStepDef;
   state: StepState;
-  /** データから分かること（「登録済み 8人」など） */
+  /** データから分かること（「登録済み 8人」など）。これがあると「済み」と見る */
   note: string | null;
+  /** まだ済んでいない手順で、残っていること（「記録が無い人 1人：遠藤 大輔さん」など）。済みの判定には使わない */
+  pending?: string | null;
 };
 
 export type OnboardingProgress = {
@@ -87,9 +103,26 @@ function autoNote(key: OnboardingKey, facts: OnboardingFacts): string | null {
       return facts.workEntries > 0 ? "稼働が入っています" : null;
     case "parallel":
       return facts.parallelChecks > 0 ? `比べた記録 ${facts.parallelChecks} 件` : null;
+    case "terms":
+      // 有効な人が全員、明示の記録を持っているときだけ「済み」
+      return facts.activeDrivers && facts.driversWithoutTerms && facts.driversWithoutTerms.length === 0
+        ? `有効なドライバー ${facts.activeDrivers}人の全員に、取引条件の記録があります`
+        : null;
     default:
       return null;
   }
+}
+
+/** 「遠藤 大輔さん・木村 誠さん ほか 2人」 */
+function namesText(names: string[]): string {
+  const shown = names.slice(0, 3).map((n) => `${n}さん`).join("・");
+  return names.length > 3 ? `${shown} ほか ${names.length - 3}人` : shown;
+}
+
+function pendingNote(key: OnboardingKey, facts: OnboardingFacts): string | null {
+  if (key !== "terms" || !facts.driversWithoutTerms?.length) return null;
+  const missing = facts.driversWithoutTerms;
+  return `取引条件を明示した記録（明示書か、明示した日）が見つからない人が ${missing.length}人います（有効な ${facts.activeDrivers ?? missing.length}人のうち）：${namesText(missing)}`;
 }
 
 export function onboardingProgress(record: Record<string, string> | null | undefined, facts: OnboardingFacts): OnboardingProgress {
@@ -101,7 +134,7 @@ export function onboardingProgress(record: Record<string, string> | null | undef
     if (mark === "done") state = "done";
     else if (mark === "skipped") state = note ? "auto" : "skipped";
     else state = note ? "auto" : "todo";
-    return { def, state, note };
+    return { def, state, note, pending: state === "auto" || state === "done" ? null : pendingNote(def.key, facts) };
   });
   const doneCount = steps.filter((s) => s.state !== "todo").length;
   const finished = rec.finished === "done";

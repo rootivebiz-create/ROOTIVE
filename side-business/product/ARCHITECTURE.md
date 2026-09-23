@@ -39,16 +39,20 @@
 | `server/rate-limit.ts` | 回数の制限 `tooMany` |
 
 ## 機能の置き場所（server/features）と、ほかの機能から使ってよい入口
+ほかの機能のファイルを直接直さない。下の入口（export された関数）を呼ぶ。足りなければ、その機能に入口を足す。
+
 | 機能 | 場所 | 入口（例） |
 |---|---|---|
-| 取り込み（稼働） | `import/`（`service.ts`・`detect.ts`・`parse.ts`・`resolve.ts`・`work.ts`） | `createDraftFromFile`・`loadDraftView`・`applyBatch`・`undoBatch`。`import_batches.summary` は `DraftSummary`（v1、`types.ts`）。稼働の束（kind='work'）を作るときは必ずここを通す |
-| 支払明細・ドライバーのリンク | `statements.ts`・`statements/`・`portal.ts` | `listMonthStatements`・`getStatementDetail`・`statementStatus`（`statements/status.ts`）・`describeChanges`（`statements/diff.ts`）・`findStatementByToken` |
-| 見張り番 | `watch.ts`・`watch/`（`rules.ts` に純関数のルール） | `runWatch`・`ackWatchIssue`（`watch/acks.ts`） |
-| 振込・締め | `transfer.ts`・`close.ts` | `loadTransferPlan`・`createTransferBatch`・`closeMonth`・`reopenMonth`・`monthAuditLog` |
-| 元請との突合 | `reconcile.ts`・`reconcile/` | `importNotice`・`runReconcile`・`listMonth`・`loadReport` |
+| 取り込み（稼働・口座） | `import/`（`service.ts`・`detect.ts`・`parse.ts`・`resolve.ts`・`work.ts`・`adopt.ts`・`bank.ts`・`zengin-read.ts`・`formulas.ts`） | `createDraftFromFile`・`loadDraftView`・`applyBatch`・`undoBatch`（稼働の束 kind='work' は必ずここ。`summary` は `DraftSummary` v1）・`adoptDeductionProposal`（控除の提案）・`createBankDraft`/`applyBankImport`（口座。kind='bank_accounts'）・`parseZengin`・`buildWorkExport`（Excel に戻す）。同じファイルは `fileHash` で止める。振込額の列は並行運用へ（`saveParallelChecks`） |
+| 支払明細・ドライバーのリンク | `statements.ts`・`statements/`・`portal.ts` | `listMonthStatements`・`getStatementDetail`・`statementStatus`（純関数。みなし確認は 3 条件：送って◯日・未解決の質問なし・取引条件の条項 `deemedClause`）・`describeChanges`・`loadVersionHistory`・`loadQuestionInbox`/`unresolvedQuestions`・`companyCopy`（会社の控え。経過措置の内訳）・`compareMonths`・`findStatementByToken` |
+| 取引条件の明示 | `terms.ts`・`terms/`・`terms-content.ts`（共通） | `listTerms`・`loadTermsDriver`・`createTermsVersion`・`bulkCreateTerms`・`markTermsSent`・`recreateTermsLink`・`findTermsByToken`・`receiveTermsFromPortal`・`renderTermsPdf`。中身は `buildTermsContent`/`buildTermsContentMany`・`compareTermsContent`・`latestTermsByDriver`・`deemedClauseMap`。`drivers.terms_issued_on` は「初めて明示した日」 |
+| 見張り番 | `watch.ts`・`watch/`（`rules.ts` に純関数のルール。`RULES` に code・重さ・根拠・出典・時点） | `runWatch`（指摘は重さ → 影響額の順。`impact`（円 or null）と `asOf` を持つ。影響額は重なるので足さない）・`ackWatchIssue`。ルールを足すときは陽性・陰性の単体テストを必ず書く。`tests/wording.test.ts`（言ってはいけない言い方）と `tests/no-hardcoded-rate.test.ts`（経過措置の率の直書き）が全ファイルを見る |
+| 振込・締め・操作の記録 | `transfer.ts`・`close.ts` | `loadTransferPlan`・`createTransferBatch`・`reviewBankChanges`（前回の振込から口座が変わった人）・`closeMonth`（赤が残るときはオーナーが理由を書けば締められる）・`reopenMonth`・`searchAuditLog`・`auditLabel`/`auditSummary`（新しい操作を足したら、ここに名前を足す。`tests/audit-log.test.ts` が見る） |
+| 全データの書き出し・読み戻し | `export-all.ts`・`export-all/` | `buildTenantExport`（ZIP：表ごとの CSV・manifest・明細の全版）・`readTenantExport`・`previewTenantImport`・`importTenantData`（`scripts/restore-tenant.ts` からも） |
+| 元請との突合 | `reconcile.ts`・`reconcile/` | `importNotice`・`runReconcile`・`listMonth`・`loadReport`・`foundMoney`（確定と見込みを分ける。足さない）・`listWaiting`・`loadLetterSource`。元請の締め日の期間で比べる（`reconcile/period.ts`） |
 | 利益・会計 | `profit.ts`・`profit/`・`accounting.ts`・`accounting/journal.ts` | `monthProfit`・`profitTrend`・`loadCeoSheet`・`buildAccountingFile` |
-| ホーム・最初の設定・並行運用 | `home.ts`・`onboarding.ts`・`parallel.ts` | `loadHomeStatus`・`createDrivers`・`saveParallelChecks`・`goLive` |
-| 設定 | `settings/` | 会社・ドライバー・元請・案件・単価・控除・利用者 |
+| ホーム・最初の設定・並行運用 | `home.ts`・`onboarding.ts`・`onboarding/`・`parallel.ts` | `loadHomeStatus`・`unresolvedQuestionCount`・`createDrivers`・`saveParallelChecks`・`goLive`（差のある人すべてに説明が付くまで切り替えない） |
+| 設定 | `settings/` | 会社・ドライバー・元請（無効にできる）・案件・単価・控除・利用者・自分のアカウント（`account.ts`）・ヘルプ。口座番号は操作の記録に下 3 桁だけ残す |
 
 ## ドライバーの画面（ログインなし）
 - 明細 `/s/<署名つきの値>`・取引条件 `/t/<署名つきの値>`。署名は `signLink(用途, id, nonce, 期限)`（用途が違うと通らない）。毎回 `verifyLink` と行の `link_nonce` を確かめる。Server Action も毎回確かめ直す（画面を信じない）

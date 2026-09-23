@@ -14,8 +14,8 @@ import { fieldError } from "./errors";
  * 会社（tenant）と本人（userId）で必ず絞る。ほかの人のログインやパスワードには触らない。
  */
 
-/** ログインのクッキーの名前（server/auth.ts と同じ）。いまの端末のセッションの id は、この値の sha256 */
-export const SESSION_COOKIE = "shimebi_sid";
+/** ログインのクッキーの名前（server/auth.ts のもの）。いまの端末のセッションの id は、この値の sha256 */
+export { SESSION_COOKIE } from "~/server/session-cookie";
 
 /** クッキーの値 → 保存しているセッションの id（生の値は保存していないので、ハッシュにして比べる） */
 export function sessionIdFromToken(token: string | null | undefined): string | null {
@@ -91,7 +91,7 @@ export async function recentLogins(db: Db, tenantId: string, userId: string, lim
 
 /** パスワードの変更の入力（確かめは changeOwnPassword の中で、項目ごとに日本語で返す） */
 export const passwordChangeSchema = z.object({
-  current: z.string({ error: "今のパスワードを入れてください" }).min(1, "今のパスワードを入れてください").max(200),
+  current: z.string({ error: "今のパスワードを入れてください" }).min(1, "今のパスワードを入れてください").max(200, "今のパスワードが違います"),
   next: z.string({ error: "新しいパスワードを入れてください" }).min(1, "新しいパスワードを入れてください"),
   confirm: z.string({ error: "新しいパスワードをもう一度入れてください" }).min(1, "新しいパスワードをもう一度入れてください"),
 });
@@ -124,6 +124,15 @@ export async function changeOwnPassword(db: Db, tenantId: string, userId: string
 /** ほかの端末からログアウトする（いまの端末のログインは残す）。切った数を返す */
 export async function signOutOtherSessions(db: Db, tenantId: string, userId: string, currentSessionId: string | null): Promise<number> {
   await mustGetUser(db, tenantId, userId);
+  // いまの端末が分からないまま消すと、この端末も切れてしまう。分からなければ何も消さずに止める
+  const here = currentSessionId
+    ? await db
+        .select({ id: s.sessions.id })
+        .from(s.sessions)
+        .where(and(eq(s.sessions.tenantId, tenantId), eq(s.sessions.userId, userId), eq(s.sessions.id, currentSessionId)))
+        .limit(1)
+    : [];
+  if (!here.length) throw new UserError("この端末のログインが確かめられませんでした。ログインし直してから、もう一度お試しください");
   return deleteOtherSessions(db, tenantId, userId, currentSessionId);
 }
 

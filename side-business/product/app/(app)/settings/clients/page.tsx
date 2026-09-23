@@ -1,22 +1,29 @@
 import Link from "next/link";
 import { Card } from "@/components/ui";
-import { Badge, EmptyState, PageHeader } from "~/components/page";
+import { Badge, EmptyState, Notice, PageHeader } from "~/components/page";
 import { ClientActiveForm } from "~/components/settings/client-active-form";
 import { ClientForm } from "~/components/settings/client-form";
 import { ActionButton } from "~/components/settings/form-kit";
 import { Expand } from "~/components/settings/list-bits";
 import { getDb } from "~/db/client";
 import { requirePageUser, roleAtLeast } from "~/server/auth";
-import { listClients, restorableProjectCount, type ClientListItem } from "~/server/features/settings/clients";
+import { clientsDoneMessage, listClients, readClientsDone, restorableProjectCount, type ClientListItem } from "~/server/features/settings/clients";
 import { createClientAction, deleteClientAction, setClientActiveAction, updateClientAction } from "./actions";
 
 export const metadata = { title: "元請" };
 
-export default async function ClientsPage() {
+type SP = { done?: string; id?: string; n?: string };
+
+export default async function ClientsPage({ searchParams }: { searchParams: Promise<SP> }) {
   const user = await requirePageUser("viewer");
   const canEdit = roleAtLeast(user.role, "staff");
+  const sp = await searchParams;
   const db = await getDb();
   const clients = await listClients(db, user.tenantId);
+  // 「取引をやめる」「戻す」のあとの知らせ（この会社の元請のときだけ）
+  const done = readClientsDone(sp);
+  // 今の状態と合うときだけ出す（あとで誰かが戻した・やめたときに、古い知らせを出さない）
+  const doneClient = done ? clients.find((c) => c.id === done.id && c.active === (done.kind === "on")) : undefined;
   const active = clients.filter((c) => c.active);
   const inactive = clients.filter((c) => !c.active);
   // 戻すときに一緒に戻せる案件の数（無効の元請だけ）
@@ -69,7 +76,7 @@ export default async function ClientsPage() {
             </Expand>
           )}
           {canEdit && !c.active && (
-            <div className="border-t border-border pt-3">
+            <div className="flex flex-wrap items-start gap-2 border-t border-border pt-3">
               <ClientActiveForm
                 action={setClientActiveAction}
                 id={c.id}
@@ -78,6 +85,17 @@ export default async function ClientsPage() {
                 activeProjects={c.activeProjects}
                 restorableProjects={restorable.get(c.id) ?? 0}
               />
+              {/* 案件にも支払通知にも使われていなければ、消すこともできる */}
+              {!used && (
+                <ActionButton
+                  action={deleteClientAction}
+                  hidden={{ id: c.id }}
+                  label="消す"
+                  danger
+                  confirm={<p>「{c.name}」を消します。元に戻せません。</p>}
+                  confirmLabel="消す"
+                />
+              )}
             </div>
           )}
         </Card>
@@ -88,6 +106,8 @@ export default async function ClientsPage() {
   return (
     <div className="max-w-3xl space-y-5">
       <PageHeader title="元請" description="仕事をくれる会社（荷主）です。案件と支払通知の突合に使います。取引をやめた元請は、消さずに「無効」にします。" />
+
+      {done && doneClient && <Notice tone="ok">{clientsDoneMessage(done, doneClient.name)}</Notice>}
 
       {canEdit && (
         <Card>

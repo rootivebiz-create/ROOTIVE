@@ -56,7 +56,12 @@ export default async function LetterPage({ params }: { params: Promise<{ id: str
           </p>
         </Card>
       )}
-      {items.length === 0 ? (
+      {source.unreadable ? (
+        <EmptyState title="お支払通知の行を読み取れていません">
+          今のファイルでは、どの列が品目・数量・金額か分からないため、数字を比べられません。
+          <Link href={`/reconcile/${notice.id}`}>結果の画面</Link>で列を選ぶか、ファイルを上げ直してから、問い合わせ文を作ってください。
+        </EmptyState>
+      ) : items.length === 0 ? (
         <EmptyState title="問い合わせる差はありません">
           未対応・問い合わせ済みの差がありません。<Link href={`/reconcile/${notice.id}`}>結果の画面</Link>に戻ってください。
         </EmptyState>

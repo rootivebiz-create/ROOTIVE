@@ -107,6 +107,8 @@ const companySchema = z
     registrationNo: z.string(),
     taxMethod: z.string(),
     paymentTermsText: z.string(),
+    capitalYen: z.string().max(40, "資本金は 40 文字までで入れてください"),
+    employees: z.string().max(20, "従業員の数は 20 文字までで入れてください"),
   })
   .transform((input, ctx) => {
     const { value, fieldErrors } = checkCompanyBasics(input);
@@ -125,6 +127,8 @@ export async function saveCompanyAction(_prev: CompanyState, form: FormData): Pr
       registrationNo: text(form, "registrationNo"),
       taxMethod: text(form, "taxMethod"),
       paymentTermsText: text(form, "paymentTermsText"),
+      capitalYen: text(form, "capitalYen"),
+      employees: text(form, "employees"),
     });
     const db = await getDb();
     await saveCompanyBasics(db, user.tenantId, input, user.id);

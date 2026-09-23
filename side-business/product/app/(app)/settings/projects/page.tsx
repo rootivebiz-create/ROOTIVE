@@ -149,11 +149,19 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
                             }}
                           />
                           <div className="flex flex-wrap gap-2 border-t border-border pt-3">
-                            <ActionButton
-                              action={setProjectActiveAction}
-                              hidden={{ id: p.id, active: p.active ? "0" : "1" }}
-                              label={p.active ? "使わないにする" : "使うように戻す"}
-                            />
+                            {!p.active && p.clientId && inactiveClients.has(p.clientId) ? (
+                              // やめた元請の案件は、元請を戻してから使う（サーバーでも止める）
+                              <p className="w-full text-sm text-muted-foreground">
+                                元請（{p.clientName}）の取引をやめているので、このままでは「使う」に戻せません。先に{" "}
+                                <Link href="/settings/clients#inactive-clients">元請の画面</Link> で「戻す」を押してください。
+                              </p>
+                            ) : (
+                              <ActionButton
+                                action={setProjectActiveAction}
+                                hidden={{ id: p.id, active: p.active ? "0" : "1" }}
+                                label={p.active ? "使わないにする" : "使うように戻す"}
+                              />
+                            )}
                             {used.has(p.id) ? (
                               <p className="w-full text-xs text-muted-foreground">稼働・明細・支払通知で使われているので消せません（記録を残すため）。</p>
                             ) : (

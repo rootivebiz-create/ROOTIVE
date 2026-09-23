@@ -179,10 +179,19 @@ describe("突き合わせの計算", () => {
     expect(compareNotice(base([], [{ projectId: "p1", driverId: "d1", qty: 1 }])).zeroRateProjects).toEqual([]);
   });
 
-  it("返事待ちの日数：問い合わせ済みのときだけ数える", () => {
+  it("返事待ちの日数：問い合わせ済みのときだけ、日本時間の暦の日で数える", () => {
     const now = new Date("2026-11-20T09:00:00+09:00");
-    expect(waitingDays("asked", new Date("2026-11-05T10:00:00+09:00"), now)).toBe(14);
-    expect(waitingDays("asked", new Date("2026-11-19T10:00:00+09:00"), now)).toBe(0);
+    // 11/5 に問い合わせ → 11/20 は 15 日（時刻に関係なく、日付の差）
+    expect(waitingDays("asked", new Date("2026-11-05T10:00:00+09:00"), now)).toBe(15);
+    expect(waitingDays("asked", new Date("2026-11-06T23:59:00+09:00"), now)).toBe(14);
+    // 前の日の夜に問い合わせ → 翌朝は 1 日。同じ日は 0 日
+    expect(waitingDays("asked", new Date("2026-11-19T23:00:00+09:00"), now)).toBe(1);
+    expect(waitingDays("asked", new Date("2026-11-20T00:30:00+09:00"), now)).toBe(0);
+    // 日本時間の 0 時をまたぐ（UTC ではまだ同じ日）ときも 1 日
+    expect(waitingDays("asked", new Date("2026-11-19T14:00:00Z"), new Date("2026-11-19T15:30:00Z"))).toBe(1);
+    // 文字の日時も読む。未来の日付（時計のずれ）は 0 日
+    expect(waitingDays("asked", "2026-11-10T12:00:00+09:00", now)).toBe(10);
+    expect(waitingDays("asked", new Date("2026-11-21T10:00:00+09:00"), now)).toBe(0);
     expect(waitingDays("open", new Date("2026-11-01T10:00:00+09:00"), now)).toBeNull();
     expect(waitingDays("asked", null, now)).toBeNull();
   });
@@ -269,7 +278,7 @@ describe("言ってはいけないこと（突合の画面・文面のすべて�
   it("決めつけ・保証・法令の結論を書いていない", () => {
     const root = path.join(__dirname, "..");
     const dirs = ["server/features/reconcile", "app/(app)/reconcile", "app/api/reconcile", "components/reconcile"];
-    const files = [path.join(root, "server/features/reconcile.ts")];
+    const files = [path.join(root, "server/features/reconcile.ts"), path.join(root, "server/pdf/reconcile-pdf.tsx")];
     const walk = (dir: string) => {
       if (!fs.existsSync(dir)) return;
       for (const e of fs.readdirSync(dir, { withFileTypes: true })) {

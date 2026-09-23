@@ -90,7 +90,7 @@ describe("ドライバー", () => {
       driverSchema.parse({ code: "D09", name: "高橋 健太", accountType: "ordinary", active: "on", bankCode: "0001", branchCode: "101", accountNumber: "765", holderKana: "タカハシ ケンタ" }),
     );
     expect(after).toMatchObject({ accountNumber: "0000765", holderKana: "ﾀｶﾊｼ ｹﾝﾀ" });
-    expect(changed.accountNumber).toEqual({ from: null, to: "0000765" });
+    expect(changed.accountNumber).toEqual({ from: null, to: "…765" });
     expect(changed.name).toBeUndefined();
 
     await setDriverActive(db, A, created.id, false);

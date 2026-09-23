@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PGlite } from "@electric-sql/pglite";
@@ -123,7 +125,44 @@ const KNOWN_ACTIONS = [
   "work.add",
   "work.delete",
   "work.update",
+  // 2 回目の組み立てで増えた操作
+  "import.reapply",
+  "import.export",
+  "import.bank.upload",
+  "import.bank.assign",
+  "import.bank.apply",
+  "import.bank.discard",
+  "export.parallel_pdf",
+  "export.reconcile_letter",
+  "export.terms_csv",
+  "export.terms_pdf_all",
+  "user.password_change",
+  "user.sign_out_others",
 ];
+
+/** いまのソースが操作の記録に書いている名前（action: "…" と *_ACTION = "…"）を集める */
+function actionsInSource(): string[] {
+  const root = path.resolve(__dirname, "..");
+  const found = new Set<string>();
+  const walk = (dir: string) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        if (e.name === "node_modules" || e.name.startsWith(".")) continue;
+        walk(full);
+      } else if (/\.(ts|tsx)$/.test(e.name) && !full.endsWith(path.join("features", "close.ts"))) {
+        const src = fs.readFileSync(full, "utf8");
+        for (const m of src.matchAll(/action:\s*(?:[^,}\n]*\?\s*)?"([a-z_]+(?:\.[A-Za-z_]+)+|setup|login)"(?:\s*:\s*"([a-z_]+(?:\.[A-Za-z_]+)+)")?/g)) {
+          found.add(m[1]);
+          if (m[2]) found.add(m[2]);
+        }
+        for (const m of src.matchAll(/_ACTION\s*=\s*"([a-z_]+(?:\.[A-Za-z_]+)+)"/g)) found.add(m[1]);
+      }
+    }
+  };
+  for (const dir of ["server", "app"]) walk(path.join(root, dir));
+  return [...found].sort();
+}
 
 describe("操作の記録の読み替え", () => {
   it("ほかの機能が書く操作は、すべて読める日本語の名前になる", () => {
@@ -136,6 +175,20 @@ describe("操作の記録の読み替え", () => {
     expect(auditLabel("unknown.thing")).toBe("操作");
   });
 
+  it("ソースに書かれている操作は、どれも種類が決まり、読める名前になる（あとから足された操作も）", () => {
+    const found = actionsInSource();
+    // grep で集められているか（少なすぎれば探し方が壊れている）
+    expect(found.length).toBeGreaterThan(80);
+    for (const a of ["transfer.create", "statement.confirm", "import.bank.apply", "user.password_change", "import.reapply"]) expect(found, a).toContain(a);
+    for (const a of found) {
+      expect(auditCategoryOf(a), a).not.toBe("other");
+      expect(auditLabel(a), a).not.toBe("操作");
+    }
+    // いまある操作は、すべて専用の名前がある
+    const missing = found.filter((a) => !KNOWN_ACTIONS.includes(a) && auditLabel(a).endsWith("の操作"));
+    expect(missing).toEqual([]);
+  });
+
   it("種類：設定・出力・その他", () => {
     expect(auditCategoryOf("driver.update")).toBe("settings");
     expect(auditCategoryOf("login")).toBe("settings");
@@ -143,6 +196,10 @@ describe("操作の記録の読み替え", () => {
     expect(auditCategoryOf("terms.send")).toBe("terms");
     expect(auditCategoryOf("reconcile.run")).toBe("reconcile");
     expect(auditCategoryOf("misc.thing")).toBe("other");
+    // いちばん長く当てはまる頭で決める
+    expect(auditCategoryOf("import.export")).toBe("export");
+    expect(auditCategoryOf("import.bank.apply")).toBe("import");
+    expect(auditCategoryOf("import.apply")).toBe("import");
   });
 
   it("1 行のまとめ：設定の変更は項目の名前だけ（値は出さない）", () => {
@@ -280,6 +337,31 @@ describe("操作の記録を探す（範囲・種類・人・ページ）", () =
     expect(confirm[5]).toBe("明細とドライバーの確認");
     expect(String(confirm[1])).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
     expect(JSON.parse(String(confirm[9]))).toMatchObject({ by: "driver", version: 1 });
+  });
+
+  it("口座番号は、画面にも CSV にも下 3 桁だけを出す（記録そのものは変えない）", async () => {
+    const DEC = "2026-12-01";
+    await db.insert(s.auditLog).values({
+      tenantId,
+      userId: staffId,
+      action: "driver.update",
+      entity: "driver",
+      entityId: d01,
+      detail: { name: "青木 翔太", changed: { accountNumber: { from: "1234567", to: "7654321" }, branchCode: { from: "101", to: "102" } } },
+      createdAt: new Date("2026-12-03T01:00:00Z"),
+    });
+    const res = await searchAuditLog(db, tenantId, { month: DEC, scope: "period" });
+    expect(res.rows).toHaveLength(1);
+    expect(res.rows[0].detail).toEqual({ name: "青木 翔太", changed: { accountNumber: { from: "****567", to: "****321" }, branchCode: { from: "101", to: "102" } } });
+    // 項目の並びは DB（jsonb）の並びのまま。値は出さない
+    expect(res.rows[0].summary).toMatch(/^青木 翔太：変えたところ：(口座番号・支店コード|支店コード・口座番号)$/);
+    const csv = await auditCsvRows(db, tenantId, { month: DEC, scope: "period" });
+    expect(csv.flat().join("|")).not.toContain("1234567");
+    expect(csv.flat().join("|")).not.toContain("7654321");
+    expect(String(csv[1][9])).toContain("****321");
+    // 記録そのものは元のまま（全データの書き出しには元のまま入る）
+    const [raw] = await db.select().from(s.auditLog).where(and(eq(s.auditLog.tenantId, tenantId), eq(s.auditLog.action, "driver.update"), eq(s.auditLog.userId, staffId)));
+    expect(JSON.stringify(raw.detail)).toContain("7654321");
   });
 
   it("他社の記録は、どの絞り込みでも出ない", async () => {

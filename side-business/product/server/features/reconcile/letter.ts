@@ -206,8 +206,11 @@ export function letterTheirSide(it: LetterItem): string {
   return formulaText(it.theirQty, it.theirPrice, it.theirAmount, it.unit);
 }
 
-/** 文面（画面と同じ）と差の一覧の表。body を渡すと（画面で直した文面）、本文はそれを使う */
-export function letterDocument(input: LetterInput, opts: { body?: string | null } = {}): LetterDocument {
+/**
+ * 文面（画面と同じ）と差の一覧の表。body を渡すと（画面で直した文面）、本文はそれを使う。
+ * ourSpan：元請の締め日が違うのに、稼働に日付が無く当社の月で比べたとき、当社の記録の期間（表の注記に書く）
+ */
+export function letterDocument(input: LetterInput, opts: { body?: string | null; ourSpan?: { from: string; to: string } | null } = {}): LetterDocument {
   const built = buildLetter(input);
   // フォームから来た文面は改行が CRLF になるので、そろえてから比べる
   const given = typeof opts.body === "string" ? opts.body.replace(/\r\n?/g, "\n") : null;
@@ -238,6 +241,9 @@ export function letterDocument(input: LetterInput, opts: { body?: string | null 
     notes: [
       "差は「お支払通知 − 当社の記録」です。マイナスは、お支払通知の金額が当社の記録より少ないものです。",
       "金額は税抜です。当社の記録は、稼働の数量 × 当社の単価で計算しています。",
+      ...(opts.ourSpan && !input.period
+        ? [`当社の記録は、当社の月（${dateJa(opts.ourSpan.from)}〜${dateJa(opts.ourSpan.to)}）の稼働で集計しています。お支払通知の期間と異なる場合があります。`]
+        : []),
     ],
   };
 }

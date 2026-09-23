@@ -17,7 +17,7 @@ import {
   uploadNoticeAction,
 } from "~/app/(app)/reconcile/actions";
 import { FormMessage } from "~/components/reconcile/bits";
-import { ITEM_STATUSES, STATUS_LABEL, type ItemStatus } from "~/server/features/reconcile/labels";
+import { closingSpan, dateJa, ITEM_STATUSES, monthJa, STATUS_LABEL, type ItemStatus } from "~/server/features/reconcile/labels";
 
 const fileClass =
   "block w-full min-h-11 rounded-lg border border-border bg-card px-2 py-2 text-sm text-foreground file:mr-3 file:min-h-9 file:rounded-md file:border-0 file:bg-muted file:px-3 file:font-bold file:text-foreground";
@@ -29,7 +29,8 @@ export function UploadForm({
   month,
   existing,
 }: {
-  clients: { id: string; name: string }[];
+  /** closingDay：元請の締め日（0＝月末）。月末でなければ、何日〜何日の分として比べるかを書き添える */
+  clients: { id: string; name: string; closingDay?: number }[];
   /** 画面の月（YYYY-MM） */
   month: string;
   /** この月にお支払通知がもうある元請 */
@@ -40,6 +41,9 @@ export function UploadForm({
   const [clientId, setClientId] = useState(firstFree?.id ?? "");
   const [m, setM] = useState(month);
   const already = m === month ? existing.find((e) => e.clientId === clientId) : undefined;
+  const picked = clients.find((c) => c.id === clientId);
+  // 締め日が月末でない元請は、何月分が何日〜何日の分か（上げる月を取り違えないように）
+  const span = picked && /^\d{4}-\d{2}$/.test(m) ? closingSpan(m, picked.closingDay ?? 0) : null;
   return (
     <form action={action} className="space-y-4">
       <FormMessage state={state} />
@@ -57,6 +61,14 @@ export function UploadForm({
           <Input type="month" name="month" value={m} onChange={(e) => setM(e.target.value)} required />
         </Field>
       </div>
+      {picked && span && (
+        <p className="rounded-lg border border-border bg-muted p-3 text-sm">
+          {picked.name}は毎月{picked.closingDay}日締めです。{monthJa(m)}分は {dateJa(span.from)}〜{dateJa(span.to)} の分です。
+          <span className="block text-xs text-muted-foreground">
+            お支払通知の締めの日が {dateJa(span.to)} になっているか確かめてください。稼働に日付があれば、この期間の稼働で比べます（日付が無ければ当社の月で比べます）。
+          </span>
+        </p>
+      )}
       <Field label="お支払通知のファイル" hint="CSV か Excel（.xlsx）。元請の画面から落としたファイルを、そのまま上げられます（5MB まで）">
         <input type="file" name="file" accept=".csv,.xlsx,.xlsm,.tsv,.txt" required className={fileClass} />
       </Field>
@@ -74,6 +86,28 @@ export function UploadForm({
       </label>
       <Button type="submit" className="w-full sm:w-auto" disabled={pending || clients.length === 0}>
         {pending ? "読み取っています…" : "取り込んで突き合わせる"}
+      </Button>
+    </form>
+  );
+}
+
+/**
+ * 結果の画面から、同じ元請・同じ月のお支払通知を直したものに入れ替える（元請と月は決まっているので、ファイルを選ぶだけ）。
+ * 取引をやめた元請でも、すでにある月の通知は入れ替えられる
+ */
+export function ReplaceNoticeForm({ clientId, clientName, month, monthText }: { clientId: string; clientName: string; month: string; monthText: string }) {
+  const [state, action, pending] = useActionState(uploadNoticeAction, undefined);
+  return (
+    <form action={action} className="space-y-3">
+      <input type="hidden" name="clientId" value={clientId} />
+      <input type="hidden" name="month" value={month} />
+      <input type="hidden" name="replace" value="1" />
+      <FormMessage state={state} />
+      <Field label={`直したお支払通知のファイル（${clientName}・${monthText}分）`} hint="行を新しいファイルの内容に入れ替えて、突き合わせ直します。問い合わせの状態・メモ・取り戻せた額は残ります">
+        <input type="file" name="file" accept=".csv,.xlsx,.xlsm,.tsv,.txt" required className={fileClass} />
+      </Field>
+      <Button type="submit" variant="secondary" className="w-full sm:w-auto" disabled={pending}>
+        {pending ? "読み取っています…" : "入れ替えて突き合わせ直す"}
       </Button>
     </form>
   );
@@ -130,8 +164,28 @@ export function ItemStatusForm({
 }) {
   const [state, action, pending] = useActionState(setItemStatusAction, undefined);
   const [chosen, setChosen] = useState<ItemStatus>(status);
+  const [recovered, setRecovered] = useState(recoveredAmount !== null ? String(recoveredAmount) : "");
   const showRecovered = chosen === "resolved" && diff < 0;
-  const noteRequired = chosen === "accepted";
+  // 了承は理由が必須。解決は「取り戻せた額」か「どう片付いたかのメモ」のどちらかが必須（サーバーでも確かめる）
+  const noteRequired = chosen === "accepted" || (chosen === "resolved" && (!showRecovered || recovered.trim() === ""));
+  const noteLabel =
+    chosen === "accepted"
+      ? "メモ（了承した理由・必須）"
+      : chosen === "resolved"
+        ? showRecovered
+          ? noteRequired
+            ? "メモ（取り戻せた額を入れないときは必須）"
+            : "メモ"
+          : "メモ（どう片付いたか・必須）"
+        : "メモ";
+  const placeholder =
+    chosen === "accepted"
+      ? "例：11/5 先方と電話。10月分はこの数で合意"
+      : chosen === "resolved"
+        ? showRecovered
+          ? "例：11月分に上乗せで入金／自社の記録を直した"
+          : "例：待機料の請求どおりと確認した"
+        : "例：10/31 メールで問い合わせ";
   return (
     <form action={action} className="mt-3 space-y-2 border-t border-border pt-3">
       <input type="hidden" name="itemId" value={itemId} />
@@ -145,14 +199,8 @@ export function ItemStatusForm({
             ))}
           </Select>
         </Field>
-        <Field label={noteRequired ? "メモ（了承した理由・必須）" : "メモ"}>
-          <Input
-            name="note"
-            defaultValue={note ?? ""}
-            maxLength={500}
-            required={noteRequired}
-            placeholder={noteRequired ? "例：11/5 先方と電話。10月分はこの数で合意" : "例：10/31 メールで問い合わせ"}
-          />
+        <Field label={noteLabel}>
+          <Input name="note" defaultValue={note ?? ""} maxLength={500} required={noteRequired} placeholder={placeholder} />
         </Field>
         <Button type="submit" variant="secondary" disabled={pending}>
           {pending ? "保存中…" : "保存"}
@@ -160,8 +208,11 @@ export function ItemStatusForm({
       </div>
       {showRecovered && (
         <div className="sm:max-w-xs">
-          <Field label="取り戻せた額（円・任意）" hint="入金された額、または次の支払に上乗せされると決まった額。当社の記録の誤りだったときは 0。入れた額だけを「取り戻せたお金」として集計します">
-            <NumberInput name="recoveredAmount" defaultValue={recoveredAmount !== null ? String(recoveredAmount) : ""} placeholder={`例：${Math.abs(diff)}`} />
+          <Field
+            label="取り戻せた額（円）"
+            hint="入金された額、または次の支払に上乗せされると決まった額（差と違う額でもかまいません）。当社の記録の誤りだったときは 0 か、メモに「自社の記録を直した」と残してください。入れた額だけを「見つけたお金（確定）」として数えます"
+          >
+            <NumberInput name="recoveredAmount" value={recovered} onChange={(e) => setRecovered(e.target.value)} placeholder={`例：${Math.abs(diff)}`} />
           </Field>
         </div>
       )}

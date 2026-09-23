@@ -49,7 +49,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         </section>
         <aside aria-label="この月のまとめ">
           <h2 className="mb-3 text-lg font-bold">この月のまとめ</h2>
-          <SideCards st={st} otherQuestions={Math.max(0, allQuestions - st.questions.count)} />
+          <SideCards st={st} otherQuestions={Math.max(0, allQuestions - st.questions.count)} canEdit={canEdit} />
         </aside>
       </div>
     </div>

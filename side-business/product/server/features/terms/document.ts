@@ -235,7 +235,45 @@ export function changeText(ch: TermsChange): string {
       return `案件「${ch.label}」が増えました`;
     case "service_removed":
       return `案件「${ch.label}」がなくなりました`;
+    case "tax":
+      return `消費税の扱い：${ch.before} → ${ch.after}`;
+    case "deemed":
+      return "明細のみなし確認の日数が、明示した文と違っています";
   }
+}
+
+/** 消費税の扱い・みなし確認の日数は termsExtraChanges の文で出すので、compareTermsContent の同じ変化は外す */
+export function notExtra(ch: TermsChange): boolean {
+  return ch.kind !== "tax" && ch.kind !== "deemed";
+}
+
+/**
+ * 明示し直したほうがよい変化のうち、読みやすい文にするもの（純関数）：
+ * - みなし確認の条項の日数（会社の設定の日数を変えると、明細のみなし確認は新しい日数で動くのに、明示した文は前の日数のまま）
+ * - 消費税の扱い（インボイスの登録・免税の方への消費税相当額の設定が変わると、支払う額が変わる）
+ */
+export function termsExtraChanges(recorded: Pick<TermsContent, "deemedClause" | "taxNote">, current: Pick<TermsContent, "deemedClause" | "taxNote">): string[] {
+  const out: string[] = [];
+  if (recorded.deemedClause && current.deemedClause && recorded.deemedClause.trim() !== current.deemedClause.trim()) {
+    const days = (t: string) => t.match(/(\d+)日以内/)?.[1];
+    const a = days(recorded.deemedClause);
+    const b = days(current.deemedClause);
+    out.push(a && b && a !== b ? `明細のみなし確認の日数：${a}日 → ${b}日（会社の設定）` : `明細のみなし確認の条項の文：「${short(recorded.deemedClause)}」→「${short(current.deemedClause)}」`);
+  }
+  if (recorded.taxNote.trim() && current.taxNote.trim() && recorded.taxNote.trim() !== current.taxNote.trim()) {
+    out.push(`消費税の扱い：「${recorded.taxNote.trim()}」→「${current.taxNote.trim()}」`);
+  }
+  return out;
+}
+
+/** 明示書に入っていない案件の稼働（新しく頼んだ仕事の条件が、まだ明示されていない） */
+export function unlistedWorkText(project: string, month: string): string {
+  return `明示書に無い案件「${project}」の稼働があります（${jpMonthText(month)}）`;
+}
+
+function jpMonthText(month: string): string {
+  const [y, m] = month.slice(0, 7).split("-").map(Number);
+  return y && m ? `${y}年${m}月` : month;
 }
 
 type VersionSide = { content: StoredTermsContent | null; subcontract: unknown; documentName: string | null; issuedOn: string };
@@ -248,7 +286,7 @@ export function describeVersionChanges(prev: VersionSide, cur: VersionSide): str
   if (!prev.content || !cur.content) return prev.content === cur.content ? [] : ["中身の写しが無い版との比べはできません"];
   const a = prev.content;
   const b = cur.content;
-  const out = compareTermsContent(a, b).map(changeText);
+  const out = [...compareTermsContent(a, b).filter(notExtra).map(changeText), ...termsExtraChanges(a, b)];
   const before = new Map(a.services.map((x) => [x.projectId, x]));
   const after = new Map(b.services.map((x) => [x.projectId, x]));
   for (const [id, x] of after) if (!before.has(id)) out.push(`案件を追加：${x.name}（${rateText(x.payRate)}／${x.unit}）`);

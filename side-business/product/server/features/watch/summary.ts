@@ -27,12 +27,16 @@ export function countIssues(issues: WatchIssue[]): WatchCounts {
   return c;
 }
 
-/** 重さごとに分ける。まだ確認していないものを先に（並びはそのまま） */
-export function groupBySeverity(issues: WatchIssue[]): Record<WatchSeverity, WatchIssue[]> {
-  const out: Record<WatchSeverity, WatchIssue[]> = { red: [], yellow: [], info: [] };
+/**
+ * 重さごとに分ける。まだ確認していないものを先に（並びはそのまま）。
+ * later を渡すと、まだ確認していないもののうち later に当たるもの（前の月に確認済みにした黄など）を、その次に並べる
+ */
+export function groupBySeverity<T extends WatchIssue>(issues: T[], later?: (i: T) => boolean): Record<WatchSeverity, T[]> {
+  const out: Record<WatchSeverity, T[]> = { red: [], yellow: [], info: [] };
   for (const i of issues) out[i.severity].push(i);
+  const isLater = (i: T) => !!later && later(i);
   for (const k of Object.keys(out) as WatchSeverity[]) {
-    out[k] = [...out[k].filter((i) => !i.acked), ...out[k].filter((i) => i.acked)];
+    out[k] = [...out[k].filter((i) => !i.acked && !isLater(i)), ...out[k].filter((i) => !i.acked && isLater(i)), ...out[k].filter((i) => i.acked)];
   }
   return out;
 }

@@ -42,6 +42,7 @@ export function ImpactLine({ impact }: { impact?: WatchImpact | null }) {
  * 確認済みにする／外すのは事務・オーナーで、まだ締めていない月（振込の遅れ・質問は締めたあとも）。
  * 直す画面へのリンクは、直せない人（閲覧の人・会社の設定を変えられない事務・締めた月）には「見る」と出す。
  * 確認済みの指摘は消さずに、灰色の 1 行にたたむ（開くと中身とメモ。確認したあとで中身が変わったものはたたまない）。
+ * 前の月に確認済みにした黄・お知らせも、翌月は灰色の 1 行にたたむ（開くと前の月のメモを下書きにして確認済みにできる）。
  */
 export function IssueCard({
   issue,
@@ -63,7 +64,7 @@ export function IssueCard({
   ack?: AckView | null;
   /** 確認済みにしたあとで、中身（数字・日付・人）が変わったか */
   changedSinceAck?: boolean;
-  previous?: { month: string; note: string | null } | null;
+  previous?: { month: string; note: string | null; fromCode?: string } | null;
 }) {
   const k = { month, code: issue.code, subjectId: issue.subjectId };
   const red = issue.severity === "red";
@@ -111,8 +112,12 @@ export function IssueCard({
         </div>
       )}
       {!issue.acked && previous && (
-        <p className="mt-3 rounded-lg border border-border bg-muted p-3 text-xs">
-          {monthJa(previous.month)}にも同じ指摘を確認済みにしています：{previous.note ? `「${previous.note}」` : "（メモなし）"}
+        <p className="mt-3 break-words rounded-lg border border-border bg-muted p-3 text-xs">
+          {previous.fromCode === "paid_late"
+            ? `${monthJa(previous.month)}分の見張り番で、この振込の遅れを確認済みにしています：`
+            : `${monthJa(previous.month)}にも同じ指摘を確認済みにしています：`}
+          {previous.note ? `「${previous.note}」` : "（メモなし）"}
+          {!red && "この月の分も、中身が同じか確かめて確認済みにしてください。"}
         </p>
       )}
 
@@ -146,20 +151,24 @@ export function IssueCard({
       </div>
     </>
   );
-  if (issue.acked && !changedSinceAck) {
+  // 灰色の 1 行にたたむ：この月に確認済みにしたもの（確認後に中身が変わったものは除く）と、
+  // 前の月に確認済みにした黄・お知らせ（締めを止めないもの。赤は締めを止めるので、たたまずに出す）
+  const carried = !issue.acked && !!previous && !red;
+  if ((issue.acked && !changedSinceAck) || carried) {
     const yen = issue.impact?.yen ?? null;
     return (
       <li>
         <details className="group rounded-card border border-border bg-muted">
-          <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm text-muted-foreground [&::-webkit-details-marker]:hidden">
-            <Badge tone="green">確認済み</Badge>
-            <span className="min-w-0 flex-1 truncate">
+          {/* スマホでは「印・金額・▾」の下に見出しを 1 行で（幅が狭くても見出しが消えないように）。広い画面では 1 行に並べる */}
+          <summary className="flex min-h-11 cursor-pointer list-none flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 text-sm text-muted-foreground [&::-webkit-details-marker]:hidden">
+            {carried ? <Badge tone="gray">{monthJa(previous!.month)}に確認済み</Badge> : <Badge tone="green">確認済み</Badge>}
+            {yen !== null && <Money value={yen} className="shrink-0 text-xs sm:order-last" />}
+            <span aria-hidden className="ml-auto shrink-0 group-open:rotate-180 sm:order-last sm:ml-0">
+              ▾
+            </span>
+            <span className="min-w-0 basis-full truncate sm:basis-0 sm:flex-1">
               {SEVERITY_LABEL[issue.severity]}・{issue.title}
               {issue.subjectLabel ? `（${issue.subjectLabel}）` : ""}
-            </span>
-            {yen !== null && <Money value={yen} className="shrink-0 text-xs" />}
-            <span aria-hidden className="shrink-0 group-open:rotate-180">
-              ▾
             </span>
           </summary>
           <div className="rounded-b-card border-t border-border bg-card p-4">{body}</div>

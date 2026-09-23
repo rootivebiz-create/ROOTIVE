@@ -17,4 +17,5 @@ export const NAV: NavItem[] = [
   { href: "/profit", label: "利益", short: "利益", need: "viewer" },
   { href: "/export", label: "会計ソフトへ", short: "会計", need: "staff" },
   { href: "/settings", label: "設定", short: "設定", need: "viewer" },
+  { href: "/help", label: "ヘルプ", short: "ヘルプ", need: "viewer" },
 ];

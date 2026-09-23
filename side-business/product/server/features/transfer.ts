@@ -11,6 +11,7 @@ import { readSnapshot, statementsStatus } from "~/server/statements-core";
 import { csvText } from "~/server/download";
 import { sha256 } from "~/server/tokens";
 import { deemedDaysOf, statementStatus } from "~/server/features/statements/status";
+import { deemedClauseMap } from "~/server/features/terms-content";
 import type { AccountType } from "@/lib/payroll/types";
 import { buildZenginRecords, toZenginKana, validateTransfers, zenginBytes, type Requester, type Transfer } from "@/lib/payroll/zengin";
 import { adjustForBankHoliday, isBankHoliday, isDateString, shortDate } from "@/lib/tools/torihiki-joken";
@@ -318,7 +319,13 @@ async function createdTransferRecords(db: Db, tenantId: string): Promise<Created
   return out;
 }
 
-export type BankEdit = { at: Date; userName: string | null; fields: string[] };
+export type BankEdit = {
+  at: Date;
+  userName: string | null;
+  fields: string[];
+  /** どこから変えたか（口座の一覧の取り込みなら、そのファイル名つき）。設定の画面なら null */
+  via: string | null;
+};
 
 export type BankChange = {
   driverId: string;
@@ -332,6 +339,8 @@ export type BankChange = {
   fields: string[];
   /** だれが・いつ変えたか（ドライバーの設定の記録から。新しい順） */
   edits: BankEdit[];
+  /** 確かめた口座を表す短い値（「確かめました」を、画面で見た口座に結びつけるため。番号は分からない） */
+  checkKey: string;
 };
 
 export type BankReview = {
@@ -376,6 +385,7 @@ export async function reviewBankChanges(db: Db, tenantId: string, targets: Revie
       currentMasked: maskedBank(now),
       fields: stampDiff(before, now),
       edits: [],
+      checkKey: sha256(`bank-check:${t.driverId}|${now.fp}`).slice(0, 16),
     };
     changed.push(change);
     pending.push({ target: t, since: last.at, change });
@@ -409,7 +419,11 @@ export async function reviewBankChanges(db: Db, tenantId: string, targets: Revie
         const changedKeys = e.detail?.changed && typeof e.detail.changed === "object" ? Object.keys(e.detail.changed as object) : [];
         const fields = changedKeys.filter((k) => k in BANK_FIELD_LABEL).map((k) => BANK_FIELD_LABEL[k]);
         if (fields.length === 0) continue;
-        p.change.edits.push({ at: e.createdAt, userName: e.userId ? userName.get(e.userId) ?? null : null, fields });
+        const via =
+          e.detail?.source === "import.bank"
+            ? `口座の一覧の取り込み${typeof e.detail.fileName === "string" && e.detail.fileName ? `（${e.detail.fileName}）` : ""}`
+            : null;
+        p.change.edits.push({ at: e.createdAt, userName: e.userId ? userName.get(e.userId) ?? null : null, fields, via });
       }
     }
   }
@@ -417,6 +431,15 @@ export async function reviewBankChanges(db: Db, tenantId: string, targets: Revie
   const byName = (a: { driverCode: string | null; driverName: string }, b: { driverCode: string | null; driverName: string }) =>
     (a.driverCode ?? "").localeCompare(b.driverCode ?? "", "ja") || a.driverName.localeCompare(b.driverName, "ja");
   return { changed: changed.sort(byName), firstTime: firstTime.sort(byName), unknown: unknown.sort(byName), compared: targets.length };
+}
+
+/**
+ * 「口座が変わった人を確かめました」を、画面で見た人と口座に結びつける値。
+ * 画面を開いたあとにまた口座が変わると値が変わるので、確かめていない口座で作ることを防げる。変わった人がいなければ空。
+ */
+export function bankReviewKey(changes: Pick<BankChange, "checkKey">[]): string {
+  if (changes.length === 0) return "";
+  return sha256(`bank-review:${changes.map((c) => c.checkKey).sort().join(",")}`).slice(0, 24);
 }
 
 // ---------------------------------------------------------------- 読む
@@ -561,6 +584,8 @@ export async function loadTransferNotes(db: Db, tenantId: string, month: string,
   ]);
   const driverById = new Map(drivers.map((d) => [d.id, d]));
   const deemedDays = deemedDaysOf(tenant.settings);
+  // みなし確認は、取引条件にその条項がある人だけ（明細の画面と同じ判定）
+  const clauses = await deemedClauseMap(db, tenantId, statements.map((x) => x.driverId));
   for (const st of statements) {
     const d = driverById.get(st.driverId);
     const snap = readSnapshot(st);
@@ -573,6 +598,7 @@ export async function loadTransferNotes(db: Db, tenantId: string, month: string,
         updatedAt: st.updatedAt,
         confirmations: confirmations.filter((c) => c.statementId === st.id),
         driverMessages: messages.filter((m) => m.statementId === st.id),
+        deemedClause: clauses.get(st.driverId) === true,
       },
       now,
       deemedDays,
@@ -596,6 +622,8 @@ export type TransferReview = {
   bank: BankReview;
   /** まだ振込データに入っていない人のうち、口座が変わった人の数（「まだの人だけ」を選んだときの確認に使う） */
   changedRemaining: number;
+  /** 「確かめました」に添えて送る値（全員ぶん・まだの人だけ。bankReviewKey） */
+  bankKeys: { all: string; remaining: string };
   notes: TransferNotes;
   /** この月の振込データのうち、作ったあとに口座が変わった人を含むもの（ダウンロードを止める） */
   staleBankBatches: { batchId: string; drivers: string[] }[];
@@ -610,7 +638,14 @@ export async function loadTransferReview(db: Db, tenantId: string, month: string
     batchesWithBankChanges(db, tenantId, month),
   ]);
   const remaining = new Set(p.included.filter((r) => r.inBatches.length === 0).map((r) => r.driverId));
-  return { bank, changedRemaining: bank.changed.filter((c) => remaining.has(c.driverId)).length, notes, staleBankBatches };
+  const changedRemaining = bank.changed.filter((c) => remaining.has(c.driverId));
+  return {
+    bank,
+    changedRemaining: changedRemaining.length,
+    bankKeys: { all: bankReviewKey(bank.changed), remaining: bankReviewKey(changedRemaining) },
+    notes,
+    staleBankBatches,
+  };
 }
 
 /** 振込データを作ったときの口座の目印（記録が無い＝この確かめを入れる前のデータなら null） */
@@ -704,6 +739,11 @@ export type CreateTransferInput = {
   replaceConfirmed?: boolean;
   /** 前回の振込から口座が変わった人を、ご本人に確かめたか（変わった人がいるとき必須） */
   bankChangesConfirmed?: boolean;
+  /**
+   * 確かめたときに画面に出ていた「変わった人と口座」の値（loadTransferReview の bankKeys）。
+   * 渡されたときは、今の値と同じでなければ作らない（画面を開いたあとに、また口座が変わったとき）
+   */
+  bankReviewKey?: string;
 };
 
 export type CreatedBatch = typeof s.transferBatches.$inferSelect & {
@@ -801,6 +841,12 @@ async function createTransferBatchLocked(
     const list = bankReview.changed.map((c) => `・${c.driverName}（${c.fields.join("・")}）`).join("\n");
     throw new UserError(
       `前回の振込から口座が変わった人が ${bankReview.changed.length}人います。口座が正しいか、ご本人に電話などで確かめてから、「口座が変わった人を確かめました」に印を付けて作ってください。\n${list}`,
+    );
+  }
+  if (bankReview.changed.length && input.bankReviewKey !== undefined && input.bankReviewKey !== bankReviewKey(bankReview.changed)) {
+    const list = bankReview.changed.map((c) => `・${c.driverName}（${c.fields.join("・")}）`).join("\n");
+    throw new UserError(
+      `確かめたあとに、口座が変わった人（または口座）がさらに変わっています。振込データは作っていません。画面を読み直して、「前回の振込から口座が変わった人」をもう一度確かめてください。\n${list}`,
     );
   }
 
@@ -921,8 +967,11 @@ async function loadBatchLines(db: Db, tenantId: string, batch: StoredBatch): Pro
   if (stamps) {
     const moved = lines.filter((l) => stamps.has(l.row.driverId) && stamps.get(l.row.driverId)!.fp !== bankFingerprint(tenantId, l.row.bank));
     if (moved.length) {
+      const who = moved.map((l) => l.row.driverName).join("、");
       throw new UserError(
-        `この振込データを作ったあとに、口座が変わった人がいます（${moved.map((l) => l.row.driverName).join("、")}）。確かめていない口座に振り込まないよう、この振込データは取り消して作り直してください（作り直すときに、口座が変わった人を確かめる欄が出ます）。`,
+        batch.executedOn
+          ? `この振込データを作ったあとに、口座が変わった人がいます（${who}）。振り込んだ記録があるデータなので、いまの口座では出し直しません（振り込んだときの口座と違うファイルになるため）。振り込んだときの人数と金額は、この画面と操作の記録で確かめられます。`
+          : `この振込データを作ったあとに、口座が変わった人がいます（${who}）。確かめていない口座に振り込まないよう、この振込データは取り消して作り直してください（作り直すときに、口座が変わった人を確かめる欄が出ます）。`,
       );
     }
   }

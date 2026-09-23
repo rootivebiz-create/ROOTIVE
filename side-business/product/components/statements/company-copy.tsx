@@ -14,10 +14,16 @@ export function CompanyCopyBox({ copy, taxMethod }: { copy: CompanyCopy; taxMeth
   return (
     <section className="rounded-card border-2 border-dashed border-border bg-muted p-4 text-sm" aria-label="会社の控え">
       <h2 className="font-bold">会社の控え：経過措置の負担（ドライバーには見せません）</h2>
-      {taxMethod !== "general" ? (
+      {taxMethod !== "general" && copy.invoiceBurden === 0 && copy.parts.length === 0 ? (
         <p className="mt-1">会社の消費税の計算が原則課税ではない設定のため、この負担は 0 円として計算しています（設定は「会社」の画面で変えられます）。</p>
       ) : (
         <>
+          {/* 数字は明細を作ったときの写し。そのあとで会社の設定を変えていれば、そう書く（作り直すまで数字は変わらない） */}
+          {taxMethod !== "general" && (
+            <p className="mt-1 rounded-lg border border-warning/40 bg-warning/10 p-2">
+              いまの会社の設定は原則課税ではありません。下の数字は、明細を作ったときの設定（原則課税）で計算したものです。明細を作り直すと 0 円になります。
+            </p>
+          )}
           <p className="mt-1">登録番号の無い方への支払（税込）のうち、仕入税額控除できるのは経過措置の割合までです。控除できない分を会社が負担します。</p>
           <dl className="mt-2 grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1">
             <dt>控除できる割合（期間の末日で判定）</dt>

@@ -154,7 +154,7 @@ export function CloseMonthForm({
               rows={3}
               maxLength={500}
               required
-              placeholder="例：取引条件の書面は 11/10 に渡す予定。支払日に間に合わせるため先に締める"
+              placeholder="例：◯◯さんの件は、ご本人と話して来月の明細で直すことにした。支払日に間に合わせるため先に締める"
               className="block w-full rounded-lg border border-border bg-card p-3 text-base text-foreground focus:border-foreground"
             />
           </Field>

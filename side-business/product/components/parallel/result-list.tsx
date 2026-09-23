@@ -8,7 +8,7 @@ export function ResultList({ rows }: { rows: ParallelRow[] }) {
   return (
     <ul className="space-y-3">
       {rows.map((r) => (
-        <li key={r.driverId} className={`rounded-card border bg-card p-3 ${r.diff ? "border-warning/60" : "border-border"}`}>
+        <li key={r.driverId} id={`row-${r.driverId}`} className={`scroll-mt-24 rounded-card border bg-card p-3 ${r.diff ? "border-warning/60" : "border-border"}`}>
           <div className="flex flex-wrap items-center gap-2">
             <span className="min-w-0 flex-1 font-bold">
               {r.name}

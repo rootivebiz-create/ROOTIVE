@@ -1,6 +1,6 @@
 "use server";
 
-import { and, count, eq, gt, isNull } from "drizzle-orm";
+import { and, asc, count, eq, gt, isNull } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getDb } from "~/db/client";
@@ -24,7 +24,12 @@ export async function loginAction(_prev: FormState, form: FormData): Promise<For
   }
   const db = await getDb();
   // 同じメールアドレスが別の会社にもある（まとめて提供するとき）なら、パスワードが合う方に入る
-  const rows = await db.select().from(s.users).where(and(eq(s.users.email, email), isNull(s.users.disabledAt))).limit(10);
+  const rows = await db
+    .select()
+    .from(s.users)
+    .where(and(eq(s.users.email, email), isNull(s.users.disabledAt)))
+    .orderBy(asc(s.users.createdAt))
+    .limit(10);
   let user: (typeof rows)[number] | undefined;
   for (const candidate of rows) {
     if (await verifyPassword(password, candidate.passwordHash ?? "")) {

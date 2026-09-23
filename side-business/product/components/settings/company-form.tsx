@@ -10,6 +10,7 @@ import {
   FEE_BEARER_WARNING,
   isStandardNote,
   payRuleSentence,
+  plainSizeText,
   readNumber,
   ROUNDING_CHOICES,
   TAX_METHODS,
@@ -90,8 +91,9 @@ export function CompanyForm({ action, initial, canEdit, today, month, periodWord
   const dayCount = daysNum !== null && Number.isInteger(daysNum) && daysNum >= 1 && daysNum <= 60 ? daysNum : 7;
   const noteDays = /(\d+)日以内/.exec(note.normalize("NFKC"))?.[1];
   const noteMismatch = noteDays !== undefined && Number(noteDays) !== dayCount;
-  const capNum = readNumber(capital);
-  const empNum = readNumber(employees);
+  // 「1,000万円」「12人」の書き方でも、保存するときと同じように読む
+  const capNum = readNumber(plainSizeText(capital, "円"));
+  const empNum = readNumber(plainSizeText(employees, "人"));
   // 見張り番と同じ数・同じ比べ方（数は見張り番の決まりから受け取る）
   const torOver = toritekiOver(toriteki, capNum, empNum);
   const torText = toritekiThresholdText(toriteki);
@@ -254,7 +256,7 @@ export function CompanyForm({ action, initial, canEdit, today, month, periodWord
           }
         >
           <div className="grid gap-3 sm:grid-cols-2">
-            <F label="資本金（円）" error={fe.capitalYen}>
+            <F label="資本金（円）" error={fe.capitalYen} hint="「1,000万円」の書き方でも入れられます">
               <NumberInput name="capitalYen" value={capital} onChange={(e) => setCapital(e.currentTarget.value)} placeholder="例：10,000,000" />
             </F>
             <F label="常時使用する従業員の数（人）" error={fe.employees}>

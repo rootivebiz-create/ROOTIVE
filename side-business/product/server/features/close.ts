@@ -388,10 +388,14 @@ export async function closeMonth(
   return result;
 }
 
-/** 締めにかかった分数（空なら null。1〜6000 の整数だけ） */
+/** 締めにかかった分数（空なら null。1〜6000 の整数だけ。全角の数字・「1,200」・「90分」も受け取る） */
 export function normalizeMinutes(value: number | string | null | undefined): number | null {
   if (value === null || value === undefined) return null;
-  const text = String(value).normalize("NFKC").trim();
+  const text = String(value)
+    .normalize("NFKC")
+    .trim()
+    .replace(/,/g, "")
+    .replace(/\s*分$/, "");
   if (text === "") return null;
   if (!/^\d+$/.test(text)) throw new UserError("締めにかかった時間は、分の数（例：90）で入れてください");
   const n = Number(text);
@@ -523,11 +527,16 @@ export const AUDIT_CATEGORIES: { key: string; label: string; prefixes: string[] 
       "login",
     ],
   },
-  { key: "export", label: "出力・書き出し", prefixes: ["export.", "data.", "profit."] },
+  { key: "export", label: "出力・書き出し", prefixes: ["export.", "data.", "profit.", "import.export"] },
 ];
 
+/** 種類：いちばん長く当てはまる頭で決める（例：import.export は「取り込み」ではなく「出力」） */
 export function auditCategoryOf(action: string): string {
-  return AUDIT_CATEGORIES.find((c) => c.prefixes.some((p) => action.startsWith(p)))?.key ?? "other";
+  let best: { key: string; len: number } | null = null;
+  for (const c of AUDIT_CATEGORIES) {
+    for (const p of c.prefixes) if (action.startsWith(p) && (!best || p.length > best.len)) best = { key: c.key, len: p.length };
+  }
+  return best?.key ?? "other";
 }
 
 export function auditCategoryLabel(key: string): string {
@@ -596,7 +605,14 @@ function kindWhere(kind: string | null | undefined) {
   }
   const cat = AUDIT_CATEGORIES.find((c) => c.key === kind);
   if (!cat) return sql`false`;
-  return or(...cat.prefixes.map((p) => sql`"audit_log"."action" like ${likeOf(p)}`));
+  // auditCategoryOf と同じ分け方にする（ほかの種類の、もっと長い頭に当たるものは外す）
+  const others = AUDIT_CATEGORIES.filter((c) => c.key !== cat.key).flatMap((c) => c.prefixes);
+  return or(
+    ...cat.prefixes.map((p) => {
+      const longer = others.filter((q) => q.length > p.length && q.startsWith(p));
+      return and(sql`"audit_log"."action" like ${likeOf(p)}`, ...longer.map((q) => sql`"audit_log"."action" not like ${likeOf(q)}`));
+    }),
+  );
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -617,6 +633,30 @@ async function actorNames(db: Db, tenantId: string) {
     db.select({ id: s.drivers.id, name: s.drivers.name }).from(s.drivers).where(eq(s.drivers.tenantId, tenantId)),
   ]);
   return { userName: new Map(users.map((u) => [u.id, u.name])), driverName: new Map(drivers.map((d) => [d.id, d.name])) };
+}
+
+/** 口座番号（accountNumber）の値を下 3 桁だけにする（中の from / to も） */
+function maskAccountValue(v: unknown): unknown {
+  if (typeof v === "string") {
+    const t = v.trim();
+    return t.length > 3 ? `${"*".repeat(t.length - 3)}${t.slice(-3)}` : t;
+  }
+  if (Array.isArray(v)) return v.map(maskAccountValue);
+  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, maskAccountValue(x)]));
+  return v;
+}
+
+/**
+ * 操作の記録を画面・CSV に出すときの中身：口座番号は下 3 桁だけにする（記録そのものは変えない。
+ * 元のままの記録は、オーナーの「全データの書き出し」に入る）。
+ */
+export function maskAuditDetail(detail: Record<string, unknown>): Record<string, unknown> {
+  const walk = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(walk);
+    if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k === "accountNumber" ? maskAccountValue(x) : walk(x)]));
+    return v;
+  };
+  return walk(detail) as Record<string, unknown>;
 }
 
 function toAuditRow(r: typeof s.auditLog.$inferSelect, names: Awaited<ReturnType<typeof actorNames>>): AuditRow {
@@ -643,7 +683,7 @@ function toAuditRow(r: typeof s.auditLog.$inferSelect, names: Awaited<ReturnType
     summary: auditSummary(r.action, detail),
     entity: r.entity,
     entityId: r.entityId,
-    detail,
+    detail: maskAuditDetail(detail),
   };
 }
 
@@ -763,6 +803,12 @@ const ACTION_LABELS: Record<string, string> = {
   "watch.ack": "見張り番の指摘を確認済みにした",
   "watch.unack": "見張り番の確認済みを外した",
   "import.apply": "Excel の取り込みを反映した",
+  "import.reapply": "取り込みを取り消して、入れ直した",
+  "import.export": "月の稼働を Excel に出した（取り込んだときの列の並び）",
+  "import.bank.upload": "口座の一覧を取り込んだ",
+  "import.bank.assign": "口座の一覧の行を、ドライバーに対応づけた",
+  "import.bank.apply": "口座の一覧の取り込みを反映した（ドライバーの口座を書き換えた）",
+  "import.bank.discard": "口座の一覧の取り込みをやめた",
   "import.discard": "取り込みを取り消した",
   "import.undo": "取り込みを元に戻した",
   "import.upload": "Excel を取り込んだ",
@@ -796,6 +842,10 @@ const ACTION_LABELS: Record<string, string> = {
   "export.accounting": "会計ソフト向けに出力した",
   "export.payments_csv": "支払の一覧（CSV）を出した",
   "export.audit_csv": "操作の記録（CSV）を出した",
+  "export.parallel_pdf": "並行運用レポート（PDF）を出した",
+  "export.reconcile_letter": "元請への問い合わせの文書（PDF）を出した",
+  "export.terms_csv": "取引条件の記録（CSV）を出した",
+  "export.terms_pdf_all": "取引条件の PDF を全員ぶん出した",
   "data.export": "全データを書き出した",
   "data.import": "全データを読み戻した（別の場所から移した）",
   "reconcile.run": "元請の支払通知と突き合わせた",
@@ -854,6 +904,8 @@ const ACTION_LABELS: Record<string, string> = {
   "onboarding.finish": "最初の設定を終えた",
   "onboarding.reopen": "最初の設定をやり直した",
   "user.role": "利用者の役割を変えた",
+  "user.password_change": "自分のパスワードを変えた",
+  "user.sign_out_others": "ほかの端末のログインを切った",
   "user.disable": "利用者を止めた",
   "user.enable": "利用者を再開した",
   "invite.create": "利用者を招待した",
@@ -870,6 +922,7 @@ const PREFIX_LABELS: [string, string][] = [
   ["transfer.", "振込データ"],
   ["watch.", "見張り番"],
   ["import.name.", "取り込みの名前の対応"],
+  ["import.bank.", "口座の一覧の取り込み"],
   ["import.", "取り込み"],
   ["work.", "稼働"],
   ["adjustment.", "調整"],
@@ -1023,7 +1076,14 @@ export function auditSummary(action: string, detail: Record<string, unknown>): s
       return [typeof d.driver === "string" ? `${d.driver}さん` : null, typeof d.label === "string" ? d.label : null, yenOf(d.amount)].filter(Boolean).join("・") || null;
     case "import.upload":
       return str(d.fileName);
+    case "import.export":
+      return join([str(d.fileName), num(d.entries) !== null && `稼働 ${d.entries}件`]);
+    case "import.bank.upload":
+      return join([str(d.fileName), num(d.rows) !== null && `${d.rows}行`]);
+    case "import.bank.apply":
+      return join([num(d.updated) ? `口座を書き換えた ${d.updated}人` : null, num(d.created) ? `口座を入れた ${d.created}人` : null]);
     case "import.apply":
+    case "import.reapply":
       return join([
         d.mode === "replaceAll" ? "月の稼働をすべて入れ替え" : d.mode === "add" ? "今ある稼働に足した" : d.mode === "replace" ? "同じ形の取り込みを入れ替え" : null,
         num(d.entries) !== null && `${d.entries}件を入れた`,
@@ -1056,8 +1116,11 @@ export function auditSummary(action: string, detail: Record<string, unknown>): s
     case "driver.update":
     case "client.update":
     case "project.update":
-    case "deduction_rule.update":
-      return join([str(d.name), changedFields(d.changed)], "：");
+    case "deduction_rule.update": {
+      const text = join([str(d.name), changedFields(d.changed)], "：");
+      // 口座の一覧の取り込みで書き換えたとき
+      return d.source === "import.bank" ? join([text, `（口座の一覧の取り込み${str(d.fileName) ? `：${d.fileName}` : ""}から）`], "") : text;
+    }
     case "settings.company.update":
       return changedFields(d.changed);
     case "user.role":
@@ -1078,7 +1141,14 @@ export function auditSummary(action: string, detail: Record<string, unknown>): s
     case "export.payments_csv":
       return join([str(d.fileName), num(d.rows) !== null && `${d.rows}行`]);
     case "export.audit_csv":
+    case "export.terms_csv":
       return num(d.rows) !== null ? `${d.rows}件` : null;
+    case "export.terms_pdf_all":
+      return num(d.count) !== null ? `${d.count}人ぶん` : null;
+    case "export.parallel_pdf":
+      return join([num(d.compared) !== null && `比べた ${d.compared}人`, num(d.matched) !== null && `同じ ${d.matched}人`, yenOf(d.diffTotal) && `差の合計 ${yenOf(d.diffTotal)}`]);
+    case "export.reconcile_letter":
+      return join([Array.isArray(d.items) && `${d.items.length}件`, yenOf(d.total)]);
     case "data.export":
       return join([str(d.fileName), num(d.rows) !== null && `${d.rows}行`, num(d.versions) !== null && `明細の版 ${d.versions}件`]);
     case "data.import":

@@ -70,11 +70,14 @@ describe("ホーム・最初の設定・Excel と比べる の画面", () => {
     expect(html).toContain("明細を作る（8人）");
     expect(html).toContain('href="/statements?m=2026-10"');
     expect(html).toContain("ドライバーへの支払日は 11月25日（水）");
-    expect(html).toContain("最初の設定：6 つのうち 5 つ済み");
-    expect(html).toContain("次は「Excel と比べる」です");
+    expect(html).toContain("最初の設定：7 つのうち 5 つ済み");
+    expect(html).toContain("次は「取引条件の明示」です");
     expect(html).toContain("稼働 11 件（8人）・調整 2 件");
     expect(html).toContain("¥980,270");
-    expect(html).toContain("支払通知 1 件。突き合わせると、請求との差が分かります。");
+    // 突合：まだ「突き合わせる」を押していなくても、突合の画面・利益の画面と同じ見込みの額が出る
+    expect(html).toContain("見つけたお金（2026年10月分・元請との突合）");
+    expect(html).toContain("¥91,700");
+    expect(html).not.toContain("突き合わせると、請求との差が分かります");
     expect(html).toContain("まだ解決していない質問はありません");
   });
 
@@ -96,12 +99,15 @@ describe("ホーム・最初の設定・Excel と比べる の画面", () => {
     expect(html).toContain("明細なし");
   });
 
-  it("最初の設定：6 つの手順・時間の目安・とばすボタン", async () => {
+  it("最初の設定：7 つの手順・時間の目安・とばすボタン", async () => {
     as("staff");
     const { default: OnboardingPage } = await import("~/app/(app)/onboarding/page");
     const html = await render(OnboardingPage);
-    expect(html).toContain("6 つのうち 5 つ済み");
-    expect(html).toContain("6. Excel と比べるをはじめる（約10分）");
+    expect(html).toContain("7 つのうち 5 つ済み");
+    expect(html).toContain("5. 取引条件の明示をはじめる（約10分）");
+    expect(html).toContain('href="/terms"');
+    expect(html).toContain("記録（明示書か、明示した日）が見つからない人が 1人います（有効な 8人のうち）：遠藤 大輔さん");
+    expect(html).toContain("7. Excel と比べる");
     expect(html).toContain("控除のルール 4 件");
     expect(html).toContain("あとでやる");
     // 取り込み・比べ合わせは先月（今日から見て）の分を開く
@@ -114,6 +120,7 @@ describe("ホーム・最初の設定・Excel と比べる の画面", () => {
     as("staff");
     let html = await render(CompanyPage);
     expect(html).toContain("会社の基本を保存できるのはオーナーの方です（デモ 社長さん）");
+    expect(html).toContain("資本金と従業員の数は、取適法の対象かの目安に使います。");
     expect(html).toContain("毎月末日締め・翌月25日払い");
     expect(html).not.toContain("保存する");
     as("owner");
@@ -123,6 +130,11 @@ describe("ホーム・最初の設定・Excel と比べる の画面", () => {
     expect(html).toContain("60日・2か月の中に入ります");
     // 設定の画面と同じ 3 つ（免税の会社がここで保存しても、原則課税に変わらない）
     expect(html).toContain("免税（会社が消費税を納めていない）");
+    // 会社の大きさ（任意）と、聞く理由の 1 行
+    expect(html).toContain("会社の大きさ（任意）");
+    expect(html).toContain("取適法の対象かの目安に使います");
+    expect(html).toContain('name="capitalYen"');
+    expect(html).toContain('name="employees"');
     // 済んだ手順には「あとでやる」を出さない
     expect(html).toContain("この手順：済み");
     expect(html).not.toContain("この手順はあとでやる");
@@ -149,6 +161,8 @@ describe("ホーム・最初の設定・Excel と比べる の画面", () => {
     expect(done).toContain("準備ができました");
     expect(done).toContain("2〜3 か月は Excel と並べて締めてください");
     expect(done).toContain("口座が入っていない人が 1人います");
+    expect(done).toContain("取引条件の記録あり 7人");
+    expect(done).toContain("取引条件を明示した記録（明示書か、明示した日）が見つからない人が 1人います。");
   });
 
   it("Excel と比べる：事務は入力、閲覧は結果だけ。報告は印刷用", async () => {
@@ -164,9 +178,18 @@ describe("ホーム・最初の設定・Excel と比べる の画面", () => {
     expect(html).toContain("消費税の扱いが違う可能性");
     expect(html).toContain("Excel をやめる目安");
     expect(html).toContain("Excel をやめるかは、オーナーの方が決めます");
+    // 切り替えの条件：だれの差にメモが無いかを名前つきで出し、その人の行へ移れる。PDF と印刷用の報告
+    expect(html).toContain("切り替える前に、次のことが残っています");
+    expect(html).toContain("差があって、理由のメモがまだ無い人が 1人います（青木 翔太さん 37,450円）");
+    expect(html).toContain(`href="#row-${aoki.id}"`);
+    expect(html).toContain(`id="row-${aoki.id}"`);
+    expect(html).toContain("原因の候補：消費税の扱いが違う可能性");
+    expect(html).toContain('href="/api/parallel/pdf?m=2026-10"');
+    expect(html).toContain("払い不足の可能性（Excel の方が少ない）");
     as("owner");
     html = await render(ParallelPage);
-    expect(html).toContain("Excel をやめて、しめ日ラボで締める…");
+    expect(html).toContain("本番に切り替える（Excel をやめる）…");
+    expect(html).toContain("（あと 1人のメモ）");
     as("viewer");
     html = await render(ParallelPage);
     expect(html).toContain("Excel の額を入れるのは、事務・オーナーの方です。");
@@ -178,5 +201,7 @@ describe("ホーム・最初の設定・Excel と比べる の画面", () => {
     expect(html).toContain("サンプル運送株式会社（架空）");
     expect(html).toContain("¥37,450");
     expect(html).toContain("Excel の額が入っていない人：");
+    expect(html).toContain('href="/api/parallel/pdf?m=2026-10"');
+    expect(html).toContain("本番に切り替える前に、次のことが残っています。");
   });
 });

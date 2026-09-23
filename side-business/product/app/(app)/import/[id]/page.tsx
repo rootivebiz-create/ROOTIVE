@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { buttonClass } from "@/components/ui";
 import { ActionForm } from "~/components/import/action-form";
+import { MoneyExtrasSection } from "~/components/import/extras";
 import { MappingForm, type MappingColumn } from "~/components/import/mapping-form";
 import { NameResolver } from "~/components/import/name-resolver";
 import {
@@ -22,10 +23,11 @@ import { getDb } from "~/db/client";
 import { requirePageUser, roleAtLeast } from "~/server/auth";
 import { baseName, colLetter, dayOfHeader, unitHint } from "~/server/features/import/detect";
 import { registrableDrivers, type NameGroup } from "~/server/features/import/resolve";
-import { columnSamples, isApplyMode, listClients, loadDraftView, type DraftView } from "~/server/features/import/service";
+import { columnSamples, isApplyMode, listClients, loadDraftView, sameFileMessage, type DraftView } from "~/server/features/import/service";
 import { APPLY_MODE_LABEL, layoutOf, ROLE_LABEL, type ApplyMode, type ColumnRole } from "~/server/features/import/types";
 import { monthLabelJa, monthParam } from "~/server/month";
 import {
+  adoptRuleAction,
   applyAction,
   discardAction,
   headerRowAction,
@@ -187,8 +189,10 @@ async function DraftBody({ view, canEdit, tenantId, openMapping }: { view: Draft
   return (
     <>
       {/* まとめ：スマホで下まで読まなくても、反映できるかが分かるように */}
-      <div className={`rounded-card border p-4 ${ready && !view.closed ? "border-success/40 bg-success/10" : "border-warning/40 bg-warning/10"}`}>
-        <p className="font-bold">{ready && !view.closed ? "このまま反映できます" : "反映の前に、決めることがあります"}</p>
+      <div
+        className={`rounded-card border p-4 ${view.sameFile ? "border-danger/40 bg-danger/10" : ready && !view.closed ? "border-success/40 bg-success/10" : "border-warning/40 bg-warning/10"}`}
+      >
+        <p className="font-bold">{view.sameFile ? "このファイルは反映済みです" : ready && !view.closed ? "このまま反映できます" : "反映の前に、決めることがあります"}</p>
         <ul className="mt-2 grid gap-1 text-sm sm:grid-cols-2">
           <li>{problem ? "✕ 列の読み方を決めてください" : "✓ 列の読み方"}</li>
           <li>
@@ -206,10 +210,14 @@ async function DraftBody({ view, canEdit, tenantId, openMapping }: { view: Draft
                 : "✕ ファイルの合計と合いません（4 を見てください）"}
           </li>
           <li>{view.closed ? `✕ ${monthLabelJa(batch.month)}は締め済み` : `✓ ${monthLabelJa(batch.month)}分に書き込み`}</li>
-          {ready && option && option.duplicates.length > 0 && <li>✕ 今ある稼働と重なる所が {option.duplicates.length} 件（5 で入れ替え方を選んでください）</li>}
+          {view.sameFile ? (
+            <li>✕ 同じファイルがすでに反映されています（5 を見てください）</li>
+          ) : (
+            ready && option && option.duplicates.length > 0 && <li>✕ 今ある稼働と重なる所が {option.duplicates.length} 件（5 で入れ替え方を選んでください）</li>
+          )}
           {!problem && res.codeConflicts.length > 0 && <li>△ 番号と名前が合わない行があります（3 を見てください）</li>}
         </ul>
-        {ready && !view.closed && canEdit && (
+        {ready && !view.closed && canEdit && !view.sameFile && (
           <a href="#apply" className={buttonClass("accent", "mt-3")}>
             反映へ進む ↓
           </a>
@@ -254,6 +262,18 @@ async function DraftBody({ view, canEdit, tenantId, openMapping }: { view: Draft
         <p className="text-sm">
           <b>{monthLabelJa(batch.month)}分</b>の稼働として書き込みます（{MONTH_FROM[summary.monthFrom] ?? ""}）。
         </p>
+        {view.sameFileOtherMonths.length > 0 && (
+          <p className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm">
+            同じファイルが、
+            {view.sameFileOtherMonths.map((o, i) => (
+              <span key={o.batchId}>
+                {i > 0 && "・"}
+                <Link href={`/import/${o.batchId}`}>{monthLabelJa(o.month)}分</Link>
+              </span>
+            ))}
+            にも反映されています。月を選び間違えていないか確かめてください。
+          </p>
+        )}
         {view.closed && (
           <Notice tone="error">
             {monthLabelJa(batch.month)}
@@ -552,7 +572,72 @@ async function DraftBody({ view, canEdit, tenantId, openMapping }: { view: Draft
         )}
       </Section>
 
+      {/* 金額の列（振込額・控除・振込手数料） */}
+      {view.extras && <MoneyExtrasSection extras={view.extras} canEdit={canEdit} batchId={batch.id} month={m} adopt={adoptRuleAction} />}
+
       {/* 5. 反映 */}
+      {ready && preview && view.sameFile && (
+        <Section step="5" title="反映する">
+          <div id="apply" className="rounded-lg border border-danger/40 bg-danger/10 p-3 text-sm">
+            <p className="font-bold text-danger">{sameFileMessage(view.sameFile)}</p>
+            <p className="mt-1">
+              前の取り込み
+              <Link href={`/import/${view.sameFile.batchId}`} className="mx-1">
+                「{view.sameFile.fileName}」
+              </Link>
+              の稼働 {view.sameFile.entries} 件が入っています。このファイルを入れ直すときは、前の取り込みを取り消してから入れます（数量は倍になりません）。直したファイルなら、ファイル名か中身が違うはずです。
+            </p>
+          </div>
+          <div>
+            <h3 className="mb-2 text-sm font-bold">入れ直すと、明細の金額はこうなります（明細と同じ計算）</h3>
+            <StatementDiffTable rows={preview.statements} unchanged={preview.unchangedStatements} />
+          </div>
+          {preview.reapply && <DuplicateList rows={preview.reapply.duplicates} total={preview.reapply.duplicateYen} />}
+          {view.blockers.map((b) => (
+            <Notice key={b} tone="error">
+              {b}
+            </Notice>
+          ))}
+          {canEdit && view.blockers.length === 0 && (
+            <ActionForm
+              action={applyAction}
+              submit="取り消して入れ直す"
+              variant="accent"
+              pendingText="入れ直しています…"
+              buttonClassName="w-full sm:w-auto"
+              confirm={
+                <>
+                  前の取り込み「{view.sameFile.fileName}」の稼働 {view.sameFile.entries} 件を消して、このファイルの {view.stats.records} 件を入れます。あとで「取り消し」を押すと、前の取り込みに戻ります。
+                </>
+              }
+              confirmSubmit="入れ直す"
+            >
+              <input type="hidden" name="batchId" value={batch.id} />
+              <input type="hidden" name="mode" value="replace" />
+              <input type="hidden" name="reapply" value="1" />
+              {preview.reapply && preview.reapply.duplicates.length > 0 && (
+                <label className="mb-3 flex min-h-11 items-start gap-3 text-sm">
+                  <input type="checkbox" name="confirmDuplicates" required className="mt-1 h-5 w-5 shrink-0" />
+                  <span>重なっている所は二重ではない（別の仕事の分）ことを確かめました</span>
+                </label>
+              )}
+            </ActionForm>
+          )}
+          {canEdit && (
+            <ActionForm
+              action={discardAction}
+              submit="この取り込みをやめる"
+              variant="ghost"
+              confirm="この取り込みをやめます（稼働には何も入りません）。記録は履歴に残ります。"
+              confirmSubmit="やめる"
+              pendingText="やめています…"
+            >
+              <input type="hidden" name="batchId" value={batch.id} />
+              <input type="hidden" name="month" value={m} />
+            </ActionForm>
+          )}
+        </Section>
+      )}
       {!ready && (
         <Section step="5" title="反映する">
           {view.blockers.map((b) => (
@@ -575,7 +660,7 @@ async function DraftBody({ view, canEdit, tenantId, openMapping }: { view: Draft
           )}
         </Section>
       )}
-      {ready && preview && option && (
+      {ready && preview && option && !view.sameFile && (
         <Section step="5" title="反映する">
           <div id="apply" className="space-y-2" role="radiogroup" aria-label="入れ替え方">
             {(["replace", "replaceAll", "add"] as ApplyMode[]).map((k) => {
@@ -684,9 +769,29 @@ function DoneBody({ view, canEdit }: { view: DraftView; canEdit: boolean }) {
       {batch.status === "applied" && applied && (
         <Section title="反映済み">
           <p className="text-sm">
-            {dateTime.format(new Date(applied.at))}に反映しました（{APPLY_MODE_LABEL[applied.mode]}）。今この取り込みの稼働は <b>{view.appliedEntries} 件</b>
+            {dateTime.format(new Date(applied.at))}に反映しました（{applied.reappliedFrom?.length ? "同じファイルの前の取り込みを取り消して入れ直し" : APPLY_MODE_LABEL[applied.mode]}）。今この取り込みの稼働は{" "}
+            <b>{view.appliedEntries} 件</b>
             です。
           </p>
+          {applied.payouts && (
+            <div className="rounded-lg border border-success/40 bg-success/10 p-3 text-sm">
+              {applied.payouts.saved > 0 ? (
+                <p>
+                  <b>今の Excel の振込額も読みました（{applied.payouts.saved}人）</b>
+                  <Link href={`/parallel?m=${m}`} className="ml-2 inline-block min-h-11 py-2 font-bold">
+                    → Excel と比べる
+                  </Link>
+                </p>
+              ) : (
+                <p>「{applied.payouts.header}」の列の振込額は、比べ合わせに入れていません{applied.payouts.error ? `（${applied.payouts.error}）` : ""}。</p>
+              )}
+              {applied.payouts.kept.length > 0 && (
+                <p className="mt-1 text-muted-foreground">
+                  理由のメモが付いている {applied.payouts.kept.join("・")} さんは、前の額のままにしました。
+                </p>
+              )}
+            </div>
+          )}
           {applied.replacedBatchIds.length > 0 && (
             <p className="text-sm">
               入れ替えた前の取り込み：

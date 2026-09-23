@@ -86,6 +86,7 @@ export default async function SettingsHome() {
       body: <>{o.company.aiConsent ? "AI を使ってよい（同意あり）" : "AI を使わない（既定）"}</>,
       notes: [],
     },
+    ...(canEdit ? [{ href: "/audit", title: "操作の記録", body: <>だれが・いつ・何をしたか（月ごと・CSV で出せます）</>, notes: [] }] : []),
     ...(isOwner ? [{ href: "/data", title: "全データの書き出し", body: <>この会社のデータを全部 1 つの ZIP で持ち帰れます</>, notes: [] }] : []),
     { href: "/settings/account", title: "自分のアカウント", body: <>パスワードの変更・ログインの記録</>, notes: [] },
     { href: "/help", title: "ヘルプ", body: <>月末の流れ・よくある質問・困ったときの連絡先</>, notes: [] },

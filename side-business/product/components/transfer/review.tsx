@@ -16,8 +16,15 @@ function who(d: NoteDriver): string {
 }
 
 function names(list: NoteDriver[], max = 8): string {
-  const shown = list.slice(0, max).map((d) => d.driverName);
-  return list.length > max ? `${shown.join("、")} ほか ${list.length - max}人` : shown.join("、");
+  return upTo(
+    list.map((d) => d.driverName),
+    max,
+  );
+}
+
+/** 長い一覧は頭の何人かだけ（50 人いてもスマホで読めるように） */
+function upTo(items: string[], max = 10): string {
+  return items.length > max ? `${items.slice(0, max).join("、")} ほか ${items.length - max}人` : items.join("、");
 }
 
 export function TransferReviewSection({ review, m }: { review: TransferReview; m: string }) {
@@ -73,6 +80,7 @@ export function TransferReviewSection({ review, m }: { review: TransferReview; m
                       {c.edits.map((e, i) => (
                         <li key={i}>
                           <span className="num">{jstDateTime(e.at)}</span> に{e.userName ? `${e.userName}さんが` : "（だれかが）"}
+                          {e.via ? `${e.via}で` : ""}
                           {e.fields.join("・")}を変えました
                         </li>
                       ))}
@@ -117,21 +125,21 @@ export function TransferReviewSection({ review, m }: { review: TransferReview; m
             {notes.openQuestions.length > 0 && (
               <li>
                 <span className="font-bold">未解決の質問 {notes.openQuestions.length}人：</span>
-                {notes.openQuestions.map((q) => `${q.driverName}（${q.count}件）`).join("、")}。
+                {upTo(notes.openQuestions.map((q) => `${q.driverName}（${q.count}件）`))}。
                 振り込む額が変わるかもしれないので、先に返事をしておくと安心です。
               </li>
             )}
             {notes.oldVersion.length > 0 && (
               <li>
                 <span className="font-bold">前の版を確認したまま {notes.oldVersion.length}人：</span>
-                {notes.oldVersion.map((o) => `${o.driverName}（第${o.confirmedVersion}版を確認・いまは第${o.currentVersion}版）`).join("、")}。
+                {upTo(notes.oldVersion.map((o) => `${o.driverName}（第${o.confirmedVersion}版を確認・いまは第${o.currentVersion}版）`))}。
                 今の明細をもう一度送って、確認をお願いしてください。
               </li>
             )}
             {notes.unconfirmed.length > 0 && (
               <li>
                 <span className="font-bold">まだ確認されていない {notes.unconfirmed.length}人：</span>
-                {notes.unconfirmed.map((u) => `${u.driverName}（${u.status}）`).join("、")}。
+                {upTo(notes.unconfirmed.map((u) => `${u.driverName}（${u.status}）`))}。
               </li>
             )}
           </ul>

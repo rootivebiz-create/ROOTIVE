@@ -3,6 +3,7 @@
  * 支払日が 60 日（2 か月）を超えないかの目安（純関数。画面からも読む）。
  * 60 日の数え方は、サイトと共有する部品（@/lib/tools/torihiki-joken）を使う。
  */
+import { parseAmount } from "@/lib/payroll/money";
 import { payRuleLabel, paymentDeadlineCheck, type DayOfMonth, type PayMonthOffset } from "@/lib/tools/torihiki-joken";
 import { normalizeRegistrationNo } from "./normalize";
 
@@ -36,7 +37,15 @@ export type CompanyBasicsInput = {
   registrationNo: string;
   taxMethod: string;
   paymentTermsText: string;
+  /** 資本金（円）と常時使用する従業員の数。空なら「分からない・入れない」。渡さなければ今の値を変えない */
+  capitalYen?: string;
+  employees?: string;
 };
+
+/** 資本金・従業員の数を聞く理由（画面に 1 行で出す） */
+export const SIZE_REASON = "取適法の対象かの目安に使います";
+export const MAX_CAPITAL_YEN = 1_000_000_000_000;
+export const MAX_EMPLOYEES = 1_000_000;
 
 export type CompanyBasics = {
   closingDay: number;
@@ -46,7 +55,37 @@ export type CompanyBasics = {
   registrationNo: string | null;
   taxMethod: TaxMethod;
   paymentTermsText: string | null;
+  /** undefined は「変えない」、null は「入れない（消す）」 */
+  capitalYen?: number | null;
+  employees?: number | null;
 };
+
+/**
+ * 資本金・従業員の数を読む（全角・カンマ・「円」「人」「万円」入りでも読む）。
+ * undefined は聞いていない、null は空、number は読めた数、"error" は読めなかった
+ */
+function sizeNumber(raw: string | undefined, max: number, unit: "円" | "人"): number | null | undefined | "error" {
+  if (raw === undefined) return undefined;
+  let v = raw.normalize("NFKC").trim().replace(/[\s,，]/g, "");
+  if (!v) return null;
+  if (unit === "円") {
+    // 「1億5000万円」「1.1万」「3億」「1000万円」「¥50,000,000」
+    v = v.replace(/^[¥￥]/, "").replace(/円$/, "");
+    const m = /^(?:(\d+(?:\.\d+)?)億)?(?:(\d+(?:\.\d+)?)万)?(\d+)?$/.exec(v);
+    if (m && (m[1] || m[2])) {
+      // 小数の掛け算は 1.1 × 10000 = 11000.000000000002 のようにずれるので、1 円未満のずれは丸める
+      const exact = Number(m[1] ?? 0) * 100_000_000 + Number(m[2] ?? 0) * 10_000 + Number(m[3] ?? 0);
+      const value = Math.round(exact);
+      if (Math.abs(exact - value) > 1e-6 || value > max) return "error";
+      return value;
+    }
+  } else {
+    v = v.replace(/人$/, "");
+  }
+  const n = parseAmount(v);
+  if (n === null || n < 0 || !Number.isInteger(n) || n > max) return "error";
+  return n;
+}
 
 function intIn(raw: string, min: number, max: number): number | null {
   const v = raw.normalize("NFKC").trim();
@@ -77,6 +116,10 @@ export function checkCompanyBasics(input: CompanyBasicsInput): { value: CompanyB
   if (!TAX_METHODS.some((t) => t.value === tax)) fieldErrors.taxMethod = "消費税の計算方法を選んでください";
   const terms = input.paymentTermsText.normalize("NFKC").trim().replace(/\s+/g, " ");
   if (terms.length > 200) fieldErrors.paymentTermsText = "支払期日の文言は 200 文字までにしてください";
+  const capitalYen = sizeNumber(input.capitalYen, MAX_CAPITAL_YEN, "円");
+  if (capitalYen === "error") fieldErrors.capitalYen = "資本金は円の数で入れてください（例：10,000,000 または 1000万）。分からなければ空のままで構いません";
+  const employees = sizeNumber(input.employees, MAX_EMPLOYEES, "人");
+  if (employees === "error") fieldErrors.employees = "従業員の数は人数（整数）で入れてください。分からなければ空のままで構いません";
   if (Object.keys(fieldErrors).length) return { value: null, fieldErrors };
   return {
     value: {
@@ -87,6 +130,8 @@ export function checkCompanyBasics(input: CompanyBasicsInput): { value: CompanyB
       registrationNo: reg.value,
       taxMethod: tax,
       paymentTermsText: terms || null,
+      ...(capitalYen !== undefined ? { capitalYen: capitalYen as number | null } : {}),
+      ...(employees !== undefined ? { employees: employees as number | null } : {}),
     },
     fieldErrors,
   };

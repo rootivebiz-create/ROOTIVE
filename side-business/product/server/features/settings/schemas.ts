@@ -10,7 +10,7 @@ import { z } from "zod";
 import { WITHHOLDING_CATEGORY_ORDER, type WithholdingCategory } from "@/lib/engine/withholding";
 import { toZenginKana } from "@/lib/payroll/zengin";
 import { isDateString, validateDeadlineInput } from "@/lib/tools/torihiki-joken";
-import { looseKey, percentToRate, rateToPercent, readNumber, toDayOfMonth, toHalfNumber, toPayMonthOffset } from "./format";
+import { looseKey, percentToRate, plainSizeText, rateToPercent, readNumber, toDayOfMonth, toHalfNumber, toPayMonthOffset } from "./format";
 
 // ---------------------------------------------------------------- 小さな部品
 
@@ -180,8 +180,9 @@ export const companySchema = z
     payDay: dayOfMonth("支払日"),
     paymentTermsText: optionalText("支払期日の文言", 300),
     transferFeeBearer: z.enum(["company", "driver"], { error: "振込手数料をどちらが持つか選んでください" }),
-    capitalYen: optionalNumber("資本金", { min: 0, max: 1_000_000_000_000, example: "10,000,000" }),
-    employees: optionalNumber("従業員の数", { min: 0, max: 1_000_000 }),
+    // 「1,000万円」「12人」の書き方でも読む（最初の設定の案内と同じ）
+    capitalYen: z.preprocess((v) => (typeof v === "string" ? plainSizeText(v, "円") : v), optionalNumber("資本金", { min: 0, max: 1_000_000_000_000, example: "10,000,000" })),
+    employees: z.preprocess((v) => (typeof v === "string" ? plainSizeText(v, "人") : v), optionalNumber("従業員の数", { min: 0, max: 1_000_000 })),
     deemedConfirmDays: optionalNumber("確認とみなすまでの日数", { min: 1, max: 60 }).transform((v) => v ?? 7),
     statementNote: optionalText("明細の注記", 400),
     requesterCode: z

@@ -16,7 +16,7 @@ function stepHref(def: OnboardingStepDef, lastMonth: string): string {
   return def.withMonth ? `${def.path}?m=${lastMonth}` : def.path;
 }
 
-/** 最初の設定の案内：6 つの手順と、どこまで済んだか。どの手順もとばせる */
+/** 最初の設定の案内：7 つの手順と、どこまで済んだか。どの手順もとばせる */
 export default async function OnboardingPage() {
   const user = await requirePageUser("staff");
   const db = await getDb();
@@ -58,7 +58,7 @@ export default async function OnboardingPage() {
       </Card>
 
       <ol className="space-y-3">
-        {progress.steps.map(({ def, state, note }) => {
+        {progress.steps.map(({ def, state, note, pending }) => {
           const ownerNote = def.ownerOnly && user.role !== "owner";
           return (
             <li key={def.key}>
@@ -80,6 +80,16 @@ export default async function OnboardingPage() {
                 </div>
                 <p className="mt-2 text-sm">{def.summary}</p>
                 {note && <p className="mt-1 text-sm text-muted-foreground">{state === "auto" ? `${note}（登録済みのデータがあるので、済みにしています）` : note}</p>}
+                {pending && <p className="mt-1 text-sm">{pending}</p>}
+                {def.key === "terms" && state !== "done" && state !== "auto" && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    仕事を頼むときは、仕事の内容・報酬の額・支払期日などを書面やメールで明示することになっています（フリーランス法 第3条。
+                    <a href="https://www.jftc.go.jp/fllaw_limited/fllaw_qa.html" target="_blank" rel="noopener noreferrer">
+                      公正取引委員会 Q&amp;A
+                    </a>
+                    ）。有効な人の全員に記録ができると、この手順は済みになります。しめ日ラボが作る明示書はひな形です。中身は、顧問の弁護士・社労士などの専門家に確かめてください。
+                  </p>
+                )}
                 {ownerNote && <p className="mt-1 text-sm text-muted-foreground">会社の基本を保存できるのはオーナーの方です。中身は見られます。</p>}
                 <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-start">
                   <Link href={stepHref(def, lastMonth)} className={buttonClass(state === "todo" ? "primary" : "secondary", "w-full sm:w-auto")}>

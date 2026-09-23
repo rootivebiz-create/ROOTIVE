@@ -13,7 +13,7 @@ import { getDb } from "~/db/client";
 import { requirePageUser, roleAtLeast } from "~/server/auth";
 import { getStatementDetail, listMonthStatements, markQuestionsRead, staffLinkToken } from "~/server/features/statements";
 import { requestOrigin } from "~/server/features/statements/request";
-import { jpDateTime, jpMonthLabel, shareLinks, shareMessage, shareSubject } from "~/server/features/statements/view";
+import { jpDateTime, jpMonthLabel, jstDateString, shareLinks, shareMessage, shareSubject } from "~/server/features/statements/view";
 import { monthParam } from "~/server/month";
 import { isMonthClosed } from "~/server/repo";
 
@@ -76,7 +76,7 @@ export default async function StatementDetailPage({ params }: { params: Promise<
         </Notice>
       )}
       {/* 送ってあって、まだ確認されていない明細：みなし確認の 3 つの条件を 1 つずつ見せる */}
-      {(detail.sentAtText || detail.status.key === "deemed") && <DeemedCheck status={detail.status} terms={detail.terms} deemedDays={detail.deemedDays} />}
+      {(detail.sentAtText || detail.status.key === "deemed") && <DeemedCheck status={detail.status} terms={detail.terms} deemedDays={detail.deemedDays} sentOn={st.sentAt ? jstDateString(st.sentAt) : null} />}
       {detail.status.needsResend && detail.status.key !== "changed" && (
         <Notice tone="info">送ったあとで中身が変わりました。新しい中身はまだ送っていません。リンクはそのまま使えるので、もう一度送ってください。</Notice>
       )}

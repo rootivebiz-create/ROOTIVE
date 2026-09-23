@@ -3,6 +3,7 @@ import { Card, buttonClass } from "@/components/ui";
 import { en } from "@/lib/engine/types";
 import { EmptyState, Notice, PageHeader } from "~/components/page";
 import { BurdenPanel } from "~/components/profit/burden-panel";
+import { FoundPanel } from "~/components/profit/found-panel";
 import { KpiCards } from "~/components/profit/kpi-cards";
 import { ClientTable, DriverTable, ProjectTable } from "~/components/profit/tables";
 import { TrendChart } from "~/components/profit/trend-chart";
@@ -111,6 +112,9 @@ export default async function ProfitPage({ searchParams }: { searchParams: Promi
               消費税と、立替の精算などの調整は利益に入れていません。売上は受注の単価 × 数量から出したもので、元請からの実際の入金とは違うことがあります（違いは「元請との突合」で確かめられます）。
             </p>
           </Card>
+          <section aria-labelledby="found-heading">
+            <FoundPanel found={page.found} m={m} />
+          </section>
         </>
       )}
 
@@ -168,7 +172,7 @@ export default async function ProfitPage({ searchParams }: { searchParams: Promi
 
       {hasData && (
         <section aria-labelledby="burden-heading">
-          <BurdenPanel future={page.future} month={month} />
+          <BurdenPanel future={page.future} month={month} split={page.split} actual={t.burden} />
         </section>
       )}
 
@@ -176,7 +180,7 @@ export default async function ProfitPage({ searchParams }: { searchParams: Promi
         <Card className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
             <p className="font-bold">社長の1枚（PDF）</p>
-            <p className="text-sm text-muted-foreground">この月の利益・前月比・案件の上位と下位・経過措置の負担・突合の差・見張り番・ドライバーの確認・振込を A4 の 1 枚にまとめます。</p>
+            <p className="text-sm text-muted-foreground">この月の利益・前月比・案件の上位と下位・経過措置の負担・見つけたお金（確定と見込み）・突合の差・見張り番・ドライバーの確認・振込を A4 の 1 枚にまとめます。</p>
           </div>
           <a href={`/api/profit/pdf?m=${m}`} className={buttonClass("secondary")}>
             PDF をダウンロード

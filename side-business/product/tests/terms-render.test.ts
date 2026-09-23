@@ -217,6 +217,28 @@ describe("1 人の画面 /terms/[driverId]", () => {
       await db.update(s.tenants).set({ settings: t.settings }).where(eq(s.tenants.id, tenantId));
     }
   });
+
+  it("会社の設定の支払期日の文言に「まで」があると、赤で知らせる（明示書の支払期日は具体的な日のまま）。見るだけの人にも出す", async () => {
+    const db = state.db!;
+    const [t] = await db.select().from(s.tenants).where(eq(s.tenants.id, tenantId));
+    await db.update(s.tenants).set({ settings: { ...t.settings, paymentTermsText: "月末締め、翌月末日までに支払う" } }).where(eq(s.tenants.id, tenantId));
+    try {
+      for (const role of ["staff", "viewer"] as const) {
+        state.user = asUser(role);
+        const h = await detailPage(D.D01);
+        expect(h).toContain("「月末締め、翌月末日までに支払う」");
+        expect(h).toContain("契約書などの文言が食い違っていないかの確認をおすすめします");
+        expect(h).toContain("毎月末日締め・翌月25日払い");
+        for (const re of FORBIDDEN) expect(h).not.toMatch(re);
+      }
+      // ほかの会社の画面には出ない
+      state.user = asUser("staff", otherId);
+      expect(await detailPage(OD.D01)).not.toContain("契約書などの文言が食い違っていないか");
+    } finally {
+      await db.update(s.tenants).set({ settings: t.settings }).where(eq(s.tenants.id, tenantId));
+      state.user = asUser("staff");
+    }
+  });
 });
 
 describe("ドライバーのページ /t/[token]", () => {

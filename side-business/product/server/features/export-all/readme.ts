@@ -1,5 +1,13 @@
 import { EXPORT_TABLES, NOT_EXPORTED_TABLES } from "./tables";
 
+/** ISO の日時 → 日本時間の「2026-10-31 18:05」 */
+function jstText(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const j = new Date(d.getTime() + 9 * 3600_000).toISOString();
+  return `${j.slice(0, 10)} ${j.slice(11, 16)}`;
+}
+
 /**
  * 書き出しの ZIP に入れる「はじめにお読みください」（README.txt）。
  * 会社の人が、しめ日ラボが無くても中身を読めるように、ファイルごとの説明を書く。
@@ -12,7 +20,7 @@ export function readmeText(opts: { tenantName: string; exportedAt: string; schem
     "==============================",
     "",
     `会社：${opts.tenantName}`,
-    `書き出した日時（UTC）：${opts.exportedAt}`,
+    `書き出した日時：${jstText(opts.exportedAt)}（日本時間）／${opts.exportedAt}（協定世界時）`,
     `データの形の版：${opts.schemaVersion}`,
     "",
     "この ZIP には、しめ日ラボに入っているこの会社のデータが、すべて入っています。",
@@ -60,6 +68,7 @@ export function readmeText(opts: { tenantName: string; exportedAt: string; schem
     "■ 別の場所へ移すとき（読み戻し）",
     "",
     "しめ日ラボの「全データの書き出し」の画面から、この ZIP をそのまま読み込めます。",
+    "移した先で「最初の設定」をして会社を 1 つ作り、その会社のオーナーとしてログインしてから読み込みます（ほかの会社が入っている場所では読み込めません）。",
     "同じ会社がすでにある場所には読み込めません（二重になるのを防ぐため）。",
     "読み込んだあとは、明細のすべての版のハッシュと、表ごとの行数が同じかを確かめます。",
     "",

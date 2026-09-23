@@ -12,11 +12,13 @@ import { shiftMonth } from "~/server/month";
 import { getTenant, isMonthClosed, loadBuildInput } from "~/server/repo";
 import { readSnapshot, statementsStatus } from "~/server/statements-core";
 import {
+  burdenSplit,
   changeOf,
   futureBurden,
   summarizeDrafts,
   toTrendPoint,
   topAndBottom,
+  type BurdenSplit,
   type BurdenStep,
   type Change,
   type FutureBurden,
@@ -109,6 +111,40 @@ export function changesFrom(current: ProfitTotals, prev: TrendPoint | null): Pro
   };
 }
 
+/**
+ * 見つけたお金（その月の元請の支払通知との突合）。突合の画面・レポートと同じ数え方（reconcile の loadReport のセル）。
+ * - confirmed：「解決」にして取り戻せた額を入れた差の合計（確定）
+ * - estimated：未対応・問い合わせ済みの差のうち、支払通知が当社の記録より少ない額の合計（見込み）
+ * 2 つは足し合わせない（SPEC P1-1.2）。error は突合を読めなかったとき
+ * unread は行を読み取れていない支払通知の数（比べられないので、見込みが 0 でも「差が無い」とは言えない）
+ */
+export type MonthFound = {
+  notices: number;
+  confirmed: number;
+  confirmedCount: number;
+  estimated: number;
+  estimatedCount: number;
+  error: string | null;
+  unread?: number;
+};
+
+/** 突合のセルから、その月の見つけたお金を出す（純関数。reconcile の foundMoneyFromReport と同じ足し方）。ホームもこれを使う */
+export function foundFromCells(cells: Pick<Report, "cells">["cells"], month: string): MonthFound {
+  const out: MonthFound = { notices: 0, confirmed: 0, confirmedCount: 0, estimated: 0, estimatedCount: 0, error: null, unread: 0 };
+  for (const c of cells) {
+    if (!c.notice || c.month !== month) continue;
+    out.notices++;
+    if (c.notice.lineCount === 0) out.unread = (out.unread ?? 0) + 1;
+    out.confirmed += c.recovered;
+    out.confirmedCount += c.recoveredCount;
+    out.estimated += c.short;
+    out.estimatedCount += c.shortCount;
+  }
+  return out;
+}
+
+const FOUND_ERROR = "突合の結果を読めませんでした。元請との突合の画面で確かめてください。";
+
 export type ProfitPage = {
   companyName: string;
   taxMethod: string;
@@ -117,14 +153,28 @@ export type ProfitPage = {
   changes: ProfitChanges;
   trend: TrendPoint[];
   future: FutureBurden;
+  /** 期間の途中で経過措置の割合が変わる月の、日ごとに分けた内訳（またがない月は空） */
+  split: BurdenSplit;
+  /** 見つけたお金（確定と見込みを分けて。足し合わせない） */
+  found: MonthFound;
 };
 
+export type ProfitDeps = Pick<CeoDeps, "loadReport">;
+
 /** 利益の画面の中身 */
-export async function loadProfitPage(db: Db, tenantId: string, month: string): Promise<ProfitPage> {
+export async function loadProfitPage(db: Db, tenantId: string, month: string, deps: ProfitDeps = {}): Promise<ProfitPage> {
   const tenant = await getTenant(db, tenantId);
   const current = await monthProfit(db, tenantId, month);
   const trend = await profitTrend(db, tenantId, month, 6, current);
   const prev = trend.length >= 2 ? trend[trend.length - 2] : null;
+  let found: MonthFound;
+  try {
+    const report = await (deps.loadReport ?? defaultLoadReport)(db, tenantId, month, month);
+    found = foundFromCells(report.cells, month);
+  } catch (error) {
+    console.error("profit page: reconcile failed", error instanceof Error ? error.message : error);
+    found = { notices: 0, confirmed: 0, confirmedCount: 0, estimated: 0, estimatedCount: 0, error: FOUND_ERROR, unread: 0 };
+  }
   return {
     companyName: tenant.name,
     taxMethod: tenant.taxMethod,
@@ -133,6 +183,8 @@ export async function loadProfitPage(db: Db, tenantId: string, month: string): P
     changes: changesFrom(current.totals, prev),
     trend,
     future: futureBurden(current.drafts, month, tenant.taxMethod),
+    split: burdenSplit(current.drafts),
+    found,
   };
 }
 
@@ -158,6 +210,10 @@ export type CeoSheet = {
   topProjects: ProjectProfit[];
   bottomProjects: ProjectProfit[];
   burden: { affected: boolean; people: number; current: BurdenStep | null; next: BurdenStep | null };
+  /** この月の実際の負担（明細の invoiceBurden の合計）と、期間の途中で割合が変わる月の日ごとの内訳 */
+  split: BurdenSplit;
+  /** 見つけたお金（確定と見込み。別の行に出し、足し合わせない） */
+  found: MonthFound;
   /**
    * 元請の支払通知との突合で、まだ片付いていない差（未対応・問い合わせ済み）。
    * 突合の画面と同じ出し方（差は今の記録で出し、状態は保存したもの）。まだ突合の画面を開いていない通知の差も入る
@@ -178,11 +234,18 @@ export type CeoSheet = {
   transfer: { total: number; people: number; notPositive: number; payDate: string };
 };
 
-/** 突合の差（突合の画面と同じ読み方。読めなくても 1 枚は出す） */
-async function reconcileSummary(db: Db, tenantId: string, month: string, load: NonNullable<CeoDeps["loadReport"]>): Promise<CeoSheet["reconcile"]> {
+/** 突合の差と見つけたお金（突合の画面と同じ読み方。読めなくても 1 枚は出す） */
+async function reconcileSummary(
+  db: Db,
+  tenantId: string,
+  month: string,
+  load: NonNullable<CeoDeps["loadReport"]>,
+): Promise<{ reconcile: CeoSheet["reconcile"]; found: MonthFound }> {
   const out: CeoSheet["reconcile"] = { notices: 0, unread: 0, count: 0, net: 0, short: 0, shortCount: 0, over: 0, overCount: 0, error: null };
+  let found: MonthFound;
   try {
     const report = await load(db, tenantId, month, month);
+    found = foundFromCells(report.cells, month);
     for (const c of report.cells) {
       if (!c.notice || c.month !== month) continue;
       out.notices++;
@@ -196,9 +259,12 @@ async function reconcileSummary(db: Db, tenantId: string, month: string, load: N
     out.net = out.over - out.short;
   } catch (error) {
     console.error("ceo sheet: reconcile failed", error instanceof Error ? error.message : error);
-    return { ...out, error: "突合の結果を読めませんでした。元請との突合の画面で確かめてください。" };
+    return {
+      reconcile: { ...out, error: FOUND_ERROR },
+      found: { notices: 0, confirmed: 0, confirmedCount: 0, estimated: 0, estimatedCount: 0, error: FOUND_ERROR, unread: 0 },
+    };
   }
-  return out;
+  return { reconcile: out, found };
 }
 
 export async function loadCeoSheet(db: Db, tenantId: string, month: string, deps: CeoDeps = {}): Promise<CeoSheet> {
@@ -210,8 +276,8 @@ export async function loadCeoSheet(db: Db, tenantId: string, month: string, deps
   const future = futureBurden(current.drafts, month, tenant.taxMethod);
   const { top, bottom } = topAndBottom(current.projects, 3);
 
-  // 突合の差（この月の支払通知。会社で絞る）
-  const reconcile = await reconcileSummary(db, tenantId, month, deps.loadReport ?? defaultLoadReport);
+  // 突合の差と見つけたお金（この月の支払通知。会社で絞る）
+  const { reconcile, found } = await reconcileSummary(db, tenantId, month, deps.loadReport ?? defaultLoadReport);
 
   // 見張り番（読めなくても 1 枚は出す）
   const watch: CeoSheet["watch"] = { red: 0, yellow: 0, acked: 0, titles: [], error: null };
@@ -249,6 +315,8 @@ export async function loadCeoSheet(db: Db, tenantId: string, month: string, deps
     topProjects: top,
     bottomProjects: bottom,
     burden: { affected: future.affected, people: future.people, current: future.current, next: future.next },
+    split: burdenSplit(current.drafts),
+    found,
     reconcile,
     watch,
     confirm: { statements: statements.counts.all, confirmed: statements.counts.confirmed, deemed: statements.counts.deemed, stale: status ? !status.upToDate : false },

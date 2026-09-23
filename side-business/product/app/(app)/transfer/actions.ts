@@ -29,6 +29,11 @@ const createSchema = z.object({
   scope: z.enum(["all", "remaining"]),
   replaceConfirmed: z.literal("on").optional(),
   bankChangesConfirmed: z.literal("on").optional(),
+  // 確かめたときに画面に出ていた「口座が変わった人」の値（英数字だけ）
+  bankReviewKey: z
+    .string()
+    .regex(/^[0-9a-f]{0,64}$/, "画面を読み直してください")
+    .optional(),
 });
 
 export async function createTransferAction(_prev: CreateTransferState, form: FormData): Promise<CreateTransferState> {
@@ -40,6 +45,7 @@ export async function createTransferAction(_prev: CreateTransferState, form: For
       scope: form.get("scope") ?? "all",
       replaceConfirmed: form.get("replaceConfirmed") ?? undefined,
       bankChangesConfirmed: form.get("bankChangesConfirmed") ?? undefined,
+      bankReviewKey: form.get("bankReviewKey") ?? undefined,
     });
     const db = await getDb();
     const batch = await createTransferBatch(
@@ -51,6 +57,7 @@ export async function createTransferAction(_prev: CreateTransferState, form: For
         scope: input.scope,
         replaceConfirmed: input.replaceConfirmed === "on",
         bankChangesConfirmed: input.bankChangesConfirmed === "on",
+        bankReviewKey: input.bankChangesConfirmed === "on" ? input.bankReviewKey : undefined,
       },
       user.id,
     );

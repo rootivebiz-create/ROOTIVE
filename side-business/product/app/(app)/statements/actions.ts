@@ -64,13 +64,25 @@ export async function markSentAction(id: string, channel: SendChannel): Promise<
 }
 
 export async function recreateLinkAction(_prev: ActionResult<void> | undefined, form: FormData): Promise<ActionResult<void>> {
-  return runAction(async () => {
+  const res = await runAction(async () => {
     const user = await requireUser("staff");
     const id = idSchema.parse(String(form.get("id") ?? ""));
+    // 同じ人のほかの月の明細のリンクも作り直すか（画面では最初から選んである）
+    const allMonths = form.get("allMonths") === "1";
     const db = await getDb();
-    await recreateStatementLink(db, user.tenantId, id, user.id);
+    const r = await recreateStatementLink(db, user.tenantId, id, user.id, { allMonths });
     refresh(id);
-  }, "リンクを作り直しました。今までのリンクは使えません。新しいリンクを送ってください");
+    return r;
+  });
+  if (!res.ok) return res;
+  const others = res.data?.otherMonths ?? 0;
+  return {
+    ok: true,
+    message:
+      others > 0
+        ? `リンクを作り直しました（この人のほかの月の明細 ${others}件のリンクも作り直しました）。今までのリンクは使えません。新しいリンクを送ってください`
+        : "リンクを作り直しました。今までのリンクは使えません。新しいリンクを送ってください",
+  };
 }
 
 const replySchema = z.object({

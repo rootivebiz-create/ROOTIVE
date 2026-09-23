@@ -3,7 +3,7 @@ import { audit } from "~/server/audit";
 import { AuthError, requireUser } from "~/server/auth";
 import { csvText, fileResponse, utf8WithBom, type CsvCell } from "~/server/download";
 import { loadReport, reportRange } from "~/server/features/reconcile";
-import { KIND_LABEL, STATUS_LABEL } from "~/server/features/reconcile/labels";
+import { KIND_LABEL, STATUS_LABEL, waitingDays } from "~/server/features/reconcile/labels";
 import { monthFromParam, monthLabelJa, monthParam } from "~/server/month";
 
 export const dynamic = "force-dynamic";
@@ -51,12 +51,22 @@ export async function GET(request: Request): Promise<Response> {
       "片付けた日",
       "取り戻せた額",
       "メモ",
+      "返事待ちの日数",
+      "比べた稼働の期間",
     ],
   ];
+  const now = new Date();
+  // 比べた期間：元請の締めの期間で比べたときはその期間、日付が無く月単位で比べたときはその旨
+  const periodCell = (c: (typeof report.cells)[number]) => {
+    const p = c.period;
+    if (!p) return "";
+    const span = `${p.from}〜${p.to}`;
+    return p.differs && p.fallback ? `${span}（締め日が違うため月単位）` : span;
+  };
   let count = 0;
   for (const c of report.cells) {
     if (!c.notice) {
-      rows.push([safeText(c.clientName), monthLabelJa(c.month), "お支払通知なし", "", "", "", c.ourTotal, "", "", "", "", "", "", "", "", ""]);
+      rows.push([safeText(c.clientName), monthLabelJa(c.month), "お支払通知なし", "", "", "", c.ourTotal, "", "", "", "", "", "", "", "", "", "", periodCell(c)]);
       continue;
     }
     for (const it of c.items) {
@@ -78,6 +88,8 @@ export async function GET(request: Request): Promise<Response> {
         it.status === "resolved" || it.status === "accepted" ? dateCell(it.resolvedAt) : "",
         it.status === "resolved" ? it.recoveredAmount : null,
         safeText(it.note),
+        waitingDays(it.status, it.askedAt, now),
+        periodCell(c),
       ]);
     }
   }

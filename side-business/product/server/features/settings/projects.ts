@@ -142,6 +142,17 @@ export async function updateProject(db: Db, tenantId: string, id: string, input:
 export async function setProjectActive(db: Db, tenantId: string, id: string, active: boolean) {
   const before = await getProject(db, tenantId, id);
   if (!before) throw new UserError("その案件は見つかりません。一覧から開き直してください");
+  // 取引をやめた（無効の）元請の案件は、元請を戻すまで「使う」にしない（取り込みの候補に、やめた元請の案件が出ないように）
+  if (active && !before.active && before.clientId) {
+    const [c] = await db
+      .select({ name: s.clients.name, active: s.clients.active })
+      .from(s.clients)
+      .where(and(eq(s.clients.tenantId, tenantId), eq(s.clients.id, before.clientId)))
+      .limit(1);
+    if (c && !c.active) {
+      throw new UserError(`「${c.name}」は取引をやめた（無効の）元請です。この案件を使うときは、先に「元請」の画面で「戻す」を押してください。`);
+    }
+  }
   const [after] = await db
     .update(s.projects)
     .set({ active })

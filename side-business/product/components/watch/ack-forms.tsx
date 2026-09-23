@@ -42,7 +42,7 @@ export function AckForm({
   red,
   draftNote,
   label = "確認済みにする",
-  draftHint = "前の月のメモを下書きに入れています。今月も同じか確かめてから保存してください。",
+  draftHint = "前の月のメモを下書きに入れています。この月も同じか確かめてから保存してください。",
 }: {
   k: Key;
   minLength: number;
