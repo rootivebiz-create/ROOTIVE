@@ -2,7 +2,7 @@ import type { MetadataRoute } from "next";
 import { listArticles } from "@/lib/content";
 import { SITE } from "@/site.config";
 
-const STATIC_ROUTES = ["/", "/articles", "/pro", "/legal/tokushoho", "/legal/privacy", "/legal/terms", "/legal/ads"];
+const STATIC_ROUTES = ["/", "/demo", "/tools/invoice-cost", "/articles", "/about", "/contact", "/legal/privacy"];
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const now = new Date();

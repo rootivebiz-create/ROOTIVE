@@ -3,10 +3,10 @@ import { PlateLogo } from "@/components/plate-logo";
 import { SITE } from "@/site.config";
 
 const NAV = [
-  { href: "/tools", label: "計算ツール" },
-  { href: "/templates", label: "様式" },
+  { href: "/demo", label: "デモ" },
+  { href: "/tools/invoice-cost", label: "計算" },
   { href: "/articles", label: "記事" },
-  { href: "/app", label: "アプリ" },
+  { href: "/contact", label: "相談する" },
 ] as const;
 
 export function SiteHeader() {
