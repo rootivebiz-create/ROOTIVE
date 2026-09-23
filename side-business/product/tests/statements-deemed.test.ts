@@ -16,7 +16,7 @@ import { createTestDb } from "./helpers/db";
 
 /**
  * みなし確認は 3 つ（日数・質問なし・取引条件の条項）がそろったときだけ。
- * 条項が無いときは未確認のままにし、会社の画面に「取引条件にみなし確認の条項がありません（/terms で入れられます）」と出す。
+ * 条項が無いときは未確認のままにし、会社の画面に「取引条件にみなし確認の条項がありません（この人の取引条件の画面で入れられます）」と出す。
  */
 const state: { db?: Db; user?: SessionUser } = {};
 Object.assign(globalThis, { React });
@@ -108,8 +108,8 @@ afterEach(async () => {
 });
 
 describe("みなし確認の 3 つの条件", () => {
-  it("取引条件の記録が無い：8 日たっても未確認のまま。画面に理由と /terms への案内", async () => {
-    const { st } = await statementOf("D01");
+  it("取引条件の記録が無い：8 日たっても未確認のまま。画面に理由と、この人の取引条件の画面への案内", async () => {
+    const { st, driver } = await statementOf("D01");
     await sentEightDaysAgo(st.id);
     const d = (await getStatementDetail(db, tenantId, st.id))!;
     expect(d.terms).toBeNull();
@@ -117,7 +117,9 @@ describe("みなし確認の 3 つの条件", () => {
     expect(d.status.deemedCheck).toEqual({ sent: true, daysSinceSent: 8, daysPassed: true, noQuestion: true, clause: false });
 
     const h = await detail(st.id);
-    expect(h).toContain(`${BLOCKED}<a href="/terms">/terms</a> で入れられます）`);
+    // 生のパス（/terms）を文字として出さず、この人の画面の「新しい版を作る」へ飛ばす
+    expect(h).toContain(`${BLOCKED}<a href="/terms/${driver.id}#new">取引条件の明示（この人の明示書を作る）</a>で入れられます）`);
+    expect(h).not.toContain(">/terms<");
     expect(h).toContain("条項なし（みなし確認にしません）");
     expect(h).toContain("取引条件の記録がありません");
     expect(h).toContain("3 つのうち 2 つ");
@@ -126,7 +128,7 @@ describe("みなし確認の 3 つの条件", () => {
     expect(all.counts.deemed).toBe(0);
     const l = await list();
     expect(l).toContain("取引条件にみなし確認の条項が無いため、未確認のままの人がいます（1人：");
-    expect(l).toContain("青木 翔太）");
+    expect(l).toContain(`<a href="/terms/${driver.id}#new">青木 翔太</a></span>）`);
     // 確認の記録（CSV）の状態も同じ
     const rows = await confirmationRecordRows(db, tenantId, DEMO_MONTH);
     expect(rows.find((r) => r[2] === "青木 翔太")![6]).toBe("送付済み");
@@ -139,6 +141,7 @@ describe("みなし確認の 3 つの条件", () => {
     let h = await detail(st.id);
     expect(h).toContain(BLOCKED);
     expect(h).toContain("取引条件の記録（版 1・2026年4月1日）に、みなし確認の条項がありません");
+    expect(h).toContain(`<a href="/terms/${driver.id}#new">取引条件の明示（この人の新しい版を作る）</a>`);
 
     await db.insert(s.termsRecords).values({ tenantId, driverId: driver.id, version: 2, issuedOn: "2026-09-01", content: {}, deemedClause: true });
     const d = (await getStatementDetail(db, tenantId, st.id))!;

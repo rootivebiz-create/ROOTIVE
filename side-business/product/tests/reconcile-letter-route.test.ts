@@ -174,8 +174,11 @@ describe("画面：扱いの流れ・返事待ち・見つけたお金・取引�
   it("結果の画面：直したお支払通知をその場で上げ直す欄（元請と月は決まっている）。閲覧の人には出さない。返事待ちの一覧から差へ飛べる", async () => {
     const page = html(await NoticePage({ params: Promise.resolve({ id: noticeId }), searchParams: Promise.resolve({}) }));
     expect(text(page)).toContain("直したお支払通知のファイル（A物流（架空）・2026年10月分）");
-    expect(page).toContain('name="replace" value="1"');
+    expect(page).toContain('name="mode" value="replace"');
     expect(page).toContain('name="month" value="2026-10"');
+    // 営業所ごとなど、同じ月の別のお支払通知を足す欄もある
+    expect(text(page)).toContain("足すお支払通知のファイル（A物流（架空）・2026年10月分）");
+    expect(page).toContain('name="mode" value="add"');
     // 差のカードに印（返事待ちの一覧のリンク先）
     expect(page).toContain(`id="item-${itemIds.yakan}"`);
     const list = html(await ReconcilePage({ searchParams: Promise.resolve({}) }));
@@ -184,7 +187,7 @@ describe("画面：扱いの流れ・返事待ち・見つけたお金・取引�
     try {
       const view = html(await NoticePage({ params: Promise.resolve({ id: noticeId }), searchParams: Promise.resolve({}) }));
       expect(text(view)).not.toContain("直したお支払通知のファイル");
-      expect(view).not.toContain('name="replace"');
+      expect(view).not.toContain('name="mode"');
     } finally {
       auth.token = OWNER;
     }

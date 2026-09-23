@@ -24,6 +24,8 @@ vi.mock("next/headers", () => ({
   cookies: async () => ({ get: (name: string) => (name === "shimebi_sid" ? { value: auth.token } : undefined), set: () => {}, delete: () => {} }),
   headers: async () => new Headers(),
 }));
+// Server Action の読み直しの指示は、Next.js の外では何もしない
+vi.mock("next/cache", () => ({ revalidatePath: () => undefined }));
 
 const { getDb } = await import("~/db/client");
 const s = await import("~/db/schema");
@@ -230,5 +232,49 @@ describe("突合の画面（デモ）", () => {
     } finally {
       auth.token = TOKEN;
     }
+  });
+
+  it("営業所ごとのお支払通知：貼り付けた表で上げ、ファイルを足すと、ファイルごとの入れ替え・外す欄と読み取りの詳細が出る", async () => {
+    const db = await getDb();
+    const [b] = await db.select().from(s.clients).where(and(eq(s.clients.tenantId, tenantId), eq(s.clients.name, "B商事（架空）")));
+    const form = (fields: Record<string, string | File>) => {
+      const fd = new FormData();
+      for (const [k, v] of Object.entries(fields)) fd.set(k, v);
+      return fd;
+    };
+    // ファイルも貼り付けも無いときは断る
+    expect(await uploadNoticeAction(undefined, form({ clientId: b.id, month: "2026-10", mode: "new" }))).toEqual({
+      ok: false,
+      error: "元請から届いたファイル（CSV か Excel）を選ぶか、表を貼り付けてください",
+    });
+    // 貼り付けた表（タブ区切り）で上げる → 結果の画面へ移る
+    await expect(
+      uploadNoticeAction(undefined, form({ clientId: b.id, month: "2026-10", mode: "new", pasted: "品目\t数量\t単価\t金額\nスポット\t4\t9000\t36000\n", pasteName: "本社の分" })),
+    ).rejects.toThrow("NEXT_REDIRECT");
+    // 同じ月にもう 1 通：選ばなければ止め、「足す」を選べば足す
+    const south = new File(["品目,数量,単価,金額\nスポット,2,9000,18000\n"], "南営業所.csv", { type: "text/csv" });
+    const stopped = await uploadNoticeAction(undefined, form({ clientId: b.id, month: "2026-10", mode: "new", file: south }));
+    expect(stopped.ok).toBe(false);
+    expect(stopped.ok ? "" : stopped.error).toContain("「足す」を選んでください");
+    await expect(uploadNoticeAction(undefined, form({ clientId: b.id, month: "2026-10", mode: "add", file: south }))).rejects.toThrow("NEXT_REDIRECT");
+
+    const [n] = await db.select().from(s.paymentNotices).where(and(eq(s.paymentNotices.tenantId, tenantId), eq(s.paymentNotices.clientId, b.id), eq(s.paymentNotices.month, "2026-10-01")));
+    expect(n).toMatchObject({ fileName: "本社の分.tsv、南営業所.csv", total: 54000 });
+    const page = html(await NoticePage({ params: Promise.resolve({ id: n.id }), searchParams: Promise.resolve({ done: "add" }) }));
+    const out = text(page);
+    expect(out).toContain("ファイルを足して、全部のファイルの合計で突き合わせ直しました");
+    expect(out).toContain("2つのファイルを足して、合計で突き合わせています");
+    expect(out).toContain("お支払通知のファイル（2つ）");
+    expect(out).toContain("「本社の分.tsv」の列の対応・読み飛ばした行を見る");
+    expect(out).toContain("「南営業所.csv」の列の対応・読み飛ばした行を見る");
+    expect(out).toContain("このファイルだけ入れ替える");
+    expect(out).toContain("このファイルを外す");
+    expect(out).toContain("全部を入れ替えて突き合わせ直す");
+    expect(page).toContain('name="mode" value="replaceFile"');
+    const batches = await db.select().from(s.importBatches).where(and(eq(s.importBatches.tenantId, tenantId), eq(s.importBatches.kind, "payment_notice"), eq(s.importBatches.status, "applied")));
+    const southBatch = batches.find((x) => x.fileName === "南営業所.csv")!;
+    expect(page).toContain(`name="fileId" value="${southBatch.id}"`);
+    // 戻るリンクは押しやすい大きさ（44px）
+    expect(page).toMatch(/<a class="inline-flex min-h-11 items-center" href="\/reconcile\?m=2026-10">/);
   });
 });

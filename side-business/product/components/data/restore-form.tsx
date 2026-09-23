@@ -5,7 +5,8 @@ import { Button } from "@/components/ui";
 import { restoreAction, type RestoreState } from "~/app/(app)/data/actions";
 
 /** この画面から送れる大きさ（サーバーの上限に合わせる） */
-const MAX_MB = 9;
+// 画面からの送信は、置き場所（Vercel）で 1 回 約 4.5MB まで。余白を見て 4MB（大きいときは手元の読み戻しで）
+const MAX_MB = 4;
 
 function when(iso: string): string {
   const d = new Date(iso);
@@ -98,7 +99,7 @@ export function RestoreForm() {
           className="mt-1 block min-h-11 w-full text-sm file:mr-3 file:min-h-11 file:rounded-lg file:border file:border-border file:bg-card file:px-4 file:font-bold"
         />
       </label>
-      {tooBig && <p className="text-sm text-danger">ファイルが大きすぎます（この画面からは {MAX_MB}MB まで）。大きいときは、しめ日ラボの窓口にご相談ください。</p>}
+      {tooBig && <p className="text-sm text-danger">ファイルが大きすぎます（この画面からは {MAX_MB}MB まで）。大きいときは、導入を担当した者にご相談ください（手元から読み戻せます）。</p>}
 
       {state && !state.ok && sentFile === file && (
         <p role="alert" className="whitespace-pre-line rounded-lg border border-danger/40 bg-danger/10 p-3 text-sm text-danger">

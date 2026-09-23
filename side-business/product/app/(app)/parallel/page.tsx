@@ -107,6 +107,8 @@ export default async function ParallelPage({ searchParams }: { searchParams: Pro
           <div className="mt-6">
             {canEdit ? (
               <ParallelEditor
+                // 月ごとに作り直す（保存していない下書きは月ごとに別）
+                key={month}
                 month={month}
                 otherDrivers={v.otherDrivers}
                 rows={v.rows.map((r) => ({

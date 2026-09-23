@@ -3,8 +3,10 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import type { Db } from "~/db/client";
 import * as s from "~/db/schema";
 import { UserError } from "~/server/action";
+import { upsertOverride } from "~/server/features/settings/rates";
 import type { RuleGuess } from "./deductions";
 import type { DeductionProposal } from "./proposals";
+import { rateKey, type RateFinding, type RateProposal } from "./rates";
 import { loadDraftView } from "./service";
 
 /**
@@ -144,4 +146,55 @@ async function createExceptions(
   });
   if (created.length === 0) throw new UserError("作るルールがありませんでした");
   return created;
+}
+
+// ---------------------------------------------------------------- 人ごとの単価（単価・金額の列から）
+
+export type AdoptedRate = {
+  id: string;
+  driverName: string;
+  projectName: string;
+  standard: number;
+  before: { payRate: number; agreedOn: string | null } | null;
+  after: { payRate: number; agreedOn: string | null };
+  created: boolean;
+};
+
+/**
+ * 単価の列から読んだ「人ごとの単価」の下書きを登録する（ドライバー × 案件。すでにあれば上書き）。
+ * 合意した日は空のまま作るので、見張り番が知らせる（取引条件の記録に入れて、合意した日を入れるのは会社）。
+ * keys を渡すと、その人 × 案件だけ（無ければ、その列の下書きすべて）
+ */
+export async function adoptRateProposals(
+  db: Db,
+  tenantId: string,
+  batchId: string,
+  input: { col: number; keys?: string[] },
+): Promise<{ finding: RateFinding; adopted: AdoptedRate[] }> {
+  const view = await loadDraftView(db, tenantId, batchId);
+  if (!view) throw new UserError("取り込みが見つかりません");
+  if (view.batch.status !== "draft") throw new UserError("単価の下書きは、反映する前の取り込みの画面で登録できます。設定の「人ごとの単価」から入れてください");
+  if (!view.extras) throw new UserError("先に列の読み方と名前を決めてください");
+  const finding = view.extras.rates.find((f) => f.col === input.col);
+  if (!finding) throw new UserError("その単価の列が見つかりません。画面を読み直してください");
+  const wanted = input.keys?.length ? new Set(input.keys) : null;
+  const picked: RateProposal[] = finding.proposals.filter((p) => !wanted || wanted.has(rateKey(p)));
+  if (picked.length === 0) throw new UserError("登録する単価がありません（もう登録したかもしれません）。画面を読み直してください");
+  const adopted: AdoptedRate[] = [];
+  await db.transaction(async (tx) => {
+    const t = tx as unknown as Db;
+    for (const p of picked) {
+      const r = await upsertOverride(t, tenantId, { driverId: p.driverId, projectId: p.projectId, payRate: p.rate, agreedOn: null });
+      adopted.push({
+        id: r.after.id,
+        driverName: r.driver.name,
+        projectName: r.project.name,
+        standard: r.project.payRate,
+        before: r.before ? { payRate: r.before.payRate, agreedOn: r.before.agreedOn } : null,
+        after: { payRate: r.after.payRate, agreedOn: r.after.agreedOn },
+        created: r.created,
+      });
+    }
+  });
+  return { finding, adopted };
 }

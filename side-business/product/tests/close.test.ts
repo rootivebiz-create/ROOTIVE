@@ -202,7 +202,16 @@ describe("月の締め", () => {
     const first = await createTransferBatch(db, tenantId, DEMO_MONTH, { transferDate: "2026-11-25", scope: "all" }, staffId);
     expect(first).toMatchObject({ count: 7, total: OCTOBER_TOTAL + 1200 - 34430 });
     let c = await loadCloseChecklist(db, tenantId, DEMO_MONTH, { runWatch: async () => [] });
-    expect(c.transfer).toEqual({ batches: 1, people: 7, total: OCTOBER_TOTAL + 1200 - 34430, executed: 0, changed: 0, notIncluded: 1 });
+    expect(c.transfer).toEqual({
+      batches: 1,
+      people: 7,
+      total: OCTOBER_TOTAL + 1200 - 34430,
+      executed: 0,
+      changed: 0,
+      changedExecuted: 0,
+      notIncluded: 1,
+      paidDiff: { open: 0, underpaid: 0, overpaid: 0 },
+    });
 
     // 前のデータを使わずに全員ぶんを作り直しても、人数・合計は二重にならない
     await createTransferBatch(db, tenantId, DEMO_MONTH, { transferDate: "2026-11-24", scope: "all", replaceConfirmed: true }, staffId);

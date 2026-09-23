@@ -5,6 +5,7 @@ import { Input, NumberInput, Select } from "@/components/ui";
 import { jpDate } from "@/lib/format";
 import { RATE_CHANGE_HINT, rateText, readNumber } from "~/server/features/settings/format";
 import { Callout, F, ResultLine, SubmitRow, useFormAction, type FormAction } from "./form-kit";
+import { OpenMonthConfirm } from "./open-month-confirm";
 
 export type RateProject = { id: string; name: string; clientName: string | null; unit: string; payRate: number; billRate: number; active: boolean };
 export type RateDriver = { id: string; name: string; code: string | null; active: boolean };
@@ -128,6 +129,7 @@ export function RateForm({
         </Callout>
       )}
       <ResultLine state={state} />
+      <OpenMonthConfirm state={state} />
       <SubmitRow pending={pending} label={fixed ? "保存" : already ? "上書きする" : "登録する"} />
     </form>
   );

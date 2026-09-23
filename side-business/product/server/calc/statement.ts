@@ -58,6 +58,9 @@ export type CalcRule = {
 export type CalcWork = { driverId: string; projectId: string; qty: number; workDate?: string | null };
 export type CalcAdjustment = { driverId: string; label: string; amount: number; taxable: boolean; agreedInWriting: boolean };
 
+/** 日ごとの数量（date が null は日付の無い稼働の合計） */
+export type StatementLineDay = { date: string | null; qty: number };
+
 export type StatementLine = {
   projectId: string;
   project: string;
@@ -69,6 +72,11 @@ export type StatementLine = {
   /** 受注の側（利益の計算に使う。明細には出さない） */
   billRate: number;
   sales: number;
+  /**
+   * 日ごとの数量（日付の古い順。日付の無い稼働があれば最後に date: null でまとめる）。
+   * 日付つきの稼働が 1 件も無い行には付けない（写しのハッシュが、日付の無い明細では前と変わらないように）
+   */
+  days?: StatementLineDay[];
 };
 
 export type StatementDeduction = { ruleId: string; name: string; amount: number; taxable: boolean; agreedInWriting: boolean; how: string };
@@ -177,6 +185,22 @@ function splitBurden(
   return { total: parts.reduce((x, p) => x + p.burden, 0), parts, undatedAcrossStep };
 }
 
+/**
+ * 1 つの行（案件）の日ごとの数量。同じ日の稼働は足す（数量は保存と同じ小数 6 桁まで）。
+ * 日付つきの稼働が無ければ undefined（日付の無い行だけなら、日ごとの内訳は出さない）
+ */
+export function lineDays(rows: { qty: number; date: string | null }[]): StatementLineDay[] | undefined {
+  if (!rows.some((r) => r.date)) return undefined;
+  const byDate = new Map<string | null, number>();
+  for (const r of rows) byDate.set(r.date, Math.round(((byDate.get(r.date) ?? 0) + r.qty) * 1e6) / 1e6);
+  const dated = [...byDate.entries()]
+    .filter((e): e is [string, number] => e[0] !== null)
+    .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+    .map(([date, qty]) => ({ date, qty }));
+  const undated = byDate.get(null);
+  return undated !== undefined ? [...dated, { date: null, qty: undated }] : dated;
+}
+
 /** 支払日：締めた月から payMonthOffset か月後の payDay 日（0 は末日。月に無い日は末日） */
 export function payDateFor(month: string, t: Pick<CalcTenant, "payMonthOffset" | "payDay">): string {
   const [y, m] = month.slice(0, 7).split("-").map(Number);
@@ -245,6 +269,7 @@ export function buildStatementDrafts(input: BuildInput): StatementDraft[] {
       .map(([projectId, qty]) => {
         const p = projects.get(projectId)!;
         const rate = overrides.get(`${d.id}:${projectId}`) ?? p.payRate;
+        const days = lineDays(workRows.filter((w) => w.projectId === projectId));
         return {
           projectId,
           project: p.name,
@@ -255,6 +280,7 @@ export function buildStatementDrafts(input: BuildInput): StatementDraft[] {
           amount: roundYen(rate * qty, tenant.amountRounding),
           billRate: p.billRate,
           sales: roundYen(p.billRate * qty, tenant.amountRounding),
+          ...(days ? { days } : {}),
         };
       })
       .sort((a, b) => a.project.localeCompare(b.project, "ja"));

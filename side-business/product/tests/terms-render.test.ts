@@ -49,8 +49,8 @@ vi.mock("next/navigation", () => ({
   },
 }));
 
-/** 製品が言ってはいけない言い方（法令・税の結論、言い切り、報酬を下げる助言） */
-const FORBIDDEN = [/適法/, /違反はありません/, /問題ありません/, /法令に完全対応/, /大丈夫/, /必ず合う/, /ミスゼロ/, /完全自動/, /補助金/, /下げ(る|ましょう|てください)/, /偽装請負/, /労働者にあたる/];
+/** 製品が言ってはいけない言い方（法令・税の結論、言い切り、報酬を下げる助言）。「取適法」（法律の略称）は数えない（wording.test.ts と同じ） */
+const FORBIDDEN = [/(?<!取)適法/, /違反はありません/, /問題ありません/, /法令に完全対応/, /大丈夫/, /必ず合う/, /ミスゼロ/, /完全自動/, /補助金/, /下げ(る|ましょう|てください)/, /偽装請負/, /労働者にあたる/];
 
 let client: PGlite;
 let tenantId: string;
@@ -208,6 +208,9 @@ describe("1 人の画面 /terms/[driverId]", () => {
     try {
       const h = await detailPage(D.D01);
       expect(h).toContain("振込手数料をドライバーが負担する設定です");
+      // 取適法は正式な名前を添えて出し、2 回目は短く
+      expect(h).toContain("取適法（中小受託取引適正化法）");
+      expect(h).toContain("取適法のリーフレット");
       expect(h).toContain("条件が変わっています");
       expect(h).toContain("振込手数料の負担：会社 → ドライバー");
       // 条件が変わったら、フォームは開いている
@@ -280,9 +283,17 @@ describe("ドライバーのページ /t/[token]", () => {
       issuedOn: "2026-09-10",
     }, new Date("2026-09-10T10:00:00+09:00"));
     const h = await portalPage(oldToken);
-    expect(h).toContain("新しい版があります。会社から届いたリンクを開いてください");
+    expect(h).toContain("新しい版があります。");
+    // 新しい版をまだ送っていないときは、届くのを待ってもらう（新しい版へのボタンは出さない）
+    expect(h).toContain("会社から新しい版のリンクが届くまで、お待ちください");
+    expect(h).not.toContain("を開く</a>");
     expect(h).toContain("この版では「受け取りました」は押せません");
     expect(h).not.toContain(">受け取りました</button>");
+    // 送ったあとは、古いリンクのページから新しい版を開ける
+    await state.db!.update(s.termsRecords).set({ sentAt: new Date("2026-09-10T11:00:00+09:00") }).where(and(eq(s.termsRecords.tenantId, tenantId), eq(s.termsRecords.driverId, D.D01), eq(s.termsRecords.version, 2)));
+    const sent = await portalPage(oldToken);
+    expect(sent).toContain("新しい版（版 2）を開く");
+    expect(sent).toMatch(/href="\/t\/[^"]+"/);
     await expect(portalPage("broken.token")).rejects.toThrow("NEXT_NOT_FOUND");
   });
 });

@@ -6,10 +6,20 @@ import { Badge, EmptyState, Notice, PageHeader } from "~/components/page";
 import { daysBetween, jstDateTime } from "~/components/close/format";
 import { DeleteBatchButton, ExecutedOnForm } from "~/components/transfer/batch-controls";
 import { CreateTransferForm } from "~/components/transfer/create-form";
+import { SettleForm, UndoSettlementButton, diffText } from "~/components/transfer/paid-diff";
 import { TransferReviewSection } from "~/components/transfer/review";
 import { getDb } from "~/db/client";
 import { requirePageUser, roleAtLeast } from "~/server/auth";
-import { loadTransferPlan, loadTransferReview, type BatchView, type BankFields, type ExcludedRow, type TransferRow } from "~/server/features/transfer";
+import {
+  loadPaidDifferences,
+  loadTransferPlan,
+  loadTransferReview,
+  type BatchView,
+  type BankFields,
+  type ExcludedRow,
+  type PaidDiffReport,
+  type TransferRow,
+} from "~/server/features/transfer";
 import { monthFromParam, monthLabelJa, monthParam } from "~/server/month";
 
 export const metadata = { title: "振込データ" };
@@ -158,10 +168,22 @@ function BatchCard({
             この振込データを作ったあとに、口座が変わった人がいます（{bankMoved.join("、")}）。確かめていない口座に振り込まないよう、ダウンロードを止めています。取り消して作り直してください。
           </p>
         )}
-        {b.changed && (
+        {b.changed && !b.executedOn && (
           <p role="alert" className="rounded-lg border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
-            この振込データを作ったあとに明細が変わりました（いま {b.currentCount}人・{yenText(b.currentTotal)}）。
-            {b.executedOn ? "振り込んだ額と明細の額が違うおそれがあります。明細を確かめてください。" : "このデータは使わず、取り消して作り直してください。"}
+            この振込データを作ったあとに明細が変わりました（いま {b.currentCount}人・{yenText(b.currentTotal)}）。このデータは使わず、取り消して作り直してください。
+          </p>
+        )}
+        {b.changed && b.executedOn && b.paidDiffOpen > 0 && (
+          <p role="alert" className="rounded-lg border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
+            振り込んだあとに明細が変わり、振り込んだ額と明細の額が違う人が {b.paidDiffOpen}人います。下の「振り込んだ額と明細の額の差」で、差をどう精算するかを記録してください。{" "}
+            <a href="#paid-diff-heading" className="font-bold">
+              差を見る ↓
+            </a>
+          </p>
+        )}
+        {b.changed && b.executedOn && b.paidDiffOpen === 0 && (
+          <p className="rounded-lg border border-border bg-muted p-3 text-sm">
+            振り込んだあとに明細が変わりました（いま {b.currentCount}人・{yenText(b.currentTotal)}）。振り込んだ額との差は、どの人も精算の記録があるか、差がありません。
           </p>
         )}
         {canEdit && !b.changed && bankMoved.length === 0 && (
@@ -189,13 +211,128 @@ function BatchCard({
   );
 }
 
+/** 振り込んだあとに明細が変わった人：振り込んだ額・今の明細・差と、精算の記録 */
+function PaidDiffSection({ report, canEdit, m }: { report: PaidDiffReport; canEdit: boolean; m: string }) {
+  const nextLabel = monthLabelJa(report.nextMonth);
+  return (
+    <section aria-labelledby="paid-diff-heading" className="space-y-3">
+      <h2 id="paid-diff-heading" className="text-lg font-bold">
+        振り込んだ額と明細の額の差
+      </h2>
+      <p className="text-sm text-muted-foreground">
+        振り込んだあとに明細が作り直され、振り込んだ額と今の明細の額が違う人です。二重に振り込まないよう、この人たちは「まだ振込データに入っていない人だけ」の振込データには入りません。
+        差をどう精算したか（{nextLabel}分の明細の調整・別に振り込んだ など）を、人ごとに記録してください。記録は操作の記録に残ります。{" "}
+        <Link href="/help#faq-paid-diff" className="font-bold">
+          振り込んだあとに間違いが分かったら
+        </Link>
+      </p>
+      <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <Card>
+          <dt className="text-xs text-muted-foreground">精算の記録がまだの人</dt>
+          <dd className={`num text-xl font-bold ${report.openCount ? "text-danger" : ""}`}>{report.openCount}人</dd>
+        </Card>
+        <Card>
+          <dt className="text-xs text-muted-foreground">払い足りない（まだ）</dt>
+          <dd className="text-xl font-bold">
+            <Money value={report.underpaid} />
+          </dd>
+        </Card>
+        <Card className="col-span-2 sm:col-span-1">
+          <dt className="text-xs text-muted-foreground">払いすぎ（まだ）</dt>
+          <dd className="text-xl font-bold">
+            <Money value={report.overpaid} />
+          </dd>
+        </Card>
+      </dl>
+      <ul className="space-y-3">
+        {report.rows.map((r) => (
+          <li key={r.driverId}>
+            <Card className="space-y-3">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <p className="min-w-0 font-bold">
+                  {r.driverName}
+                  {r.driverCode && <span className="ml-2 text-xs font-normal text-muted-foreground">{r.driverCode}</span>}
+                </p>
+                {r.outstanding === 0 ? <Badge tone="green">精算の記録あり</Badge> : <Badge tone="red">精算の記録がまだ</Badge>}
+              </div>
+              <dl className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
+                <div>
+                  <dt className="text-xs text-muted-foreground">
+                    振り込んだ額（{r.paidVersions.length ? r.paidVersions.map((v) => `第${v}版`).join("・") : "版の記録なし"}・{r.paidOn.map((d) => shortDate(d)).join("・")}）
+                  </dt>
+                  <dd>
+                    <Money value={r.paid} className="font-bold" />
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">今の明細{r.statementVersion !== null ? `（第${r.statementVersion}版）` : "（明細なし）"}</dt>
+                  <dd>
+                    <Money value={r.statementTotal} className="font-bold" />
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">差（明細 − 振り込んだ額）</dt>
+                  <dd className="font-bold">{diffText(r.difference)}</dd>
+                </div>
+              </dl>
+              {r.settlements.length > 0 && (
+                <ul className="space-y-1 text-sm">
+                  {r.settlements.map((x) => (
+                    <li key={x.id} className={x.voided ? "text-danger" : ""}>
+                      {x.method === "next_month"
+                        ? x.voided
+                          ? `${x.nextMonth ? monthLabelJa(x.nextMonth) : nextLabel}分の明細の調整で精算する記録でしたが、その調整が消されています（精算になっていません）。`
+                          : `${x.nextMonth ? monthLabelJa(x.nextMonth) : nextLabel}分の明細の調整で精算：${x.amount < 0 ? "−" : "＋"}${yenText(Math.abs(x.amount))}`
+                        : `別の方法で精算：${x.settledOn ? shortDate(x.settledOn) : ""}・${diffText(x.amount)}${x.note ? `（${x.note}）` : ""}`}
+                      <span className="ml-1 text-xs text-muted-foreground">
+                        {jstDateTime(x.at)}
+                        {x.userName ? `・${x.userName}さん` : ""}
+                      </span>
+                      {x.method === "next_month" && !x.voided && x.nextMonth && (
+                        <Link href={`/work?m=${x.nextMonth.slice(0, 7)}`} className="ml-2 inline-flex min-h-11 items-center">
+                          調整を見る →
+                        </Link>
+                      )}
+                      {canEdit && x.method === "outside" && <UndoSettlementButton month={report.month} settleId={x.id} />}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {r.outstanding !== 0 && r.settled !== 0 && <p className="text-sm">まだ精算の記録が無い差：{diffText(r.outstanding)}</p>}
+              {r.outstanding !== 0 &&
+                (canEdit ? (
+                  <SettleForm
+                    key={`${r.driverId}:${r.outstanding}`}
+                    month={report.month}
+                    driverId={r.driverId}
+                    driverName={r.driverName}
+                    outstanding={r.outstanding}
+                    nextMonthLabel={nextLabel}
+                    nextMonthClosed={report.nextMonthClosed}
+                  />
+                ) : (
+                  <p className="text-sm text-muted-foreground">精算の仕方を記録するのは、事務・オーナーの方です。</p>
+                ))}
+              {r.statementId && (
+                <Link href={`/statements/${r.statementId}?m=${m}`} className="inline-flex min-h-11 items-center text-sm">
+                  明細と版の違いを見る →
+                </Link>
+              )}
+            </Card>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 /** 振込データ：明細の振込額から、銀行にそのまま出せるファイルを作る。作った記録と、実際に振り込んだ日も残す */
 export default async function TransferPage({ searchParams }: { searchParams: Promise<{ m?: string }> }) {
   const user = await requirePageUser("viewer");
   const month = monthFromParam((await searchParams).m);
   const m = monthParam(month);
   const db = await getDb();
-  const plan = await loadTransferPlan(db, user.tenantId, month);
+  const [plan, paidDiff] = await Promise.all([loadTransferPlan(db, user.tenantId, month), loadPaidDifferences(db, user.tenantId, month)]);
   const canEdit = roleAtLeast(user.role, "staff");
   // 口座の変更などの確かめは、作れる人にだけ出す（閲覧の人には口座を見せない）
   const review = canEdit ? await loadTransferReview(db, user.tenantId, month, plan) : null;
@@ -331,6 +468,8 @@ export default async function TransferPage({ searchParams }: { searchParams: Pro
           )}
         </>
       )}
+
+      {paidDiff.rows.length > 0 && <PaidDiffSection report={paidDiff} canEdit={canEdit} m={m} />}
 
       <section aria-labelledby="history-heading" className="space-y-3">
         <h2 id="history-heading" className="text-lg font-bold">

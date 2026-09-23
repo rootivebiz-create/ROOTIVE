@@ -2,8 +2,8 @@ import Link from "next/link";
 import { buttonClass, Card, Select } from "@/components/ui";
 import { jpDate } from "@/lib/format";
 import { Badge, EmptyState, PageHeader } from "~/components/page";
-import { ActionButton } from "~/components/settings/form-kit";
 import { Expand } from "~/components/settings/list-bits";
+import { OpenMonthActionButton } from "~/components/settings/open-month-confirm";
 import { RateForm } from "~/components/settings/rate-form";
 import { getDb } from "~/db/client";
 import { requirePageUser, roleAtLeast } from "~/server/auth";
@@ -165,7 +165,7 @@ export default async function RatesPage({ searchParams }: { searchParams: Promis
                                 initial={{ driverId: o.driverId, projectId: o.projectId, payRate: String(o.payRate), agreedOn: o.agreedOn ?? "", fixed: true }}
                               />
                               <div className="border-t border-border pt-3">
-                                <ActionButton
+                                <OpenMonthActionButton
                                   action={deleteOverrideAction}
                                   hidden={{ id: o.id }}
                                   label="消す（標準の単価に戻す）"

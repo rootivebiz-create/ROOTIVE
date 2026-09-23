@@ -455,6 +455,10 @@ describe("会社の設定と AI の同意", () => {
     // 注記は空なので保存しない（明細が「10日以内」の文を作る）
     expect(after.settings.statementNote).toBeUndefined();
     expect(changed.payDay).toEqual({ from: 25, to: 20 });
+    // 操作の記録（消せない表）に会社の口座番号を残さない：下 3 桁だけ（ドライバーの口座と同じ）
+    expect(changed.requester).toMatchObject({ from: { accountNumber: "…321", bankCode: "0001" }, to: { accountNumber: "…321", bankCode: "0001" } });
+    expect(JSON.stringify(changed)).not.toContain("7654321");
+    expect(JSON.stringify(changed)).not.toContain("0654321");
     // 支払日の変更は、これから作る明細の支払日に出る
     const drafts = buildStatementDrafts(await loadBuildInput(db, A, DEMO_MONTH));
     expect(drafts[0].payDate).toBe("2026-11-20");
@@ -488,6 +492,8 @@ describe("会社の設定と AI の同意", () => {
     expect(o.drivers).toMatchObject({ active: 9, noBank: 2, noTerms: 2, unregistered: 4 });
     expect(o.projects).toMatchObject({ active: 5, loss: 0 });
     expect(o.rules).toMatchObject({ active: 4, notAgreed: 1 });
+    // 有効なオーナーの数（1 人だけなら、はじめの画面で「もう 1 人」をすすめる）
+    expect(o.users.owners).toBe(1);
     expect(o.company.payRule).toBe("毎月末日締め・翌月25日払い");
     expect(o.company.missing).toEqual(["支払期日の文言"]);
     // 登録番号が無くても、免税の会社なら抜けとして出さない

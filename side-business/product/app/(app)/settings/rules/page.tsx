@@ -4,8 +4,8 @@ import { jpDate, yenText } from "@/lib/format";
 import type { Rounding } from "@/lib/payroll/types";
 import { Badge, EmptyState, PageHeader } from "~/components/page";
 import { SourceLink } from "~/components/settings/bits";
-import { ActionButton } from "~/components/settings/form-kit";
 import { Expand } from "~/components/settings/list-bits";
+import { OpenMonthActionButton } from "~/components/settings/open-month-confirm";
 import { RuleForm, type RuleInitial, type RuleKind } from "~/components/settings/rule-form";
 import { getDb } from "~/db/client";
 import { requirePageUser, roleAtLeast } from "~/server/auth";
@@ -188,11 +188,11 @@ export default async function RulesPage({ searchParams }: { searchParams: Promis
                         others={others}
                       />
                       <div className="flex flex-wrap gap-2 border-t border-border pt-3">
-                        <ActionButton action={setRuleActiveAction} hidden={{ id: r.id, active: r.active ? "0" : "1" }} label={r.active ? "使わないにする" : "使うように戻す"} />
+                        <OpenMonthActionButton action={setRuleActiveAction} hidden={{ id: r.id, active: r.active ? "0" : "1" }} label={r.active ? "使わないにする" : "使うように戻す"} />
                         {used.has(r.id) ? (
                           <p className="w-full text-xs text-muted-foreground">支払明細で使われているので消せません（明細の記録を残すため）。やめるときは「使わないにする」を。</p>
                         ) : (
-                          <ActionButton
+                          <OpenMonthActionButton
                             action={deleteRuleAction}
                             hidden={{ id: r.id }}
                             label="消す"

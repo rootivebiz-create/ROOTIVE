@@ -23,6 +23,7 @@ import { resetRateLimit } from "~/server/rate-limit";
 import { DEMO_MONTH, seedDemo } from "~/server/seed-demo";
 import { generateStatements, readSnapshot } from "~/server/statements-core";
 import { createTestDb } from "./helpers/db";
+import { ipMarker } from "~/server/tokens";
 
 const DAY = 86_400_000;
 const pause = () => new Promise((r) => setTimeout(r, 5));
@@ -296,6 +297,9 @@ describe("確認の記録（CSV）", () => {
     expect(rows).toHaveLength(9);
     const aoki = rows.find((r) => r[2] === "青木 翔太")!;
     expect(aoki.slice(0, 7)).toEqual(["2026-10", "D01", "青木 翔太", 1, st.hash, 357_555, "確認済み"]);
-    expect(aoki.slice(10)).toEqual([1, st.hash, 357_555, "abcdef01", "iPhone"]);
+    // 接続元は、記録した値にもう一度鍵をかけた 8 文字（記録した値の先頭をそのまま出さない）
+    expect(aoki.slice(10)).toEqual([1, st.hash, 357_555, ipMarker("abcdef0123456789"), "iPhone"]);
+    expect(aoki[13]).toMatch(/^[0-9a-f]{8}$/);
+    expect(aoki[13]).not.toBe("abcdef01");
   });
 });

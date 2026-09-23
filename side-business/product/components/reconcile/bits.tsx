@@ -43,7 +43,7 @@ export function FormMessage({ state }: { state: ActionResult<unknown> | undefine
 /** 見出しつきの区切り */
 export function Section({ id, title, description, children, className }: { id?: string; title: string; description?: ReactNode; children: ReactNode; className?: string }) {
   return (
-    <section id={id} className={cx("mt-8 scroll-mt-28", className)}>
+    <section id={id} className={cx("mt-8", className)}>
       <h2 className="text-lg font-bold">{title}</h2>
       {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
       <div className="mt-3">{children}</div>

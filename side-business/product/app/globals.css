@@ -80,6 +80,19 @@
     font-family: var(--font-sans);
     line-height: 1.7;
     font-feature-settings: "palt" 1;
+    /* 区切りの無い長い英数字（ファイル名・メールアドレス）が 320px の画面からはみ出さないように。表や横並びの幅は変わらない */
+    overflow-wrap: break-word;
+  }
+
+  /* 会社の画面（上にメニューが貼り付く）では、ページの中のリンク（#…）で飛んだ先がメニューの下に隠れないようにずらす。
+     ドライバーの画面（/s・/t）は貼り付くメニューが無いので、ずらさない */
+  :root:has([data-app-shell]) {
+    scroll-padding-top: 7.5rem;
+  }
+  @media (min-width: 48rem) {
+    :root:has([data-app-shell]) {
+      scroll-padding-top: 4.5rem;
+    }
   }
 
   a {

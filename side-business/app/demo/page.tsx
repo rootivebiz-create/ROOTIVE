@@ -58,7 +58,7 @@ export default function DemoPage() {
         </p>
         <p className="mt-2 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-4">
           {productDemo && (
-            <a href={productDemo} target="_blank" rel="noopener" className="inline-flex min-h-11 items-center gap-1 font-bold">
+            <a href={productDemo} target="_blank" rel="noopener nofollow" className="inline-flex min-h-11 items-center gap-1 font-bold">
               製品のデモを触る
               <NewTabNote />
               <ArrowIcon />

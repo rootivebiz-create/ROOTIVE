@@ -26,7 +26,7 @@ export async function settingsOverview(db: Db, tenantId: string) {
     db.select({ active: s.projects.active, billRate: s.projects.billRate, payRate: s.projects.payRate }).from(s.projects).where(eq(s.projects.tenantId, tenantId)),
     db.select({ agreedOn: s.rateOverrides.agreedOn }).from(s.rateOverrides).where(eq(s.rateOverrides.tenantId, tenantId)),
     db.select({ active: s.deductionRules.active, agreedInWriting: s.deductionRules.agreedInWriting }).from(s.deductionRules).where(eq(s.deductionRules.tenantId, tenantId)),
-    db.select({ disabledAt: s.users.disabledAt }).from(s.users).where(eq(s.users.tenantId, tenantId)),
+    db.select({ disabledAt: s.users.disabledAt, role: s.users.role }).from(s.users).where(eq(s.users.tenantId, tenantId)),
   ]);
   const activeDrivers = drivers.filter((d) => d.active);
   const activeProjects = projects.filter((p) => p.active);
@@ -62,7 +62,12 @@ export async function settingsOverview(db: Db, tenantId: string) {
     },
     rates: { total: overrides.length, noAgreedOn: overrides.filter((o) => !o.agreedOn).length },
     rules: { total: rules.length, active: activeRules.length, notAgreed: activeRules.filter((x) => !x.agreedInWriting).length },
-    users: { total: users.length, active: users.filter((u) => !u.disabledAt).length },
+    users: {
+      total: users.length,
+      active: users.filter((u) => !u.disabledAt).length,
+      /** 有効なオーナーの数（1 人だけだと、その人が入れなくなったときに利用者の管理ができる人がいない） */
+      owners: users.filter((u) => !u.disabledAt && u.role === "owner").length,
+    },
   };
 }
 

@@ -2,10 +2,12 @@
  * お客様 1 社ぶんの置き場所を 1 回で作る。
  *
  *   DATABASE_URL=postgres://…  VERCEL_TOKEN=…  npx tsx scripts/provision.ts \
- *     --client "〇〇運送" --repo 自分のアカウント/shimebi --root product [--team team_xxx] [--demo] [--dry-run]
+ *     --client "〇〇運送" --repo 自分のアカウント/shimebi --root product [--team team_xxx] [--demo] [--dry-run] \
+ *     [--support-email support@example.com] [--support-line https://lin.ee/…]
  *
  * すること：① お客様の Postgres にマイグレーションを当てる ② Vercel にプロジェクトを作る（GitHub のリポジトリとつなぐ）
- * ③ 環境変数（DATABASE_URL・APP_SECRET・SETUP_TOKEN／デモは DEMO_MODE）を入れる ④ 本番をデプロイする
+ * ③ 環境変数（本番：DATABASE_URL・APP_SECRET・SETUP_TOKEN／デモは DEMO_MODE。プレビュー：揮発する PGlite のデモと別の APP_SECRET）
+ *   を入れる ④ 本番をデプロイする
  * ⑤ 最初のオーナーの登録リンク（/setup?token=…）を出す。
  * 秘密の値（DATABASE_URL・VERCEL_TOKEN）はコマンドの引数に書かない（シェルの履歴に残るため、環境変数で渡す）。
  */
@@ -64,7 +66,7 @@ async function run(input: ProvisionInput, plan: ProvisionPlan, token: string) {
   console.log("③ 環境変数を入れます…");
   const sep = plan.query ? "&" : "?";
   await vercel(token, "POST", `/v10/projects/${project.id}/env${plan.query}${sep}upsert=true`, plan.env);
-  console.log(`   済み（${plan.env.map((e) => e.key).join("・")}）`);
+  console.log(`   済み（${plan.env.map((e) => `${e.key}：${e.target.join("・")}`).join("／")}）`);
 
   console.log("④ 本番をデプロイします…");
   const repoId = project.link?.repoId;
@@ -94,6 +96,8 @@ async function main() {
     teamId: arg("team") || undefined,
     demo: flag("demo"),
     ref: arg("ref") || undefined,
+    supportEmail: arg("support-email") || undefined,
+    supportLineUrl: arg("support-line") || undefined,
   };
   if (input.demo && !input.client) input.client = "demo";
   const problems = validateInput(input);
@@ -106,7 +110,7 @@ async function main() {
   const plan = buildPlan(input);
   if (flag("dry-run")) {
     console.log("（試し：通信はしません）");
-    console.log(JSON.stringify({ project: plan.createProjectBody, env: plan.env.map((e) => ({ ...e, value: e.key === "DEMO_MODE" ? e.value : "••••" })) }, null, 2));
+    console.log(JSON.stringify({ project: plan.createProjectBody, env: plan.env.map((e) => ({ ...e, value: e.type === "plain" ? e.value : "••••" })) }, null, 2));
     return;
   }
   await run(input, plan, token);

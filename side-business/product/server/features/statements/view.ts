@@ -7,9 +7,22 @@
  */
 import { num } from "@/lib/engine/types";
 import { WITHHOLDING_CATEGORIES, type WithholdingCategory } from "@/lib/engine/withholding";
+import { adjustForBankHoliday, bankHolidayReason } from "@/lib/tools/torihiki-joken";
 import { TAX_RATE, type StatementDraft } from "~/server/calc/statement";
 
-export type ViewLine = { key: string; project: string; client: string | null; unit: string; qty: number; rate: number; amount: number };
+/** 日ごとの数量（date が null は日付の無い稼働の合計）。key は質問の lineKey（日付の無い分は無い） */
+export type ViewDay = { key: string | null; date: string | null; qty: number };
+export type ViewLine = {
+  key: string;
+  project: string;
+  client: string | null;
+  unit: string;
+  qty: number;
+  rate: number;
+  amount: number;
+  /** 日ごとの数量（日付つきの稼働が無い行・古い写しは空。toDriverView は必ず入れる） */
+  days?: ViewDay[];
+};
 export type ViewDeduction = { key: string; name: string; amount: number; taxable: boolean; agreedInWriting: boolean; how: string };
 export type ViewAdjustment = { key: string; label: string; amount: number; taxable: boolean; agreedInWriting: boolean };
 
@@ -17,7 +30,12 @@ export type DriverStatementView = {
   title: string;
   month: string;
   period: { from: string; to: string };
+  /** 振込予定日（明細に書いた支払日が銀行の休みの日なら、前の営業日） */
   payDate: string;
+  /** 明細に書いた支払日（締めの設定から決まる日。60 日・支払の遅れの確かめはこの日で行う） */
+  payDueDate: string;
+  /** 前の営業日にずらしたときの一言（「10月31日が土曜日のため」）。ずらしていなければ null */
+  payDateNote: string | null;
   company: { name: string; registrationNo: string | null };
   driver: { name: string; code: string | null; registrationNo: string | null; invoiceRegistered: boolean };
   isPurchaseStatement: boolean;
@@ -55,6 +73,18 @@ export function adjustmentKey(index: number): string {
   return `adj:${index}`;
 }
 
+/** 委託料の行の、ある日の目印（質問の lineKey に使う。「案件の id@日付」） */
+export function dayKey(lineKey: string, date: string): string {
+  return `${lineKey}@${date}`;
+}
+
+function viewDays(days: unknown, lineKey: string): ViewDay[] {
+  if (!Array.isArray(days)) return [];
+  return days
+    .filter((d): d is { date: string | null; qty: number } => !!d && typeof d === "object" && typeof (d as { qty?: unknown }).qty === "number")
+    .map((d) => ({ key: typeof d.date === "string" ? dayKey(lineKey, d.date) : null, date: typeof d.date === "string" ? d.date : null, qty: d.qty }));
+}
+
 export function statementTitle(draft: Pick<StatementDraft, "isPurchaseStatement">): string {
   return draft.isPurchaseStatement ? PURCHASE_TITLE : PLAIN_TITLE;
 }
@@ -69,13 +99,32 @@ function withholdingLabel(category: string): string {
   return info ? `源泉徴収（${info.short}）` : "源泉徴収";
 }
 
+/**
+ * 振込予定日：明細に書いた支払日（写しの payDate）が銀行の休みの日なら、前の営業日
+ * （取引条件の「支払日が金融機関の休業日のときは、その前の営業日に支払います」と同じ）
+ */
+export function scheduledPayDate(payDueDate: string): string {
+  return /^\d{4}-\d{2}-\d{2}$/.test(payDueDate) ? adjustForBankHoliday(payDueDate, "before") : payDueDate;
+}
+
+/** ずらしたときの一言。「10月31日が土曜日のため」「9月20日が敬老の日のため」。ずらしていなければ null */
+export function payDateShiftNote(payDueDate: string): string | null {
+  if (scheduledPayDate(payDueDate) === payDueDate) return null;
+  const m = /^\d{4}-(\d{2})-(\d{2})$/.exec(payDueDate);
+  const reason = bankHolidayReason(payDueDate);
+  const day = m ? `${Number(m[1])}月${Number(m[2])}日` : payDueDate;
+  return reason === "年末年始" ? `${day}が年末年始の銀行の休みのため` : `${day}が${reason ?? "銀行の休みの日"}のため`;
+}
+
 /** 写し → ドライバーに見せる形。項目は 1 つずつ拾う（写しを広げない） */
 export function toDriverView(draft: StatementDraft, meta: { version: number; hash: string }): DriverStatementView {
   return {
     title: statementTitle(draft),
     month: draft.month,
     period: { from: draft.period.from, to: draft.period.to },
-    payDate: draft.payDate,
+    payDate: scheduledPayDate(draft.payDate),
+    payDueDate: draft.payDate,
+    payDateNote: payDateShiftNote(draft.payDate),
     company: { name: draft.company.name, registrationNo: draft.company.registrationNo },
     driver: {
       name: draft.driver.name,
@@ -84,7 +133,17 @@ export function toDriverView(draft: StatementDraft, meta: { version: number; has
       invoiceRegistered: draft.driver.invoiceRegistered,
     },
     isPurchaseStatement: draft.isPurchaseStatement,
-    lines: draft.lines.map((l) => ({ key: l.projectId, project: l.project, client: l.client, unit: l.unit, qty: l.qty, rate: l.rate, amount: l.amount })),
+    lines: draft.lines.map((l) => ({
+      key: l.projectId,
+      project: l.project,
+      client: l.client,
+      unit: l.unit,
+      qty: l.qty,
+      rate: l.rate,
+      amount: l.amount,
+      // 古い写しには日ごとの数量が無い（無ければ空）
+      days: viewDays(l.days, l.projectId),
+    })),
     subtotal: draft.subtotal,
     tax: draft.tax,
     taxLabel: draft.taxLabel,
@@ -133,10 +192,26 @@ export function taxBreakdown(v: DriverStatementView): { rateLabel: string; base:
   return { rateLabel: `${v.taxRatePercent}%対象`, base: v.subtotal, tax: v.tax, taxLabel: v.taxLabel };
 }
 
-/** 質問の対象になる行の一覧（lineKey と表示名） */
-export function lineTargets(v: DriverStatementView): { key: string; label: string; kind: "line" | "deduction" | "adjustment" }[] {
+/** 日の見せ方（10月5日（月）） */
+export function jpMonthDayWithWeekday(date: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (!m) return date;
+  const w = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))).getUTCDay();
+  return `${Number(m[2])}月${Number(m[3])}日（${WEEK[w]}）`;
+}
+
+/** ある日の行の表示名（「宅配（個建て） 10月5日（月）」） */
+export function dayLabel(project: string, date: string): string {
+  return `${project} ${jpMonthDayWithWeekday(date)}`;
+}
+
+/** 質問の対象になる行の一覧（lineKey と表示名）。日ごとの数量がある行は、その日ごとにも聞ける */
+export function lineTargets(v: DriverStatementView): { key: string; label: string; kind: "line" | "day" | "deduction" | "adjustment" }[] {
   return [
     ...v.lines.map((l) => ({ key: l.key, label: l.project, kind: "line" as const })),
+    ...v.lines.flatMap((l) =>
+      (l.days ?? []).flatMap((d) => (d.key && d.date ? [{ key: d.key, label: dayLabel(l.project, d.date), kind: "day" as const }] : [])),
+    ),
     ...v.deductions.map((d) => ({ key: d.key, label: d.name, kind: "deduction" as const })),
     ...v.adjustments.map((a) => ({ key: a.key, label: a.label, kind: "adjustment" as const })),
   ];
@@ -157,7 +232,24 @@ export function isLineKeyOf(v: DriverStatementView, key: string): boolean {
 /** 送る文面（LINE・SMS・メール共通） */
 export function shareMessage(name: string, month: string, url: string): string {
   const [y, m] = month.slice(0, 7).split("-").map(Number);
-  return `${name}さん　${y}年${m}月分の支払明細です。内容をご確認のうえ『確認しました』を押してください。${url}`;
+  return `${name}さん　${y}年${m}月分の支払明細です。内容をご確認のうえ『内容を確認しました』を押してください。${url}`;
+}
+
+/** 返事を書いたことを知らせる文面（返事はドライバーに自動では届かないので、会社が LINE などで知らせる） */
+export function replyShareMessage(name: string, month: string, url: string): string {
+  const [y, m] = month.slice(0, 7).split("-").map(Number);
+  return `${name}さん　${y}年${m}月分の支払明細に、会社から返事を書きました。同じリンクのいちばん下の「質問・会社とのやりとり」でご覧ください。${url}`;
+}
+
+export function replyShareSubject(month: string, companyName: string): string {
+  const [y, m] = month.slice(0, 7).split("-").map(Number);
+  return `${y}年${m}月分の支払明細への返事（${companyName}）`;
+}
+
+/** 送る一覧（名前とリンクを 1 行ずつ）。1 人ずつ、その人とのトークに貼るためのもの */
+export function sendListText(month: string, items: { name: string; code: string | null; url: string }[]): string {
+  const [y, m] = month.slice(0, 7).split("-").map(Number);
+  return [`${y}年${m}月分の支払明細（${items.length}人）`, ...items.map((i) => `${i.name}${i.code ? `（${i.code}）` : ""}\t${i.url}`)].join("\n");
 }
 
 export function shareSubject(month: string, companyName: string): string {

@@ -5,7 +5,7 @@ import { z } from "zod";
 import { getDb } from "~/db/client";
 import { runAction, type ActionResult } from "~/server/action";
 import { requireUser } from "~/server/auth";
-import { createTransferBatch, deleteTransferBatch, setTransferExecutedOn } from "~/server/features/transfer";
+import { createTransferBatch, deleteTransferBatch, setTransferExecutedOn, settlePaidDifference, undoSettlement } from "~/server/features/transfer";
 
 /** 振込データの画面の Server Action（薄い包み。中身は server/features/transfer.ts） */
 
@@ -104,4 +104,56 @@ export async function deleteTransferAction(_prev: SimpleState, form: FormData): 
     refresh();
     return undefined;
   }, "振込データを取り消しました（操作の記録には残ります）");
+}
+
+export type SettleState = ActionResult<{ amount: number; method: "next_month" | "outside"; nextMonth: string | null; driverName: string }> | undefined;
+
+const settleSchema = z.object({
+  month: monthSchema,
+  driverId: z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, "ドライバーが見つかりません。画面を読み直してください"),
+  method: z.enum(["next_month", "outside"], { error: "精算の仕方を選んでください" }),
+  expected: z.coerce.number().int("画面を読み直してください"),
+  settledOn: z.union([z.literal(""), dateSchema]).optional(),
+  note: z.string().trim().max(200, "メモは 200 文字までにしてください").optional(),
+});
+
+/** 振り込んだ額と明細の額の差を精算したことを記録する（翌月の調整を足す・別の方法で精算した日を残す） */
+export async function settlePaidDifferenceAction(_prev: SettleState, form: FormData): Promise<SettleState> {
+  return runAction(async () => {
+    const user = await requireUser("staff");
+    const input = settleSchema.parse({
+      month: form.get("month"),
+      driverId: form.get("driverId"),
+      method: form.get("method"),
+      expected: form.get("expected"),
+      settledOn: form.get("settledOn") ?? "",
+      note: form.get("note") ?? "",
+    });
+    const db = await getDb();
+    const r = await settlePaidDifference(
+      db,
+      user.tenantId,
+      input.month,
+      { driverId: input.driverId, method: input.method, expectedOutstanding: input.expected, settledOn: input.settledOn || null, note: input.note || null },
+      user.id,
+    );
+    refresh();
+    revalidatePath("/work");
+    revalidatePath("/statements");
+    return { amount: r.amount, method: r.method, nextMonth: r.nextMonth, driverName: r.driverName };
+  }, "精算の仕方を記録しました");
+}
+
+const undoSettleSchema = z.object({ month: monthSchema, settleId: z.coerce.number().int().positive("精算の記録が見つかりません") });
+
+/** 「別の方法で精算した」記録を取り消す（記録は消さず、取り消したことを足す） */
+export async function undoSettlementAction(_prev: SimpleState, form: FormData): Promise<SimpleState> {
+  return runAction(async () => {
+    const user = await requireUser("staff");
+    const input = undoSettleSchema.parse({ month: form.get("month"), settleId: form.get("settleId") });
+    const db = await getDb();
+    await undoSettlement(db, user.tenantId, input.month, input.settleId, user.id);
+    refresh();
+    return undefined;
+  }, "精算の記録を取り消しました（操作の記録には残ります）");
 }

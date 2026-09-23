@@ -14,6 +14,7 @@ import {
   loadTransferReview,
   maskedBank,
   reviewBankChanges,
+  sameBankAsStamp,
   setTransferExecutedOn,
   stampDiff,
   bankStamp,
@@ -22,6 +23,9 @@ import {
 } from "~/server/features/transfer";
 import { DEMO_MONTH, seedDemo } from "~/server/seed-demo";
 import { generateStatements } from "~/server/statements-core";
+import { sha256 } from "~/server/tokens";
+import { auditCsvRows, searchAuditLog } from "~/server/features/close";
+import { toZenginKana } from "@/lib/payroll/zengin";
 import { createTestDb } from "./helpers/db";
 
 const NOV = "2026-11-01";
@@ -37,6 +41,20 @@ async function editBank(db: Db, tenantId: string, userId: string, code: string, 
   await db.update(s.drivers).set(next).where(and(eq(s.drivers.id, before.id), eq(s.drivers.tenantId, tenantId)));
   const changed = Object.fromEntries(Object.entries(next).map(([k, v]) => [k, { from: (before as Record<string, unknown>)[k] ?? null, to: v }]));
   await audit(db, { tenantId, userId, action: "driver.update", entity: "driver", entityId: before.id, detail: { name: before.name, changed } });
+}
+
+/** 前の作り方（鍵なしの sha256）の目印：この確かめを入れる前に残っていた操作の記録と同じ形 */
+function legacyStamp(tenantId: string, b: BankFields) {
+  const holder = toZenginKana(b.holderKana).value.replace(/\s+/g, " ").trim();
+  return {
+    fp: sha256(`bank:${tenantId}|${b.bankCode}|${b.branchCode}|${b.accountType}|${b.accountNumber}|${holder}`),
+    bankCode: b.bankCode,
+    branchCode: b.branchCode,
+    accountType: b.accountType,
+    tail: b.accountNumber.slice(-3),
+    n: sha256(`bank-number:${tenantId}|${b.accountNumber}`).slice(0, 16),
+    h: sha256(`bank-holder:${tenantId}|${holder}`).slice(0, 16),
+  };
 }
 
 const bank = (over: Partial<BankFields> = {}): BankFields => ({
@@ -64,6 +82,43 @@ describe("口座の目印（純関数）", () => {
     // 会社が違えば目印も違う（他社の記録と照らし合わせても番号は分からない）
     expect(bankFingerprint("00000000-0000-0000-0000-000000000002", bank())).not.toBe(a.fp);
     expect(daysAfter("2026-11-25", "2026-11-26")).toBe(1);
+  });
+
+  it("目印は鍵つき：会社の id と下 3 桁を知っていても、残りの桁を総当たりで割り出せない", () => {
+    const t = "00000000-0000-0000-0000-000000000001";
+    const a = bankStamp(t, bank());
+    expect(a.v).toBe(2);
+    // 前の作り方（鍵なしの sha256）で総当たりしても、どの候補とも一致しない
+    const found: string[] = [];
+    for (let i = 0; i < 10_000; i++) {
+      const candidate = `${String(i).padStart(4, "0")}${a.tail}`;
+      if (sha256(`bank-number:${t}|${candidate}`).slice(0, 16) === a.n) found.push(candidate);
+    }
+    expect(found).toEqual([]);
+    expect(a.fp).not.toBe(sha256(`bank:${t}|0009|303|ordinary|3456789|ｳｴﾀﾞ ｹﾝ`));
+    // 鍵は APP_SECRET から作る（DB・操作の記録・書き出しのどこにも無い）
+    const saved = process.env.APP_SECRET;
+    try {
+      process.env.APP_SECRET = "x".repeat(40);
+      const other = bankStamp(t, bank());
+      expect(other.fp).not.toBe(a.fp);
+      expect(other.n).not.toBe(a.n);
+      // 同じ鍵なら同じ目印（前回との比べ合わせができる）
+      expect(bankStamp(t, bank()).fp).toBe(other.fp);
+    } finally {
+      if (saved === undefined) delete process.env.APP_SECRET;
+      else process.env.APP_SECRET = saved;
+    }
+  });
+
+  it("前の作り方（鍵なし）の目印とも比べられる：同じ口座なら「同じ」、違えば「違う」", () => {
+    const t = "00000000-0000-0000-0000-000000000001";
+    const legacy = legacyStamp(t, bank());
+    expect(sameBankAsStamp(t, legacy, bank())).toBe(true);
+    expect(sameBankAsStamp(t, legacy, bank({ holderKana: "ｳｴﾀﾞ ｹﾝ" }))).toBe(true);
+    expect(sameBankAsStamp(t, legacy, bank({ accountNumber: "3456780" }))).toBe(false);
+    expect(sameBankAsStamp(t, bankStamp(t, bank()), bank())).toBe(true);
+    expect(sameBankAsStamp(t, bankStamp(t, bank()), bank({ branchCode: "305" }))).toBe(false);
   });
 });
 
@@ -239,6 +294,71 @@ describe("前回の振込から口座が変わった人", () => {
     // 他社の口座を変えても、この会社の「変わった人」には出ない
     await editBank(db, otherTenantId, staffId, "D02", { accountNumber: "9999999" });
     expect((await loadTransferReview(db, tenantId, NOV)).bank.changed).toEqual([]);
+  });
+});
+
+describe("前の作り方（鍵なし）の目印が残っている会社", () => {
+  let db: Db;
+  let client: PGlite;
+  let tenantId: string;
+  let staffId: string;
+  const SEP = "2026-09-01";
+  const OLD_BATCH = "11111111-1111-4111-8111-111111111111";
+
+  beforeAll(async () => {
+    ({ db, client } = await createTestDb());
+    ({ tenantId } = await seedDemo(db));
+    const users = await db.select().from(s.users).where(eq(s.users.tenantId, tenantId));
+    staffId = users.find((u) => u.role === "staff")!.id;
+    await generateStatements(db, tenantId, DEMO_MONTH);
+    const plan = await loadTransferPlan(db, tenantId, DEMO_MONTH);
+    // 9 月の振込の記録：前の作り方の目印（操作の記録は消せないので、このまま残っている）
+    await audit(db, {
+      tenantId,
+      userId: staffId,
+      action: "transfer.create",
+      entity: "transfer_batch",
+      entityId: OLD_BATCH,
+      detail: {
+        month: SEP,
+        fileName: "振込_2026年9月分_20261025.txt",
+        lines: plan.included.map((r) => ({ statementId: r.statementId, driverId: r.driverId, amount: 1000, version: 1, bank: legacyStamp(tenantId, r.bank) })),
+      },
+    });
+  });
+  afterAll(async () => client.close());
+
+  it("同じ口座の人は「変わった人」に出さない。変わった人だけを、変わった項目つきで出す", async () => {
+    const plan = await loadTransferPlan(db, tenantId, DEMO_MONTH);
+    const first = await reviewBankChanges(db, tenantId, plan.included);
+    expect(first.changed).toEqual([]);
+    expect(first.firstTime).toEqual([]);
+    expect(first.unknown).toEqual([]);
+
+    await db.update(s.drivers).set({ accountNumber: "3456780" }).where(eq(s.drivers.id, (await driverOf(db, tenantId, "D03")).id));
+    const again = await reviewBankChanges(db, tenantId, (await loadTransferPlan(db, tenantId, DEMO_MONTH)).included);
+    expect(again.changed.map((c) => [c.driverCode, c.fields])).toEqual([["D03", ["口座番号"]]]);
+    expect(again.changed[0].previous.masked).toBe("0009-303 普通 ****789");
+    expect(again.changed[0].currentMasked).toBe("0009-303 普通 ****780");
+  });
+
+  it("操作の記録の画面と CSV には、目印のハッシュ（fp・n・h）を出さない（銀行・支店・下 3 桁は出す）", async () => {
+    const found = await searchAuditLog(db, tenantId, { month: SEP });
+    const row = found.rows.find((r) => r.action === "transfer.create")!;
+    const lines = row.detail.lines as Record<string, Record<string, unknown>>[];
+    expect(lines).toHaveLength(7);
+    for (const l of lines) {
+      expect(Object.keys(l.bank).sort()).toEqual(["accountType", "bankCode", "branchCode", "tail"]);
+      // 目印ではない値（件数・金額など）はそのまま
+      expect(l.amount).toBe(1000);
+    }
+    const csv = JSON.stringify(await auditCsvRows(db, tenantId, { month: SEP }));
+    const [log] = await db.select().from(s.auditLog).where(and(eq(s.auditLog.tenantId, tenantId), eq(s.auditLog.entityId, OLD_BATCH)));
+    for (const l of log.detail.lines as { bank: { fp: string; n: string; h: string } }[]) {
+      expect(csv).not.toContain(l.bank.n);
+      expect(csv).not.toContain(l.bank.fp);
+      expect(csv).not.toContain(l.bank.h);
+    }
   });
 });
 

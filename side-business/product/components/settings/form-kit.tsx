@@ -1,59 +1,14 @@
 "use client";
 
-import { startTransition, useActionState, useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { Button, Field } from "@/components/ui";
+import { useEffect, useState, type ReactNode } from "react";
+import { Button } from "@/components/ui";
 import { cx } from "@/lib/cx";
-import type { ActionResult } from "~/server/action";
+import { ResultLine, useFormAction, type FormAction } from "~/components/form-field";
 
 /** 設定の画面で使うフォームの小さな部品（送信・結果・入力欄の誤り・チェック） */
 
-export type FormState = ActionResult<unknown> | undefined;
-export type FormAction = (prev: FormState, form: FormData) => Promise<FormState>;
-
-/**
- * フォームを Server Action で送る。onSubmit から送るので、誤りがあっても入力が消えない。
- */
-export function useFormAction(action: FormAction) {
-  const [state, dispatch, pending] = useActionState(action, undefined);
-  const onSubmit = (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const submitter = (e.nativeEvent as SubmitEvent).submitter;
-    const data = new FormData(e.currentTarget, submitter ?? undefined);
-    startTransition(() => dispatch(data));
-  };
-  const fe: Record<string, string> = state && !state.ok ? (state.fieldErrors ?? {}) : {};
-  return { state, pending, onSubmit, fe };
-}
-
-/** 結果を 1 行で（うまくいった・だめだった） */
-export function ResultLine({ state }: { state: FormState }) {
-  if (!state) return null;
-  if (!state.ok) {
-    return (
-      <p role="alert" className="rounded-lg border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
-        {state.error}
-      </p>
-    );
-  }
-  if (!state.message) return null;
-  return (
-    <p role="status" className="rounded-lg border border-success/40 bg-success/10 p-3 text-sm text-success">
-      {state.message}
-    </p>
-  );
-}
-
-/** 入力欄（誤りは赤で、ヒントは灰色で下に出す） */
-export function F({ label, hint, error, children, className }: { label: string; hint?: string; error?: string; children: ReactNode; className?: string }) {
-  return (
-    <div className={className}>
-      <Field label={label} hint={error ? undefined : hint}>
-        {children}
-      </Field>
-      {error && <p className="mt-1 text-xs font-bold text-danger">{error}</p>}
-    </div>
-  );
-}
+// 入力欄（誤りは赤・aria-invalid）・送り方（誤りのある欄へ移る）・結果（誤りの箇条書き）は、製品の共通の部品
+export { F, ResultLine, useFormAction, type FormAction, type FormState } from "~/components/form-field";
 
 /** チェック（押せる所を広く） */
 export function Check({

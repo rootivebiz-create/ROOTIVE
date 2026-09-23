@@ -5,7 +5,7 @@ import { z } from "zod";
 import { getDb } from "~/db/client";
 import { runAction, type ActionResult } from "~/server/action";
 import { requireUser } from "~/server/auth";
-import { ACK_NOTE_MAX, ACK_NOTE_MIN, ackWatchIssue, unackWatchIssue } from "~/server/features/watch/acks";
+import { ACK_MANY_MAX, ACK_NOTE_MAX, ACK_NOTE_MIN, ackWatchIssue, ackWatchIssues, unackWatchIssue } from "~/server/features/watch/acks";
 
 /**
  * 見張り番の Server Action（薄い包み。中身は server/features/watch/acks.ts）。
@@ -24,6 +24,15 @@ const ackSchema = keySchema.extend({
     .trim()
     .min(ACK_NOTE_MIN.other, `何を確かめたかを ${ACK_NOTE_MIN.other} 文字以上で書いてください`)
     .max(ACK_NOTE_MAX, `メモは ${ACK_NOTE_MAX} 文字までにしてください`),
+});
+
+/** まとめて確認済みにする：同じ種類の指摘を 2 件以上 */
+const ackManySchema = keySchema.omit({ subjectId: true }).extend({
+  subjectIds: z
+    .array(z.string().trim().min(1, "指摘の対象が正しくありません").max(200, "指摘の対象が正しくありません"))
+    .min(2, "まとめて確認済みにするのは 2 件からです")
+    .max(ACK_MANY_MAX, `まとめて確認済みにできるのは、1 回で ${ACK_MANY_MAX} 件までです`),
+  note: ackSchema.shape.note,
 });
 
 function text(form: FormData, key: string): string {
@@ -47,6 +56,18 @@ export async function ackWatchAction(_prev: WatchFormState, form: FormData): Pro
     refresh();
     return undefined;
   }, "確認済みにしました。何を確かめたかは記録に残ります。");
+}
+
+export async function ackManyWatchAction(_prev: WatchFormState, form: FormData): Promise<WatchFormState> {
+  return runAction(async () => {
+    const user = await requireUser("staff");
+    const subjectIds = form.getAll("subjectId").filter((v): v is string => typeof v === "string");
+    const input = ackManySchema.parse({ month: text(form, "month"), code: text(form, "code"), subjectIds, note: text(form, "note") });
+    const db = await getDb();
+    await ackWatchIssues(db, user.tenantId, input, user.id);
+    refresh();
+    return undefined;
+  }, "まとめて確認済みにしました。1 件ずつの記録に同じメモが残ります。");
 }
 
 export async function unackWatchAction(_prev: WatchFormState, form: FormData): Promise<WatchFormState> {

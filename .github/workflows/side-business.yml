@@ -28,11 +28,14 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
+      # ブラウザでの確かめ（スマホ 375px とパソコン）。ビルドしたものをそのまま使う
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test
 
   product:
     name: product（製品）typecheck / lint / test / build
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     defaults:
       run:
         working-directory: side-business/product
@@ -53,3 +56,8 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
+      # ブラウザでの確かめ（デモの架空の会社・スマホ 320px/375px とパソコン）。上で作ったビルドを使う
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test
+        env:
+          E2E_SKIP_BUILD: "1"

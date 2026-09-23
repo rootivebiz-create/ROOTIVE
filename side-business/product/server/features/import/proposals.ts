@@ -4,10 +4,12 @@
  * - 控除の列から読み取った式の提案（採用すると、合意の記録が無いルールとして作る）
  * - 振込手数料の列（控除のルールにはしない。知らせるだけ）
  */
+import { adjustCandidates, type AdjustCandidate } from "./adjust";
 import { baseName, colLetter } from "./detect";
 import { parseDeductionFormula } from "./formula-read";
 import { CATEGORY_LABEL, findMoneyColumns, perDriverValues, readPayout, type DeductionCategory, type PayoutRead } from "./columns";
 import { formatRate, inferDeductionRule, sameGuess, type Inference, type RuleGuess } from "./deductions";
+import { readRateColumns, type RateFinding } from "./rates";
 import type { WorkMapping } from "./types";
 
 export type ExistingRule = { id: string; driverId: string | null; name: string; kind: string; rate: number | null; amount: number | null; active: boolean; agreedInWriting: boolean };
@@ -52,6 +54,10 @@ export type MoneyExtras = {
   payout: PayoutRead | null;
   fees: { col: number; header: string }[];
   proposals: DeductionProposal[];
+  /** その月の調整として入れられる金額の列（燃料・高速代・立替・事故の負担・手当 など） */
+  adjust: AdjustCandidate[];
+  /** 単価・金額の列から読んだ、人ごとの単価 */
+  rates: RateFinding[];
   /** 率の元にした委託料：ファイルの列（委託料・報酬）か、明細と同じ計算 */
   base: { from: "column" | "calc"; header: string | null };
   /** 会社の金額の端数の処理（Excel の端数と違えば知らせる） */
@@ -122,13 +128,16 @@ export function moneyExtras(input: {
   rows: string[][];
   mapping: WorkMapping;
   header: string[];
-  resolved: { rowNo: number; driverId: string }[];
+  resolved: { rowNo: number; driverId: string; projectId?: string; qty?: number }[];
   names: Map<string, string>;
   bases: DriverBase[];
   rules: ExistingRule[];
   rounding?: string;
   /** Excel に残っていた数式（番地 → 数式）。無ければ値だけで読む */
   formulas?: Record<string, string>;
+  /** 案件と人ごとの単価（単価の列を読むときに比べる。無ければ単価の列は読まない） */
+  projects?: { id: string; name: string; unit: string; payRate: number; billRate: number }[];
+  overrides?: { driverId: string; projectId: string; payRate: number }[];
 }): MoneyExtras {
   const { rows, mapping, header, resolved, names } = input;
   const cols = findMoneyColumns(header, mapping.roles);
@@ -142,9 +151,11 @@ export function moneyExtras(input: {
   const workers = [...new Set(resolved.map((r) => r.driverId))];
   const baseOf = (id: string) => (baseRead && baseRead.values.has(id) ? Math.abs(baseRead.values.get(id)!) : (calc.get(id)?.subtotal ?? 0));
 
+  const adjustCols = new Set((mapping.adjust ?? []).map((a) => a.col));
   const proposals: DeductionProposal[] = [];
   for (const c of cols) {
-    if (c.kind !== "deduction") continue;
+    // 調整として入れると決めた列は、控除のルールの提案にしない（二重に引かないように）
+    if (c.kind !== "deduction" || adjustCols.has(c.col)) continue;
     const read = perDriverValues(rows, mapping, resolved, c.col);
     // 稼働した人は全員を見る（額が空なら 0＝引いていない）
     const obs = workers.map((id) => ({
@@ -166,8 +177,8 @@ export function moneyExtras(input: {
       name,
       category: c.category,
       categoryLabel: CATEGORY_LABEL[c.category],
-      // 立替の精算・保険（実費の受け渡し）は、消費税の対象外を既定にする（設定の画面で直せる）
-      taxable: c.category !== "advance" && c.category !== "insurance",
+      // 立替の精算・保険・高速代・事故の負担（実費の受け渡し）は、消費税の対象外を既定にする（設定の画面で直せる）
+      taxable: c.category !== "advance" && c.category !== "insurance" && c.category !== "toll" && c.category !== "accident",
       inference: res.inference,
       reason: res.reason,
       perRow: read.perRow,
@@ -179,5 +190,18 @@ export function moneyExtras(input: {
       formula: hint ? { ...hint, used: !!res.inference && sameGuess(res.inference.guess, hint.guess) } : null,
     });
   }
-  return { payout, fees, proposals, base: { from: baseRead ? "column" : "calc", header: baseCol?.header ?? null }, rounding: input.rounding ?? "round" };
+  const adjust = adjustCandidates({ rows, mapping, header, resolved, names, rules: input.rules });
+  const withProject = resolved.filter((r): r is { rowNo: number; driverId: string; projectId: string; qty: number } => !!r.projectId && typeof r.qty === "number");
+  const rates = input.projects
+    ? readRateColumns({ rows, mapping, header, resolved: withProject, projects: input.projects, overrides: input.overrides ?? [], names })
+    : [];
+  return {
+    payout,
+    fees,
+    proposals,
+    adjust,
+    rates,
+    base: { from: baseRead ? "column" : "calc", header: baseCol?.header ?? null },
+    rounding: input.rounding ?? "round",
+  };
 }

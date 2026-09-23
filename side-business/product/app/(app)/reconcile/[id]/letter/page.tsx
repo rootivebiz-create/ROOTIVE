@@ -35,7 +35,7 @@ export default async function LetterPage({ params }: { params: Promise<{ id: str
   return (
     <div>
       <p className="mb-2 text-sm">
-        <Link href={`/reconcile/${notice.id}`}>← 突合の結果（{clientName}・{monthLabelJa(notice.month)}分）</Link>
+        <Link href={`/reconcile/${notice.id}`} className="inline-flex min-h-11 items-center">← 突合の結果（{clientName}・{monthLabelJa(notice.month)}分）</Link>
       </p>
       <PageHeader
         title="問い合わせ文を作る"

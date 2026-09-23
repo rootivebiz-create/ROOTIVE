@@ -4,7 +4,7 @@ import Link from "next/link";
 import { startTransition, useActionState, useState, type FormEvent } from "react";
 import { Button, Field, Input, NumberInput, Select } from "@/components/ui";
 import { saveCompanyAction, type CompanyState } from "~/app/(app)/onboarding/actions";
-import { CLOSING_CHOICES, dayText, deadlineHint, OFFSET_LABEL, PAY_DAY_CHOICES, payRuleText, SIZE_REASON, TAX_METHODS } from "~/server/features/onboarding/company";
+import { CLOSING_CHOICES, dayText, deadlineHint, FEE_DEDUCT_NOTE, OFFSET_LABEL, PAY_DAY_CHOICES, payRuleText, SIZE_REASON, SIZE_REASON_SHORT, TAX_METHODS } from "~/server/features/onboarding/company";
 
 const SOURCES = {
   toriteki: "https://www.jftc.go.jp/file/toriteki_leaflet.pdf",
@@ -35,7 +35,7 @@ function withCurrent(choices: readonly number[], current: number): number[] {
 }
 
 /** 会社の基本（オーナーだけ）。選ぶと、支払までの日数の目安がすぐ出る */
-export function CompanyForm({ initial, today }: { initial: CompanyInitial; today: string }) {
+export function CompanyForm({ initial, today, next }: { initial: CompanyInitial; today: string; /** 保存したあとに出す「次の手順」（順番は steps.ts が決め、画面が渡す） */ next?: { href: string; title: string } | null }) {
   const [state, action, pending] = useActionState<CompanyState, FormData>(saveCompanyAction, undefined);
   const [closingDay, setClosingDay] = useState(String(initial.closingDay));
   const [offset, setOffset] = useState(String(initial.payMonthOffset));
@@ -138,7 +138,8 @@ export function CompanyForm({ initial, today }: { initial: CompanyInitial; today
         {(
           [
             ["company", "会社が持つ", "振込額をそのまま振り込みます。"],
-            ["driver", "ドライバーが持つ（振込額から差し引く）", "この設定のあいだは、見張り番が毎月お知らせします。"],
+            // この設定は計算を変えない（明細・振込データに手数料の行は無い）ので、「差し引く」とは書かない
+            ["driver", "ドライバーが持つ", "しめ日ラボの明細・振込データでは差し引きません。この設定のあいだは、見張り番が毎月お知らせします。"],
           ] as const
         ).map(([value, label, note]) => (
           <label key={value} className="flex min-h-11 cursor-pointer items-start gap-3 rounded-lg border border-border bg-card p-3">
@@ -151,9 +152,13 @@ export function CompanyForm({ initial, today }: { initial: CompanyInitial; today
         ))}
         {fee === "driver" && (
           <p className="text-sm">
-            振込手数料をドライバーの負担にして振込額から差し引くと、報酬の減額にあたるおそれがあります（取適法の対象になる取引では、合意があっても）。取引条件と、会社の負担にする設定の確認をおすすめします（
+            {FEE_DEDUCT_NOTE}（
             <a href={SOURCES.toriteki} target="_blank" rel="noopener noreferrer">
-              公正取引委員会 取適法リーフレット
+              公正取引委員会 取適法（中小受託取引適正化法）のリーフレット
+            </a>
+            ・
+            <a href={SOURCES.flQa} target="_blank" rel="noopener noreferrer">
+              フリーランス法 Q&amp;A
             </a>
             ）。
           </p>
@@ -202,7 +207,8 @@ export function CompanyForm({ initial, today }: { initial: CompanyInitial; today
       <fieldset className="space-y-3">
         <legend className="text-lg font-bold">会社の大きさ（任意）</legend>
         <p className="text-sm text-muted-foreground">
-          {SIZE_REASON}（
+          {/* 正式な名前は画面で最初に出すところだけ（振込手数料の注意が出ていれば、そちらが最初） */}
+          {fee === "driver" ? SIZE_REASON_SHORT : SIZE_REASON}（
           <a href={SOURCES.toritekiOverview} target="_blank" rel="noopener noreferrer">
             公正取引委員会 取適法の概要
           </a>
@@ -247,9 +253,11 @@ export function CompanyForm({ initial, today }: { initial: CompanyInitial; today
       {state?.ok && (
         <div role="status" className="space-y-2 rounded-lg border border-success/40 bg-success/10 p-3 text-sm">
           <p className="text-success">{state.message}</p>
-          <Link href="/onboarding/drivers" className="inline-flex min-h-11 items-center font-bold">
-            次の手順「ドライバー」へ →
-          </Link>
+          {next && (
+            <Link href={next.href} className="inline-flex min-h-11 items-center font-bold">
+              次の手順「{next.title}」へ →
+            </Link>
+          )}
         </div>
       )}
       <Button type="submit" disabled={pending} className="w-full sm:w-auto">

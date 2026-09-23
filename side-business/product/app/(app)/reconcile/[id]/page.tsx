@@ -6,12 +6,22 @@ import { yen } from "@/lib/payroll/money";
 import { Badge, Notice, PageHeader } from "~/components/page";
 import { ColumnsForm } from "~/components/reconcile/columns-form";
 import { DiffAmount, Pair, Section } from "~/components/reconcile/bits";
-import { DeleteNoticeForm, DriverMappingForm, LineMappingForm, NoticeMetaForm, ReplaceNoticeForm, RerunButton } from "~/components/reconcile/forms";
+import {
+  AddNoticeFileForm,
+  DeleteNoticeForm,
+  DriverMappingForm,
+  LineMappingForm,
+  NoticeMetaForm,
+  RemoveFileForm,
+  ReplaceFileForm,
+  ReplaceNoticeForm,
+  RerunButton,
+} from "~/components/reconcile/forms";
 import { ItemCard } from "~/components/reconcile/item-card";
 import { getDb } from "~/db/client";
 import { UserError } from "~/server/action";
 import { requirePageUser, roleAtLeast } from "~/server/auth";
-import { loadNoticeView, runReconcile, type NoticeView } from "~/server/features/reconcile";
+import { loadNoticeView, runReconcile, type NoticeBatchView, type NoticeView } from "~/server/features/reconcile";
 import { COLUMN_ROLES, ROLE_LABEL } from "~/server/features/reconcile/roles";
 import { amountText, dateJa, formulaText, isUnsettled, qtyUnitText } from "~/server/features/reconcile/labels";
 import { periodNotes, periodText } from "~/server/features/reconcile/period";
@@ -62,7 +72,10 @@ export default async function NoticePage({ params, searchParams }: { params: Pro
   const driverDiffs = live.drivers?.filter((d) => d.theirQty === null || Math.abs(d.theirQty - d.ourQty) > 1e-6) ?? [];
   const unknownGroups = view.lineGroups.filter((g) => g.role === "unknown");
   const unknownDrivers = view.driverGroups.filter((g) => !g.driverId && !g.remembered);
-  const batchHeader = view.batch ? (view.batch.rows[view.batch.headerIndex] ?? []) : [];
+  // 何通かを足したお支払通知（営業所ごとなど）：ファイルごとの読み取りの詳細・入れ替え・外す
+  const multiFile = view.files.length > 1;
+  const fileWarnings = multiFile ? view.files.flatMap((f) => (f.detail?.warnings ?? []).map((w) => `${f.fileName}：${w}`)) : (view.batch?.warnings ?? []);
+  const dateText = (d: Date) => d.toLocaleDateString("ja-JP", { timeZone: "Asia/Tokyo" });
   const openShort = unsettled.filter((i) => i.diff < 0);
   const openOver = unsettled.filter((i) => i.diff > 0);
   /** 内訳：「宅配（個建て） ¥81,700 ＋ 夜間便 ¥10,000」（多いときは 4 件まで） */
@@ -72,14 +85,14 @@ export default async function NoticePage({ params, searchParams }: { params: Pro
   return (
     <div>
       <p className="mb-2 text-sm">
-        <Link href={`/reconcile?m=${m}`}>← 突合の一覧（{monthLabelJa(notice.month)}）</Link>
+        <Link href={`/reconcile?m=${m}`} className="inline-flex min-h-11 items-center">← 突合の一覧（{monthLabelJa(notice.month)}）</Link>
       </p>
       <PageHeader
         title={`${clientName}　${monthLabelJa(notice.month)}分`}
         description={
           <>
             お支払通知：{notice.fileName}
-            {view.batch && <>（{view.batch.createdAt.toLocaleDateString("ja-JP", { timeZone: "Asia/Tokyo" })} に取り込み）</>}
+            {multiFile ? <>（{view.files.length}つのファイルを足して、合計で突き合わせています）</> : view.batch && <>（{dateText(view.batch.createdAt)} に取り込み）</>}
           </>
         }
         actions={
@@ -93,6 +106,8 @@ export default async function NoticePage({ params, searchParams }: { params: Pro
 
       {sp.done === "import" && <Notice tone="ok">取り込んで、当社の記録と突き合わせました。</Notice>}
       {sp.done === "sample" && <Notice tone="ok">見本のお支払通知（架空）を取り込んで、突き合わせました。</Notice>}
+      {sp.done === "add" && <Notice tone="ok">ファイルを足して、全部のファイルの合計で突き合わせ直しました。</Notice>}
+      {sp.done === "replaceFile" && <Notice tone="ok">ファイルを 1 つ入れ替えて、突き合わせ直しました。ほかのファイルの行はそのままです。</Notice>}
 
       {view.stale && (
         <Card className="mt-4 border-warning/40">
@@ -208,7 +223,7 @@ export default async function NoticePage({ params, searchParams }: { params: Pro
         </Section>
       )}
 
-      {!noLines && (live.chargeWarnings.length > 0 || unknownGroups.length > 0 || (view.batch?.warnings.length ?? 0) > 0 || live.zeroRateProjects.length > 0 || periodInfo.length > 0) && (
+      {!noLines && (live.chargeWarnings.length > 0 || unknownGroups.length > 0 || fileWarnings.length > 0 || live.zeroRateProjects.length > 0 || periodInfo.length > 0) && (
         <div className="mt-4 space-y-2">
           {live.zeroRateProjects.length > 0 && (
             <p className="rounded-lg border border-danger/40 bg-danger/10 p-3 text-sm">
@@ -232,7 +247,7 @@ export default async function NoticePage({ params, searchParams }: { params: Pro
               <p className="mt-1">{n.body}</p>
             </div>
           ))}
-          {view.batch?.warnings.map((w) => (
+          {fileWarnings.map((w) => (
             <p key={w} className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm">
               {w}
               <span className="ml-1 text-muted-foreground">（下の「読み取りの詳細」で、読み飛ばした行を見られます）</span>
@@ -269,7 +284,7 @@ export default async function NoticePage({ params, searchParams }: { params: Pro
           ) : (
             <ul className="space-y-3">
               {currentItems.map((it) => (
-                <li key={it.id ?? it.key} id={it.id ? `item-${it.id}` : undefined} className="scroll-mt-28">
+                <li key={it.id ?? it.key} id={it.id ? `item-${it.id}` : undefined}>
                   <ItemCard item={it} canEdit={canEdit && !view.stale} />
                 </li>
               ))}
@@ -285,7 +300,7 @@ export default async function NoticePage({ params, searchParams }: { params: Pro
         >
           <ul className="space-y-3">
             {historyItems.map((it) => (
-              <li key={it.id ?? it.key} id={it.id ? `item-${it.id}` : undefined} className="scroll-mt-28">
+              <li key={it.id ?? it.key} id={it.id ? `item-${it.id}` : undefined}>
                 <ItemCard item={it} canEdit={canEdit && !view.stale} />
               </li>
             ))}
@@ -443,71 +458,60 @@ export default async function NoticePage({ params, searchParams }: { params: Pro
         </Card>
       </Section>
 
-      {view.batch && !noLines && (
+      {!noLines && view.files.some((f) => f.detail) && (
         <Section title="読み取りの詳細">
-          <details className="rounded-card border border-border bg-card p-4">
-            <summary className="flex min-h-11 cursor-pointer items-center font-bold">列の対応・読み飛ばした行を見る{canEdit ? "／列を選び直す" : ""}</summary>
-            <div className="mt-3 space-y-3 text-sm">
-              <div className="divide-y divide-border">
-                <Pair label="ファイルの形">
-                  {view.batch.encoding === "xlsx" ? `Excel（シート「${view.batch.sheetName}」）` : view.batch.encoding === "shift_jis" ? "CSV（Shift_JIS）" : "CSV（UTF-8）"}
-                </Pair>
-                <Pair label="見出しの行">{view.batch.headerIndex + 1}行目{view.batch.fromSaved ? "（前回覚えた対応）" : ""}</Pair>
-                {COLUMN_ROLES.map((r) => {
-                  const idx = view.batch?.columns[r] ?? null;
-                  return (
-                    <Pair key={r} label={ROLE_LABEL[r]}>
-                      {idx === null ? "使わない" : `「${batchHeader[idx] || `${idx + 1}列目`}」の列`}
-                    </Pair>
-                  );
-                })}
-                <Pair label="読み取った行の合計">{amountText(view.batch.total)}</Pair>
-                {view.batch.fileTotal !== null && <Pair label="ファイルの合計の行">{amountText(view.batch.fileTotal)}</Pair>}
-                {view.batch.taxTotal !== 0 && <Pair label="消費税の行（突き合わせに使っていない）">{amountText(view.batch.taxTotal)}</Pair>}
-                {view.batch.feeTotal !== 0 && <Pair label="振込手数料の行（入金の記録へ）">{amountText(view.batch.feeTotal)}</Pair>}
-                {view.batch.dates && (
-                  <Pair label="日付">
-                    {dateJa(view.batch.dates.from)}〜{dateJa(view.batch.dates.to)}
-                    {view.batch.dates.outside > 0 ? `（その月の外 ${view.batch.dates.outside}行）` : ""}
-                  </Pair>
-                )}
-              </div>
-              {view.batch.notes.map((w) => (
-                <p key={w} className="rounded-lg border border-warning/40 bg-warning/10 p-3">
-                  {w}
-                </p>
-              ))}
-              {view.batch.skipped.length > 0 && (
-                <div>
-                  <p className="font-bold">読み飛ばした行（{view.batch.skipped.length}行）</p>
-                  <ul className="mt-1 space-y-1">
-                    {view.batch.skipped.slice(0, 50).map((s) => (
-                      <li key={s.rowNo} className="break-words text-muted-foreground">
-                        {s.rowNo}行目：{s.reason}（{s.text || "空"}）
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {view.batch.rowsTruncated && <p className="text-muted-foreground">ファイルが長いため、列を選び直すときは最初の 5,000 行だけを使います。</p>}
-              {canEdit && (
-                <div className="border-t border-border pt-4">
-                  <p className="mb-3 font-bold">列を選び直す</p>
-                  <ColumnsForm noticeId={notice.id} rows={view.batch.rows.slice(0, 300)} headerIndex={view.batch.headerIndex} columns={view.batch.columns} />
-                </div>
-              )}
-            </div>
-          </details>
+          <div className="space-y-3">
+            {multiFile
+              ? view.files.map((f) =>
+                  f.detail ? (
+                    <ReadDetails key={f.id} noticeId={notice.id} fileId={f.id} title={`「${f.fileName}」の列の対応・読み飛ばした行を見る`} detail={f.detail} canEdit={canEdit} />
+                  ) : null,
+                )
+              : view.batch && <ReadDetails noticeId={notice.id} title="列の対応・読み飛ばした行を見る" detail={view.batch} canEdit={canEdit} />}
+          </div>
         </Section>
       )}
 
       {canEdit && (
-        <Section title="上げ直す・削除する">
-          {view.client ? (
+        <Section title="上げ直す・足す・削除する">
+          {multiFile && (
             <Card className="mb-3">
-              <p className="mb-3 text-sm text-muted-foreground">元請から直したお支払通知が届いたら、ここで上げ直してください。同じ差の扱い・メモ・取り戻せた額は残ります。</p>
-              <ReplaceNoticeForm clientId={view.client.id} clientName={view.client.name} month={m} monthText={monthLabelJa(notice.month)} />
+              <p className="font-bold">お支払通知のファイル（{view.files.length}つ）</p>
+              <p className="mt-1 text-sm text-muted-foreground">全部のファイルの行を足して、合計で突き合わせています。1 つだけ直したものが届いたら「このファイルだけ入れ替える」、まちがえて足したものは「外す」を使ってください。</p>
+              <ul className="mt-3 space-y-3">
+                {view.files.map((f) => (
+                  <li key={f.id} className="rounded-lg border border-border p-3">
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <span className="min-w-0 font-bold [overflow-wrap:anywhere]">{f.fileName}</span>
+                      <span className="num text-sm text-muted-foreground">
+                        {f.lineCount}行・<Money value={f.total} />
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">{dateText(f.createdAt)} に取り込み</p>
+                    <div className="mt-2 space-y-2">
+                      {view.client && <ReplaceFileForm clientId={view.client.id} month={m} fileId={f.id} fileName={f.fileName} />}
+                      <RemoveFileForm noticeId={notice.id} fileId={f.id} fileName={f.fileName} />
+                    </div>
+                  </li>
+                ))}
+              </ul>
             </Card>
+          )}
+          {view.client ? (
+            <>
+              <Card className="mb-3">
+                <p className="mb-3 text-sm text-muted-foreground">元請から直したお支払通知が届いたら、ここで上げ直してください。同じ差の扱い・メモ・取り戻せた額は残ります。</p>
+                <ReplaceNoticeForm clientId={view.client.id} clientName={view.client.name} month={m} monthText={monthLabelJa(notice.month)} fileCount={view.files.length} />
+              </Card>
+              {!noLines && (
+                <Card className="mb-3">
+                  <p className="mb-3 text-sm text-muted-foreground">
+                    営業所ごとなど、同じ元請から同じ月のお支払通知が何通も届くときは、ここで足してください。全部のファイルの行を足して、合計で突き合わせます。
+                  </p>
+                  <AddNoticeFileForm clientId={view.client.id} clientName={view.client.name} month={m} monthText={monthLabelJa(notice.month)} />
+                </Card>
+              )}
+            </>
           ) : (
             <p className="mb-3 text-sm text-muted-foreground">
               このお支払通知の元請は削除されています。直したお支払通知は、<Link href={`/reconcile?m=${m}`}>一覧の画面</Link>で元請を選んで上げてください。
@@ -517,5 +521,68 @@ export default async function NoticePage({ params, searchParams }: { params: Pro
         </Section>
       )}
     </div>
+  );
+}
+
+/** 1 つのファイルの読み取りの詳細（列の対応・合計・読み飛ばした行）と、列の選び直し */
+function ReadDetails({ noticeId, fileId, title, detail, canEdit }: { noticeId: string; fileId?: string; title: string; detail: NoticeBatchView; canEdit: boolean }) {
+  const header = detail.rows[detail.headerIndex] ?? [];
+  return (
+    <details className="rounded-card border border-border bg-card p-4">
+      <summary className="flex min-h-11 cursor-pointer items-center font-bold">
+        {title}
+        {canEdit ? "／列を選び直す" : ""}
+      </summary>
+      <div className="mt-3 space-y-3 text-sm">
+        <div className="divide-y divide-border">
+          <Pair label="ファイルの形">{detail.encoding === "xlsx" ? `Excel（シート「${detail.sheetName}」）` : detail.encoding === "shift_jis" ? "CSV（Shift_JIS）" : "CSV（UTF-8）"}</Pair>
+          <Pair label="見出しの行">
+            {detail.headerIndex + 1}行目{detail.fromSaved ? "（前回覚えた対応）" : ""}
+          </Pair>
+          {COLUMN_ROLES.map((r) => {
+            const idx = detail.columns[r] ?? null;
+            return (
+              <Pair key={r} label={ROLE_LABEL[r]}>
+                {idx === null ? "使わない" : `「${header[idx] || `${idx + 1}列目`}」の列`}
+              </Pair>
+            );
+          })}
+          <Pair label="読み取った行の合計">{amountText(detail.total)}</Pair>
+          {detail.fileTotal !== null && <Pair label="ファイルの合計の行">{amountText(detail.fileTotal)}</Pair>}
+          {detail.taxTotal !== 0 && <Pair label="消費税の行（突き合わせに使っていない）">{amountText(detail.taxTotal)}</Pair>}
+          {detail.feeTotal !== 0 && <Pair label="振込手数料の行（入金の記録へ）">{amountText(detail.feeTotal)}</Pair>}
+          {detail.dates && (
+            <Pair label="日付">
+              {dateJa(detail.dates.from)}〜{dateJa(detail.dates.to)}
+              {detail.dates.outside > 0 ? `（その月の外 ${detail.dates.outside}行）` : ""}
+            </Pair>
+          )}
+        </div>
+        {detail.notes.map((w) => (
+          <p key={w} className="rounded-lg border border-warning/40 bg-warning/10 p-3">
+            {w}
+          </p>
+        ))}
+        {detail.skipped.length > 0 && (
+          <div>
+            <p className="font-bold">読み飛ばした行（{detail.skipped.length}行）</p>
+            <ul className="mt-1 space-y-1">
+              {detail.skipped.slice(0, 50).map((s) => (
+                <li key={s.rowNo} className="break-words text-muted-foreground">
+                  {s.rowNo}行目：{s.reason}（{s.text || "空"}）
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {detail.rowsTruncated && <p className="text-muted-foreground">ファイルが長いため、列を選び直すときは最初の 5,000 行だけを使います。</p>}
+        {canEdit && (
+          <div className="border-t border-border pt-4">
+            <p className="mb-3 font-bold">列を選び直す</p>
+            <ColumnsForm noticeId={noticeId} fileId={fileId} rows={detail.rows.slice(0, 300)} headerIndex={detail.headerIndex} columns={detail.columns} />
+          </div>
+        )}
+      </div>
+    </details>
   );
 }

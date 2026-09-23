@@ -42,7 +42,7 @@ export function InboxList({ items, canEdit }: { items: InboxItem[]; canEdit: boo
               <details className="text-sm">
                 <summary className="inline-flex min-h-11 cursor-pointer items-center font-bold">ここで返事を書く</summary>
                 <div className="mt-2">
-                  <ReplyForm statementId={i.statementId} lineKey={i.lineKey} placeholder="返事を書く（ドライバーは明細のリンクで読めます）" />
+                  <ReplyForm statementId={i.statementId} lineKey={i.lineKey} placeholder="返事を書く（ドライバーは明細のリンクで読めます。書いたら LINE などで知らせてください）" />
                 </div>
               </details>
               <ResolveForm statementId={i.statementId} lineKey={i.lineKey} resolved={false} />

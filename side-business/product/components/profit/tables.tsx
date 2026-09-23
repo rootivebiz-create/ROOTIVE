@@ -26,11 +26,11 @@ function RateCell({ rate, loss }: { rate: number | null; loss: boolean }) {
   return <td className={`${td} num ${loss ? "text-danger" : ""}`}>{rateText(rate)}</td>;
 }
 
-/** 表の下の足し引き（粗利 ＋ 控除 − 経過措置の負担 ＝ 会社の利益） */
+/** 表の下の足し引き（粗利 ＋ 控除 − 会社がかぶる消費税 ＝ 会社の利益）。専門用語（経過措置）は見出しに使わない（SPEC §5 社長 1） */
 function Bridge({ totals, span }: { totals: ProfitTotals; span: number }) {
   const rows: { label: ReactNode; value: number; strong?: boolean }[] = [
     { label: "＋ 控除（ロイヤリティ・管理費など。会社の売上）", value: totals.deductions },
-    { label: "− 経過措置の負担（登録の無い方への支払で、控除できない消費税）", value: -totals.burden },
+    { label: "− 会社がかぶる消費税（免税の方への支払。インボイスの登録が無い方への支払で、差し引けない消費税）", value: -totals.burden },
     { label: "＝ 会社の利益", value: totals.profit, strong: true },
   ];
   return (
@@ -225,7 +225,8 @@ export function DriverTable({ rows, totals }: { rows: DriverProfit[]; totals: Pr
               控除
             </th>
             <th scope="col" className={th}>
-              経過措置の負担
+              会社がかぶる消費税
+              <span className="block text-xs font-normal text-muted-foreground">（免税の方への支払）</span>
             </th>
             <th scope="col" className={th}>
               会社の利益

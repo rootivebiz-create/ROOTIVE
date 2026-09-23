@@ -1,15 +1,18 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { NAV } from "~/components/nav";
+import { MobileNav, SideNav } from "~/components/nav-links";
 import { roleAtLeast, type SessionUser } from "~/server/auth";
 
 const ROLE_LABEL = { owner: "オーナー", staff: "事務", viewer: "閲覧" } as const;
 
 /** 画面の外枠。パソコンは左のメニュー、スマホは上の横スクロールのメニュー */
 export function AppShell({ user, children, demo }: { user: SessionUser; children: ReactNode; demo: boolean }) {
-  const items = NAV.filter((n) => roleAtLeast(user.role, n.need));
+  // 画面（ブラウザ）へ渡すのは、名前とリンクだけ
+  const links = NAV.filter((n) => roleAtLeast(user.role, n.need)).map(({ href, label, short }) => ({ href, label, short }));
   return (
-    <div className="min-h-dvh">
+    // data-app-shell：上に貼り付くメニューの分だけ、ページの中のリンク（#…）で飛んだ先をずらす（globals.css）
+    <div className="min-h-dvh" data-app-shell>
       {demo && (
         <div className="no-print bg-accent px-4 py-2 text-center text-sm font-bold text-accent-foreground">
           デモです（架空の会社・架空のデータ）。あなた専用なので自由に触ってください。24 時間で消えます。{" "}
@@ -40,28 +43,12 @@ export function AppShell({ user, children, demo }: { user: SessionUser; children
           </div>
         </div>
         <nav aria-label="メニュー" className="no-print border-t border-border md:hidden">
-          <ul className="flex gap-1 overflow-x-auto px-2 py-1 text-sm">
-            {items.map((n) => (
-              <li key={n.href}>
-                <Link href={n.href} className="inline-flex min-h-11 items-center whitespace-nowrap rounded-md px-3 text-foreground no-underline hover:bg-muted">
-                  {n.short}
-                </Link>
-              </li>
-            ))}
-          </ul>
+          <MobileNav items={links} />
         </nav>
       </header>
       <div className="mx-auto flex max-w-6xl gap-6 px-4">
         <nav aria-label="メニュー" className="no-print hidden w-48 shrink-0 py-6 md:block">
-          <ul className="sticky top-20 space-y-1 text-sm">
-            {items.map((n) => (
-              <li key={n.href}>
-                <Link href={n.href} className="flex min-h-11 items-center rounded-md px-3 text-foreground no-underline hover:bg-muted">
-                  {n.label}
-                </Link>
-              </li>
-            ))}
-          </ul>
+          <SideNav items={links} />
         </nav>
         <main id="main" className="min-w-0 flex-1 py-6">
           {children}

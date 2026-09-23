@@ -10,8 +10,11 @@ import { requestOrigin } from "~/server/features/statements/request";
 
 /** 全データの画面の Server Action（オーナーだけ。中身は server/features/export-all.ts） */
 
-/** この画面から送れる大きさ（Server Action の上限 10MB に、送るときの余白を見る） */
-const ACTION_MAX_BYTES = 9 * 1024 * 1024;
+/**
+ * この画面から送れる大きさ。置き場所（Vercel）の画面からの送信は 1 回 約 4.5MB までなので、余白を見て 4MB にする
+ * （それより大きい ZIP は、手元の読み戻しのスクリプト scripts/restore-tenant.ts で読み戻す。上限 50MB）
+ */
+const ACTION_MAX_BYTES = 4 * 1024 * 1024;
 
 export type RestoreInvite = { name: string; email: string; url: string };
 export type RestoreState = ActionResult<{ mode: "check" | "apply"; summary: ImportSummary; invites: RestoreInvite[] }> | undefined;
@@ -19,7 +22,9 @@ export type RestoreState = ActionResult<{ mode: "check" | "apply"; summary: Impo
 async function fileBytes(form: FormData): Promise<Uint8Array> {
   const file = form.get("file");
   if (!(file instanceof File) || file.size === 0) throw new UserError("書き出しの ZIP を選んでください");
-  if (file.size > ACTION_MAX_BYTES) throw new UserError("ファイルが大きすぎます（この画面からは 9MB まで）。大きいときは、しめ日ラボの窓口にご相談ください。");
+  if (file.size > ACTION_MAX_BYTES) {
+    throw new UserError("ファイルが大きすぎます（この画面からは 4MB まで）。大きいときは、導入を担当した者にご相談ください（手元から読み戻せます）。");
+  }
   if (!/\.zip$/i.test(file.name)) throw new UserError("ZIP のファイル（.zip）を選んでください");
   return new Uint8Array(await file.arrayBuffer());
 }

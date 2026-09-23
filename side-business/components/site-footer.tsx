@@ -8,7 +8,7 @@ export function SiteFooter() {
         <nav aria-label="フッター" className="flex flex-wrap gap-x-4 gap-y-2">
           <Link href="/product">製品のご紹介</Link>
           {PRODUCT.demoUrl && (
-            <a href={PRODUCT.demoUrl} target="_blank" rel="noopener">
+            <a href={PRODUCT.demoUrl} target="_blank" rel="noopener nofollow">
               製品のデモ
               <span className="sr-only">（新しいタブで開きます）</span>
             </a>

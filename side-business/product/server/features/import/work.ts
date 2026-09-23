@@ -5,6 +5,7 @@ import * as s from "~/db/schema";
 import { UserError } from "~/server/action";
 import { monthLabelJa } from "~/server/month";
 import { isMonthClosed } from "~/server/repo";
+import { parseAdjustmentPaste, type PasteRow, type PasteSign } from "./adjust-paste";
 import { byKana } from "./resolve";
 
 /**
@@ -288,4 +289,42 @@ export async function deleteAdjustment(db: Db, tenantId: string, id: string) {
   await ensureOpen(db, tenantId, before.month);
   await db.delete(s.adjustments).where(and(eq(s.adjustments.id, id), eq(s.adjustments.tenantId, tenantId)));
   return before;
+}
+
+/**
+ * 調整をまとめて入れる（Excel から「名前・内容・金額」を貼り付け）。1 行でも読めない行があれば、何も入れずに理由を返す。
+ * 消費税・書面の合意・根拠は、貼り付けた行すべてに同じものを付ける（あとで 1 件ずつ直せる）
+ */
+export async function bulkAddAdjustments(
+  db: Db,
+  tenantId: string,
+  month: string,
+  input: { text: string; defaultLabel: string | null; sign: PasteSign; taxable: boolean; agreedInWriting: boolean; basis: string | null },
+): Promise<{ rows: (PasteRow & { id: string })[]; skipped: number }> {
+  await ensureOpen(db, tenantId, month);
+  const drivers = await db
+    .select({ id: s.drivers.id, name: s.drivers.name, code: s.drivers.code, kana: s.drivers.kana, aliases: s.drivers.aliases })
+    .from(s.drivers)
+    .where(eq(s.drivers.tenantId, tenantId));
+  const parsed = parseAdjustmentPaste(input.text, drivers, { defaultLabel: input.defaultLabel, sign: input.sign });
+  if (parsed.problems.length > 0) {
+    const more = parsed.problems.length > 8 ? `（ほか ${parsed.problems.length - 8} 行）` : "";
+    throw new UserError(`読めない行があるので、まだ入れていません。直してから、もう一度押してください：${parsed.problems.slice(0, 8).join("／")}${more}`);
+  }
+  const made = await db
+    .insert(s.adjustments)
+    .values(
+      parsed.rows.map((r) => ({
+        tenantId,
+        month,
+        driverId: r.driverId,
+        label: r.label,
+        amount: r.amount,
+        taxable: input.taxable,
+        agreedInWriting: input.agreedInWriting,
+        basis: input.basis,
+      })),
+    )
+    .returning({ id: s.adjustments.id });
+  return { rows: parsed.rows.map((r, i) => ({ ...r, id: made[i].id })), skipped: parsed.skipped };
 }

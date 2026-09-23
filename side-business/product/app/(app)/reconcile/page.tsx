@@ -85,7 +85,10 @@ export default async function ReconcilePage({ searchParams }: { searchParams: Pr
       )}
 
       {canEdit && clients.length > 0 && (
-        <Section title="お支払通知を上げる" description="元請の画面から落とした CSV・Excel をそのまま上げてください。列（品目・数量・単価・金額）は自動で見分け、元請ごとに覚えます。">
+        <Section
+          title="お支払通知を上げる"
+          description="元請の画面から落とした CSV・Excel をそのまま上げてください（PDF しか無いときは、表をコピーして貼り付けられます）。列（品目・数量・単価・金額）は自動で見分け、元請ごとに覚えます。"
+        >
           <Card>
             {activeClients.length === 0 ? (
               <p className="text-sm">
@@ -119,6 +122,7 @@ export default async function ReconcilePage({ searchParams }: { searchParams: Pr
           <li>お支払通知に無い案件・数量の違い・単価の違いを、案件ごとに金額で出します（当社の記録 ＝ 稼働の数量 × 案件の受注単価）。</li>
           <li>元請の締め日が月末でないとき（例：20日締め）は、日付のある稼働から、その締めの期間（例：9月21日〜10月20日）の分を数えて比べます。</li>
           <li>待機料・再配達・高速代など、当社の記録に無い行も並べます。当社に待機料などの記録があるのにお支払通知に無いときは、知らせます。</li>
+          <li>営業所ごとなど、同じ元請から同じ月のお支払通知が何通も届くときは、「足す」で合わせて突き合わせます（同じファイルは二重に足せません）。</li>
           <li>差ごとに「問い合わせ済み」「解決」「この金額で了承」を残せます。元請のご担当者への確認のお願いの文面（コピー・PDF）も作れます。</li>
           <li>差は、当社の記録とお支払通知の「記録の違い」です。どちらが正しいかは、元請に確かめてください。</li>
         </ul>

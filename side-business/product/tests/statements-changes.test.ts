@@ -104,6 +104,8 @@ describe("前の版との違い", () => {
       month: "2026-10-01",
       period: { from: "2026-10-01", to: "2026-10-31" },
       payDate: "2026-11-25",
+      payDueDate: "2026-11-25",
+      payDateNote: null,
       company: { name: "サンプル", registrationNo: null },
       driver: { name: "青木 翔太", code: "D01", registrationNo: "T9876543210987", invoiceRegistered: true },
       isPurchaseStatement: true,

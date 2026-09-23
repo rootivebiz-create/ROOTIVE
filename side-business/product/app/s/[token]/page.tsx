@@ -86,7 +86,9 @@ export default async function DriverStatementPage({ params }: { params: Promise<
         <StatementView
           view={v}
           account={data.account}
-          lineAction={(t) => <AskButton token={token} lineKey={t.key} label={t.label} count={threadCount.get(t.key) ?? 0} disabled={staffPreview} />}
+          lineAction={(t) => (
+            <AskButton token={token} lineKey={t.key} label={t.label} count={threadCount.get(t.key) ?? 0} disabled={staffPreview} compact={t.kind === "day"} />
+          )}
         />
       </div>
 

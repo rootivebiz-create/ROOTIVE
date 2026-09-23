@@ -180,9 +180,19 @@ describe("ドライバーのページと「受け取りました」", () => {
     const old = (await loadTermsPortal(db, oldToken, LATER))!;
     expect(old.isLatest).toBe(false);
     expect(old.latestVersion).toBe(2);
+    // 新しい版をまだ送っていないうちは、古いリンクから新しい版へは行けない
+    expect(old.latestToken).toBeNull();
     await expect(receiveTermsFromPortal(db, oldToken, { version: 1 }, { now: LATER, ipHash: "ip-1" })).rejects.toThrow(TERMS_NEWER_VERSION);
 
     const [rec2] = (await recordsOf(D.D01)).filter((r) => r.version === 2);
+    // 送ったあとは、古いリンクのページから新しい版を開ける（同じドライバーの最新の版だけ）
+    await db.update(s.termsRecords).set({ sentAt: NOW }).where(eq(s.termsRecords.id, rec2.id));
+    const oldAfterSend = (await loadTermsPortal(db, oldToken, LATER))!;
+    expect(oldAfterSend.latestToken).toBeTruthy();
+    const viaOld = (await loadTermsPortal(db, oldAfterSend.latestToken!, LATER))!;
+    expect(viaOld.isLatest).toBe(true);
+    expect(viaOld.doc.version).toBe(2);
+    expect(viaOld.latestToken).toBeNull();
     const newToken = termsLinkToken(rec2, NOW).token;
     const cur = (await loadTermsPortal(db, newToken, LATER))!;
     expect(cur.isLatest).toBe(true);

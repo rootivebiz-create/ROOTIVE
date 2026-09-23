@@ -43,7 +43,7 @@ export function KpiCards({ totals, changes }: { totals: ProfitTotals; changes: P
           <Money value={totals.profit} />
           {totals.profit < 0 && <span className="ml-1 text-sm text-danger">赤字</span>}
         </dd>
-        <dd className="mt-1 text-xs text-muted-foreground">売上 − 委託料 ＋ 控除 − 経過措置の負担</dd>
+        <dd className="mt-1 text-xs text-muted-foreground">売上 − 委託料 ＋ 控除 − 会社がかぶる消費税（免税の方への支払）</dd>
       </Card>
       <Card>
         <dt className="text-xs text-muted-foreground">利益率</dt>

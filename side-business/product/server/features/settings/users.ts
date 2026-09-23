@@ -122,7 +122,7 @@ export async function prepareInvite(db: Db, tenantId: string, input: InviteInput
     throw new UserError("このメールアドレスでは招待できません（同じアドレスがほかで使われています）。別のメールアドレスをお使いください。");
   }
   if (here && !here.disabledAt && here.passwordHash) {
-    throw new UserError(`${here.name}さん（${here.email}）はもう利用者です。役割を変えるときは、一覧の「役割」から変えてください。`);
+    throw new UserError(`${here.name}さん（${here.email}）はもう利用者です。役割を変えるときは、一覧の「役割」から変えてください。パスワードを忘れた方なら、一覧で一度「止める」にしてから、招待のリンクを作ってください（リンクから新しいパスワードを決めると、また入れます）。`);
   }
   if (here && here.role !== input.role) {
     // 最後のオーナーを、招待し直しで外さない（パスワードをまだ決めていないオーナーだけの会社など）

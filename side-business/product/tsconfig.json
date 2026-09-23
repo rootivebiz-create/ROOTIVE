@@ -17,7 +17,9 @@
     "paths": {
       "~/*": ["./*"],
       "@/lib/*": ["../lib/*"],
-      "@/components/ui": ["../components/ui.tsx"]
+      "@/components/ui": ["../components/ui.tsx"],
+      "react": ["./node_modules/@types/react"],
+      "react/*": ["./node_modules/@types/react/*"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],

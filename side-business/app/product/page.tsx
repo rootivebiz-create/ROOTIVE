@@ -320,7 +320,7 @@ export default function ProductPage() {
             <a
               href={PRODUCT.demoUrl}
               target="_blank"
-              rel="noopener"
+              rel="noopener nofollow"
               className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-white/40 px-5 text-base font-bold text-white no-underline transition hover:bg-white/10 sm:w-auto"
             >
               製品のデモを触る

@@ -1,4 +1,5 @@
 import { and, eq, gt, isNull } from "drizzle-orm";
+import Link from "next/link";
 import { AuthFrame } from "~/components/auth-frame";
 import { InviteForm } from "~/components/auth-forms";
 import { getDb } from "~/db/client";
@@ -22,7 +23,15 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
       {invite ? (
         <InviteForm token={token} email={invite.email} />
       ) : (
-        <p className="text-sm">この招待リンクは無効か、期限（7 日）が切れています。招待した方に作り直してもらってください。</p>
+        <div className="space-y-3 text-sm">
+          <p>このリンクは無効か、期限が切れています（招待のリンクは 7 日、入り直しのリンクは作ったときに決めた時間まで）。一度使ったリンクも、もう使えません。</p>
+          <p>リンクを作った方（社内のオーナーなど）に、作り直してもらってください。</p>
+          <p>
+            <Link href="/login" className="inline-flex min-h-11 items-center font-bold">
+              ログインの画面へ
+            </Link>
+          </p>
+        </div>
       )}
     </AuthFrame>
   );

@@ -6,7 +6,7 @@ import type { Role } from "~/server/auth";
 import { UserError } from "~/server/action";
 import { audit } from "~/server/audit";
 import { buildStatementDrafts } from "~/server/calc/statement";
-import { listTransferBatches, lockTenant } from "~/server/features/transfer";
+import { listTransferBatches, loadPaidDifferences, lockTenant } from "~/server/features/transfer";
 import { runWatch as defaultRunWatch } from "~/server/features/watch";
 import type { WatchIssue } from "~/server/features/watch-types";
 import { getTenant, isMonthClosed, loadBuildInput } from "~/server/repo";
@@ -74,9 +74,20 @@ export type CloseChecklist = {
   parallel: { rows: number; diffs: { driverId: string; driverName: string; excelTotal: number; ourTotal: number; diff: number }[] };
   /**
    * ⑤ 振込データ。people・total は、どれかの振込データに入っている明細（同じ人は 1 回だけ数える）の今の振込額。
-   * changed は作ったあとに明細が変わったもの、notIncluded は振込額が 1 円以上なのにどの振込データにも入っていない人。
+   * changed は作ったあとに明細が変わったもの（changedExecuted はそのうち振り込んだ日が入っているもの）、
+   * notIncluded は振込額が 1 円以上なのにどの振込データにも入っていない人。
+   * paidDiff は、振り込んだ額と今の明細の額の差に、まだ精算の記録が無い人の数と額（loadPaidDifferences）。
    */
-  transfer: { batches: number; people: number; total: number; executed: number; changed: number; notIncluded: number };
+  transfer: {
+    batches: number;
+    people: number;
+    total: number;
+    executed: number;
+    changed: number;
+    changedExecuted: number;
+    notIncluded: number;
+    paidDiff: { open: number; underpaid: number; overpaid: number };
+  };
   /** ⑥ ドライバーの確認（今の版を確認した人） */
   confirm: { statements: number; confirmed: number; sent: number };
   /** 締めたときの明細（開いている月は今の稼働から作った見込み、締めた月は保存した明細） */
@@ -195,6 +206,8 @@ export async function loadCloseChecklist(db: Db, tenantId: string, month: string
   // ⑤ 振込データ：人で数える（同じ人を二重に数えない。明細が作り直されて id が変わっていても入っていると分かる）
   const inAnyBatch = new Set(batches.flatMap((b) => b.driverIds));
   const covered = saved.filter((r) => inAnyBatch.has(r.driverId));
+  // 振り込んだあとに明細が変わった人の、振り込んだ額との差（精算の記録がまだのもの）
+  const paidDiff = batches.some((b) => b.executedOn && b.changed) ? await loadPaidDifferences(db, tenantId, month) : null;
 
   const blockers: string[] = [];
   let hardBlockers = 0;
@@ -253,7 +266,9 @@ export async function loadCloseChecklist(db: Db, tenantId: string, month: string
       total: covered.reduce((a, r) => a + r.total, 0),
       executed: batches.filter((b) => b.executedOn).length,
       changed: batches.filter((b) => b.changed).length,
+      changedExecuted: batches.filter((b) => b.changed && b.executedOn).length,
       notIncluded: batches.length ? saved.filter((r) => r.total > 0 && !inAnyBatch.has(r.driverId)).length : 0,
+      paidDiff: { open: paidDiff?.openCount ?? 0, underpaid: paidDiff?.underpaid ?? 0, overpaid: paidDiff?.overpaid ?? 0 },
     },
     confirm: { statements: saved.length, confirmed, sent: saved.filter((r) => r.sentAt).length },
     totals,
@@ -646,14 +661,30 @@ function maskAccountValue(v: unknown): unknown {
   return v;
 }
 
+/** 振込データを作ったときの口座の目印（transfer.create の lines[].bank）の形か */
+function isBankStampLike(o: Record<string, unknown>): boolean {
+  return typeof o.fp === "string" && typeof o.tail === "string" && typeof o.bankCode === "string" && typeof o.branchCode === "string";
+}
+
+/** 口座の目印のうち、画面・CSV に出さない値（番号・名義・全体のハッシュ。前の作り方のものは総当たりで番号が割り出せるため） */
+const BANK_STAMP_HIDDEN = new Set(["fp", "n", "h"]);
+
 /**
- * 操作の記録を画面・CSV に出すときの中身：口座番号は下 3 桁だけにする（記録そのものは変えない。
- * 元のままの記録は、オーナーの「全データの書き出し」に入る）。
+ * 操作の記録を画面・CSV に出すときの中身：口座番号は下 3 桁だけにし、口座の目印のハッシュ（fp・n・h）は外す
+ * （銀行・支店・種目・下 3 桁は残す）。記録そのものは変えない。元のままの記録は、オーナーの「全データの書き出し」に入る。
  */
 export function maskAuditDetail(detail: Record<string, unknown>): Record<string, unknown> {
   const walk = (v: unknown): unknown => {
     if (Array.isArray(v)) return v.map(walk);
-    if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k === "accountNumber" ? maskAccountValue(x) : walk(x)]));
+    if (v && typeof v === "object") {
+      const o = v as Record<string, unknown>;
+      const stamp = isBankStampLike(o);
+      return Object.fromEntries(
+        Object.entries(o)
+          .filter(([k]) => !(stamp && BANK_STAMP_HIDDEN.has(k)))
+          .map(([k, x]) => [k, k === "accountNumber" ? maskAccountValue(x) : walk(x)]),
+      );
+    }
     return v;
   };
   return walk(detail) as Record<string, unknown>;
@@ -800,6 +831,8 @@ const ACTION_LABELS: Record<string, string> = {
   "transfer.delete": "振込データを取り消した",
   "transfer.executed": "振り込んだ日を記録した",
   "transfer.download": "振込データをダウンロードした",
+  "transfer.settle": "振り込んだ額と明細の額の差の精算を記録した",
+  "transfer.settle_undo": "差の精算の記録を取り消した",
   "watch.ack": "見張り番の指摘を確認済みにした",
   "watch.unack": "見張り番の確認済みを外した",
   "import.apply": "Excel の取り込みを反映した",
@@ -838,6 +871,7 @@ const ACTION_LABELS: Record<string, string> = {
   "export.statement_pdf": "明細の PDF を出した",
   "export.statements_pdf": "明細の PDF をまとめて出した",
   "export.statement_confirmations": "確認の記録（CSV）を出した",
+  "export.records_csv": "明細の検索の索引（CSV）を出した",
   "export.reconcile_items": "突合の差の一覧を出した",
   "export.accounting": "会計ソフト向けに出力した",
   "export.payments_csv": "支払の一覧（CSV）を出した",
@@ -847,6 +881,7 @@ const ACTION_LABELS: Record<string, string> = {
   "export.terms_csv": "取引条件の記録（CSV）を出した",
   "export.terms_pdf_all": "取引条件の PDF を全員ぶん出した",
   "data.export": "全データを書き出した",
+  "data.export_pdfs": "明細・取引条件の PDF（年ごと）を書き出した",
   "data.import": "全データを読み戻した（別の場所から移した）",
   "reconcile.run": "元請の支払通知と突き合わせた",
   "reconcile.update": "突合の差の扱いを変えた",
@@ -1063,6 +1098,16 @@ export function auditSummary(action: string, detail: Record<string, unknown>): s
       return typeof d.executedOn === "string" ? `振り込んだ日：${d.executedOn}` : "振り込んだ日を消した";
     case "transfer.download":
       return d.format === "csv" ? "振込の一覧（CSV）" : "全銀の振込データ";
+    case "transfer.settle":
+      return join([
+        str(d.driverName) && `${d.driverName}さん`,
+        num(d.amount) !== null && `差 ${num(d.amount)! < 0 ? "−" : "＋"}${Math.abs(num(d.amount)!).toLocaleString("ja-JP")}円`,
+        d.method === "next_month"
+          ? `${typeof d.nextMonth === "string" ? `${Number(d.nextMonth.slice(5, 7))}月分の` : "翌月の"}明細の調整で精算`
+          : `別の方法で精算${str(d.settledOn) ? `（${d.settledOn}）` : ""}`,
+      ]);
+    case "transfer.settle_undo":
+      return join([str(d.driverName) && `${d.driverName}さん`, str(d.settledOn) && `${d.settledOn} の精算の記録`]);
     case "watch.ack":
       return [typeof d.title === "string" ? d.title : typeof d.code === "string" ? d.code : null, typeof d.subject === "string" ? `（${d.subject}）` : null, typeof d.note === "string" ? `：${d.note}` : null].filter(Boolean).join("") || null;
     case "watch.unack":
@@ -1130,7 +1175,12 @@ export function auditSummary(action: string, detail: Record<string, unknown>): s
       return str(d.name);
     case "invite.create":
     case "invite.revoke":
-      return join([str(d.name), typeof d.role === "string" && (ROLE_JA[d.role] ?? d.role)]);
+      // 入り直しのリンク（scripts/reset-access.ts。オーナーが入れなくなったときに導入の担当者が作る）は、画面の招待と見分ける
+      return join([
+        str(d.name),
+        typeof d.role === "string" && (ROLE_JA[d.role] ?? d.role),
+        action === "invite.create" && d.via === "reset-access" && "入り直しのリンク（導入の担当者が作成）",
+      ]);
     case "terms.create":
     case "terms.send":
     case "terms.relink":
@@ -1145,12 +1195,20 @@ export function auditSummary(action: string, detail: Record<string, unknown>): s
       return num(d.rows) !== null ? `${d.rows}件` : null;
     case "export.terms_pdf_all":
       return num(d.count) !== null ? `${d.count}人ぶん` : null;
+    case "export.records_csv":
+      return join([num(d.statements) !== null && `明細 ${d.statements}件`, num(d.rows) !== null && `${d.rows}行`]);
     case "export.parallel_pdf":
       return join([num(d.compared) !== null && `比べた ${d.compared}人`, num(d.matched) !== null && `同じ ${d.matched}人`, yenOf(d.diffTotal) && `差の合計 ${yenOf(d.diffTotal)}`]);
     case "export.reconcile_letter":
       return join([Array.isArray(d.items) && `${d.items.length}件`, yenOf(d.total)]);
     case "data.export":
       return join([str(d.fileName), num(d.rows) !== null && `${d.rows}行`, num(d.versions) !== null && `明細の版 ${d.versions}件`]);
+    case "data.export_pdfs":
+      return join([
+        num(d.year) !== null && `${d.year}年`,
+        num(d.statementVersions) !== null && `明細の版 ${d.statementVersions}件`,
+        num(d.termsVersions) !== null && `取引条件の版 ${d.termsVersions}件`,
+      ]);
     case "data.import":
       return join([str(d.tenantName), num(d.rows) !== null && `${d.rows}行`, num(d.versions) !== null && `明細の版 ${d.versions}件`]);
     default:

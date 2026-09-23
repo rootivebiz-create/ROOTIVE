@@ -31,10 +31,19 @@ export default async function DriverTermsPage({ params }: { params: Promise<{ to
       <div className="space-y-3">
         {!data.isLatest && (
           <div role="alert" className="rounded-lg border-2 border-danger bg-danger/10 p-3 font-bold text-danger">
-            新しい版があります。会社から届いたリンクを開いてください。
+            新しい版があります。
             <span className="mt-1 block text-sm font-normal text-foreground">
-              このページは前の版（版 {d.version}）です。いまの条件は版 {data.latestVersion} です。新しいリンクが見当たらないときは、会社にお尋ねください。
+              このページは前の版（版 {d.version}）です。いまの条件は版 {data.latestVersion} です。
+              {data.latestToken ? "下のボタンから、新しい版を開いてください。" : "会社から新しい版のリンクが届くまで、お待ちください。届かないときは、会社にお尋ねください。"}
             </span>
+            {data.latestToken && (
+              <a
+                href={`/t/${encodeURIComponent(data.latestToken)}`}
+                className="mt-2 flex min-h-11 items-center justify-center rounded-lg bg-foreground px-4 text-base font-bold text-background no-underline"
+              >
+                新しい版（版 {data.latestVersion}）を開く
+              </a>
+            )}
           </div>
         )}
         {staffPreview && (
@@ -72,7 +81,7 @@ export default async function DriverTermsPage({ params }: { params: Promise<{ to
         {data.isLatest ? (
           <ReceiveForm token={token} version={d.version} received={data.received} disabled={staffPreview} />
         ) : (
-          <p className="rounded-lg border border-border bg-muted p-3 text-sm">この版では「受け取りました」は押せません。新しい版のリンクを開いてください。</p>
+          <p className="rounded-lg border border-border bg-muted p-3 text-sm">この版では「受け取りました」は押せません。{data.latestToken ? "上の「新しい版を開く」から開いてください。" : "新しい版のリンクを開いてください。"}</p>
         )}
       </section>
 

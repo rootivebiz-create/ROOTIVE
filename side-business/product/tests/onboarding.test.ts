@@ -215,13 +215,14 @@ describe("最初の設定（DB）", () => {
     // 新しい会社（何も入っていない）
     const [fresh] = await db.insert(s.tenants).values({ name: "はじめて運送（架空）" }).returning();
     let p = await loadOnboarding(db, fresh.id);
-    expect(p).toMatchObject({ doneCount: 0, total: 7, complete: false, minutesLeft: 65 });
+    expect(p).toMatchObject({ doneCount: 0, total: 7, complete: false, minutesLeft: 60 });
     expect(p.next?.key).toBe("company");
 
     await setOnboardingStep(db, fresh.id, "company", "skipped", null);
     p = await loadOnboarding(db, fresh.id);
     expect(p.steps[0].state).toBe("skipped");
-    expect(p.next?.key).toBe("drivers");
+    // 会社の次は先月の Excel の取り込み（マスタの登録を先にさせない。SPEC P0-1）
+    expect(p.next?.key).toBe("import");
 
     await finishOnboarding(db, fresh.id, null);
     p = await loadOnboarding(db, fresh.id);
@@ -233,20 +234,20 @@ describe("最初の設定（DB）", () => {
 
     // 済みにすると次へ。まだに戻すと、また案内に出る
     await setOnboardingStep(db, fresh.id, "company", "done", null);
-    expect((await loadOnboarding(db, fresh.id)).next?.key).toBe("drivers");
+    expect((await loadOnboarding(db, fresh.id)).next?.key).toBe("import");
     await setOnboardingStep(db, fresh.id, "company", null, null);
     expect((await loadOnboarding(db, fresh.id)).next?.key).toBe("company");
 
     // デモの会社は変わらない
     const demo = await loadOnboarding(db, tenantId);
     expect(demo.doneCount).toBe(5);
-    expect(demo.next?.key).toBe("terms");
+    expect(demo.next?.key).toBe("parallel");
     await client.close();
   });
 
   it("純関数：データがあれば印が無くても済み。「あとで」でもデータがあれば済み", () => {
     const p = onboardingProgress({ drivers: "skipped" }, { drivers: 3, projects: 0, rules: 0, workEntries: 0, parallelChecks: 0 });
-    expect(p.steps[1]).toMatchObject({ state: "auto", note: "登録済み 3人" });
+    expect(p.steps.find((x) => x.def.key === "drivers")).toMatchObject({ state: "auto", note: "登録済み 3人" });
     expect(p.doneCount).toBe(1);
   });
 

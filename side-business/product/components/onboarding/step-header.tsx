@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { MarkButton } from "~/components/onboarding/mark-button";
-import { minutesText, ONBOARDING_STEPS, STATE_LABEL, type OnboardingKey, type StepState } from "~/server/features/onboarding/steps";
+import { minutesText, nextStepOf, ONBOARDING_STEPS, STATE_LABEL, stepHref, type OnboardingKey, type StepState } from "~/server/features/onboarding/steps";
 import { monthFromParam, monthParam } from "~/server/month";
 
 /** 案内の各手順の見出し：何番目か・かかる時間・戻る・とばす（済んだ手順には「あとでやる」を出さない） */
@@ -33,12 +33,11 @@ export function StepHeader({ step, description, showSkip = true, state }: { step
 
 /** 手順のおわりの「次へ」 */
 export function NextStepLink({ step }: { step: OnboardingKey }) {
-  const i = ONBOARDING_STEPS.findIndex((s) => s.key === step);
-  const next = ONBOARDING_STEPS[i + 1];
+  const next = nextStepOf(step);
   if (!next) return null;
   return (
     // 取り込みは先月（デモは架空のデータがある月）の分を開く
-    <Link href={next.withMonth ? `${next.path}?m=${monthParam(monthFromParam(undefined))}` : next.path} className="inline-flex min-h-11 items-center text-sm font-bold">
+    <Link href={stepHref(next, monthParam(monthFromParam(undefined)))} className="inline-flex min-h-11 items-center text-sm font-bold">
       次の手順「{next.title}」へ →
     </Link>
   );

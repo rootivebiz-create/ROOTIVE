@@ -95,6 +95,9 @@ describe("設定の画面", () => {
     expect(staff).toContain("取引条件の明示なし 1人");
     expect(staff).toContain("合意の記録なし 1件");
     expect(staff).toContain("毎月末日締め・翌月25日払い");
+    // 「つかえません」は「使えません」と読めてしまうので使わない
+    expect(staff).toContain("月末の締めで止まりません");
+    expect(staff).not.toContain("つかえません");
     expect(staff).not.toContain("/settings/users");
     expect(await html("home", "owner")).toContain("/settings/users");
   });
@@ -223,7 +226,20 @@ describe("設定の画面", () => {
     expect(owner).toContain("ただ 1 人のオーナー");
     expect(owner).toContain("招待のリンクを作る");
     expect(owner).toContain("デモ 事務");
+    // オーナーが 1 人だけなら、もう 1 人をすすめる（その人が入れなくなると、利用者の管理ができる人がいない）
+    expect(owner).toContain("オーナーが 1 人だけです");
+    expect(await html("home", "owner")).toContain("オーナーが 1 人だけ（もう 1 人いると安心）");
     await expect(html("users", "staff")).rejects.toThrow("FORBIDDEN");
+    // 2 人目のオーナーがいれば、すすめない
+    const db = state.db!;
+    const [staffUser] = await db.select().from(s.users).where(and(eq(s.users.tenantId, tenantId), eq(s.users.role, "staff")));
+    await db.update(s.users).set({ role: "owner" }).where(eq(s.users.id, staffUser.id));
+    try {
+      expect(await html("users", "owner")).not.toContain("オーナーが 1 人だけです");
+      expect(await html("home", "owner")).not.toContain("オーナーが 1 人だけ");
+    } finally {
+      await db.update(s.users).set({ role: "staff" }).where(eq(s.users.id, staffUser.id));
+    }
   });
 
   it("AI の同意：既定は使わない。送るもの・送らないものを書く。オーナーだけが変えられる", async () => {

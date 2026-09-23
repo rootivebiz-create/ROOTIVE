@@ -30,7 +30,7 @@ import {
 } from "~/server/features/watch/rules";
 import { ackAllowed } from "~/server/features/watch/acks";
 import { FIX, fixLink, SOURCES } from "~/server/features/watch/sources";
-import { countIssues, groupBySeverity } from "~/server/features/watch/summary";
+import { bulkAckGroups, countIssues, groupBySeverity } from "~/server/features/watch/summary";
 import type { WatchContext, WatchDriver } from "~/server/features/watch/types";
 import type { WatchIssue } from "~/server/features/watch-types";
 
@@ -184,6 +184,8 @@ describe("60日（2か月）：サイトの道具と同じ判定", () => {
     const ng = sixtyDays(ctx({ tenant: { ...TENANT, payMonthOffset: 3, payDay: 5 } }));
     expect(ng[0].severity).toBe("red");
     expect(ng[0].detail).toContain("3か月後の5日払い");
+    // 60 日の決まりが当たるのは特定業務委託事業者（従業員を使っている会社など）。そう書く
+    expect(ng[0].detail).toContain("フリーランス法では、従業員を使っている会社など（特定業務委託事業者）は、報酬の支払期日を、仕事を受け取った日から60日以内");
   });
 
   it("支払日が銀行の休みの日なら、道具と同じく前の営業日で数え、そう書く", () => {
@@ -207,13 +209,57 @@ describe("取引条件の明示", () => {
     expect(termsMissing(ctx({ drivers: [none], drafts: onlyRefund }))).toHaveLength(0);
   });
 
-  it("委託を始めた日より後の明示 → 赤、日付の無い月の途中 → 黄", () => {
-    const late = driver("d1", "青木 翔太", { termsFirstIssuedOn: "2026-05-10", startedOn: "2026-05-01", firstWork: { month: "2026-05-01", minDate: null, hasUndated: true } });
-    const [red] = termsMissing(ctx({ drivers: [late], drafts: drafts(OCT, [late], work) }));
+  it("委託を始めた日より後の明示 → 最初に稼働した月は赤、日付の無い月の途中 → 黄", () => {
+    const MAY = "2026-05-01";
+    const late = driver("d1", "青木 翔太", { termsFirstIssuedOn: "2026-05-10", startedOn: "2026-05-01", firstWork: { month: MAY, minDate: null, hasUndated: true } });
+    const [red] = termsMissing(ctx({ month: MAY, drivers: [late], drafts: drafts(MAY, [late], work) }));
     expect(red.severity).toBe("red");
     expect(red.detail).toContain("委託を始めた日（2026年5月1日）");
-    const unsure = driver("d1", "青木 翔太", { termsFirstIssuedOn: "2026-05-10", firstWork: { month: "2026-05-01", minDate: null, hasUndated: true } });
-    expect(termsMissing(ctx({ drivers: [unsure], drafts: drafts(OCT, [unsure], work) }))[0].severity).toBe("yellow");
+    expect(red.detail).toContain("赤で出すのは、最初に稼働した2026年5月分までです");
+    const unsure = driver("d1", "青木 翔太", { termsFirstIssuedOn: "2026-05-10", firstWork: { month: MAY, minDate: null, hasUndated: true } });
+    expect(termsMissing(ctx({ month: MAY, drivers: [unsure], drafts: drafts(MAY, [unsure], work) }))[0].severity).toBe("yellow");
+  });
+
+  it("仕事を始めたあとの明示は、最初に稼働した月だけ赤。次の月からは締めを止めないお知らせ（毎月の赤にしない）", () => {
+    // 導入の日に明示書を作り（9/23）、先月（8 月）の Excel を取り込んだ：8 月は赤、9 月・10 月はお知らせ
+    const AUG = "2026-08-01";
+    const onboarded = driver("d1", "青木 翔太", {
+      termsFirstIssuedOn: "2026-09-23",
+      termsLatestIssuedOn: "2026-09-23",
+      startedOn: "2023-04-01",
+      firstWork: { month: AUG, minDate: null, hasUndated: true },
+    });
+    const [aug] = termsMissing(ctx({ month: AUG, today: "2026-09-23", drivers: [onboarded], drafts: drafts(AUG, [onboarded], work) }));
+    expect(aug).toMatchObject({ severity: "red", title: "取引条件の明示が、仕事を始めたあとになっています", subjectId: "d1" });
+    for (const month of [SEP, OCT]) {
+      const issues = termsMissing(ctx({ month, drivers: [onboarded], drafts: drafts(month, [onboarded], work) }));
+      expect(issues, month).toHaveLength(1);
+      expect(issues[0]).toMatchObject({ code: "terms_missing", severity: "info", subjectId: "d1", title: "取引条件の明示は、仕事を始めたあとでした", fixHref: FIX.terms("d1") });
+      expect(issues[0].detail).toContain("取引条件を最初に明示した日（2026年9月23日）");
+      expect(issues[0].detail).toContain("2026年8月分の見張り番で確かめられます");
+      // 月の支払額を書かない（毎月同じ中身にする）。金額で出す指摘ではない
+      expect(issues[0].detail).not.toContain("支払額");
+      expect(issues[0].impact?.yen).toBeNull();
+    }
+    // evaluateRules を通しても、9 月の取引条件の指摘はお知らせだけ（締めを止めない）
+    const sep = evaluateRules(ctx({ month: SEP, drivers: [onboarded], drafts: drafts(SEP, [onboarded], work) }));
+    expect(sep.filter((i) => i.code === "terms_missing").map((i) => i.severity)).toEqual(["info"]);
+    // 明示した記録が無い人は、これまでどおり毎月赤（明示すれば直せる）
+    const none = driver("d1", "青木 翔太", { termsFirstIssuedOn: null, termsLatestIssuedOn: null, firstWork: { month: AUG, minDate: null, hasUndated: true } });
+    expect(termsMissing(ctx({ drivers: [none], drafts: drafts(OCT, [none], work) }))[0].severity).toBe("red");
+    // 最初に稼働した月より前（稼働の前に差し引きだけある月）も赤
+    const julD = drafts("2026-07-01", [onboarded], [], { adjustments: [{ driverId: "d1", label: "車両の保険", amount: -3000, taxable: false, agreedInWriting: true }] });
+    expect(termsMissing(ctx({ month: "2026-07-01", drivers: [onboarded], drafts: julD }))[0].severity).toBe("red");
+    // 稼働の記録が無い人（差し引きだけ）は、委託を始めた日で毎月見る
+    const noWork = driver("d1", "青木 翔太", { termsFirstIssuedOn: "2026-09-23", startedOn: "2026-08-01", firstWork: null });
+    const octD = drafts(OCT, [noWork], [], { adjustments: [{ driverId: "d1", label: "車両の保険", amount: -3000, taxable: false, agreedInWriting: true }] });
+    expect(termsMissing(ctx({ drivers: [noWork], drafts: octD }))[0].severity).toBe("red");
+  });
+
+  it("明示した日が最初の稼働より前か分からない（黄）は、最初に稼働した月だけ", () => {
+    const unsure = driver("d1", "青木 翔太", { termsFirstIssuedOn: "2026-09-10", firstWork: { month: SEP, minDate: null, hasUndated: true } });
+    expect(termsMissing(ctx({ month: SEP, drivers: [unsure], drafts: drafts(SEP, [unsure], work) })).map((i) => i.severity)).toEqual(["yellow"]);
+    expect(termsMissing(ctx({ month: OCT, drivers: [unsure], drafts: drafts(OCT, [unsure], work) }))).toHaveLength(0);
   });
 
   it("明示のあとに変えた単価で、合意の日が無い → 黄。合意の日がある・その単価で払っていない → 出ない", () => {
@@ -372,7 +418,10 @@ describe("終了の予告", () => {
   const base = { startedOn: "2026-01-01", endOn: "2026-10-31" };
   it("30 日前ちょうど → 出ない、29 日前 → 黄、終わった月のあと → 出ない、始めた日が分からない → 出ない", () => {
     expect(contractEnd(ctx({ drivers: [driver("d1", "青木 翔太", { ...base, endNoticedOn: "2026-10-01" })] }))).toHaveLength(0);
-    expect(contractEnd(ctx({ drivers: [driver("d1", "青木 翔太", { ...base, endNoticedOn: "2026-10-02" })] }))[0].detail).toContain("29日前");
+    const [late] = contractEnd(ctx({ drivers: [driver("d1", "青木 翔太", { ...base, endNoticedOn: "2026-10-02" })] }));
+    expect(late.detail).toContain("29日前");
+    // 予告の決まりが当たるのは特定業務委託事業者（従業員を使っている会社など）で、原則。そう書く
+    expect(late.detail).toContain("従業員を使っている会社など（特定業務委託事業者）が、6か月以上続いた委託を終える（更新しない）ときは、原則として30日前までに予告することが求められています（例外があります）");
     expect(contractEnd(ctx({ month: "2026-11-01", drivers: [driver("d1", "青木 翔太", base)] }))).toHaveLength(0);
     expect(contractEnd(ctx({ drivers: [driver("d1", "青木 翔太", { endOn: "2026-10-31", startedOn: null, termsFirstIssuedOn: null, firstWork: null })] }))).toHaveLength(0);
     // 6 か月ちょうど（1/1〜6/30）は対象
@@ -526,6 +575,34 @@ describe("まとめ・並べ方・文面", () => {
     expect(counts.redOpen + counts.redAcked + counts.yellowOpen + counts.yellowAcked + counts.info).toBe(issues.length);
     const groups = groupBySeverity(withAck);
     expect(groups.red.at(-1)!.acked).toBe(true);
+  });
+
+  it("まとめて確認済みにできる組：まだ確認していない、同じ種類・同じ見出し・同じ重さの指摘が 2 件以上", () => {
+    const issue = (code: string, subjectId: string, severity: WatchIssue["severity"], title: string, acked = false): WatchIssue => ({
+      code,
+      severity,
+      title,
+      detail: "記録から見えること",
+      subjectId,
+      subjectLabel: subjectId,
+      acked,
+      blocksClose: severity === "red" && !acked,
+    });
+    const LATE = "取引条件の明示が、仕事を始めたあとになっています";
+    const groups = bulkAckGroups([
+      issue("terms_missing", "d1", "red", LATE),
+      issue("terms_missing", "d2", "red", "取引条件を明示した記録がありません"),
+      issue("terms_missing", "d3", "red", LATE),
+      issue("terms_missing", "d4", "red", LATE, true),
+      issue("no_bank", "d5", "yellow", "振込先の口座がそろっていません"),
+      issue("terms_missing", "d6", "info", "取引条件の明示は、仕事を始めたあとでした"),
+      issue("terms_missing", "d7", "info", "取引条件の明示は、仕事を始めたあとでした"),
+    ]);
+    expect(groups.map((g) => [g.severity, g.code, g.title, g.issues.map((i) => i.subjectId)])).toEqual([
+      ["red", "terms_missing", LATE, ["d1", "d3"]],
+      ["info", "terms_missing", "取引条件の明示は、仕事を始めたあとでした", ["d6", "d7"]],
+    ]);
+    expect(bulkAckGroups([issue("no_bank", "d5", "yellow", "振込先の口座がそろっていません")])).toEqual([]);
   });
 
   it("直す画面のリンク：直せない人には「見る」（閲覧の人・会社の設定を変えられない事務・締めた月の稼働と明細）", () => {

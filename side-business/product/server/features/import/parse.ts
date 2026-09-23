@@ -3,7 +3,7 @@
  * 取り込まない行は、行番号と理由を残す。ファイル自身の合計（合計の行・「計」の列）と照らし合わせる。
  */
 import { isBlankRow, isTotalRow, parseNumberCell } from "~/server/tabular";
-import { colLetter, dateNear, dayColumnDates, dayOfHeader, effectiveHeader, isTotalHeader, mappingProblem } from "./detect";
+import { colLetter, dateNear, dayColumnDates, dayOfHeader, effectiveHeader, isTotalHeader, mappingProblem, markValue } from "./detect";
 import { layoutOf, type ColumnRole, type ParseResult, type RawRecord, type SkippedRow, type TotalCheck, type WorkMapping } from "./types";
 
 const EPS = 1e-6;
@@ -49,10 +49,19 @@ export function emptyParse(problem: string | null): ParseResult {
   return { records: [], skipped: [], emptyCells: 0, checks: [], warnings: [], dateMonths: {}, problem };
 }
 
-/** 読み方（mapping）で表を読む。month は取り込む月（YYYY-MM-01。日だけの見出しの年月に使う） */
-export function parseWithMapping(rows: string[][], mapping: WorkMapping, month: string): ParseResult {
+/**
+ * 読み方（mapping）で表を読む。month は取り込む月（YYYY-MM-01。日だけの見出しの年月に使う）。
+ * opts.driverName：シートごとに別の人の表（mapping.sheetDrivers）のときの、このシートの人の名前（ファイルの書き方のまま）
+ */
+export function parseWithMapping(rows: string[][], mapping: WorkMapping, month: string, opts: { driverName?: string | null } = {}): ParseResult {
   const problem = mappingProblem(mapping);
   if (problem) return emptyParse(problem);
+  // 数か印（○・出・休）を読む
+  const readNumber = (raw: string) => markValue(raw, mapping.marks) ?? parseNumberCell(raw);
+  // 人の列が無い表：「すべて同じ人」か、シートの名前の人
+  const sheetDriver = mapping.sheetDrivers ? (opts.driverName ?? "").trim() : "";
+  const noDriverCol = !!mapping.fixedDriverId || !!mapping.sheetDrivers;
+  if (mapping.sheetDrivers && !sheetDriver) return emptyParse("このシートの人が分かりません（シートの名前か、表の上の「氏名」から読みます）");
   const header = effectiveHeader(rows, mapping.headerRow, mapping.headerDepth);
   const roles = mapping.roles;
   const col = (r: ColumnRole) => roles.indexOf(r);
@@ -63,33 +72,43 @@ export function parseWithMapping(rows: string[][], mapping: WorkMapping, month: 
   const dateCol = col("date");
   const noteCol = col("note");
   const layout = layoutOf(roles);
+  const byDriver = layout === "byDriver";
   const fixed = mapping.fixedProjectId;
   const warnings: string[] = [];
 
-  // 横持ちの数の列：日付の見出しか、案件名の見出しか
-  const valueCols = roles.flatMap((r, i) => (r === "value" ? [i] : []));
-  const dayDates = dayColumnDates(
-    valueCols.map((c) => ({ col: c, header: header[c] ?? "" })),
-    month,
-  );
+  // 横持ちの数の列：日付の見出しか、案件名の見出しか（人が横に並ぶ表なら、見出しは人の名前）
+  const valueCols = roles.flatMap((r, i) => (r === "value" || r === "driverValue" ? [i] : []));
+  const dayDates = byDriver
+    ? new Map<number, string>()
+    : dayColumnDates(
+        valueCols.map((c) => ({ col: c, header: header[c] ?? "" })),
+        month,
+      );
   const activeCols: number[] = [];
   const badDays: string[] = [];
   const blankHeads: string[] = [];
   for (const c of valueCols) {
     const h = header[c] ?? "";
-    if (dayOfHeader(h) && !dayDates.has(c)) badDays.push(`${colLetter(c)}列「${h}」`);
+    if (byDriver) {
+      if (!h.trim()) blankHeads.push(`${colLetter(c)}列`);
+      else activeCols.push(c);
+    } else if (dayOfHeader(h) && !dayDates.has(c)) badDays.push(`${colLetter(c)}列「${h}」`);
     else if (!h.trim() && !fixed) blankHeads.push(`${colLetter(c)}列`);
     else activeCols.push(c);
   }
   if (badDays.length) warnings.push(`${badDays.join("、")}は、取り込む月に無い日なので取り込みません`);
-  if (blankHeads.length) warnings.push(`${blankHeads.join("、")}は見出しが空なので、どの案件か分からず取り込みません`);
+  if (blankHeads.length) {
+    warnings.push(`${blankHeads.join("、")}は見出しが空なので、${byDriver ? "だれの数" : "どの案件"}か分からず取り込みません`);
+  }
 
-  const needsRowProject = layout === "long" || activeCols.some((c) => dayDates.has(c));
+  const needsRowProject = layout === "long" || byDriver || activeCols.some((c) => dayDates.has(c));
   if (needsRowProject && projectCol < 0 && !fixed) {
     return emptyParse(
       layout === "long"
         ? "案件の列を選ぶか、「この表はすべて同じ案件」で案件を選んでください"
-        : "日付ごとの表です。案件の列を選ぶか、「この表はすべて同じ案件」で案件を選んでください",
+        : byDriver
+          ? "人が横に並ぶ表です。案件の列を選ぶか、「この表はすべて同じ案件」で案件を選んでください"
+          : "日付ごとの表です。案件の列を選ぶか、「この表はすべて同じ案件」で案件を選んでください",
     );
   }
 
@@ -102,7 +121,7 @@ export function parseWithMapping(rows: string[][], mapping: WorkMapping, month: 
   let emptyCells = 0;
   let readSum = 0;
   const importedByCol = new Map<number, number>();
-  const rowTotalCol = layout === "wide" ? header.findIndex((h, i) => roles[i] !== "value" && isTotalHeader(h)) : -1;
+  const rowTotalCol = layout !== "long" ? header.findIndex((h, i) => roles[i] !== "value" && roles[i] !== "driverValue" && isTotalHeader(h)) : -1;
   let rowTotalExpected = 0;
   let rowTotalActual = 0;
   let rowTotalRows = 0;
@@ -121,7 +140,7 @@ export function parseWithMapping(rows: string[][], mapping: WorkMapping, month: 
       skipped.push({ rowNo, reason: /小計/.test(label) ? "小計の行" : "合計の行（取り込まず、合計の確かめに使います）" });
       continue;
     }
-    const driver = cellOf(row, driverCol);
+    const driver = sheetDriver || cellOf(row, driverCol);
     const code = cellOf(row, codeCol);
     const note = cellOf(row, noteCol) || null;
     const rowProject = cellOf(row, projectCol);
@@ -141,7 +160,7 @@ export function parseWithMapping(rows: string[][], mapping: WorkMapping, month: 
     if (layout === "long") {
       const raw = cellOf(row, qtyCol);
       const addr = `${colLetter(qtyCol)}${rowNo}`;
-      if (!driver && !code && !raw && !rowProject) {
+      if (!cellOf(row, driverCol) && !code && !raw && !rowProject) {
         skipped.push({ rowNo, reason: "空の行" });
         continue;
       }
@@ -149,7 +168,7 @@ export function parseWithMapping(rows: string[][], mapping: WorkMapping, month: 
         skipped.push({ rowNo, cell: addr, reason: "数量が空" });
         continue;
       }
-      const n = parseNumberCell(raw);
+      const n = readNumber(raw);
       if (n === null) {
         skipped.push({ rowNo, cell: addr, reason: unreadableQty(addr, raw) });
         continue;
@@ -163,7 +182,7 @@ export function parseWithMapping(rows: string[][], mapping: WorkMapping, month: 
         skipped.push({ rowNo, cell: addr, reason: NEGATIVE });
         continue;
       }
-      if (!driver && !code) {
+      if (!driver && !code && !noDriverCol) {
         skipped.push({ rowNo, cell: addr, reason: "ドライバーの名前が空" });
         continue;
       }
@@ -187,7 +206,7 @@ export function parseWithMapping(rows: string[][], mapping: WorkMapping, month: 
         emptyCells++;
         continue;
       }
-      const n = parseNumberCell(raw);
+      const n = readNumber(raw);
       if (n === null) {
         anyValue = true;
         rowSkips.push({ rowNo, cell: addr, reason: unreadableQty(addr, raw) });
@@ -204,15 +223,20 @@ export function parseWithMapping(rows: string[][], mapping: WorkMapping, month: 
         continue;
       }
       const dayDate = dayDates.get(c) ?? null;
-      const project = fixed ? "" : dayDate ? rowProject : (header[c] ?? "").trim();
+      const project = fixed ? "" : dayDate || byDriver ? rowProject : (header[c] ?? "").trim();
       if (!fixed && !project) {
         rowSkips.push({ rowNo, cell: addr, reason: "案件が空" });
         continue;
       }
-      rowRecords.push({ rowNo, cell: addr, driver, code, project, qty: round4(n), date: dayDate ?? rowDate, note });
+      const who = byDriver ? (header[c] ?? "").trim() : driver;
+      rowRecords.push({ rowNo, cell: addr, driver: who, code: byDriver ? "" : code, project, qty: round4(n), date: dayDate ?? rowDate, note });
     }
-    if (!driver && !code) {
+    if (!byDriver && !driver && !code && !noDriverCol) {
       skipped.push({ rowNo, reason: anyValue ? "ドライバーの名前が空" : "空の行" });
+      continue;
+    }
+    if (byDriver && !anyValue && rowSkips.length === 0) {
+      skipped.push({ rowNo, reason: "空の行" });
       continue;
     }
     skipped.push(...rowSkips);
@@ -228,7 +252,7 @@ export function parseWithMapping(rows: string[][], mapping: WorkMapping, month: 
         rowTotalExpected += expected;
         rowTotalActual += rowSum;
         if (Math.abs(expected - rowSum) > EPS)
-          rowTotalBad.push(`${rowNo}行目（${driver || code}）：「${header[rowTotalCol]}」は ${fmt(expected)}、読み取りは ${fmt(rowSum)}`);
+          rowTotalBad.push(`${rowNo}行目（${(byDriver ? rowProject || cellOf(row, dateCol) : driver || code) || "—"}）：「${header[rowTotalCol]}」は ${fmt(expected)}、読み取りは ${fmt(rowSum)}`);
       }
     }
   }
@@ -250,7 +274,7 @@ export function parseWithMapping(rows: string[][], mapping: WorkMapping, month: 
       });
     }
   }
-  if (grand && layout === "wide") {
+  if (grand && layout !== "long") {
     let expected = 0;
     let found = false;
     const badCols: string[] = [];

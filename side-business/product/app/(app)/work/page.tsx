@@ -4,6 +4,7 @@ import { ActionForm } from "~/components/import/action-form";
 import { qtyText } from "~/components/import/sections";
 import { Badge, EmptyState, Notice, PageHeader } from "~/components/page";
 import { AdjustmentForm } from "~/components/work/adjustment-form";
+import { AdjustmentPasteForm } from "~/components/work/adjustment-paste-form";
 import { EntryForm } from "~/components/work/entry-form";
 import { getDb } from "~/db/client";
 import { requirePageUser, roleAtLeast } from "~/server/auth";
@@ -11,7 +12,15 @@ import { loadExportLayout } from "~/server/features/import/export";
 import { loadWorkMonth, type EntryRow } from "~/server/features/import/work";
 import { monthFromParam, monthLabelJa, monthParam } from "~/server/month";
 import { statementsStatus } from "~/server/statements-core";
-import { addAdjustmentAction, addEntryAction, deleteAdjustmentAction, deleteEntryAction, updateAdjustmentAction, updateEntryAction } from "./actions";
+import {
+  addAdjustmentAction,
+  addEntryAction,
+  bulkAdjustmentAction,
+  deleteAdjustmentAction,
+  deleteEntryAction,
+  updateAdjustmentAction,
+  updateEntryAction,
+} from "./actions";
 
 export const metadata = { title: "稼働と調整" };
 
@@ -310,6 +319,16 @@ export default async function WorkPage({ searchParams }: { searchParams: Promise
           <details className="rounded-card border border-border bg-card p-4">
             <summary className="min-h-11 cursor-pointer py-2 font-bold">＋ 調整を足す</summary>
             <AdjustmentForm action={addAdjustmentAction} month={month} drivers={drivers} submitLabel="足す" />
+          </details>
+        )}
+        {canEdit && (
+          <details className="rounded-card border border-border bg-card p-4">
+            <summary className="min-h-11 cursor-pointer py-2 font-bold">＋ まとめて入れる（Excel から貼り付け）</summary>
+            <p className="mb-3 text-sm text-muted-foreground">
+              燃料・高速代・立替・事故の負担など、人ごとに額が変わるものを、Excel の「名前・内容・金額」の列ごとコピーして入れられます。
+              稼働の Excel にその列があるなら、取り込みの画面で「その月の調整として入れる」にすると、来月からは置くだけで入ります。
+            </p>
+            <AdjustmentPasteForm action={bulkAdjustmentAction} month={month} />
           </details>
         )}
       </section>

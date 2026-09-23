@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui";
 import { ResultLine, useFormAction, type FormAction } from "~/components/import/action-form";
-import { MAX_FILE_BYTES } from "~/server/features/import/types";
+import { MAX_FILE_BYTES, MAX_FILE_LABEL } from "~/server/features/import/types";
 
 /**
  * 口座のファイルを置く：口座一覧の Excel・CSV か、先月の全銀の振込ファイル（.txt など）。
@@ -22,12 +22,12 @@ export function BankUploadForm({ action, month }: { action: FormAction; month: s
       <input type="hidden" name="month" value={month} />
       <label className="flex min-h-32 cursor-pointer flex-col items-center justify-center gap-2 rounded-card border-2 border-dashed border-border bg-card p-6 text-center hover:bg-muted">
         <span className="break-all text-base font-bold">{fileName ?? "ここを押して、口座一覧か振込ファイルを選ぶ"}</span>
-        <span className="text-xs text-muted-foreground">Excel（.xlsx）・CSV・全銀の振込ファイル（.txt など）が読めます（10MB まで）</span>
+        <span className="text-xs text-muted-foreground">Excel（.xlsx）・CSV・全銀の振込ファイル（.txt など）が読めます（{MAX_FILE_LABEL} まで）</span>
         <input type="file" name="file" accept=".xlsx,.xlsm,.csv,.tsv,.txt,.dat,.fb" className="sr-only" onChange={(e) => pick(e.currentTarget.files?.[0])} />
       </label>
       {tooBig && (
         <p role="alert" className="rounded-lg border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
-          ファイルが大きすぎます（10MB まで）。
+          ファイルが大きすぎます（{MAX_FILE_LABEL} まで）。
         </p>
       )}
       <Button type="submit" className="w-full sm:w-auto" disabled={pending || !fileName || tooBig}>

@@ -19,6 +19,7 @@ import { normalizeName } from "~/server/names";
 import { parseProjectRows, type ProjectDraft, type ProjectPreview, type ProjectRowInput } from "~/server/features/onboarding/projects-parse";
 import { checkRule, type RuleDraft, type RuleInput } from "~/server/features/onboarding/rules";
 import { byKana, driverTermsFlags, type DriverTermsFlag } from "~/server/features/onboarding/terms";
+import { demoFileProblem } from "~/server/features/import/demo-budget";
 import {
   finishRecord,
   onboardingProgress,
@@ -207,6 +208,8 @@ export async function previewDriverPaste(db: Db, tenantId: string, text: string)
 /** ファイル（CSV・Excel）から。シートが何枚かあれば、氏名の列がある最初のシートを使う */
 export async function previewDriverFile(db: Db, tenantId: string, fileName: string, bytes: Uint8Array): Promise<DriverPreview & { sheetName: string }> {
   if (bytes.byteLength > MAX_DRIVER_FILE_BYTES) throw new UserError("ファイルが大きすぎます（5MB まで）");
+  const demoProblem = demoFileProblem(bytes.byteLength);
+  if (demoProblem) throw new UserError(demoProblem);
   let sheets;
   try {
     ({ sheets } = await readTable(fileName, bytes));

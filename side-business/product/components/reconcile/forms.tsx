@@ -3,12 +3,15 @@
 /**
  * 突合の画面の入力（ブラウザ側）。保存は app/(app)/reconcile/actions.ts の Server Action。
  * どれも useActionState で結果（成功・失敗・入力の誤り）をその場に出す。
+ * ファイル・貼り付け・メモのように打ち直しが大変な欄のあるフォームは、useFormAction（onSubmit から送る）で送る。
+ * form の action に直接渡すと、断られたときも React が入力を空に戻し、選んだファイルやチェックが消えるため
  */
 import { useActionState, useState } from "react";
 import { Button, Field, Input, NumberInput, Select } from "@/components/ui";
 import {
   deleteNoticeAction,
   loadSampleAction,
+  removeNoticeFileAction,
   rerunAction,
   setDriverMappingAction,
   setItemStatusAction,
@@ -16,13 +19,72 @@ import {
   updateNoticeMetaAction,
   uploadNoticeAction,
 } from "~/app/(app)/reconcile/actions";
+import { useFormAction } from "~/components/form-field";
 import { FormMessage } from "~/components/reconcile/bits";
+import { SAME_CONTENT_OVERRIDE } from "~/server/features/reconcile/files";
 import { closingSpan, dateJa, ITEM_STATUSES, monthJa, STATUS_LABEL, type ItemStatus } from "~/server/features/reconcile/labels";
 
 const fileClass =
   "block w-full min-h-11 rounded-lg border border-border bg-card px-2 py-2 text-sm text-foreground file:mr-3 file:min-h-9 file:rounded-md file:border-0 file:bg-muted file:px-3 file:font-bold file:text-foreground";
 
 // ---------------------------------------------------------------- 取り込み
+
+/** ファイルを選ぶか、表を貼り付ける（PDF しか無いとき・画面の表をコピーしたとき）。サーバーは、ファイルがあればファイルを使う */
+function FileOrPaste({ fileLabel, fileHint }: { fileLabel: string; fileHint: string }) {
+  return (
+    <div className="space-y-3">
+      <Field label={fileLabel} hint={fileHint}>
+        <input type="file" name="file" accept=".csv,.xlsx,.xlsm,.tsv,.txt" className={fileClass} />
+      </Field>
+      <details className="rounded-lg border border-border bg-card px-3">
+        <summary className="flex min-h-11 cursor-pointer items-center text-sm font-bold">ファイルが無いとき：表を貼り付ける</summary>
+        <div className="space-y-3 pb-3">
+          <p className="text-xs text-muted-foreground">
+            元請の画面や Excel の表、PDF のお支払通知の表を、見出しの行（品目・数量・単価・金額など）から下までコピーして貼り付けてください。PDF
+            からのコピーは列がずれることがあります。取り込んだあと、結果の画面の「お支払通知の行」と「読み取りの詳細」で、品目と金額を確かめてください。
+          </p>
+          <label className="block">
+            <span className="block text-sm font-bold">貼り付ける表</span>
+            <textarea
+              name="pasted"
+              rows={6}
+              maxLength={1_000_000}
+              placeholder={"品目\t数量\t単価\t金額\n宅配\t4520\t190\t858800"}
+              className="mt-1 block w-full rounded-lg border border-border bg-card px-3 py-2 font-mono text-sm text-foreground focus:border-foreground"
+            />
+          </label>
+          <Field label="名前（任意）" hint="結果の画面に出す名前。例：北営業所の分">
+            <Input type="text" name="pasteName" maxLength={60} autoComplete="off" />
+          </Field>
+        </div>
+      </details>
+    </div>
+  );
+}
+
+/** 中身が同じファイルを止めたときだけ出す「それでも足す」（別の営業所の分で、たまたま同じ数・同じ金額のとき） */
+function SameContentOverride({ state }: { state: { ok: boolean; error?: string } | undefined }) {
+  if (!state || state.ok || !state.error?.includes(SAME_CONTENT_OVERRIDE)) return null;
+  return (
+    <label className="flex min-h-11 items-start gap-3 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm">
+      <input type="checkbox" name="allowSameContent" value="1" className="mt-1 h-5 w-5 shrink-0" />
+      <span>
+        {SAME_CONTENT_OVERRIDE}
+        <span className="block text-xs text-muted-foreground">別の営業所の分で、たまたま同じ中身のときだけ。ファイルを選び直して、もう一度上げてください。</span>
+      </span>
+    </label>
+  );
+}
+
+const MODE_CHOICES: { value: "new" | "replace" | "add"; label: string; hint: string }[] = [
+  { value: "new", label: "上げない", hint: "まちがえて入れ替えないように、止めて知らせます。" },
+  { value: "replace", label: "入れ替える", hint: "直したお支払通知が届いたとき。行を新しいファイルの内容に入れ替えます。問い合わせの状態とメモは残ります。" },
+  {
+    value: "add",
+    label: "足す",
+    hint: "営業所ごとなど、同じ月に何通も届くとき。前のファイルの行に足して、合計で突き合わせます。同じファイルを二重に足すことはできません。",
+  },
+];
 
 export function UploadForm({
   clients,
@@ -36,16 +98,17 @@ export function UploadForm({
   /** この月にお支払通知がもうある元請 */
   existing: { clientId: string; fileName: string }[];
 }) {
-  const [state, action, pending] = useActionState(uploadNoticeAction, undefined);
+  const { state, pending, onSubmit } = useFormAction(uploadNoticeAction);
   const firstFree = clients.find((c) => !existing.some((e) => e.clientId === c.id)) ?? clients[0];
   const [clientId, setClientId] = useState(firstFree?.id ?? "");
   const [m, setM] = useState(month);
+  const [mode, setMode] = useState<"new" | "replace" | "add">("new");
   const already = m === month ? existing.find((e) => e.clientId === clientId) : undefined;
   const picked = clients.find((c) => c.id === clientId);
   // 締め日が月末でない元請は、何月分が何日〜何日の分か（上げる月を取り違えないように）
   const span = picked && /^\d{4}-\d{2}$/.test(m) ? closingSpan(m, picked.closingDay ?? 0) : null;
   return (
-    <form action={action} className="space-y-4">
+    <form onSubmit={onSubmit} className="space-y-4">
       <FormMessage state={state} />
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="元請">
@@ -69,21 +132,25 @@ export function UploadForm({
           </span>
         </p>
       )}
-      <Field label="お支払通知のファイル" hint="CSV か Excel（.xlsx）。元請の画面から落としたファイルを、そのまま上げられます（5MB まで）">
-        <input type="file" name="file" accept=".csv,.xlsx,.xlsm,.tsv,.txt" required className={fileClass} />
-      </Field>
+      <FileOrPaste fileLabel="お支払通知のファイル" fileHint="CSV か Excel（.xlsx）。元請の画面から落としたファイルを、そのまま上げられます（5MB まで）" />
       {already && (
         <p className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm text-warning">
-          この月のお支払通知は、すでに上げてあります（{already.fileName}）。上げ直すときは、下の「入れ替える」にチェックを入れてください。
+          この月のお支払通知は、すでに上げてあります（{already.fileName}）。直したお支払通知なら「入れ替える」、営業所ごとなど同じ月の別のお支払通知なら「足す」を選んでください。
         </p>
       )}
-      <label className="flex min-h-11 items-start gap-3 text-sm">
-        <input type="checkbox" name="replace" value="1" className="mt-1 h-5 w-5 shrink-0" />
-        <span>
-          すでにあれば入れ替える
-          <span className="block text-xs text-muted-foreground">行を新しいファイルの内容に入れ替えます。問い合わせの状態とメモは残ります。</span>
-        </span>
-      </label>
+      <fieldset className="space-y-1">
+        <legend className="text-sm font-bold">この月のお支払通知がすでにあるとき</legend>
+        {MODE_CHOICES.map((c) => (
+          <label key={c.value} className="flex min-h-11 items-start gap-3 py-1 text-sm">
+            <input type="radio" name="mode" value={c.value} checked={mode === c.value} onChange={() => setMode(c.value)} className="mt-1 h-5 w-5 shrink-0" />
+            <span>
+              {c.label}
+              <span className="block text-xs text-muted-foreground">{c.hint}</span>
+            </span>
+          </label>
+        ))}
+      </fieldset>
+      {mode === "add" && <SameContentOverride state={state} />}
       <Button type="submit" className="w-full sm:w-auto" disabled={pending || clients.length === 0}>
         {pending ? "読み取っています…" : "取り込んで突き合わせる"}
       </Button>
@@ -93,23 +160,112 @@ export function UploadForm({
 
 /**
  * 結果の画面から、同じ元請・同じ月のお支払通知を直したものに入れ替える（元請と月は決まっているので、ファイルを選ぶだけ）。
- * 取引をやめた元請でも、すでにある月の通知は入れ替えられる
+ * 取引をやめた元請でも、すでにある月の通知は入れ替えられる。何通かを足したお支払通知では、全部のファイルが入れ替わる
  */
-export function ReplaceNoticeForm({ clientId, clientName, month, monthText }: { clientId: string; clientName: string; month: string; monthText: string }) {
-  const [state, action, pending] = useActionState(uploadNoticeAction, undefined);
+export function ReplaceNoticeForm({
+  clientId,
+  clientName,
+  month,
+  monthText,
+  fileCount = 1,
+}: {
+  clientId: string;
+  clientName: string;
+  month: string;
+  monthText: string;
+  /** お支払通知を作っているファイルの数（2 つ以上なら、全部が入れ替わることを書き添える） */
+  fileCount?: number;
+}) {
+  const { state, pending, onSubmit } = useFormAction(uploadNoticeAction, { resetOnSuccess: true });
   return (
-    <form action={action} className="space-y-3">
+    <form onSubmit={onSubmit} className="space-y-3">
       <input type="hidden" name="clientId" value={clientId} />
       <input type="hidden" name="month" value={month} />
-      <input type="hidden" name="replace" value="1" />
+      <input type="hidden" name="mode" value="replace" />
       <FormMessage state={state} />
-      <Field label={`直したお支払通知のファイル（${clientName}・${monthText}分）`} hint="行を新しいファイルの内容に入れ替えて、突き合わせ直します。問い合わせの状態・メモ・取り戻せた額は残ります">
-        <input type="file" name="file" accept=".csv,.xlsx,.xlsm,.tsv,.txt" required className={fileClass} />
-      </Field>
+      <FileOrPaste
+        fileLabel={`直したお支払通知のファイル（${clientName}・${monthText}分）`}
+        fileHint={
+          fileCount > 1
+            ? `いま足してある ${fileCount} つのファイルを、全部このファイル 1 つに入れ替えます。1 つのファイルだけ直すときは、上の「ファイル」の「このファイルだけ入れ替える」を使ってください`
+            : "行を新しいファイルの内容に入れ替えて、突き合わせ直します。問い合わせの状態・メモ・取り戻せた額は残ります"
+        }
+      />
       <Button type="submit" variant="secondary" className="w-full sm:w-auto" disabled={pending}>
-        {pending ? "読み取っています…" : "入れ替えて突き合わせ直す"}
+        {pending ? "読み取っています…" : fileCount > 1 ? "全部を入れ替えて突き合わせ直す" : "入れ替えて突き合わせ直す"}
       </Button>
     </form>
+  );
+}
+
+/** 結果の画面から、同じ元請・同じ月の別のお支払通知（営業所ごとなど）を足す */
+export function AddNoticeFileForm({ clientId, clientName, month, monthText }: { clientId: string; clientName: string; month: string; monthText: string }) {
+  const { state, pending, onSubmit } = useFormAction(uploadNoticeAction, { resetOnSuccess: true });
+  return (
+    <form onSubmit={onSubmit} className="space-y-3">
+      <input type="hidden" name="clientId" value={clientId} />
+      <input type="hidden" name="month" value={month} />
+      <input type="hidden" name="mode" value="add" />
+      <FormMessage state={state} />
+      <FileOrPaste
+        fileLabel={`足すお支払通知のファイル（${clientName}・${monthText}分）`}
+        fileHint="営業所ごとなど、同じ月に別に届いたお支払通知。今の行に足して、合計で突き合わせ直します。同じファイル・同じ中身のファイルは、二重に数えないように止めます"
+      />
+      <SameContentOverride state={state} />
+      <Button type="submit" variant="secondary" className="w-full sm:w-auto" disabled={pending}>
+        {pending ? "読み取っています…" : "足して突き合わせ直す"}
+      </Button>
+    </form>
+  );
+}
+
+/** 何通かを足したお支払通知の、1 つのファイルだけを直したものに入れ替える */
+export function ReplaceFileForm({ clientId, month, fileId, fileName }: { clientId: string; month: string; fileId: string; fileName: string }) {
+  const { state, pending, onSubmit } = useFormAction(uploadNoticeAction, { resetOnSuccess: true });
+  return (
+    <details className="rounded-lg border border-border bg-card px-3">
+      <summary className="flex min-h-11 cursor-pointer items-center text-sm font-bold">このファイルだけ入れ替える</summary>
+      <form onSubmit={onSubmit} className="space-y-3 pb-3">
+        <input type="hidden" name="clientId" value={clientId} />
+        <input type="hidden" name="month" value={month} />
+        <input type="hidden" name="mode" value="replaceFile" />
+        <input type="hidden" name="fileId" value={fileId} />
+        <FormMessage state={state} />
+        <FileOrPaste fileLabel={`「${fileName}」を直したファイル`} fileHint="このファイルの行だけを入れ替えます。ほかのファイルの行はそのままです" />
+        <SameContentOverride state={state} />
+        <Button type="submit" variant="secondary" className="w-full sm:w-auto" disabled={pending}>
+          {pending ? "読み取っています…" : "このファイルを入れ替える"}
+        </Button>
+      </form>
+    </details>
+  );
+}
+
+/** 何通かを足したお支払通知から、ファイルを 1 つ外す（まちがえて足したとき） */
+export function RemoveFileForm({ noticeId, fileId, fileName }: { noticeId: string; fileId: string; fileName: string }) {
+  const [state, action, pending] = useActionState(removeNoticeFileAction, undefined);
+  const [ok, setOk] = useState(false);
+  return (
+    <details className="rounded-lg border border-danger/40 bg-card px-3">
+      <summary className="flex min-h-11 cursor-pointer items-center text-sm font-bold text-danger">このファイルを外す</summary>
+      <form action={action} className="space-y-3 pb-3">
+        <input type="hidden" name="noticeId" value={noticeId} />
+        <input type="hidden" name="fileId" value={fileId} />
+        <p className="text-sm">「{fileName}」の行を外して、残りのファイルで突き合わせ直します。まちがえて足したときに使ってください（直したものが届いたときは「このファイルだけ入れ替える」）。</p>
+        <label className="flex min-h-11 items-center gap-3 text-sm">
+          <input type="checkbox" name="confirm" value="1" className="h-5 w-5" checked={ok} onChange={(e) => setOk(e.target.checked)} />
+          外してよい
+        </label>
+        <button
+          type="submit"
+          className="inline-flex min-h-11 items-center justify-center rounded-lg border border-danger bg-card px-4 text-sm font-bold text-danger transition hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={!ok || pending}
+        >
+          {pending ? "外しています…" : "外す"}
+        </button>
+        <FormMessage state={state} />
+      </form>
+    </details>
   );
 }
 
@@ -162,7 +318,7 @@ export function ItemStatusForm({
   /** 選べる扱い（片付いた記録は「解決」「了承」だけ） */
   statuses?: readonly ItemStatus[];
 }) {
-  const [state, action, pending] = useActionState(setItemStatusAction, undefined);
+  const { state, pending, onSubmit } = useFormAction(setItemStatusAction);
   const [chosen, setChosen] = useState<ItemStatus>(status);
   const [recovered, setRecovered] = useState(recoveredAmount !== null ? String(recoveredAmount) : "");
   const showRecovered = chosen === "resolved" && diff < 0;
@@ -187,7 +343,7 @@ export function ItemStatusForm({
           : "例：待機料の請求どおりと確認した"
         : "例：10/31 メールで問い合わせ";
   return (
-    <form action={action} className="mt-3 space-y-2 border-t border-border pt-3">
+    <form onSubmit={onSubmit} className="mt-3 space-y-2 border-t border-border pt-3">
       <input type="hidden" name="itemId" value={itemId} />
       <div className="grid gap-3 sm:grid-cols-[12rem_1fr_auto] sm:items-end">
         <Field label="扱い">
@@ -339,9 +495,9 @@ export function DriverMappingForm({
 // ---------------------------------------------------------------- 入金の記録
 
 export function NoticeMetaForm({ noticeId, paidOn, feeDeducted }: { noticeId: string; paidOn: string | null; feeDeducted: number }) {
-  const [state, action, pending] = useActionState(updateNoticeMetaAction, undefined);
+  const { state, pending, onSubmit } = useFormAction(updateNoticeMetaAction);
   return (
-    <form action={action} className="space-y-4">
+    <form onSubmit={onSubmit} className="space-y-4">
       <input type="hidden" name="noticeId" value={noticeId} />
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="入金日" hint="元請から実際に振り込まれた日">
@@ -371,7 +527,7 @@ export function DeleteNoticeForm({ noticeId, itemCount }: { noticeId: string; it
         <input type="hidden" name="noticeId" value={noticeId} />
         <p className="text-sm">
           お支払通知の行と、見つかった差（{itemCount}件）の状態・メモを削除します。元に戻せません（操作の記録には残ります）。
-          ファイルを上げ直したいだけなら、削除せずに「すでにあれば入れ替える」で上げてください。状態とメモが残ります。
+          ファイルを上げ直したいだけなら、削除せずに上の「入れ替える」で上げてください。状態とメモが残ります。
         </p>
         <label className="flex min-h-11 items-center gap-3 text-sm">
           <input type="checkbox" name="confirm" value="1" className="h-5 w-5" checked={ok} onChange={(e) => setOk(e.target.checked)} />

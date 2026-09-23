@@ -5,10 +5,22 @@
  * - 調整は並び順が変わることがあるので、名前と金額で突き合わせる
  */
 import { en } from "@/lib/engine/types";
-import { jpDateWithWeekday, qtyText, unitPriceText, type DriverStatementView } from "~/server/features/statements/view";
+import { jpDateWithWeekday, jpMonthDayWithWeekday, qtyText, unitPriceText, type DriverStatementView, type ViewDay } from "~/server/features/statements/view";
 
 function signed(v: number): string {
   return v > 0 ? `＋${en(v)}` : en(v);
+}
+
+/** 日ごとの数量で、前と今で違う日（「10月5日（月） 80 → 75」）。多いときは 5 日まで書いて残りの日数を足す */
+export function dayChanges(before: ViewDay[] | undefined, after: ViewDay[] | undefined, unit: string): string | null {
+  const b = new Map((before ?? []).map((d) => [d.date ?? "", d.qty]));
+  const a = new Map((after ?? []).map((d) => [d.date ?? "", d.qty]));
+  // 日付の古い順。日付なし（""）は最後
+  const keys = [...new Set([...b.keys(), ...a.keys()])].sort((x, y) => (x === "" ? 1 : y === "" ? -1 : x < y ? -1 : x > y ? 1 : 0));
+  const changed = keys.filter((k) => (b.get(k) ?? 0) !== (a.get(k) ?? 0));
+  if (changed.length === 0) return null;
+  const text = changed.slice(0, 5).map((k) => `${k ? jpMonthDayWithWeekday(k) : "日付なし"} ${qtyText(b.get(k) ?? 0)} → ${qtyText(a.get(k) ?? 0)}${unit}`);
+  return `日ごと：${text.join("、")}${changed.length > 5 ? `ほか ${changed.length - 5}日` : ""}`;
 }
 
 export function describeChanges(before: DriverStatementView, after: DriverStatementView): string[] {
@@ -23,11 +35,20 @@ export function describeChanges(before: DriverStatementView, after: DriverStatem
       out.push(`${l.project}：${qtyText(l.qty)}${l.unit} × ${unitPriceText(l.rate)} ＝ ${en(l.amount)} が加わりました`);
       continue;
     }
-    if (p.qty === l.qty && p.rate === l.rate && p.amount === l.amount) continue;
+    const beforeDays = p.days ?? [];
+    const afterDays = l.days ?? [];
+    // 前の版に日ごとの内訳が無かった（内訳を載せる前に作った写し）：数量が同じなら、載せたことだけを書く
+    const days = beforeDays.length === 0 && afterDays.length > 0 ? null : dayChanges(beforeDays, afterDays, l.unit);
+    if (p.qty === l.qty && p.rate === l.rate && p.amount === l.amount) {
+      if (beforeDays.length === 0 && afterDays.length > 0) out.push(`${l.project}：日ごとの数量の内訳を載せました（数量・金額は同じです）`);
+      else if (days) out.push(`${l.project}：${days}（数量の合計・金額は同じです）`);
+      continue;
+    }
     const parts: string[] = [];
     if (p.qty !== l.qty) parts.push(`数量 ${qtyText(p.qty)} → ${qtyText(l.qty)}${l.unit}`);
     if (p.rate !== l.rate) parts.push(`単価 ${unitPriceText(p.rate)} → ${unitPriceText(l.rate)}`);
     parts.push(`金額 ${en(p.amount)} → ${en(l.amount)}`);
+    if (days) parts.push(days);
     out.push(`${l.project}：${parts.join("、")}`);
   }
   for (const p of before.lines) if (!newKeys.has(p.key)) out.push(`${p.project}（${en(p.amount)}）がなくなりました`);

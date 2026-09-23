@@ -30,7 +30,7 @@ export function HelpLinks({ links, role }: { links: HelpLink[]; role: Role }) {
 /** 見出しつきのまとまり（ページ内のリンクで飛べる） */
 export function HelpSection({ id, title, children }: { id: string; title: string; children: ReactNode }) {
   return (
-    <section id={id} aria-labelledby={`${id}-title`} className="scroll-mt-24 space-y-3">
+    <section id={id} aria-labelledby={`${id}-title`} className="space-y-3">
       <h2 id={`${id}-title`} className="text-lg font-bold">
         {title}
       </h2>
@@ -42,7 +42,7 @@ export function HelpSection({ id, title, children }: { id: string; title: string
 /** 開いて読む質問（押せる所を広く） */
 export function FaqItem({ id, q, children }: { id: string; q: string; children: ReactNode }) {
   return (
-    <details id={id} className="group scroll-mt-24 rounded-lg border border-border bg-card">
+    <details id={id} className="group rounded-lg border border-border bg-card">
       <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 font-bold">
         <span>{q}</span>
         <span aria-hidden className="text-muted-foreground transition group-open:rotate-180">

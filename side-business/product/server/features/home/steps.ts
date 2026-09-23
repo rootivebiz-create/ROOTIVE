@@ -1,6 +1,8 @@
 /**
  * ホーム（今月の締め）の 5 つの段と「次にやること」（純関数。DB に触らない）。
- * 開いている月：上から順に、最初に済んでいない段が「次にやること」。
+ * 段の順番：取り込み → 見張り番 → 明細 → 締め → 振込（締めてから振込データを作ると、あとで金額が変わらない。
+ * 振込データ・締めの画面の案内と同じ順。ヘルプの「月末の流れ」・メニューもこの順）。
+ * 開いている月：上から順に、最初に済んでいない段が「次にやること」（振込より先に締めが来る）。
  * 締めた月：残りは「明細を送る」「振込データを作る」「振り込んだ日を記録する」だけ。全部済めば「締め済み」。
  * 閲覧の人（viewer）には、同じ段を「見る」ボタンにして、だれが進めるかを添える。
  */
@@ -156,8 +158,8 @@ export function homeView(st: HomeStatus, opts: { canEdit: boolean }): HomeView {
     statementsStep = { ...stBase, tone: sendNeeded > 0 ? "yellow" : "green", badge: sendNeeded > 0 ? `未送付 ${sendNeeded}人` : "送付済み", lines: sendLines(), done: sendNeeded === 0 };
   }
 
-  // ④ 振込
-  const trBase = { key: "transfer" as const, no: 4, title: "振込", href: `/transfer${q}`, linkLabel: canEdit ? "振込データへ" : "振込データを見る", current: false };
+  // ⑤ 振込（締めのあと）
+  const trBase = { key: "transfer" as const, no: 5, title: "振込", href: `/transfer${q}`, linkLabel: canEdit ? "振込データへ" : "振込データを見る", current: false };
   // 振込データに入らない人（口座が無い・形が違う・振込額が 0 円以下）は、別に手当てが要るので必ず書く
   const noBank = tr.excluded.filter((x) => x.reason !== "not_positive").map((x) => x.name);
   const notPositive = tr.excluded.filter((x) => x.reason === "not_positive").map((x) => x.name);
@@ -179,12 +181,13 @@ export function homeView(st: HomeStatus, opts: { canEdit: boolean }): HomeView {
     transferStep = {
       ...trBase,
       tone: "gray",
-      badge: statementsReady ? "まだ" : "明細ができてから",
+      // 開いている月は「締めてから」（先に作ると、稼働や控除が変わったときに作り直しになる）
+      badge: !statementsReady ? "明細ができてから" : st.closed ? "まだ" : "締めてから",
       lines: [
         statementsReady
           ? // 振込データがまだ無いので、入れられる人は全員「まだ入っていない人」
-            `銀行にそのまま出せる振込データ（全銀形式）を作れます。${tr.includable}人・合計 ${yen(tr.notInBatchTotal)}の見込みです。`
-          : "明細ができたら、銀行にそのまま出せる振込データ（全銀形式）を作れます。",
+            `${st.closed ? "銀行にそのまま出せる振込データ（全銀形式）を作れます。" : "締めたら、銀行にそのまま出せる振込データ（全銀形式）を作ります。"}${tr.includable}人・合計 ${yen(tr.notInBatchTotal)}の見込みです。`
+          : "明細ができて締めたら、銀行にそのまま出せる振込データ（全銀形式）を作れます。",
         ...excludedLines,
       ],
       done: false,
@@ -217,17 +220,19 @@ export function homeView(st: HomeStatus, opts: { canEdit: boolean }): HomeView {
         : "実際に振り込んだ日も記録してあります。",
     ];
     if (tr.changedExecuted > 0) {
-      lines.push(`振り込んだあとに明細が変わった振込データが ${tr.changedExecuted} 件あります。振り込んだ額と明細の額が違うおそれがあるので、振込データの画面で確かめてください。`);
+      lines.push(
+        `振り込んだあとに明細が変わった振込データが ${tr.changedExecuted} 件あります。振り込んだ額と明細の額が違う人がいます。振込データの画面の「振り込んだ額と明細の額の差」で、翌月の明細で精算するか、別に精算したかを人ごとに記録してください。`,
+      );
     }
     lines.push(...excludedLines);
     transferStep = { ...trBase, tone: tr.changedExecuted > 0 || excludedLines.length > 0 ? "yellow" : "green", badge: "作成済み", lines, done: true };
   }
 
-  // ⑤ 締め
+  // ④ 締め（振込の前）
   const closeStep: HomeStepView = st.closed
     ? {
         key: "close",
-        no: 5,
+        no: 4,
         title: "締め",
         tone: "green",
         badge: "締め済み",
@@ -239,7 +244,7 @@ export function homeView(st: HomeStatus, opts: { canEdit: boolean }): HomeView {
       }
     : {
         key: "close",
-        no: 5,
+        no: 4,
         title: "締め",
         tone: "gray",
         badge: "まだ",
@@ -250,7 +255,8 @@ export function homeView(st: HomeStatus, opts: { canEdit: boolean }): HomeView {
         current: false,
       };
 
-  const steps = [importStep, watchStep, statementsStep, transferStep, closeStep];
+  // 明細 → 締め → 振込（開いている月は、振込より先に締めが「次にやること」になる）
+  const steps = [importStep, watchStep, statementsStep, closeStep, transferStep];
 
   // 次にやること
   let next: NextAction | null = null;
@@ -304,10 +310,9 @@ export function homeView(st: HomeStatus, opts: { canEdit: boolean }): HomeView {
             "明細の様子を見る",
           )
         : sendAction();
-    } else if (first?.key === "transfer") {
-      next = transferAction();
     } else if (first?.key === "close") {
-      next = act("close", `${monthLabelJa(st.month)}を締める`, `/close${q}`, "締める前の確かめが出ます。締めると、この月の稼働・調整・明細は書き換えられなくなります。", "締めの様子を見る");
+      // 開いている月では締めが済まないので、振込の段はここには来ない（振込データは締めたあとの分岐で案内する）
+      next = act("close", `${monthLabelJa(st.month)}を締める`, `/close${q}`, "締める前の確かめが出ます。締めると、この月の稼働・調整・明細は書き換えられなくなります。振込データは締めたあとに作ると、あとで金額が変わる心配がありません。", "締めの様子を見る");
     }
   } else if (sm.saved > 0 && sendNeeded > 0) {
     next = sendAction();

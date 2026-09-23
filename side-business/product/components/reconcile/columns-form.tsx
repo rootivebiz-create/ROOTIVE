@@ -30,7 +30,20 @@ function colName(i: number): string {
   return s;
 }
 
-export function ColumnsForm({ noticeId, rows, headerIndex, columns }: { noticeId: string; rows: string[][]; headerIndex: number; columns: ColumnMap }) {
+export function ColumnsForm({
+  noticeId,
+  fileId,
+  rows,
+  headerIndex,
+  columns,
+}: {
+  noticeId: string;
+  /** 何通かを足したお支払通知で、どのファイルの列か（無ければ、いちばん新しいファイル） */
+  fileId?: string;
+  rows: string[][];
+  headerIndex: number;
+  columns: ColumnMap;
+}) {
   const [state, action, pending] = useActionState(updateColumnsAction, undefined);
   const [header, setHeader] = useState(headerIndex);
   const [cols, setCols] = useState<ColumnMap>(columns);
@@ -46,6 +59,7 @@ export function ColumnsForm({ noticeId, rows, headerIndex, columns }: { noticeId
   return (
     <form action={action} className="space-y-4">
       <input type="hidden" name="noticeId" value={noticeId} />
+      {fileId && <input type="hidden" name="fileId" value={fileId} />}
       <Field label="見出しの行" hint="「品目」「数量」などの見出しが並んでいる行">
         <Select name="headerRow" value={String(header + 1)} onChange={(e) => setHeader(Number(e.target.value) - 1)}>
           {headRows.map((r, i) => (

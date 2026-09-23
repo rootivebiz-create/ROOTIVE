@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Button, Field, Input, NumberInput, Select } from "@/components/ui";
-import { ResultLine, useFormAction, type FormAction } from "~/components/import/action-form";
+import { Button, Input, NumberInput, Select } from "@/components/ui";
+import { F, ResultLine, useFormAction, type FormAction } from "~/components/form-field";
 
 export type AdjustmentInitial = {
   id: string;
@@ -30,11 +30,10 @@ export function AdjustmentForm({
   initial?: AdjustmentInitial;
   submitLabel: string;
 }) {
-  const { state, pending, onSubmit } = useFormAction(action);
+  const { state, pending, onSubmit, fe } = useFormAction(action);
   const formRef = useRef<HTMLFormElement>(null);
   const [direction, setDirection] = useState<"plus" | "minus">(initial && initial.amount < 0 ? "minus" : "plus");
   const [agreed, setAgreed] = useState(initial?.agreedInWriting ?? false);
-  const fe = state && !state.ok ? (state.fieldErrors ?? {}) : {};
 
   useEffect(() => {
     if (state?.ok && !initial) {
@@ -49,7 +48,7 @@ export function AdjustmentForm({
       <input type="hidden" name="month" value={month} />
       {initial && <input type="hidden" name="id" value={initial.id} />}
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="ドライバー" hint={fe.driverId}>
+        <F label="ドライバー" error={fe.driverId}>
           <Select name="driverId" defaultValue={initial?.driverId ?? ""} required>
             <option value="" disabled>
               選んでください
@@ -61,10 +60,10 @@ export function AdjustmentForm({
               </option>
             ))}
           </Select>
-        </Field>
-        <Field label="内容" hint={fe.label ?? "明細にこのまま出ます（例：駐車場代の立替・高速代の立替）"}>
+        </F>
+        <F label="内容" error={fe.label} hint="明細にこのまま出ます（例：駐車場代の立替・高速代の立替）">
           <Input name="label" defaultValue={initial?.label ?? ""} required maxLength={60} />
-        </Field>
+        </F>
       </div>
 
       <fieldset>
@@ -85,16 +84,16 @@ export function AdjustmentForm({
             </label>
           ))}
         </div>
-        {fe.direction && <p className="mt-1 text-xs text-danger">{fe.direction}</p>}
+        {fe.direction && <p className="mt-1 text-xs font-bold text-danger">{fe.direction}</p>}
       </fieldset>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="金額（円）" hint={fe.amount ?? "1 円単位。全角・カンマつきでも入れられます"}>
+        <F label="金額（円）" error={fe.amount} hint="1 円単位。全角・カンマつきでも入れられます">
           <NumberInput name="amount" inputMode="numeric" defaultValue={initial ? String(Math.abs(initial.amount)) : ""} required placeholder="例：3,300" />
-        </Field>
-        <Field label="根拠（任意）" hint={fe.basis ?? "領収書・事故の報告・合意書 など"}>
+        </F>
+        <F label="根拠（任意）" error={fe.basis} hint="領収書・事故の報告・合意書 など">
           <Input name="basis" defaultValue={initial?.basis ?? ""} maxLength={200} />
-        </Field>
+        </F>
       </div>
 
       <label className="flex min-h-11 items-start gap-3 text-sm">

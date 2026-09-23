@@ -1,5 +1,5 @@
 import { Card } from "@/components/ui";
-import { Badge, PageHeader } from "~/components/page";
+import { Badge, Notice, PageHeader } from "~/components/page";
 import { ActionButton } from "~/components/settings/form-kit";
 import { InviteForm, RoleForm } from "~/components/settings/user-forms";
 import { getDb } from "~/db/client";
@@ -21,6 +21,13 @@ export default async function UsersPage() {
   return (
     <div className="max-w-3xl space-y-6">
       <PageHeader title="利用者" description="この会社のしめ日ラボを使う人です。やめた人は消さずに「止める」（操作の記録に名前を残すため）。" />
+
+      {activeOwners <= 1 && (
+        <Notice tone="info">
+          オーナーが 1 人だけです。そのオーナーがパスワードを忘れたり、急にいなくなったりすると、利用者の招待・会社の設定・締めの解除ができる人がいなくなります。
+          信頼できる方（役員・事務の責任者など）をもう 1 人オーナーにしておくことをおすすめします（下の「招待する」で役割を「オーナー」にするか、一覧の「役割」から変えます）。
+        </Notice>
+      )}
 
       <section aria-labelledby="roles" className="space-y-2">
         <h2 id="roles" className="sr-only">

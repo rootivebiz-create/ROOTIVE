@@ -45,6 +45,8 @@ export const SOURCES = {
   invoiceItems: "https://www.nta.go.jp/taxes/shiraberu/taxanswer/shohi/6496.htm",
   /** 仕入明細書 */
   purchaseStatement: "https://www.nta.go.jp/taxes/shiraberu/taxanswer/shohi/6498.htm",
+  /** インボイス Q&A 問86（仕入明細書の相手方の確認。送付後一定期間内に連絡が無ければ確認があったものとする方法など） */
+  purchaseStatementQa: "https://www.nta.go.jp/taxes/shiraberu/zeimokubetsu/shohi/keigenzeiritsu/pdf/qa/86.pdf",
   /** 適格請求書発行事業者 公表サイト */
   invoiceRegistry: "https://www.invoice-kohyo.nta.go.jp/",
 } as const;

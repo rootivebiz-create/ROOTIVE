@@ -13,6 +13,7 @@ import type { DriverStatementView } from "~/server/features/statements/view";
 import { resetRateLimit } from "~/server/rate-limit";
 import { DEMO_MONTH, DEMO_PREV_MONTH, seedDemo } from "~/server/seed-demo";
 import { generateStatements } from "~/server/statements-core";
+import { signStatementLink, verifyStatementLink } from "~/server/tokens";
 import { createTestDb } from "./helpers/db";
 
 /**
@@ -165,7 +166,8 @@ describe("ほかの月の明細", () => {
     await confirmFromPortal(db, await tokenOf("D01", tenantId, DEMO_PREV_MONTH), { version: 1 }, ctx);
 
     const oct = (await loadPortal(db, await tokenOf("D01")))!;
-    expect(oct.others.map((o) => [o.label, o.total, o.payDate, o.confirmed])).toEqual([["2026年9月", 338_415, "2026-10-25", true]]);
+    // 9 月分の支払日 10/25 は日曜日なので、振込予定日は前の営業日の 10/23
+    expect(oct.others.map((o) => [o.label, o.total, o.payDate, o.confirmed])).toEqual([["2026年9月", 338_415, "2026-10-23", true]]);
     const sepToken = tokenFromHref(oct.others[0].href);
     const sep = (await loadPortal(db, sepToken))!;
     expect(sep.view).toMatchObject({ month: DEMO_PREV_MONTH, total: 338_415 });
@@ -222,6 +224,36 @@ describe("ほかの月の明細", () => {
     const bData = (await loadPortal(db, await tokenOf("D01", b.tenantId)))!;
     const bSep = (await findStatementByToken(db, tokenFromHref(bData.others[0].href)))!;
     expect(bSep.tenantId).toBe(b.tenantId);
+  });
+
+  it("ほかの月のリンクは、開いたリンクより長く使えない（A → B → A とたどり直しても期限は延びない）", async () => {
+    await makeSeptember();
+    const { st: oct } = await statementOf("D01");
+    await markStatementSent(db, tenantId, oct.id, null, "line");
+    const now = new Date("2026-11-01T09:00:00+09:00");
+    // 5 日後に切れるリンク（例：前に送ったリンクが、もうすぐ期限）
+    const openedExp = Math.floor(now.getTime() / 1000) + 5 * 86_400;
+    const octToken = signStatementLink(oct.id, oct.linkNonce, openedExp);
+    const expOf = (href: string) => {
+      const c = verifyStatementLink(tokenFromHref(href), Math.floor(now.getTime() / 1000));
+      expect(c.ok).toBe(true);
+      return c.ok ? c.expiresAt : Infinity;
+    };
+    const fromOct = (await loadPortal(db, octToken, now))!;
+    expect(fromOct.others).toHaveLength(1);
+    const sepHref = fromOct.others[0].href;
+    expect(expOf(sepHref)).toBeLessThanOrEqual(openedExp);
+    // 9 月から 10 月へ戻っても、最初のリンクの期限のまま
+    const fromSep = (await loadPortal(db, tokenFromHref(sepHref), now))!;
+    const backHref = fromSep.others.find((o) => o.month === DEMO_MONTH)!.href;
+    expect(expOf(backHref)).toBeLessThanOrEqual(openedExp);
+    // 期限が過ぎたら、たどった先のリンクも使えない
+    const later = new Date((openedExp + 60) * 1000);
+    expect(await findStatementByToken(db, tokenFromHref(sepHref), later)).toBeNull();
+    expect(await findStatementByToken(db, tokenFromHref(backHref), later)).toBeNull();
+    // ふだんの（会社が今日作った）リンクから開けば、ほかの月も今日から 120 日のまま
+    const { token: staffToken, expiresAt: staffExp } = staffLinkToken(oct, now);
+    expect(expOf((await loadPortal(db, staffToken, now))!.others[0].href)).toBe(staffExp);
   });
 
   it("明細のリンクを作り直すと、ほかの月から作るリンクも新しいものになる（古いリンクは使えない）", async () => {

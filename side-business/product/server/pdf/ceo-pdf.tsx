@@ -140,7 +140,7 @@ function CeoPage({ sheet, generatedAt }: { sheet: CeoSheet; generatedAt: Date })
         <Kpi label="利益率" value={rateText(t.rate)} sub={pointChangeText(sheet.changes.rate)} />
       </View>
       <T style={st.formula}>
-        案件の粗利（売上 − 委託料）{en(t.gross)} ＋ 控除（ロイヤリティ・管理費など）{en(t.deductions)} − 経過措置の負担 {en(t.burden)} ＝ 会社の利益 {en(t.profit)}
+        案件の粗利（売上 − 委託料）{en(t.gross)} ＋ 控除（ロイヤリティ・管理費など）{en(t.deductions)} − 会社がかぶる消費税（免税の方への支払）{en(t.burden)} ＝ 会社の利益 {en(t.profit)}
       </T>
 
       <T style={st.h2}>会社の利益の推移（直近6か月）</T>
@@ -163,12 +163,12 @@ function CeoPage({ sheet, generatedAt }: { sheet: CeoSheet; generatedAt: Date })
         <ProjectList title="利益の多い案件" rows={sheet.topProjects} empty="この月の案件はありません" />
         <ProjectList title="利益の少ない案件" rows={sheet.bottomProjects} empty="ほかの案件はありません" />
       </View>
-      <T style={st.small}>案件の利益は 売上 − 委託料 です（控除と経過措置の負担はドライバーごとのものなので、案件には割り振っていません）。</T>
+      <T style={st.small}>案件の利益は 売上 − 委託料 です（控除と会社がかぶる消費税はドライバーごとのものなので、案件には割り振っていません）。</T>
 
       <T style={st.h2}>今月の確かめ</T>
       <View style={st.grid}>
         <View style={st.box} wrap={false}>
-          <T style={st.boxTitle}>インボイスの経過措置の負担</T>
+          <T style={st.boxTitle}>免税の方への支払で、会社がかぶる消費税</T>
           {!b.affected ? (
             <T>会社の設定が原則課税ではないため、この負担は計算していません。</T>
           ) : b.people === 0 ? (

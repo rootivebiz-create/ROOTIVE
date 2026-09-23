@@ -3,13 +3,16 @@
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui";
 import { ResultLine, useFormAction, type FormAction } from "~/components/import/action-form";
-import { MAX_FILE_BYTES } from "~/server/features/import/types";
+import { DEMO_MAX_FILE_BYTES, DEMO_MAX_FILE_LABEL, MAX_FILE_BYTES, MAX_FILE_LABEL } from "~/server/features/import/types";
 
 /**
  * ファイルを置く。スマホでは大きな押せる枠、パソコンでは枠にドラッグしても置ける。
  * 「見本で試す」は、架空の会社の Excel をサーバーの見本から読む（ファイルを持っていない人向け）。
  */
-export function UploadForm({ action, month, showSamples }: { action: FormAction; month: string; showSamples: boolean }) {
+export function UploadForm({ action, month, showSamples, demo = false }: { action: FormAction; month: string; showSamples: boolean; demo?: boolean }) {
+  // デモ（来た人ごとの架空の会社）では、小さなファイルだけ（デモの DB をいっぱいにしないため）
+  const maxBytes = demo ? DEMO_MAX_FILE_BYTES : MAX_FILE_BYTES;
+  const maxLabel = demo ? DEMO_MAX_FILE_LABEL : MAX_FILE_LABEL;
   const { state, pending, onSubmit } = useFormAction(action);
   const [fileName, setFileName] = useState<string | null>(null);
   const [tooBig, setTooBig] = useState(false);
@@ -22,7 +25,7 @@ export function UploadForm({ action, month, showSamples }: { action: FormAction;
   // 送る前に大きさを確かめる（大きすぎるファイルは、サーバーに届く前に断られて、理由が出ないため）
   const pick = (file: File | undefined) => {
     setFileName(file?.name ?? null);
-    setTooBig(!!file && file.size > MAX_FILE_BYTES);
+    setTooBig(!!file && file.size > maxBytes);
   };
 
   return (
@@ -50,7 +53,7 @@ export function UploadForm({ action, month, showSamples }: { action: FormAction;
       >
         <span className="break-all text-base font-bold">{fileName ?? "ここを押して、稼働の Excel・CSV を選ぶ"}</span>
         <span className="text-xs text-muted-foreground">
-          {fileName ? "別のファイルにするときは、もう一度押してください" : "パソコンなら、ここへドラッグしても置けます（10MB まで）"}
+          {fileName ? "別のファイルにするときは、もう一度押してください" : `パソコンなら、ここへドラッグしても置けます（${maxLabel} まで）`}
         </span>
         <input
           type="file"
@@ -62,7 +65,7 @@ export function UploadForm({ action, month, showSamples }: { action: FormAction;
       </label>
       {tooBig && (
         <p role="alert" className="rounded-lg border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
-          ファイルが大きすぎます（10MB まで）。使っていないシートや画像を消して保存し直すか、CSV にしてから置いてください。
+          ファイルが大きすぎます（{maxLabel} まで）。使っていないシートや画像を消して保存し直すか、CSV にしてから置いてください。
         </p>
       )}
       <Button type="submit" className="w-full sm:w-auto" disabled={pending || !fileName || tooBig} onClick={() => setSample("")}>

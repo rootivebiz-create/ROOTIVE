@@ -5,20 +5,20 @@ import { NextStepLink, StepHeader } from "~/components/onboarding/step-header";
 import { Badge } from "~/components/page";
 import { getDb } from "~/db/client";
 import { requirePageUser } from "~/server/auth";
-import { listRuleNames, loadOnboarding, ONBOARDING_STEPS } from "~/server/features/onboarding";
+import { listRuleNames, loadOnboarding, nextStepOf, stepHref } from "~/server/features/onboarding";
 import { ruleValueText, type RuleKind } from "~/server/features/onboarding/rules";
 import { monthFromParam, monthParam } from "~/server/month";
 
 export const metadata = { title: "最初の設定：控除のルール" };
 
-/** ④ 控除のルール：今の取引条件に書いてある控除を写す（新しく控除を決める場所ではない） */
+/** ⑤ 控除のルール：今の取引条件に書いてある控除を写す（新しく控除を決める場所ではない。取り込みの「控除の提案」で採ったものはもう入っている） */
 export default async function OnboardingRulesPage() {
   const user = await requirePageUser("staff");
   const db = await getDb();
   const [rules, progress] = await Promise.all([listRuleNames(db, user.tenantId), loadOnboarding(db, user.tenantId)]);
-  // 次の手順（控除のルールの次は「取引条件の明示」。取り込み・比べ合わせは先月の分を開く）
-  const next = ONBOARDING_STEPS[ONBOARDING_STEPS.findIndex((s) => s.key === "rules") + 1];
-  const nextHref = !next ? "/onboarding" : next.withMonth ? `${next.path}?m=${monthParam(monthFromParam(undefined))}` : next.path;
+  // 次の手順（順番は steps.ts が決める。取り込み・比べ合わせは先月の分を開く）
+  const next = nextStepOf("rules");
+  const nextHref = next ? stepHref(next, monthParam(monthFromParam(undefined))) : "/onboarding";
 
   return (
     <div className="mx-auto max-w-3xl">

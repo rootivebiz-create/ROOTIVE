@@ -40,3 +40,22 @@ export function groupBySeverity<T extends WatchIssue>(issues: T[], later?: (i: T
   }
   return out;
 }
+
+/** まとめて確認済みにできる、同じ種類・同じ見出しの指摘の組 */
+export type BulkAckGroup<T extends WatchIssue> = { code: string; title: string; severity: WatchSeverity; issues: T[] };
+
+/**
+ * まだ確認していない指摘のうち、同じ種類・同じ見出し（同じ重さ）のものが 2 件以上ある組（出てきた順）。
+ * 画面の「同じ理由でまとめて確認済みにする」に使う（導入の月に、何人もの同じ指摘が並ぶとき）
+ */
+export function bulkAckGroups<T extends WatchIssue>(issues: T[]): BulkAckGroup<T>[] {
+  const by = new Map<string, BulkAckGroup<T>>();
+  for (const i of issues) {
+    if (i.acked) continue;
+    const key = `${i.severity}\u0000${i.code}\u0000${i.title}`;
+    const g = by.get(key);
+    if (g) g.issues.push(i);
+    else by.set(key, { code: i.code, title: i.title, severity: i.severity, issues: [i] });
+  }
+  return [...by.values()].filter((g) => g.issues.length >= 2);
+}

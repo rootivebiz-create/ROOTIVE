@@ -3,7 +3,9 @@ import { en } from "@/lib/engine/types";
 import { jpDate } from "@/lib/format";
 import { Badge } from "~/components/page";
 import {
+  dayLabel,
   jpDateWithWeekday,
+  jpMonthDayWithWeekday,
   jpMonthLabel,
   qtyText,
   summaryRows,
@@ -24,7 +26,51 @@ function Yen({ value, className }: { value: number; className?: string }) {
   return <span className={`num whitespace-nowrap ${className ?? ""}`}>{en(value)}</span>;
 }
 
-export type LineTarget = { key: string; label: string };
+/** 質問の対象（kind が "day" は日ごとの数量の 1 行。画面の幅が狭いので、小さいボタンで出す） */
+export type LineTarget = { key: string; label: string; kind?: "line" | "day" | "deduction" | "adjustment" };
+
+/**
+ * 日ごとの数量（日付つきの稼働がある行だけ）。2 日以上あれば折りたたみ、1 日だけなら稼働日を 1 行で出す。
+ * 自分の控えと見比べられるように、日付・曜日と数量を並べる（金額は行の合計だけ。日ごとに丸めない）
+ */
+function LineDays({ line: l, lineAction }: { line: DriverStatementView["lines"][number]; lineAction?: (target: LineTarget) => ReactNode }) {
+  const days = l.days ?? [];
+  if (days.length === 0) return null;
+  if (days.length === 1 && days[0].date) {
+    return (
+      <p className="mt-1 text-sm text-muted-foreground">稼働日 {jpMonthDayWithWeekday(days[0].date)}</p>
+    );
+  }
+  const dated = days.filter((d) => d.date).length;
+  return (
+    <details className="mt-2 rounded-lg border border-border">
+      <summary className="flex min-h-11 cursor-pointer items-center px-3 text-sm font-bold">
+        日ごとの数量（{dated}日{dated < days.length ? "・日付なしの分あり" : ""}）
+      </summary>
+      <ul className="divide-y divide-border border-t border-border px-3">
+        {days.map((d) => (
+          <li key={d.date ?? "undated"} className="py-2">
+            <div className="flex flex-wrap items-center justify-between gap-x-3 text-base">
+              <span>{d.date ? jpMonthDayWithWeekday(d.date) : "日付なし"}</span>
+              <span className="num whitespace-nowrap">
+                {qtyText(d.qty)}
+                {l.unit}
+              </span>
+            </div>
+            {d.key && d.date && lineAction?.({ key: d.key, label: dayLabel(l.project, d.date), kind: "day" })}
+          </li>
+        ))}
+        <li className="flex flex-wrap items-center justify-between gap-x-3 py-2 text-sm font-bold">
+          <span>合計</span>
+          <span className="num whitespace-nowrap">
+            {qtyText(l.qty)}
+            {l.unit}
+          </span>
+        </li>
+      </ul>
+    </details>
+  );
+}
 
 export function StatementView({
   view: v,
@@ -49,6 +95,7 @@ export function StatementView({
         {zeroNote && <p className="mt-1 text-sm font-bold">{zeroNote}</p>}
         <p className="mt-2 text-base">
           振込予定日 <strong className="whitespace-nowrap">{jpDateWithWeekday(v.payDate)}</strong>
+          {v.payDateNote && <span className="block text-sm text-muted-foreground">（{v.payDateNote}、前の営業日）</span>}
         </p>
         {showAccount &&
           (account ? (
@@ -84,7 +131,10 @@ export function StatementView({
           </div>
           <div>
             <dt className="text-muted-foreground">振込予定日</dt>
-            <dd>{jpDateWithWeekday(v.payDate)}</dd>
+            <dd>
+              {jpDateWithWeekday(v.payDate)}
+              {v.payDateNote && <span className="block text-xs text-muted-foreground">（{v.payDateNote}、前の営業日）</span>}
+            </dd>
           </div>
         </dl>
         {v.isPurchaseStatement && <p className="mt-3 text-xs text-muted-foreground">登録番号のある方への明細は、仕入明細書の記載事項を載せています。</p>}
@@ -110,7 +160,8 @@ export function StatementView({
                   </div>
                   <Yen value={l.amount} className="text-base font-bold" />
                 </div>
-                {lineAction?.({ key: l.key, label: l.project })}
+                {lineAction?.({ key: l.key, label: l.project, kind: "line" })}
+                <LineDays line={l} lineAction={lineAction} />
               </li>
             ))}
           </ul>
@@ -158,7 +209,7 @@ export function StatementView({
                   </div>
                   <Yen value={-d.amount} className="text-base font-bold" />
                 </div>
-                {lineAction?.({ key: d.key, label: d.name })}
+                {lineAction?.({ key: d.key, label: d.name, kind: "deduction" })}
               </li>
             ))}
           </ul>
@@ -191,7 +242,7 @@ export function StatementView({
                   </div>
                   <Yen value={a.amount} className="text-base font-bold" />
                 </div>
-                {lineAction?.({ key: a.key, label: a.label })}
+                {lineAction?.({ key: a.key, label: a.label, kind: "adjustment" })}
               </li>
             ))}
           </ul>

@@ -79,7 +79,16 @@ export default async function SettingsHome() {
       body: <>使っている控除 {o.rules.active}件</>,
       notes: o.rules.notAgreed ? [{ tone: "red", text: `合意の記録なし ${o.rules.notAgreed}件` }] : [],
     },
-    ...(isOwner ? [{ href: "/settings/users", title: "利用者", body: <>{o.users.active}人</>, notes: [] }] : []),
+    ...(isOwner
+      ? [
+          {
+            href: "/settings/users",
+            title: "利用者",
+            body: <>{o.users.active}人</>,
+            notes: o.users.owners <= 1 ? [{ tone: "gray" as const, text: "オーナーが 1 人だけ（もう 1 人いると安心）" }] : [],
+          },
+        ]
+      : []),
     {
       href: "/settings/ai",
       title: "AI の同意",
@@ -94,7 +103,7 @@ export default async function SettingsHome() {
 
   return (
     <div className="max-w-4xl space-y-5">
-      <PageHeader title="設定" description="明細・振込データ・見張り番のもとになる台帳です。赤と黄色のところを月末の前に直しておくと、締めがつかえません。" />
+      <PageHeader title="設定" description="明細・振込データ・見張り番のもとになる台帳です。赤と黄色のところを先に直しておくと、月末の締めで止まりません。" />
 
       {canEdit && o.drivers.total === 0 && (
         <Card className="space-y-2 border-accent">

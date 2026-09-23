@@ -7,8 +7,8 @@
  * 古い写しには burdenParts・undatedAcrossStep が無いことがある（無ければ「内訳なし」として扱う）
  */
 import { yen } from "@/lib/payroll/money";
-import { TRANSITIONAL_STEPS } from "@/lib/payroll/tax";
-import type { StatementDraft } from "~/server/calc/statement";
+import { nonDeductibleTax, TRANSITIONAL_STEPS } from "@/lib/payroll/tax";
+import { TAX_RATE, type StatementDraft } from "~/server/calc/statement";
 
 export type BurdenPart = {
   /** その割合の段のうち、締めの期間に入る日（例：9/21〜9/30） */
@@ -39,6 +39,12 @@ export type CompanyCopy = {
   partsText: string | null;
   /** 日付の無い稼働があり、期間の末日の割合で数えた */
   undatedAcrossStep: boolean;
+  /**
+   * 期間全体を末日の割合で数えた場合の負担（内訳があるときだけ。無ければ null）。
+   * 日ごとに分けた数え方（invoiceBurden）と、期間全体を末日の割合で数える考え方（国税庁の Q&A の役務の例）の
+   * どちらで扱うかは税理士が決めるので、両方を出す。会計ソフト向けの仕訳の税区分は、期間の末日の割合
+   */
+  periodEndBurden: number | null;
 };
 
 /** 割合（0〜1）→ %（割合は写しの値から作る。直書きしない） */
@@ -84,5 +90,12 @@ export function companyCopy(draft: StatementDraft): CompanyCopy {
     parts,
     partsText: parts.length > 0 ? parts.map((p) => `${p.label} ${yen(p.burden)}（${p.ratePercent}%）`).join("／") : null,
     undatedAcrossStep: draft.undatedAcrossStep === true,
+    periodEndBurden: parts.length > 0 ? periodEndBurdenOf(draft) : null,
   };
+}
+
+/** 期間全体を、期間の末日の割合で数えた負担（支払（税込）＝ 委託料 ＋ 消費税（相当額）。写しの数字から） */
+export function periodEndBurdenOf(draft: Pick<StatementDraft, "subtotal" | "tax" | "period">): number | null {
+  if (!draft.period?.to || typeof draft.subtotal !== "number") return null;
+  return nonDeductibleTax(draft.subtotal + (draft.tax ?? 0), draft.period.to, TAX_RATE);
 }

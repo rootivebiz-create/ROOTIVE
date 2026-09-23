@@ -9,8 +9,10 @@ export function monthFromParam(value: string | string[] | undefined, today = new
   if (v && /^\d{4}-(0[1-9]|1[0-2])$/.test(v)) return `${v}-01`;
   // デモは架空のデータがある月を開く
   if (process.env.DEMO_MODE === "1") return DEMO_MONTH;
-  // 既定は先月（月末の締めは、たいてい前の月の分）
-  const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 1, 1));
+  // 既定は先月（月末の締めは、たいてい前の月の分）。「今日」は日本時間で数える
+  // （UTC のままだと、1 日の 0〜9 時に 2 か月前が開いてしまう。軽貨物の事務所は朝が早い）
+  const jst = new Date(today.getTime() + 9 * 3600 * 1000);
+  const d = new Date(Date.UTC(jst.getUTCFullYear(), jst.getUTCMonth() - 1, 1));
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-01`;
 }
 

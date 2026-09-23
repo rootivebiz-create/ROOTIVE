@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Input, NumberInput, Select } from "@/components/ui";
 import { marginOf, rateText, readNumber } from "~/server/features/settings/format";
 import { Callout, Check, F, ResultLine, SubmitRow, useFormAction, type FormAction } from "./form-kit";
+import { OpenMonthConfirm } from "./open-month-confirm";
 
 export type ProjectInitial = {
   id?: string;
@@ -110,6 +111,7 @@ export function ProjectForm({
         <Check name="active" defaultChecked={initial?.active ?? true} label="使っている" hint="外すと、取り込みの候補や選ぶところで後ろに回ります。記録は残ります" />
       )}
       <ResultLine state={state} />
+      <OpenMonthConfirm state={state} />
       <SubmitRow pending={pending} label={submitLabel} />
     </form>
   );

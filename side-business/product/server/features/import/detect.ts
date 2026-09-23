@@ -6,7 +6,7 @@
  */
 import { matchName, normalizeName, type Candidate } from "~/server/names";
 import { dataRows, detectHeaderRow, headerSignature, isBlankRow, isTotalRow, normalizeHeader, parseDateCell, parseNumberCell } from "~/server/tabular";
-import { SINGLE_ROLES, type ColumnRole, type WorkMapping } from "./types";
+import { COLUMN_ROLES, DEFAULT_MARKS, SINGLE_ROLES, type AdjustColumn, type ColumnRole, type MarkMap, type WorkMapping } from "./types";
 
 export type KnownNames = { drivers: Candidate[]; projects: Candidate[] };
 
@@ -247,8 +247,12 @@ type ColStat = {
   driverRate: number;
   codeRate: number;
   projectRate: number;
+  /** 中が印（○・出・休 など）の割合 */
+  markRate: number;
   headerProject: boolean;
   headerDay: boolean;
+  /** 見出しが台帳のドライバーの名前 */
+  headerDriver: boolean;
 };
 
 const SAMPLE_ROWS = 300;
@@ -283,6 +287,7 @@ function columnStats(rows: string[][], headerRow: number, depth: 1 | 2, header: 
     const values = body.map((r) => (r[col] ?? "").trim()).filter(Boolean);
     const kw = headerKeyword(h);
     const hp = h ? matchName(h, known.projects) : null;
+    const hd = h && kw === null && !dayOfHeader(h) ? matchName(h, known.drivers) : null;
     return {
       col,
       header: h,
@@ -296,8 +301,10 @@ function columnStats(rows: string[][], headerRow: number, depth: 1 | 2, header: 
       }),
       codeRate: rate(values, (v) => codes.has(looseCode(v))),
       projectRate: rate(values, (v) => matchName(v, known.projects) !== null),
+      markRate: rate(values, (v) => markValue(v, DEFAULT_MARKS) !== null),
       headerProject: hp !== null && (hp.how !== "partial" || kw === null),
       headerDay: dayOfHeader(h) !== null,
+      headerDriver: hd !== null && hd.how !== "partial" && hd.how !== "code" && !(hp !== null && hp.how !== "partial"),
     };
   });
 }
@@ -305,10 +312,18 @@ function columnStats(rows: string[][], headerRow: number, depth: 1 | 2, header: 
 export type Guess = { mapping: WorkMapping; header: string[]; notes: string[] };
 
 /**
+ * 人の列が無い表の、人の決め方の手がかり（シートの名前・表題から）
+ * - fixedDriverId：1 人 1 枚の表で、シートの名前か表題が台帳の人に当たった
+ * - sheetDrivers：同じ形のシートが人ごとに並ぶブック（シートの名前が人の名前）
+ */
+export type DriverHint = { fixedDriverId?: string | null; sheetDrivers?: boolean };
+
+/**
  * 列の役目を推測する。見出しの言葉と、中の値（台帳の名前に当たる割合・数の割合）の両方を見る。
  * headerRow を渡すとその行を見出しにする（利用者が選び直したとき）。
+ * driverHint を渡すと、はっきりした人の列（見出しの言葉か、中が台帳の名前）が無いとき、人の列を当てずにその決め方にする。
  */
-export function guessMapping(rows: string[][], known: KnownNames, opts: { headerRow?: number } = {}): Guess {
+export function guessMapping(rows: string[][], known: KnownNames, opts: { headerRow?: number; driverHint?: DriverHint | null } = {}): Guess {
   const headerRow = opts.headerRow ?? detectHeaderRow(rows);
   const depth = detectHeaderDepth(rows, headerRow);
   const header = effectiveHeader(rows, headerRow, depth);
@@ -317,7 +332,9 @@ export function guessMapping(rows: string[][], known: KnownNames, opts: { header
   const notes: string[] = [];
   const taken = new Set<number>();
 
-  const isNumeric = (s: ColStat) => s.nonEmpty > 0 && s.numericRate >= 0.6;
+  // 数の列：数か、印（○・出・休）の入った列。印の列は、見出しが日付・案件・人の名前・数量の言葉のときだけ（「確認」の ○ などを数にしない）
+  const markHeader = (s: ColStat) => s.headerDay || s.headerProject || s.headerDriver || s.kw === "qty";
+  const isNumeric = (s: ColStat) => s.nonEmpty > 0 && (s.numericRate >= 0.6 || (markHeader(s) && s.numericRate + s.markRate >= 0.6));
   const blocked = (s: ColStat) => s.kw === "total" || s.kw === "ignore" || s.kw === "money";
 
   // 日付の列（見出しの言葉か、中が日付）
@@ -340,12 +357,28 @@ export function guessMapping(rows: string[][], known: KnownNames, opts: { header
 
   const textCols = stats.filter((s) => !taken.has(s.col) && !blocked(s) && s.nonEmpty > 0 && !isNumeric(s) && s.kw !== "date" && s.kw !== "qty");
 
+  // 人が横に並ぶ表（見出しが台帳のドライバーの名前の、数の列が 2 つ以上）：行は日付か案件
+  const driverHeads = stats.filter((s) => !taken.has(s.col) && !blocked(s) && s.headerDriver && isNumeric(s));
+  const byDriver = !codeCol && driverHeads.length >= 2;
+  for (const s of byDriver ? driverHeads : []) {
+    roles[s.col] = "driverValue";
+    taken.add(s.col);
+  }
+  if (byDriver) notes.push(`見出しがドライバーの名前の列（${driverHeads.length}人）を、人ごとの数として読みました`);
+
   // ドライバーの名前：台帳の名前に当たる割合 ＋ 見出しの言葉
   const driverScore = (s: ColStat) => s.driverRate + (s.kw === "driver" ? 0.5 : 0) - (s.kw === "project" || s.kw === "note" ? 0.3 : 0);
-  let driverCol = [...textCols].sort((a, b) => driverScore(b) - driverScore(a))[0];
+  let driverCol = byDriver ? undefined : [...textCols].sort((a, b) => driverScore(b) - driverScore(a))[0];
+  const hint = opts.driverHint ?? null;
+  // 1 人 1 枚の表・人ごとのシート：はっきりした人の列が無ければ、人の列を当てない（案件の列を人とみなさないように）
+  const strongDriver = !!codeCol || (!!driverCol && (driverCol.kw === "driver" || driverCol.driverRate >= 0.5));
+  const useHint = !byDriver && !!hint && (!!hint.fixedDriverId || !!hint.sheetDrivers) && !strongDriver;
+  if (useHint) driverCol = undefined;
   if (driverCol && driverScore(driverCol) < 0.5) {
     // 台帳がまだ空の会社：見出しの言葉が無ければ、いちばん左の文字の列
-    driverCol = textCols.find((s) => s.kw === null || s.kw === "driver") ?? driverCol;
+    // 案件らしい列（見出しが案件の言葉か、中が台帳の案件）は人とみなさない（1 人 1 枚の表で、コースの列を人にしないように）
+    const projectLike = (s: ColStat) => s.kw === "project" || s.kw === "note" || s.projectRate >= 0.5;
+    driverCol = textCols.find((s) => s.kw === null || s.kw === "driver") ?? (driverCol && !projectLike(driverCol) ? driverCol : undefined);
     if (driverCol) notes.push(`「${driverCol.header || colLetter(driverCol.col) + "列"}」をドライバーの名前とみなしました`);
   }
   if (driverCol) {
@@ -384,14 +417,150 @@ export function guessMapping(rows: string[][], known: KnownNames, opts: { header
     else values = numeric;
   }
 
+  if (byDriver) {
+    qtyCol = undefined;
+    values = [];
+  }
   if (qtyCol) roles[qtyCol.col] = "qty";
   for (const v of values) roles[v.col] = "value";
 
-  const useDates = dateCol ? distinctDates(rows, headerRow + depth, dateCol.col) >= 2 : false;
+  // 人が横に並ぶ表で、行が日付なら、日ごとに残す（日付の列があれば）
+  const useDates = dateCol ? byDriver || distinctDates(rows, headerRow + depth, dateCol.col) >= 2 : false;
   if (dateCol && !useDates) notes.push(`日付の列はすべて同じ日なので、集計した日とみなし、日ごとには分けません`);
-  if (!qtyCol && values.length === 0) notes.push("数の入った列が見つかりませんでした。下の表を見て、数量の列を選んでください");
+  if (!qtyCol && values.length === 0 && !byDriver) notes.push("数の入った列が見つかりませんでした。下の表を見て、数量の列を選んでください");
 
-  return { mapping: { headerRow, headerDepth: depth, roles, fixedProjectId: null, useDates }, header, notes };
+  // 印（○・出・休）の入った数の列があれば、既定の数え方で読む（読み方の画面で変えられる）
+  const hasMarks = stats.some((s) => (roles[s.col] === "qty" || roles[s.col] === "value" || roles[s.col] === "driverValue") && s.markRate > 0);
+  if (hasMarks) notes.push(`「○」「出」などの印を 1、「休」「×」などを 0 と数えました（読み方の画面で変えられます）`);
+
+  const mapping: WorkMapping = { headerRow, headerDepth: depth, roles, fixedProjectId: null, useDates };
+  if (hasMarks) mapping.marks = { ...DEFAULT_MARKS };
+  if (useHint && hint?.fixedDriverId) mapping.fixedDriverId = hint.fixedDriverId;
+  else if (useHint && hint?.sheetDrivers) mapping.sheetDrivers = true;
+  return { mapping, header, notes };
+}
+
+// ---------------------------------------------------------------- 印（○・出・休）
+
+/** 印をいくつと数えるか（数え方に無ければ null） */
+export function markValue(raw: string, marks: MarkMap | null | undefined): number | null {
+  if (!marks) return null;
+  const k = raw.normalize("NFKC").trim();
+  if (!k) return null;
+  const v = marks[k];
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+/** 「○=1, 出=1, 休=0」を印の数え方にする。読めなければ誤りの説明を返す */
+export function parseMarks(text: string): { marks: MarkMap | null; error: string | null } {
+  const t = text.normalize("NFKC").trim();
+  if (!t) return { marks: null, error: null };
+  const marks: MarkMap = {};
+  for (const part of t.split(/[,、;\n]+/)) {
+    const p = part.trim();
+    if (!p) continue;
+    const m = p.match(/^(.{1,6}?)\s*[=:→]\s*(-?\d+(?:\.\d+)?)$/);
+    if (!m) return { marks: null, error: `「${p}」が読めません。「○=1, 休=0」のように、印と数を「=」でつないでください` };
+    const n = Number(m[2]);
+    if (n < 0 || n > 1000) return { marks: null, error: `「${p}」の数は 0 から 1000 までにしてください` };
+    marks[m[1].trim()] = n;
+  }
+  if (Object.keys(marks).length > 30) return { marks: null, error: "印は 30 種類までにしてください" };
+  return { marks: Object.keys(marks).length ? marks : null, error: null };
+}
+
+/** 印の数え方を「○=1, 出=1, 休=0」の形に */
+export function marksText(marks: MarkMap | null | undefined): string {
+  if (!marks) return "";
+  return Object.entries(marks)
+    .map(([k, v]) => `${k}=${v}`)
+    .join(", ");
+}
+
+// ---------------------------------------------------------------- 1 人 1 枚の表（シートの名前・表題）
+
+/** 人の名前ではないシートの名前（Sheet1・月の名前・「集計」など） */
+function genericSheetName(name: string): boolean {
+  const n = name.normalize("NFKC").trim();
+  if (!n) return true;
+  if (/^(sheet|シート)\s*\d*$/i.test(n)) return true;
+  if (monthInText(n) || /^\d{1,2}\s*月(分)?$/.test(n) || /^(r|令和|h)?\d+[.年]\d{1,2}(月)?$/i.test(n)) return true;
+  return /集計|合計|まとめ|一覧|全体|設定|マスタ|master|summary|total|単価|請求|目次/.test(n.toLowerCase());
+}
+
+/** シートの名前から、月・「様」「稼働表」などを外した名前 */
+function cleanSheetName(name: string): string {
+  return name
+    .normalize("NFKC")
+    .replace(/(\d{4}\s*年)?\s*\d{1,2}\s*月\s*分?/g, "")
+    .replace(/(様|さん|殿)?\s*(の)?\s*(稼働表|稼働|実績表|実績|日報|明細)?\s*$/, "")
+    .replace(/^[\s_\-・]+|[\s_\-・]+$/g, "")
+    .trim();
+}
+
+/** 名前の欄の見出し（表題のあたりの「氏名」「ドライバー名」） */
+const NAME_LABEL = /(?:氏名|名前|お名前|ドライバー名?|ドライバ名?|乗務員名?|委託者名?|配達員名?|担当者?名?)/;
+
+/** 「山田 太郎 様」→「山田 太郎」（月や数だけのものは名前ではない） */
+function nameOnly(v: string): string | null {
+  const n = v.replace(/\s*(様|さん|殿)\s*$/, "").trim();
+  if (!n || parseNumberCell(n) !== null || monthInText(n) || parseDateCell(n) !== null) return null;
+  return n;
+}
+
+/**
+ * 表の上（見出しより上の行）から、人の名前らしいセルを探す：「氏名：山田 太郎」「ドライバー名 | 山田 太郎」
+ */
+function titleName(rows: string[][], headerRow: number): string | null {
+  for (const row of rows.slice(0, Math.min(headerRow, 8))) {
+    const cells = row.map((c) => (c ?? "").trim());
+    for (let i = 0; i < cells.length; i++) {
+      const c = cells[i];
+      if (!c) continue;
+      const v = c.normalize("NFKC").trim();
+      const inline = v.match(new RegExp(`^${NAME_LABEL.source}\\s*[:：]\\s*(.+)$`));
+      if (inline) return nameOnly(inline[1]);
+      if (new RegExp(`^${NAME_LABEL.source}\\s*[:：]?$`).test(v)) {
+        const next = cells.slice(i + 1).find(Boolean);
+        if (next) return nameOnly(next);
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * そのシートの人の名前（ファイルの書き方のまま）：表題の「氏名：〇〇」→ シートの名前（Sheet1・月の名前は除く）。
+ * 分からなければ null
+ */
+export function sheetDriverName(name: string, rows: string[][], headerRow: number): string | null {
+  const title = titleName(rows, headerRow);
+  if (title) return title;
+  if (genericSheetName(name)) return null;
+  const cleaned = cleanSheetName(name);
+  return cleaned && !genericSheetName(cleaned) ? cleaned : null;
+}
+
+/** そのシートの人が台帳のだれか（名前の一部だけで当たったものは使わない） */
+export function sheetDriverMatch(name: string, rows: string[][], headerRow: number, known: KnownNames): { id: string; name: string } | null {
+  const tries = [titleName(rows, headerRow), sheetDriverName(name, rows, headerRow)];
+  // 表題のどこかに台帳の名前がそのまま書いてある（「山田 太郎 様 10月分」）
+  for (const row of rows.slice(0, Math.min(headerRow, 8))) for (const c of row) if (c?.trim()) tries.push(c.trim().replace(/\s*(様|さん|殿).*$/, ""));
+  for (const t of tries) {
+    if (!t) continue;
+    const m = matchName(t, known.drivers);
+    if (m && m.how !== "partial") return { id: m.id, name: m.name };
+  }
+  return null;
+}
+
+/** 見出しの行と形の目印（シートごと。見出しの行は、選んだシートと同じ行 → 自動で見つけた行 の順に試す） */
+export function sheetShape(rows: string[][], mapping: Pick<WorkMapping, "headerRow" | "headerDepth">, signature: string): { headerRow: number } | null {
+  for (const headerRow of new Set([mapping.headerRow, detectHeaderRow(rows)])) {
+    if (headerRow < 0 || headerRow >= rows.length) continue;
+    if (shapeSignature(effectiveHeader(rows, headerRow, mapping.headerDepth)) === signature) return { headerRow };
+  }
+  return null;
 }
 
 function distinctDates(rows: string[][], start: number, col: number): number {
@@ -410,11 +579,23 @@ export function mappingProblem(mapping: WorkMapping): string | null {
   for (const r of SINGLE_ROLES) {
     if (roles.filter((x) => x === r).length > 1) return `「${ROLE_NAMES[r]}」が 2 つ以上の列に付いています。1 つの列にしてください`;
   }
-  if (!roles.includes("driver") && !roles.includes("driverCode")) return "ドライバーの名前（または番号）の列を選んでください";
+  const hasDriverCol = roles.includes("driver") || roles.includes("driverCode");
+  const hasDriverValues = roles.includes("driverValue");
+  if (hasDriverCol && hasDriverValues) {
+    return "「ドライバーの名前」の列と「数（見出しがドライバーの名前）」の列は、どちらか一方にしてください";
+  }
+  if (hasDriverCol && mapping.fixedDriverId) return "「この表はすべて同じ人」を選んだときは、ドライバーの名前・番号の列を「使わない」にしてください";
+  if (hasDriverCol && mapping.sheetDrivers) return "「シートごとに別の人」にしたときは、ドライバーの名前・番号の列を「使わない」にしてください";
+  if (!hasDriverCol && !hasDriverValues && !mapping.fixedDriverId && !mapping.sheetDrivers) {
+    return "ドライバーの名前（または番号）の列を選んでください。1 人 1 枚の表なら「この表はすべて同じ人」で選んでください";
+  }
   const hasQty = roles.includes("qty");
   const hasValues = roles.includes("value");
   if (hasQty && hasValues) return "「数量」の列と「数（見出しが案件名か日付）」の列は、どちらか一方にしてください";
-  if (!hasQty && !hasValues) return "数の入った列が決まっていません。数量の列を選んでください";
+  if (hasDriverValues && (hasQty || hasValues)) {
+    return "「数（見出しがドライバーの名前）」の列と「数量」「数（見出しが案件名か日付）」の列は、どちらか一方にしてください";
+  }
+  if (!hasQty && !hasValues && !hasDriverValues) return "数の入った列が決まっていません。数量の列を選んでください";
   return null;
 }
 
@@ -426,6 +607,7 @@ const ROLE_NAMES: Record<ColumnRole, string> = {
   date: "日付",
   note: "備考",
   value: "数",
+  driverValue: "数（人ごと）",
   ignore: "使わない",
 };
 
@@ -433,7 +615,19 @@ const ROLE_NAMES: Record<ColumnRole, string> = {
 
 export type ProfileLike = { id: string; headerSignature: string; mapping: Record<string, string>; options: Record<string, unknown> };
 
-type ProfileOptions = { headerRow?: number; headerDepth?: 1 | 2; fixedProjectId?: string | null; useDates?: boolean; dayRole?: ColumnRole };
+/** 調整の列の覚え方（列の番号ではなく、見出しの鍵で覚える） */
+type AdjustSaved = Omit<AdjustColumn, "col"> & { key: string };
+
+type ProfileOptions = {
+  headerRow?: number;
+  headerDepth?: 1 | 2;
+  fixedProjectId?: string | null;
+  useDates?: boolean;
+  dayRole?: ColumnRole;
+  sheetDrivers?: boolean;
+  marks?: MarkMap | null;
+  adjust?: AdjustSaved[];
+};
 
 /** 見出しごとの鍵（同じ見出しが 2 つあれば #1, #2 …） */
 function headerKeys(header: string[]): string[] {
@@ -457,18 +651,39 @@ export function profileData(header: string[], mapping: WorkMapping): { mapping: 
     if (k === "#日") dayRole ??= role;
     else out[k] = role;
   });
+  // 「この表はすべて同じ人」は覚えない（同じ形の別の人の表に、前の人を当ててしまわないように）
+  const adjust: AdjustSaved[] = (mapping.adjust ?? []).flatMap(({ col, ...a }) => (keys[col] && keys[col] !== "#日" ? [{ ...a, key: keys[col] }] : []));
   const options: ProfileOptions = {
     headerRow: mapping.headerRow,
     headerDepth: mapping.headerDepth,
     fixedProjectId: mapping.fixedProjectId,
     useDates: mapping.useDates,
     ...(dayRole ? { dayRole } : {}),
+    ...(mapping.sheetDrivers ? { sheetDrivers: true } : {}),
+    ...(mapping.marks ? { marks: mapping.marks } : {}),
+    ...(adjust.length ? { adjust } : {}),
   };
   return { mapping: out, options };
 }
 
 function isRole(v: unknown): v is ColumnRole {
-  return typeof v === "string" && ["driver", "driverCode", "project", "qty", "date", "note", "value", "ignore"].includes(v);
+  return typeof v === "string" && (COLUMN_ROLES as string[]).includes(v);
+}
+
+function isMarkMap(v: unknown): v is MarkMap {
+  return !!v && typeof v === "object" && !Array.isArray(v) && Object.values(v).every((x) => typeof x === "number" && Number.isFinite(x));
+}
+
+/** 覚えた調整の列を、今のファイルの列の番号に戻す（見出しが見つからない列は落とす） */
+function adjustFromSaved(saved: unknown, keys: string[]): AdjustColumn[] {
+  if (!Array.isArray(saved)) return [];
+  const out: AdjustColumn[] = [];
+  for (const a of saved as Partial<AdjustSaved>[]) {
+    const col = typeof a?.key === "string" ? keys.indexOf(a.key) : -1;
+    if (col < 0 || typeof a.label !== "string" || (a.sign !== "plus" && a.sign !== "minus" && a.sign !== "asIs")) continue;
+    out.push({ col, label: a.label, sign: a.sign, taxable: !!a.taxable, agreedInWriting: !!a.agreedInWriting, basis: typeof a.basis === "string" ? a.basis : null });
+  }
+  return out;
 }
 
 /** 同じ形のファイルの読み方を探す（自動で見つけた見出しの行、または前回選んだ見出しの行で比べる） */
@@ -492,10 +707,12 @@ export function findProfile<P extends ProfileLike>(rows: string[][], profiles: P
         const r = k === "#日" ? opts.dayRole : p.mapping[k];
         return isRole(r) ? r : "ignore";
       });
-      return {
-        profile: p,
-        mapping: { headerRow, headerDepth: depth, roles, fixedProjectId: opts.fixedProjectId ?? null, useDates: opts.useDates ?? false },
-      };
+      const mapping: WorkMapping = { headerRow, headerDepth: depth, roles, fixedProjectId: opts.fixedProjectId ?? null, useDates: opts.useDates ?? false };
+      if (opts.sheetDrivers) mapping.sheetDrivers = true;
+      if (isMarkMap(opts.marks)) mapping.marks = opts.marks;
+      const adjust = adjustFromSaved(opts.adjust, keys);
+      if (adjust.length) mapping.adjust = adjust;
+      return { profile: p, mapping };
     }
   }
   return null;

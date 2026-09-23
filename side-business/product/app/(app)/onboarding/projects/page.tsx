@@ -10,7 +10,7 @@ import { loadOnboarding } from "~/server/features/onboarding";
 
 export const metadata = { title: "最初の設定：元請と案件" };
 
-/** ③ 元請と案件：表に書くように入れる。すでにある元請には名前で当てる */
+/** ④ 元請と案件：取り込みで作った案件の確かめと、足りないものを表に書くように入れる。すでにある元請には名前で当てる */
 export default async function OnboardingProjectsPage() {
   const user = await requirePageUser("staff");
   const db = await getDb();
@@ -36,7 +36,8 @@ export default async function OnboardingProjectsPage() {
         state={progress.steps.find((x) => x.def.key === "projects")?.state}
         description={
           <>
-            元請（荷主）ごとの仕事の種類と、標準の単価です。受注単価は利益と元請との突合に、支払単価は明細に使います（どちらも税抜）。
+            元請（荷主）ごとの仕事の種類と、標準の単価です。先月の Excel の取り込みで作った案件は、もう入っています。単価と元請が合っているかを確かめ、足りないものを足してください。
+            受注単価は利益と元請との突合に、支払単価は明細に使います（どちらも税抜）。
             元請の名前は「株式会社」や全角・半角の違いがあっても、すでにある元請に当てます。
           </>
         }

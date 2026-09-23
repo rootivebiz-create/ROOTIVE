@@ -11,7 +11,7 @@ import { loadOnboarding } from "~/server/features/onboarding";
 export const metadata = { title: "ドライバーの名簿を読み込む" };
 
 /**
- * ② ドライバー：Excel の名簿を貼り付けるか、ファイルを置いて、まとめて登録する。
+ * ③ ドライバー：先月の Excel の取り込みで登録した人の確かめと、足りない人の追加（Excel の名簿を貼り付けるか、ファイルを置いて、まとめて登録する）。
  * 設定の画面からも開く（最初の設定のあとで、新しい人をまとめて足すとき）。
  */
 export default async function OnboardingDriversPage() {
@@ -32,7 +32,7 @@ export default async function OnboardingDriversPage() {
         state={progress.steps.find((x) => x.def.key === "drivers")?.state}
         description={
           <>
-            今お使いの Excel の名簿を、そのまま貼り付けてください。1 人ずつ「登録番号の形」「口座の桁」を確かめてから登録します。
+            先月の Excel を取り込んだときに登録した人は、もう入っています。足りない人がいれば、今お使いの Excel の名簿をそのまま貼り付けてください。1 人ずつ「登録番号の形」「口座の桁」を確かめてから登録します。
             すでにいる人（同じ名前・同じ番号）は登録しないので、何度読み込んでも増えません。
           </>
         }

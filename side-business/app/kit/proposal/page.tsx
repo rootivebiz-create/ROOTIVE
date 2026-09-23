@@ -407,7 +407,7 @@ export default async function ProposalPage({ searchParams }: Props) {
               </h3>
               <ul className="mt-2 space-y-1.5 text-sm leading-snug lg:space-y-2.5 lg:text-[15px]">
                 {[
-                  "今のExcel・CSVを、形を変えずに置くだけ。打ち直しは要りません",
+                  "今のExcel・CSVを、形を変えずに置くだけ。1人1枚の表や○・休の表も読めます（お試しで実物のファイルを先に確かめます）",
                   "日付が横に並んだ表や、合計の行があっても読みます。ファイルの合計と照らし合わせます",
                   "一度読んだ形と、名前の表記ゆれ（全角・半角・カナ）は覚えます",
                   "同じファイルを2回置いても、数量は倍になりません。締めるまでは取り消せます",

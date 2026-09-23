@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   BLANK,
   adjustForBankHoliday,
+  bankHolidayReason,
   buildTorihikiJoken,
   closingPeriodText,
   dayInMonth,
@@ -18,6 +19,7 @@ import {
   type PayMonthOffset,
   type TorihikiInput,
 } from "@/lib/tools/torihiki-joken";
+import { JP_HOLIDAYS, JP_HOLIDAYS_THROUGH, isJpHoliday, jpHolidayName } from "@/lib/tools/jp-holidays";
 
 const FROM = "2026-10-01";
 
@@ -52,6 +54,39 @@ describe("60日（2か月）の期限", () => {
     expect(adjustForBankHoliday("2026-10-31", "before")).toBe("2026-10-30");
     expect(adjustForBankHoliday("2026-12-31", "after")).toBe("2027-01-04");
     expect(adjustForBankHoliday("2027-01-02", "before")).toBe("2026-12-30");
+  });
+
+  it("祝日と休日（振替休日・国民の休日）も銀行の休みの日", () => {
+    expect(isBankHoliday("2027-09-20")).toBe(true); // 敬老の日（月）
+    expect(isBankHoliday("2028-01-10")).toBe(true); // 成人の日（月）
+    expect(isBankHoliday("2026-09-22")).toBe(true); // 国民の休日（火）
+    expect(isBankHoliday("2027-03-22")).toBe(true); // 春分の日の振替休日（月）
+    expect(isBankHoliday("2026-11-24")).toBe(false); // 火
+    expect(adjustForBankHoliday("2026-11-23", "before")).toBe("2026-11-20"); // 勤労感謝の日（月）→ 金
+    expect(adjustForBankHoliday("2026-09-23", "before")).toBe("2026-09-18"); // 秋分の日 → 国民の休日 → 敬老の日 → 土日 → 金
+    expect(adjustForBankHoliday("2026-09-21", "after")).toBe("2026-09-24");
+    expect(bankHolidayReason("2026-10-31")).toBe("土曜日");
+    expect(bankHolidayReason("2027-01-31")).toBe("日曜日");
+    expect(bankHolidayReason("2027-09-20")).toBe("敬老の日");
+    expect(bankHolidayReason("2026-12-31")).toBe("年末年始");
+    expect(bankHolidayReason("2026-11-25")).toBeNull();
+  });
+
+  it("祝日の表：2026年は内閣府の一覧と同じ 18 日。どの年も " + JP_HOLIDAYS_THROUGH + " 年まで入っていて、日付の形が正しい", () => {
+    const y2026 = Object.keys(JP_HOLIDAYS).filter((d) => d.startsWith("2026-"));
+    expect(y2026).toEqual([
+      "2026-01-01", "2026-01-12", "2026-02-11", "2026-02-23", "2026-03-20", "2026-04-29", "2026-05-03", "2026-05-04", "2026-05-05",
+      "2026-05-06", "2026-07-20", "2026-08-11", "2026-09-21", "2026-09-22", "2026-09-23", "2026-10-12", "2026-11-03", "2026-11-23",
+    ]);
+    for (let y = 2025; y <= JP_HOLIDAYS_THROUGH; y++) {
+      const days = Object.keys(JP_HOLIDAYS).filter((d) => d.startsWith(`${y}-`));
+      expect(days.length).toBeGreaterThanOrEqual(16);
+      expect(days).toContain(`${y}-01-01`);
+    }
+    for (const d of Object.keys(JP_HOLIDAYS)) expect(isDateString(d)).toBe(true);
+    expect(isJpHoliday("2026-10-12")).toBe(true);
+    expect(jpHolidayName("2026-10-12")).toBe("スポーツの日");
+    expect(isJpHoliday("toString")).toBe(false);
   });
 });
 

@@ -51,25 +51,28 @@ async function assertCanChange(db: Db, tenantId: string, month: string, code: st
 
 export type AckInput = { month: string; code: string; subjectId: string; note: string };
 
-export async function ackWatchIssue(db: Db, tenantId: string, input: AckInput, userId: string | null, options: WatchOptions = {}): Promise<WatchIssue> {
-  assertMonth(input.month);
-  await getTenant(db, tenantId);
-  await assertCanChange(db, tenantId, input.month, input.code);
-  const issues: WatchIssueEx[] = await runWatch(db, tenantId, input.month, options);
-  const issue = issues.find((i) => i.code === input.code && i.subjectId === input.subjectId);
-  if (!issue) throw new UserError("この指摘は、いまは出ていません。画面を開き直してください（直したあとなら、確認済みにする必要はありません）。");
-  const note = input.note.trim();
-  const min = ackNoteMin(issue.severity);
+/** メモの長さを確かめて、前後の空白を落としたメモを返す（赤が 1 件でも入っていれば赤の長さ） */
+function checkedNote(raw: string, severities: WatchIssue["severity"][]): string {
+  const note = raw.trim();
+  const min = Math.max(...severities.map(ackNoteMin));
   if (note.length < min) throw new UserError(`何を確かめたかを ${min} 文字以上で書いてください。`);
   if (note.length > ACK_NOTE_MAX) throw new UserError(`メモは ${ACK_NOTE_MAX} 文字までにしてください。`);
+  return note;
+}
 
+/** 確認済みの印を付ける（同じ種類・同じ対象ならメモを書き直す） */
+async function saveAck(db: Pick<Db, "insert">, tenantId: string, month: string, issue: WatchIssue, note: string, userId: string | null): Promise<void> {
   await db
     .insert(s.watchAcks)
-    .values({ tenantId, month: input.month, code: issue.code, subjectId: issue.subjectId, note, ackedBy: userId })
+    .values({ tenantId, month, code: issue.code, subjectId: issue.subjectId, note, ackedBy: userId })
     .onConflictDoUpdate({
       target: [s.watchAcks.tenantId, s.watchAcks.month, s.watchAcks.code, s.watchAcks.subjectId],
       set: { note, ackedBy: userId, createdAt: new Date() },
     });
+}
+
+/** 確認済みにしたことを操作の記録に残す（1 件ずつ。まとめて付けたときは bulk に件数） */
+async function auditAck(db: Db, tenantId: string, month: string, issue: WatchIssueEx, note: string, userId: string | null, bulk?: number): Promise<void> {
   await audit(db, {
     tenantId,
     userId,
@@ -78,7 +81,7 @@ export async function ackWatchIssue(db: Db, tenantId: string, input: AckInput, u
     entityId: `${issue.code}:${issue.subjectId}`,
     // detail：確認したときの中身（あとで数字や日付が変わったら、画面で「確かめ直して」と出すため）
     detail: {
-      month: input.month,
+      month,
       code: issue.code,
       subjectId: issue.subjectId,
       severity: issue.severity,
@@ -91,9 +94,55 @@ export async function ackWatchIssue(db: Db, tenantId: string, input: AckInput, u
       impactYen: issue.impact?.yen ?? null,
       impactLabel: issue.impact?.label ?? null,
       ruleAsOf: issue.asOf ?? null,
+      ...(bulk ? { bulk } : {}),
     },
   });
+}
+
+export async function ackWatchIssue(db: Db, tenantId: string, input: AckInput, userId: string | null, options: WatchOptions = {}): Promise<WatchIssue> {
+  assertMonth(input.month);
+  await getTenant(db, tenantId);
+  await assertCanChange(db, tenantId, input.month, input.code);
+  const issues: WatchIssueEx[] = await runWatch(db, tenantId, input.month, options);
+  const issue = issues.find((i) => i.code === input.code && i.subjectId === input.subjectId);
+  if (!issue) throw new UserError("この指摘は、いまは出ていません。画面を開き直してください（直したあとなら、確認済みにする必要はありません）。");
+  const note = checkedNote(input.note, [issue.severity]);
+  await saveAck(db, tenantId, input.month, issue, note, userId);
+  await auditAck(db, tenantId, input.month, issue, note, userId);
   return { ...issue, acked: true, ackNote: note, blocksClose: false };
+}
+
+/** まとめて確認済みにできる件数の上限（1 回で） */
+export const ACK_MANY_MAX = 200;
+
+export type AckManyInput = { month: string; code: string; subjectIds: string[]; note: string };
+
+/**
+ * 同じ種類の指摘を、同じ理由でまとめて確認済みにする（導入の月に、何人もの「取引条件の明示が、仕事を始めたあと」が並ぶときなど）。
+ * - 1 件ずつ、いま出ている指摘か確かめる。1 件でも出ていなければ、どれにも付けない
+ * - 印と操作の記録は 1 件ずつ残す（あとで 1 件だけ外せる。中身が変わったら 1 件ずつ「確かめ直して」と出る）
+ * - メモの長さは、赤が入っていれば赤の長さ
+ */
+export async function ackWatchIssues(db: Db, tenantId: string, input: AckManyInput, userId: string | null, options: WatchOptions = {}): Promise<WatchIssue[]> {
+  assertMonth(input.month);
+  await getTenant(db, tenantId);
+  await assertCanChange(db, tenantId, input.month, input.code);
+  const ids = [...new Set(input.subjectIds.map((x) => x.trim()).filter(Boolean))];
+  if (!ids.length) throw new UserError("まとめて確認済みにする指摘がありません。画面を開き直してください。");
+  if (ids.length > ACK_MANY_MAX) throw new UserError(`まとめて確認済みにできるのは、1 回で ${ACK_MANY_MAX} 件までです。`);
+  const issues: WatchIssueEx[] = await runWatch(db, tenantId, input.month, options);
+  const bySubject = new Map(issues.filter((i) => i.code === input.code).map((i) => [i.subjectId, i]));
+  const targets = ids.map((id) => bySubject.get(id));
+  if (targets.some((t) => !t)) {
+    throw new UserError("いまは出ていない指摘が含まれています。画面を開き直してください（直したあとなら、確認済みにする必要はありません）。");
+  }
+  const found = targets as WatchIssueEx[];
+  const note = checkedNote(input.note, found.map((i) => i.severity));
+  await db.transaction(async (tx) => {
+    for (const issue of found) await saveAck(tx, tenantId, input.month, issue, note, userId);
+  });
+  for (const issue of found) await auditAck(db, tenantId, input.month, issue, note, userId, found.length);
+  return found.map((i) => ({ ...i, acked: true, ackNote: note, blocksClose: false }));
 }
 
 export async function unackWatchIssue(db: Db, tenantId: string, input: Omit<AckInput, "note">, userId: string | null): Promise<void> {

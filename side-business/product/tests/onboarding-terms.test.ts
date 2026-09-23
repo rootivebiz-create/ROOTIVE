@@ -2,8 +2,8 @@ import { and, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import * as s from "~/db/schema";
 import { loadCompanyForm, loadOnboarding, saveCompanyBasics, setOnboardingStep, ONBOARDING_STEPS } from "~/server/features/onboarding";
-import { checkCompanyBasics, SIZE_REASON } from "~/server/features/onboarding/company";
-import { onboardingProgress } from "~/server/features/onboarding/steps";
+import { checkCompanyBasics, FEE_DEDUCT_NOTE, SIZE_REASON, SIZE_REASON_SHORT } from "~/server/features/onboarding/company";
+import { nextStepOf, onboardingProgress, stepHref } from "~/server/features/onboarding/steps";
 import { driverTermsFlags } from "~/server/features/onboarding/terms";
 import { seedDemo } from "~/server/seed-demo";
 import { createTestDb } from "./helpers/db";
@@ -17,12 +17,27 @@ async function driverId(db: Db, tenantId: string, code: string): Promise<string>
 const baseInput = { closingDay: "0", payMonthOffset: "1", payDay: "25", transferFeeBearer: "company", registrationNo: "", taxMethod: "general", paymentTermsText: "" };
 
 describe("最初の設定：取引条件の明示の手順", () => {
-  it("順番と時間の目安：控除のルールのあと、先月の Excel の前。/terms を開く。全部で約65分", () => {
-    expect(ONBOARDING_STEPS.map((x) => x.key)).toEqual(["company", "drivers", "projects", "rules", "terms", "import", "parallel"]);
+  it("順番と時間の目安（SPEC P0-1）：会社 → 先月の Excel → 名前・案件・控除の確かめ → Excel と比べる → 取引条件の明示（最後）。全部で約60分", () => {
+    expect(ONBOARDING_STEPS.map((x) => x.key)).toEqual(["company", "import", "drivers", "projects", "rules", "parallel", "terms"]);
     const terms = ONBOARDING_STEPS.find((x) => x.key === "terms")!;
-    expect(terms).toMatchObject({ no: 5, title: "取引条件の明示", path: "/terms", minutes: 10 });
+    expect(terms).toMatchObject({ no: 7, title: "取引条件の明示", path: "/terms", minutes: 10 });
     expect(ONBOARDING_STEPS.map((x) => x.no)).toEqual([1, 2, 3, 4, 5, 6, 7]);
-    expect(ONBOARDING_STEPS.reduce((a, x) => a + x.minutes, 0)).toBe(65);
+    expect(ONBOARDING_STEPS.reduce((a, x) => a + x.minutes, 0)).toBe(60);
+    // マスタ（ドライバー・案件）を取り込みより先に置かない。取引条件の明示は Excel と比べたあと
+    const at = (k: string) => ONBOARDING_STEPS.findIndex((x) => x.key === k);
+    expect(at("import")).toBeLessThan(at("drivers"));
+    expect(at("import")).toBeLessThan(at("projects"));
+    expect(at("parallel")).toBeLessThan(at("terms"));
+  });
+
+  it("次の手順と、その画面へのリンク（取り込み・比べ合わせは先月の分）", () => {
+    expect(nextStepOf("company")?.key).toBe("import");
+    expect(nextStepOf("rules")?.key).toBe("parallel");
+    expect(nextStepOf("parallel")?.key).toBe("terms");
+    expect(nextStepOf("terms")).toBeNull();
+    expect(stepHref(nextStepOf("company")!, "2026-09")).toBe("/import?m=2026-09");
+    expect(stepHref(nextStepOf("rules")!, "2026-09")).toBe("/parallel?m=2026-09");
+    expect(stepHref(nextStepOf("parallel")!, "2026-09")).toBe("/terms");
   });
 
   it("有効な人の全員に記録（明示書か明示した日）があれば済み。辞めた人は数えない。「あとで」でも進む。ほかの会社の記録は効かない", async () => {
@@ -37,7 +52,8 @@ describe("最初の設定：取引条件の明示の手順", () => {
     expect(step.state).toBe("todo");
     expect(step.note).toBeNull();
     expect(step.pending).toBe("取引条件を明示した記録（明示書か、明示した日）が見つからない人が 1人います（有効な 8人のうち）：遠藤 大輔さん");
-    expect(p.next?.key).toBe("terms");
+    // 取引条件の明示は最後。先に Excel と比べる
+    expect(p.next?.key).toBe("parallel");
     expect(p).toMatchObject({ doneCount: 5, total: 7, minutesLeft: 20 });
     // ホームのように、読んだものを渡しても同じ（読み直さない）
     const [t0] = await db.select().from(s.tenants).where(eq(s.tenants.id, tenantId));
@@ -119,7 +135,17 @@ describe("最初の設定：会社の大きさ（資本金・常時使用する�
     expect(read("-1", "3").fieldErrors.capitalYen).toBeTruthy();
     expect(read("2000000000000", "3").fieldErrors.capitalYen).toBeTruthy();
     expect(read("1000", "1000001").fieldErrors.employees).toBeTruthy();
-    expect(SIZE_REASON).toBe("取適法の対象かの目安に使います");
+    // 画面で最初に出す取適法には正式な名前を添える。同じ画面で 2 回目は短く
+    expect(SIZE_REASON).toBe("取適法（中小受託取引適正化法）の対象かの目安に使います");
+    expect(SIZE_REASON_SHORT).toBe("取適法の対象かの目安に使います");
+  });
+
+  it("振込手数料をドライバーが持つときの注意：取適法の対象かで区切らず、2026年1月1日以降は合意があっても減額のおそれ（見張り番と同じ向き）", () => {
+    expect(FEE_DEDUCT_NOTE).toContain("報酬の減額にあたるおそれがあります");
+    expect(FEE_DEDUCT_NOTE).toContain("2026年1月1日以降に発注する取引は、合意があっても");
+    // 「取適法の対象になる取引では」のように区切ると、対象外なら合意で許されるように読める
+    expect(FEE_DEDUCT_NOTE).not.toMatch(/対象になる取引では/);
+    expect(FEE_DEDUCT_NOTE).toContain("確認をおすすめします");
   });
 
   it("保存：settings の capitalYen・employees に入れ、ほかの設定（振込依頼人）は残す。空にすると消す。ほかの会社は変わらない", async () => {

@@ -5,6 +5,7 @@ import { Input, NumberInput, Select } from "@/components/ui";
 import type { Rounding } from "@/lib/payroll/types";
 import { FEE_BEARER_WARNING, looseKey, NO_AGREEMENT_WARNING, percentToRate, readNumber, ruleNameKey, rulePreview } from "~/server/features/settings/format";
 import { Callout, Check, Choice, F, ResultLine, SubmitRow, useFormAction, type FormAction } from "./form-kit";
+import { OpenMonthConfirm } from "./open-month-confirm";
 
 export type RuleKind = "percent" | "fixed" | "per_unit";
 
@@ -218,6 +219,7 @@ export function RuleForm({
         </F>
       </div>
       <ResultLine state={state} />
+      <OpenMonthConfirm state={state} />
       <SubmitRow pending={pending} label={submitLabel} />
     </form>
   );

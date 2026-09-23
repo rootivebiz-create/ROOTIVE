@@ -11,6 +11,7 @@ import { TAX_RATE } from "~/server/calc/statement";
 import { stableStringify } from "~/server/statements-core";
 import { sha256 } from "~/server/tokens";
 import { compareTermsContent, type TermsChange, type TermsContent, type TermsDeduction } from "~/server/features/terms-content";
+import { SOURCES } from "~/server/features/watch/sources";
 
 export const TERMS_TITLE = "取引条件の明示書（業務委託）";
 export const TEMPLATE_NOTE = "このひな形の内容は、必要に応じて弁護士などの専門家に確認してください。";
@@ -21,7 +22,8 @@ export const TERMS_SOURCES = {
   flLaw: "https://laws.e-gov.go.jp/law/505AC0000000025",
   flGuide: "https://www.jftc.go.jp/file/fl_jftcmhlwguidelines.pdf",
   flKankoku: "https://www.jftc.go.jp/FL/FLkankoku/index.html",
-  ntaQa: "https://www.nta.go.jp/taxes/shiraberu/zeimokubetsu/shohi/keigenzeiritsu/pdf/qa/113-3.pdf",
+  /** インボイス Q&A 問86（仕入明細書の相手方の確認）。URL は見張り番の出典の表と同じもの */
+  ntaQa: SOURCES.purchaseStatementQa,
   toritekiLeaflet: "https://www.jftc.go.jp/file/toriteki_leaflet.pdf",
 } as const;
 
@@ -172,7 +174,9 @@ export function termsSections(doc: Pick<TermsDocument, "content" | "subcontract"
       ? {
           key: "fee",
           label: "振込手数料",
-          paragraphs: ["振込手数料は、受託者（ドライバー）の負担として、振込額から差し引きます。"],
+          // 負担の取り決めだけを書く。差し引くかどうかはこの設定では決まらない（明細・振込データに手数料の行は無い）ので、
+          // 「振込額から差し引きます」とは書かない（差し引くなら控除のルールとして下の「報酬から差し引くもの」に載る）
+          paragraphs: ["振込手数料は、受託者（ドライバー）の負担とします。"],
           emphasis: true,
         }
       : { key: "fee", label: "振込手数料", paragraphs: ["振込手数料は、委託者（会社）が負担します。"] },

@@ -7,7 +7,8 @@ import { getDb } from "~/db/client";
 import { runAction, UserError, type ActionResult } from "~/server/action";
 import { audit } from "~/server/audit";
 import { requireUser } from "~/server/auth";
-import { adoptDeductionProposal } from "~/server/features/import/adopt";
+import { adoptDeductionProposal, adoptRateProposals } from "~/server/features/import/adopt";
+import { parseMarks } from "~/server/features/import/detect";
 import { guessText } from "~/server/features/import/deductions";
 import { idSchema, monthInputSchema, quickDriverSchema, quickProjectSchema, roleSchema } from "~/server/features/import/schemas";
 import {
@@ -19,12 +20,13 @@ import {
   registerAllDrivers,
   resolveName,
   selectSheet,
+  setAdjustColumn,
   setBatchMonth,
   setHeaderRow,
   undoBatch,
   updateMapping,
 } from "~/server/features/import/service";
-import { MAX_FILE_BYTES, type ColumnRole } from "~/server/features/import/types";
+import { MAX_FILE_BYTES, MAX_FILE_LABEL, type ColumnRole } from "~/server/features/import/types";
 import { monthParam } from "~/server/month";
 
 /**
@@ -58,7 +60,7 @@ export async function uploadAction(_prev: State, form: FormData): Promise<State>
     } else {
       const file = form.get("file");
       if (!(file instanceof File) || file.name === "") throw new UserError("ファイルを選んでください");
-      if (file.size > MAX_FILE_BYTES) throw new UserError("ファイルが大きすぎます（10MB まで）。使っていないシートや画像を消してから置いてください");
+      if (file.size > MAX_FILE_BYTES) throw new UserError(`ファイルが大きすぎます（${MAX_FILE_LABEL} まで）。使っていないシートや画像を消すか、CSV にしてから置いてください`);
       fileName = file.name;
       bytes = new Uint8Array(await file.arrayBuffer());
     }
@@ -114,15 +116,34 @@ export async function mappingAction(_prev: State, form: FormData): Promise<State
     const fixedProjectId = fixed ? idSchema("案件を選び直してください").parse(fixed) : null;
     const useDates = text(form, "useDates") === "on";
     const remember = text(form, "remember") === "on";
+    // 人の決め方：列から（既定）・「この表はすべて同じ人」・シートごとに別の人
+    // 欄が無いフォーム（古い画面）なら今のまま
+    let fixedDriverId: string | null | undefined;
+    let sheetDrivers: boolean | undefined;
+    const driverMode = form.get("driverMode");
+    if (typeof driverMode === "string") {
+      const fixedDriver = text(form, "fixedDriverId").trim();
+      if (driverMode === "fixed" && !fixedDriver) throw new UserError("「この表はすべて同じ人」のドライバーを選んでください");
+      fixedDriverId = driverMode === "fixed" ? idSchema("ドライバーを選び直してください").parse(fixedDriver) : null;
+      sheetDrivers = driverMode === "sheets";
+    }
+    // 印（○・出・休）の数え方。欄が無いフォームなら今のまま
+    const marksField = form.get("marks");
+    let marks: ReturnType<typeof parseMarks>["marks"] | undefined;
+    if (typeof marksField === "string") {
+      const parsed = parseMarks(marksField.slice(0, 500));
+      if (parsed.error) throw new UserError(parsed.error);
+      marks = parsed.marks;
+    }
     const db = await getDb();
-    const { problem } = await updateMapping(db, user.tenantId, batchId, { roles, fixedProjectId, useDates, remember });
+    const { problem } = await updateMapping(db, user.tenantId, batchId, { roles, fixedProjectId, useDates, remember, fixedDriverId, sheetDrivers, marks });
     await audit(db, {
       tenantId: user.tenantId,
       userId: user.id,
       action: "import.mapping",
       entity: "import_batch",
       entityId: batchId,
-      detail: { roles, fixedProjectId, useDates, remember },
+      detail: { roles, fixedProjectId, useDates, remember, fixedDriverId, sheetDrivers, marks: marks ?? null },
     });
     refresh(batchId);
     if (problem) throw new UserError(`保存しました。ただし、このままでは取り込めません：${problem}`);
@@ -157,7 +178,10 @@ export async function resolveAction(_prev: State, form: FormData): Promise<State
     const db = await getDb();
     let out;
     if (action === "match") {
-      const targetId = idSchema(base.kind === "driver" ? "ドライバーを選んでください" : "案件を選んでください").parse(text(form, "targetId"));
+      // 選ぶ欄の誤りとして返す（画面がその欄に赤で出して、そこへ移る）
+      const { targetId } = z
+        .object({ targetId: idSchema(base.kind === "driver" ? "ドライバーを選んでください" : "案件を選んでください") })
+        .parse({ targetId: text(form, "targetId") });
       out = await resolveName(db, user.tenantId, base.batchId, { kind: base.kind, key: base.key, action: "match", targetId });
     } else if (action === "skip" || action === "unskip") {
       out = await resolveName(db, user.tenantId, base.batchId, { kind: base.kind, key: base.key, action });
@@ -333,6 +357,94 @@ export async function adoptRuleAction(_prev: State, form: FormData): Promise<Sta
       const own = created.length - 1;
       message = `控除「${proposal.name}」（${guessText(proposal.inference!.guess)}）を作りました${own > 0 ? `。その人だけの式も ${own} 人ぶん作りました` : ""}。書面の合意の記録がまだ無いので、取引条件の記録に入れて、合意した日を入れてください`;
     }
+    revalidatePath("/", "layout");
+    revalidatePath(`/import/${batchId}`);
+  });
+  return res.ok ? { ...res, message } : res;
+}
+
+const adjustColumnSchema = z.discriminatedUnion("enabled", [
+  z.object({ enabled: z.literal("0"), col: z.coerce.number().int().min(0).max(500) }),
+  z.object({
+    enabled: z.literal("1"),
+    col: z.coerce.number().int().min(0).max(500),
+    label: z.string().trim().min(1, "明細に出す名前を入れてください（例：燃料代）").max(60, "名前は 60 文字までにしてください"),
+    sign: z.enum(["plus", "minus", "asIs"], { error: "足すか引くかを選んでください" }),
+    taxable: z.string().optional(),
+    agreedInWriting: z.string().optional(),
+    basis: z.string().trim().max(200, "根拠は 200 文字までにしてください").optional(),
+  }),
+]);
+
+/** 金額の列を、その月の調整（人ごとの足し引き）として入れる・やめる（読み方に残し、翌月も同じように入れる） */
+export async function adjustColumnAction(_prev: State, form: FormData): Promise<State> {
+  let message = "";
+  const res = await runAction(async () => {
+    const user = await requireUser("staff");
+    const batchId = batchIdSchema.parse(text(form, "batchId"));
+    const v = adjustColumnSchema.parse({
+      enabled: text(form, "enabled"),
+      col: text(form, "col"),
+      label: text(form, "label"),
+      sign: text(form, "sign"),
+      taxable: text(form, "taxable"),
+      agreedInWriting: text(form, "agreedInWriting"),
+      basis: text(form, "basis"),
+    });
+    const db = await getDb();
+    const input =
+      v.enabled === "1"
+        ? {
+            col: v.col,
+            enabled: true as const,
+            label: v.label,
+            sign: v.sign,
+            taxable: v.taxable === "on",
+            agreedInWriting: v.agreedInWriting === "on",
+            basis: v.basis || null,
+          }
+        : { col: v.col, enabled: false as const };
+    const out = await setAdjustColumn(db, user.tenantId, batchId, input);
+    await audit(db, {
+      tenantId: user.tenantId,
+      userId: user.id,
+      action: "import.mapping",
+      entity: "import_batch",
+      entityId: batchId,
+      detail: { adjustColumn: { header: out.header, ...input } },
+    });
+    message = input.enabled
+      ? `「${out.header}」の列を、反映のときに「${input.label}」の調整として入れます。次から同じ形のファイルも同じように入れます`
+      : `「${out.header}」の列は、調整として入れないことにしました`;
+    refresh(batchId);
+  });
+  return res.ok ? { ...res, message } : res;
+}
+
+/** 単価の列から読んだ「人ごとの単価」を登録する（合意した日は空のまま → 見張り番が知らせる） */
+export async function adoptRatesAction(_prev: State, form: FormData): Promise<State> {
+  let message = "";
+  const res = await runAction(async () => {
+    const user = await requireUser("staff");
+    const batchId = batchIdSchema.parse(text(form, "batchId"));
+    const col = z.coerce.number().int().min(0).max(500).parse(text(form, "col"));
+    const keys = form
+      .getAll("key")
+      .filter((k): k is string => typeof k === "string" && /^[0-9a-f-]{36}:[0-9a-f-]{36}$/i.test(k))
+      .slice(0, 500);
+    const db = await getDb();
+    const { adopted } = await adoptRateProposals(db, user.tenantId, batchId, { col, keys });
+    for (const r of adopted) {
+      await audit(db, {
+        tenantId: user.tenantId,
+        userId: user.id,
+        action: r.created ? "rate_override.create" : "rate_override.update",
+        entity: "rate_override",
+        entityId: r.id,
+        detail: { driver: r.driverName, project: r.projectName, standard: r.standard, before: r.before, after: r.after, source: "import", batchId },
+      });
+    }
+    message = `${adopted.length} 件の人ごとの単価を登録しました。合意した日はまだ空なので、取引条件の記録に入れて、合意した日を入れてください`;
     revalidatePath("/", "layout");
     revalidatePath(`/import/${batchId}`);
   });

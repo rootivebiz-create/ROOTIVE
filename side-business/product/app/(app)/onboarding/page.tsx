@@ -4,24 +4,19 @@ import { FinishButton, MarkButton, ReopenButton } from "~/components/onboarding/
 import { Badge, PageHeader } from "~/components/page";
 import { getDb } from "~/db/client";
 import { requirePageUser } from "~/server/auth";
-import { loadOnboarding, minutesText, STATE_LABEL, type OnboardingStepDef, type StepState } from "~/server/features/onboarding";
+import { loadOnboarding, minutesText, STATE_LABEL, stepHref, type StepState } from "~/server/features/onboarding";
 import { monthFromParam, monthParam } from "~/server/month";
 
 export const metadata = { title: "最初の設定" };
 
 const TONE: Record<StepState, "green" | "gray" | "yellow"> = { done: "green", auto: "green", skipped: "gray", todo: "yellow" };
 
-/** 取り込み・比べ合わせは先月の分を開く（今の Excel で締め終わっている月で試すと、比べやすい） */
-function stepHref(def: OnboardingStepDef, lastMonth: string): string {
-  return def.withMonth ? `${def.path}?m=${lastMonth}` : def.path;
-}
-
 /** 最初の設定の案内：7 つの手順と、どこまで済んだか。どの手順もとばせる */
 export default async function OnboardingPage() {
   const user = await requirePageUser("staff");
   const db = await getDb();
   const progress = await loadOnboarding(db, user.tenantId);
-  // 先月（デモは架空のデータがある月）
+  // 先月（デモは架空のデータがある月）。取り込み・比べ合わせはこの月を開く（今の Excel で締め終わっている月で試すと、比べやすい）
   const lastMonth = monthParam(monthFromParam(undefined));
   const pct = Math.round((progress.doneCount / progress.total) * 100);
 

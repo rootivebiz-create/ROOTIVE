@@ -26,9 +26,9 @@ export function CompanyCopyBox({ copy, taxMethod }: { copy: CompanyCopy; taxMeth
           )}
           <p className="mt-1">登録番号の無い方への支払（税込）のうち、仕入税額控除できるのは経過措置の割合までです。控除できない分を会社が負担します。</p>
           <dl className="mt-2 grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1">
-            <dt>控除できる割合（期間の末日で判定）</dt>
+            <dt>期間の末日の割合</dt>
             <dd className="num text-right">{copy.deductibleRatePercent !== null ? `${copy.deductibleRatePercent}%` : "—"}</dd>
-            <dt className="font-bold">会社が負担する消費税</dt>
+            <dt className="font-bold">{copy.parts.length > 0 ? "会社が負担する消費税（日ごとに分けた目安）" : "会社が負担する消費税"}</dt>
             <dd className="text-right font-bold">
               <Money value={copy.invoiceBurden} />
             </dd>
@@ -68,6 +68,16 @@ export function CompanyCopyBox({ copy, taxMethod }: { copy: CompanyCopy; taxMeth
                   </tbody>
                 </table>
               </TableWrap>
+              <p className="mt-2 rounded-lg border border-warning/40 bg-warning/10 p-2" role="note">
+                稼働の日ごとに割合を分けた目安です。国税庁の Q&A には、9月21日から提供を受けて10月20日に完了した役務を、期間全体で10月1日以後の割合とする例があります。どちらで扱うかは税理士にご確認ください
+                {copy.periodEndBurden !== null && (
+                  <>
+                    （期間全体を末日の割合{copy.deductibleRatePercent !== null ? `（${copy.deductibleRatePercent}%）` : ""}で数えた場合：
+                    <Money value={copy.periodEndBurden} />）
+                  </>
+                )}
+                。会計ソフト向けの仕訳の税区分は、期間の末日の割合で出します。
+              </p>
             </>
           )}
           {copy.undatedAcrossStep && (

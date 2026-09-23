@@ -35,6 +35,8 @@ const nextConfig: NextConfig = {
       { source: "/t/:path*", headers: privateLink },
       { source: "/api/s/:path*", headers: privateLink },
       { source: "/api/t/:path*", headers: privateLink },
+      // デモの入口は検索に出さない・たどらせない（開いただけでは何も作らないが、ロボットを呼び込まない）
+      { source: "/demo/:path*", headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }] },
     ];
   },
 };

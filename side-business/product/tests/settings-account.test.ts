@@ -96,7 +96,15 @@ describe("自分のアカウント", () => {
   it("クッキーの名前は、ログインの仕組み（server/auth.ts）と同じ（違うと「ほかの端末から」でこの端末も切れてしまう）", () => {
     const src = readFileSync(join(__dirname, "..", "server", "auth.ts"), "utf8");
     const declared = /const (?:SESSION_)?COOKIE\s*=\s*"([^"]+)"/.exec(src)?.[1];
-    expect(declared).toBe(SESSION_COOKIE);
+    if (declared !== undefined) {
+      expect(declared).toBe(SESSION_COOKIE);
+    } else {
+      // 名前を 1 か所（server/session-cookie.ts）にまとめた形：auth もそこから読み、クッキーに使う
+      const shared = readFileSync(join(__dirname, "..", "server", "session-cookie.ts"), "utf8");
+      expect(/export const SESSION_COOKIE\s*=\s*"([^"]+)"/.exec(shared)?.[1]).toBe(SESSION_COOKIE);
+      expect(src).toMatch(/import \{ SESSION_COOKIE \} from "~\/server\/session-cookie"/);
+      expect(src).toMatch(/const COOKIE = SESSION_COOKIE;/);
+    }
   });
 
   it("パスワードの最低の長さは passwordProblem とそろっている", () => {

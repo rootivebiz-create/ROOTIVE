@@ -12,6 +12,7 @@ import { monthLabelJa, shiftMonth } from "~/server/month";
 import { getTenant, isMonthClosed, loadBuildInput } from "~/server/repo";
 import { readSnapshot, snapshotHash } from "~/server/statements-core";
 import { readTable, TableReadError } from "~/server/tabular";
+import { demoFileProblem } from "~/server/features/import/demo-budget";
 
 export * from "~/server/features/parallel/explain";
 export * from "~/server/features/parallel/gate";
@@ -342,6 +343,8 @@ export async function readParallelPaste(db: Db, tenantId: string, text: string, 
 /** ファイル（CSV・Excel）の「名前・金額」を読む（保存はしない）。シートが何枚かあれば、名前がいちばん多く当たるシート */
 export async function readParallelFile(db: Db, tenantId: string, fileName: string, bytes: Uint8Array, opts: AmountReadOptions = {}): Promise<AmountTable & { sheetName: string }> {
   if (bytes.byteLength > MAX_PARALLEL_FILE_BYTES) throw new UserError("ファイルが大きすぎます（5MB まで）");
+  const demoProblem = demoFileProblem(bytes.byteLength);
+  if (demoProblem) throw new UserError(demoProblem);
   let sheets;
   try {
     ({ sheets } = await readTable(fileName, bytes));

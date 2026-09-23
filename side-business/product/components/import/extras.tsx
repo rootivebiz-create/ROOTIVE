@@ -1,16 +1,22 @@
 import Link from "next/link";
-import { Money } from "@/components/ui";
+import { Money, TableWrap } from "@/components/ui";
+import { AdjustColumnForm } from "~/components/import/adjust-form";
 import { ActionForm, type FormAction } from "~/components/import/action-form";
 import { Section } from "~/components/import/sections";
 import { Badge } from "~/components/page";
+import { signedAmount, type AdjustCandidate } from "~/server/features/import/adjust";
 import { formatRate, guessText, type RuleGuess } from "~/server/features/import/deductions";
 import { formulaText, type DeductionProposal, type MoneyExtras } from "~/server/features/import/proposals";
+import { rateKey, type RateFinding } from "~/server/features/import/rates";
+import { ADJUST_SIGN_LABEL } from "~/server/features/import/types";
 
 /**
  * 取り込みの確認の画面：ファイルの金額の列から分かったこと（表示だけ。サーバーで描く）。
  * - 今の Excel の振込額 → 並行運用の比べ合わせに入れる
  * - 控除の列 → 式の提案（採用すると、合意の記録が無いルールとして作る）
  * - 振込手数料の列 → ルールにはせず、知らせるだけ
+ * - 燃料・高速代・立替・事故の負担・手当の列 → その月の調整として入れる（決まった式にならない額）
+ * - 単価・金額の列 → 台帳と違う人の「人ごとの単価」の下書き
  */
 
 const ROUNDING_JA: Record<string, string> = { floor: "切り捨て", round: "四捨五入", ceil: "切り上げ" };
@@ -141,10 +147,180 @@ function ProposalCard({ p, canEdit, batchId, adopt, tenantRounding }: { p: Deduc
               Excel の数式は <span className="break-all font-mono">{p.formula.sample}</span>（{formulaText(p.formula)}）ですが、値と合わない人が多いため、式にしませんでした。
             </>
           )}
-          その月だけの足し引きなら、「稼働と調整」の調整で入れてください（合意の記録と根拠も入れられます）。
+          人ごとに額が変わるもの（燃料・立替 など）なら、下の「その月の調整として入れる」で、この列の額を人ごとの調整にできます（次の月も同じように入れます）。
         </p>
       )}
     </li>
+  );
+}
+
+function qtyRate(n: number): string {
+  return n.toLocaleString("ja-JP", { maximumFractionDigits: 2 });
+}
+
+/** 金額の列を、その月の調整として入れる（決まった式にならない、人ごとに変わる額） */
+function AdjustCard({ c, canEdit, batchId, action }: { c: AdjustCandidate; canEdit: boolean; batchId: string; action: FormAction }) {
+  const on = c.setting;
+  const amounts = c.entries.map((e) => ({ ...e, amount: signedAmount(e.value, on?.sign ?? c.draft.sign) }));
+  const total = amounts.reduce((a, e) => a + e.amount, 0);
+  return (
+    <li className="space-y-2 rounded-lg border border-border p-3 text-sm">
+      <div className="flex flex-wrap items-center gap-2">
+        <b className="text-base">「{c.header}」の列</b>
+        <Badge>{c.kindLabel}</Badge>
+        {on ? <Badge tone="green">調整として入れる</Badge> : <Badge tone="gray">入れない</Badge>}
+        <span className="text-muted-foreground">{c.entries.length}人</span>
+      </div>
+      {on ? (
+        <p>
+          反映するとき、人ごとに「<b>{on.label}</b>」の調整を入れます（{ADJUST_SIGN_LABEL[on.sign]}・{on.taxable ? "消費税の対象" : "消費税の対象外"}・
+          {on.agreedInWriting ? "書面の合意あり" : "書面の合意の記録なし"}）。合計 <Money value={total} />。
+        </p>
+      ) : (
+        <p className="text-muted-foreground">
+          人ごと・月ごとに額が変わるもの（燃料・高速代・立替・事故の負担・手当 など）は、この列の額を、その月の調整として人ごとに入れられます。
+        </p>
+      )}
+      {c.sameNameRule && (
+        <p className="rounded-lg border border-warning/40 bg-warning/10 p-2">
+          同じ名前の控除のルール「{c.sameNameRule}」があります。両方あると二重に引くので、どちらか一方にしてください。
+        </p>
+      )}
+      {c.unreadable.length > 0 && (
+        <p className="text-xs text-warning">
+          数として読めないセルがあります（{c.unreadable.slice(0, 5).join("・")}
+          {c.unreadable.length > 5 ? ` ほか ${c.unreadable.length - 5} か所` : ""}）。その人の分は入れません。
+        </p>
+      )}
+      {amounts.length > 0 && (
+        <details>
+          <summary className="min-h-11 cursor-pointer py-2 font-bold">人ごとの額を見る（{amounts.length}人）</summary>
+          <ul className="grid gap-x-4 gap-y-1 sm:grid-cols-2">
+            {amounts.map((e) => (
+              <li key={e.driverId} className="flex justify-between gap-2">
+                <span className="min-w-0 break-all">{e.name}</span>
+                <Money value={e.amount} />
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+      {canEdit &&
+        (on ? (
+          <div className="flex flex-wrap gap-2">
+            <ActionForm action={action} submit="調整として入れるのをやめる" variant="ghost" pendingText="変えています…">
+              <input type="hidden" name="batchId" value={batchId} />
+              <input type="hidden" name="col" value={c.col} />
+              <input type="hidden" name="enabled" value="0" />
+            </ActionForm>
+            <details className="w-full">
+              <summary className="min-h-11 cursor-pointer py-2 font-bold">名前・向き・消費税を変える</summary>
+              <AdjustColumnForm action={action} batchId={batchId} col={c.col} initial={on} mixedSigns={c.mixedSigns} />
+            </details>
+          </div>
+        ) : (
+          <details>
+            <summary className="min-h-11 cursor-pointer py-2 font-bold">その月の調整として入れる</summary>
+            <AdjustColumnForm
+              action={action}
+              batchId={batchId}
+              col={c.col}
+              initial={{ ...c.draft, agreedInWriting: false, basis: null }}
+              mixedSigns={c.mixedSigns}
+            />
+          </details>
+        ))}
+    </li>
+  );
+}
+
+/** 単価・金額の列から読んだ、人ごとの単価 */
+function RatesCard({ f, canEdit, batchId, action }: { f: RateFinding; canEdit: boolean; batchId: string; action: FormAction }) {
+  return (
+    <li className="space-y-2 rounded-lg border border-border p-3 text-sm">
+      <div className="flex flex-wrap items-center gap-2">
+        <b className="text-base">「{f.header}」の列</b>
+        <Badge>{f.kind === "rate" ? "単価" : "金額 ÷ 数量"}</Badge>
+        {f.matched > 0 && <Badge tone="green">台帳と同じ {f.matched}件</Badge>}
+        {f.proposals.length > 0 && <Badge tone="yellow">台帳と違う {f.proposals.length}件</Badge>}
+      </div>
+      {f.billLike ? (
+        <p className="text-muted-foreground">元請からの単価（受注単価）と同じ値が多いので、ドライバーへの支払の単価ではないとみなしました。</p>
+      ) : f.proposals.length > 0 ? (
+        <>
+          <p>
+            Excel の単価が、台帳の単価（人ごとの単価、無ければ案件の支払単価）と違う人がいます。人ごとの単価として登録すると、明細はその単価 × 数量で計算します。
+          </p>
+          {canEdit ? (
+            <ActionForm
+              action={action}
+              submit="選んだ人の単価を登録する"
+              variant="primary"
+              pendingText="登録しています…"
+              confirm="選んだ人の単価を、人ごとの単価として登録します（すでにあれば上書き）。合意した日は空のままなので、取引条件の記録に入れて、合意した日を入れてください。"
+              confirmSubmit="登録する"
+            >
+              <input type="hidden" name="batchId" value={batchId} />
+              <input type="hidden" name="col" value={f.col} />
+              <RateTable f={f} selectable />
+            </ActionForm>
+          ) : (
+            <RateTable f={f} selectable={false} />
+          )}
+        </>
+      ) : (
+        f.matched > 0 && <p className="text-success">✓ すべて台帳の単価と同じです。</p>
+      )}
+      {f.varying.length > 0 && (
+        <div className="rounded-lg border border-warning/40 bg-warning/10 p-2">
+          <p className="font-bold">同じ人・同じ案件で、行ごとに単価が違う人がいます</p>
+          <ul className="mt-1 space-y-0.5">
+            {f.varying.slice(0, 10).map((v) => (
+              <li key={`${v.driverName}|${v.projectName}`}>
+                {v.driverName}・{v.projectName}：{v.rates.map(qtyRate).join("・")}円
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1">
+            段階制・最低保証・日額と歩合の組み合わせなどは、今の計算（単価 × 数量）では表せません。差は「稼働と調整」の調整で入れるか、導入のときにご相談ください。
+          </p>
+        </div>
+      )}
+    </li>
+  );
+}
+
+function RateTable({ f, selectable }: { f: RateFinding; selectable: boolean }) {
+  return (
+    <TableWrap>
+      <table className="mb-3 w-full min-w-[22rem] text-sm">
+        <thead>
+          <tr className="border-b border-border text-left text-muted-foreground">
+            {selectable && <th className="py-2 pr-2 font-normal">登録</th>}
+            <th className="py-2 pr-2 font-normal">人・案件</th>
+            <th className="py-2 pr-2 text-right font-normal">台帳</th>
+            <th className="py-2 text-right font-normal">Excel</th>
+          </tr>
+        </thead>
+        <tbody>
+          {f.proposals.map((p) => (
+            <tr key={rateKey(p)} className="border-b border-border">
+              {selectable && (
+                <td className="py-1 pr-2">
+                  <input type="checkbox" name="key" value={rateKey(p)} defaultChecked aria-label={`${p.driverName}・${p.projectName}`} className="h-5 w-5" />
+                </td>
+              )}
+              <td className="py-1 pr-2">
+                {p.driverName}・{p.projectName}
+                {p.hasOverride && <span className="ml-1 text-xs text-muted-foreground">（人ごとの単価あり）</span>}
+              </td>
+              <td className="num py-1 pr-2 text-right">{qtyRate(p.current)}円</td>
+              <td className="num py-1 text-right font-bold">{qtyRate(p.rate)}円</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </TableWrap>
   );
 }
 
@@ -154,16 +330,20 @@ export function MoneyExtrasSection({
   batchId,
   month,
   adopt,
+  adjustAction,
+  ratesAction,
 }: {
   extras: MoneyExtras;
   canEdit: boolean;
   batchId: string;
   month: string;
   adopt: FormAction;
+  adjustAction: FormAction;
+  ratesAction: FormAction;
 }) {
   const tenantRounding = extras.rounding;
-  const { payout, fees, proposals } = extras;
-  if (!payout && fees.length === 0 && proposals.length === 0) return null;
+  const { payout, fees, proposals, adjust, rates } = extras;
+  if (!payout && fees.length === 0 && proposals.length === 0 && adjust.length === 0 && rates.length === 0) return null;
   return (
     <Section title="金額の列から分かったこと">
       {payout &&
@@ -207,6 +387,29 @@ export function MoneyExtrasSection({
           <ul className="space-y-2">
             {proposals.map((p) => (
               <ProposalCard key={p.col} p={p} canEdit={canEdit} batchId={batchId} adopt={adopt} tenantRounding={tenantRounding} />
+            ))}
+          </ul>
+        </div>
+      )}
+      {adjust.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="text-sm font-bold">その月の調整として入れる（人ごとに変わる額）</h3>
+          <p className="text-sm text-muted-foreground">
+            1 件ずつ打ち直さなくても、この列の額を人ごとの調整にできます。決めた入れ方は覚えるので、来月は置いて反映するだけです。
+          </p>
+          <ul className="space-y-2">
+            {adjust.map((c) => (
+              <AdjustCard key={c.col} c={c} canEdit={canEdit} batchId={batchId} action={adjustAction} />
+            ))}
+          </ul>
+        </div>
+      )}
+      {rates.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="text-sm font-bold">単価の列から分かったこと（人ごとの単価）</h3>
+          <ul className="space-y-2">
+            {rates.map((f) => (
+              <RatesCard key={f.col} f={f} canEdit={canEdit} batchId={batchId} action={ratesAction} />
             ))}
           </ul>
         </div>

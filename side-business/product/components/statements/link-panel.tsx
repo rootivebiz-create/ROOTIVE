@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useRef, useState, useTransition } from "react";
 import { Button, buttonClass } from "@/components/ui";
 import { Notice } from "~/components/page";
@@ -20,6 +21,8 @@ export function LinkPanel({
   expiresText,
   hasPhone,
   hasEmail,
+  nextToSend = null,
+  listHref = null,
 }: {
   statementId: string;
   url: string;
@@ -28,6 +31,10 @@ export function LinkPanel({
   expiresText: string;
   hasPhone: boolean;
   hasEmail: boolean;
+  /** 次に送る人（まだ送っていない・送ったあとで中身が変わった人）。送ったあとすぐ次へ進めるように、ここにも出す */
+  nextToSend?: { href: string; name: string } | null;
+  /** 明細の一覧（次に送る人がいないときの戻り先） */
+  listHref?: string | null;
 }) {
   const [pending, startTransition] = useTransition();
   const [note, setNote] = useState<Note>(null);
@@ -114,6 +121,20 @@ export function LinkPanel({
       </details>
 
       {note && <Notice tone={note.tone}>{note.text}</Notice>}
+
+      {/* 送ったら、そのまま次の人へ（スマホでは一番下まで行かなくてよいように、送るボタンのすぐ下に置く） */}
+      {nextToSend ? (
+        <Link href={nextToSend.href} className={buttonClass(note?.tone === "ok" ? "accent" : "secondary", "w-full")}>
+          次に送る人へ（{nextToSend.name}）→
+        </Link>
+      ) : (
+        note?.tone === "ok" &&
+        listHref && (
+          <p className="text-sm">
+            まだ送っていない人は、ほかにいません。<Link href={listHref}>明細の一覧へ戻る</Link>
+          </p>
+        )
+      )}
 
       <RecreateLink statementId={statementId} />
     </div>

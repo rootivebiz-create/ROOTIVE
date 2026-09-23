@@ -11,9 +11,6 @@ import { saveCompanyAction } from "./actions";
 
 export const metadata = { title: "会社の設定" };
 
-/** 仕入明細書の相手方の確認（インボイス Q&A 問86） */
-const PURCHASE_STATEMENT_QA = "https://www.nta.go.jp/taxes/shiraberu/zeimokubetsu/shohi/keigenzeiritsu/pdf/qa/113-3.pdf";
-
 export default async function CompanySettingsPage({ searchParams }: { searchParams: Promise<{ m?: string }> }) {
   const user = await requirePageUser("viewer");
   const month = monthFromParam((await searchParams).m);
@@ -74,7 +71,7 @@ export default async function CompanySettingsPage({ searchParams }: { searchPara
           exemptQa: SOURCES.exemptQa,
           invoiceRegistry: SOURCES.invoiceRegistry,
           purchaseStatement: SOURCES.purchaseStatement,
-          purchaseStatementQa: PURCHASE_STATEMENT_QA,
+          purchaseStatementQa: SOURCES.purchaseStatementQa,
         }}
       />
     </div>

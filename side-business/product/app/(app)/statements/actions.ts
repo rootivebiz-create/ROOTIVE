@@ -5,7 +5,8 @@ import { z } from "zod";
 import { getDb } from "~/db/client";
 import { runAction, type ActionResult } from "~/server/action";
 import { requireUser } from "~/server/auth";
-import { markStatementSent, recreateStatementLink, replyToDriver, resolveThread, type SendChannel } from "~/server/features/statements";
+import { markStatementSent, recreateStatementLink, replyShareFor, replyToDriver, resolveThread, type ReplyShare, type SendChannel } from "~/server/features/statements";
+import { requestOrigin } from "~/server/features/statements/request";
 import { isUuid } from "~/server/features/statements/view";
 import { generateStatements, type GenerateResult } from "~/server/statements-core";
 
@@ -63,6 +64,20 @@ export async function markSentAction(id: string, channel: SendChannel): Promise<
   }, "送った記録をつけました");
 }
 
+const manyIdsSchema = z.array(idSchema).min(1, "送る人がいません").max(500);
+
+/** 送る一覧をコピーしたあと、その人たちに送った記録をまとめてつける（前に送った日時は変えない） */
+export async function markManySentAction(ids: string[]): Promise<ActionResult<{ count: number }>> {
+  return runAction(async () => {
+    const user = await requireUser("staff");
+    const list = [...new Set(manyIdsSchema.parse(ids))];
+    const db = await getDb();
+    for (const id of list) await markStatementSent(db, user.tenantId, id, user.id, "copy");
+    refresh();
+    return { count: list.length };
+  });
+}
+
 export async function recreateLinkAction(_prev: ActionResult<void> | undefined, form: FormData): Promise<ActionResult<void>> {
   const res = await runAction(async () => {
     const user = await requireUser("staff");
@@ -91,14 +106,21 @@ const replySchema = z.object({
   body: z.string().trim().min(1, "返事を書いてください").max(1000, "1,000 文字までにしてください"),
 });
 
-export async function replyAction(_prev: ActionResult<void> | undefined, form: FormData): Promise<ActionResult<void>> {
+/** 返事の保存のあとに出す言葉（ドライバーには自動では届かないことをはっきり書く） */
+const REPLIED = "返事を書きました。ドライバーには自動では届きません。下のボタンから LINE などで「返事を書きました」と知らせてください";
+
+export type ReplyState = ActionResult<ReplyShare | null> | undefined;
+
+export async function replyAction(_prev: ReplyState, form: FormData): Promise<ActionResult<ReplyShare | null>> {
   return runAction(async () => {
     const user = await requireUser("staff");
     const input = replySchema.parse({ id: form.get("id"), lineKey: form.get("lineKey") ?? undefined, body: form.get("body") ?? "" });
     const db = await getDb();
     await replyToDriver(db, user.tenantId, input.id, user.id, { lineKey: input.lineKey, body: input.body });
     refresh(input.id);
-  }, "返事を送りました。ドライバーは同じリンクで読めます");
+    // 知らせるための文面とリンク（今までと同じリンク。作り直さない）
+    return replyShareFor(db, user.tenantId, input.id, await requestOrigin());
+  }, REPLIED);
 }
 
 const resolveSchema = z.object({ id: idSchema, lineKey: lineKeySchema, resolved: z.enum(["1", "0"]) });

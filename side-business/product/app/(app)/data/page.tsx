@@ -6,6 +6,7 @@ import { RestoreForm } from "~/components/data/restore-form";
 import { getDb } from "~/db/client";
 import { requirePageUser } from "~/server/auth";
 import { loadDataOverview, restoreHostProblem, schemaVersion } from "~/server/features/export-all";
+import { pdfArchiveYears } from "~/server/features/export-all/pdfs";
 import { EXPORT_TABLES } from "~/server/features/export-all/tables";
 import { monthLabelJa } from "~/server/month";
 
@@ -19,7 +20,11 @@ export default async function DataPage() {
   const user = await requirePageUser("owner");
   const db = await getDb();
   const demo = process.env.DEMO_MODE === "1";
-  const [o, restoreProblem] = await Promise.all([loadDataOverview(db, user.tenantId), demo ? null : restoreHostProblem(db, user.tenantId)]);
+  const [o, restoreProblem, pdfYears] = await Promise.all([
+    loadDataOverview(db, user.tenantId),
+    demo ? null : restoreHostProblem(db, user.tenantId),
+    pdfArchiveYears(db, user.tenantId),
+  ]);
 
   return (
     <div className="space-y-8">
@@ -74,6 +79,32 @@ export default async function DataPage() {
               : "まだ書き出したことはありません。"}
             　データの形の版：{schemaVersion()}
           </p>
+        </Card>
+      </section>
+
+      <section aria-labelledby="pdf-heading" className="space-y-3">
+        <h2 id="pdf-heading" className="text-lg font-bold">
+          読むための PDF を書き出す（年ごと）
+        </h2>
+        <Card className="space-y-3">
+          <p className="text-sm">
+            上の ZIP は、別の場所へ読み戻すための形（CSV・JSON）です。支払明細と取引条件の明示書を、人が読める PDF でも残せます。
+            その年のすべての版（作り直した前の版も）を、月ごとの PDF と目録（どのファイルに、だれの・どの版が入っているか）にして 1 つの ZIP にします。
+          </p>
+          <p className="text-sm text-muted-foreground">しめ日ラボをやめる前に、要る年の分をすべて保存してください。1 年ぶんを作るのに、少し時間がかかることがあります。書き出したことは操作の記録に残ります。</p>
+          {pdfYears.length === 0 ? (
+            <p className="text-sm text-muted-foreground">まだ明細・取引条件の記録がありません。</p>
+          ) : (
+            <ul className="flex flex-wrap gap-2">
+              {pdfYears.map((y) => (
+                <li key={y}>
+                  <a href={`/api/data/pdfs?year=${y}`} className={buttonClass("secondary")}>
+                    {y}年の PDF（ZIP）
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
         </Card>
       </section>
 

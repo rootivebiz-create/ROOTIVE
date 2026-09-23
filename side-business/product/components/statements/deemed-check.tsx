@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { jpDate } from "@/lib/format";
 import type { StatementStatus } from "~/server/features/statements/status";
+import { SOURCES } from "~/server/features/watch/sources";
 
-const NTA_QA_URL = "https://www.nta.go.jp/taxes/shiraberu/zeimokubetsu/shohi/keigenzeiritsu/pdf/qa/113-3.pdf";
+/** 仕入明細書の相手方の確認（インボイス Q&A 問86） */
+const NTA_QA_URL = SOURCES.purchaseStatementQa;
 
 type Terms = { version: number; issuedOn: string; deemedClause: boolean } | null;
 
@@ -18,8 +20,27 @@ function Mark({ ok }: { ok: boolean }) {
  * 「みなし確認」の 3 つの条件を 1 つずつ見せる（会社の画面）。1 つでも欠けていれば未確認のまま。
  * ドライバーが今の版を確認していれば出さない。
  */
-export function DeemedCheck({ status, terms, deemedDays, sentOn = null }: { status: StatementStatus; terms: Terms; deemedDays: number; sentOn?: string | null }) {
+/** この人の取引条件の画面（新しい版を作る所）。人が分からなければ一覧 */
+export function termsHrefFor(driverId: string | null | undefined): string {
+  return driverId ? `/terms/${encodeURIComponent(driverId)}#new` : "/terms";
+}
+
+export function DeemedCheck({
+  status,
+  terms,
+  deemedDays,
+  sentOn = null,
+  driverId = null,
+}: {
+  status: StatementStatus;
+  terms: Terms;
+  deemedDays: number;
+  sentOn?: string | null;
+  driverId?: string | null;
+}) {
   if (status.key === "confirmed") return null;
+  const termsHref = termsHrefFor(driverId);
+  const termsLabel = driverId ? (terms ? "取引条件の明示（この人の新しい版を作る）" : "取引条件の明示（この人の明示書を作る）") : "取引条件の明示";
   const c = status.deemedCheck;
   // 条項のある取引条件を、明細を送ったあとで渡している（送った時点で合意があったかは、記録を見て確かめてもらう）
   const clauseAfterSent = !!terms?.deemedClause && !!sentOn && c.sent && terms.issuedOn > sentOn;
@@ -32,7 +53,7 @@ export function DeemedCheck({ status, terms, deemedDays, sentOn = null }: { stat
     ? "送ってから質問はありません"
     : status.openQuestions > 0
       ? `解決していない質問が ${status.openQuestions}件あります`
-      : "送ったあとに質問がありました（解決済みでも、みなし確認にはしません。「確認しました」を押してもらうようお願いしてください）";
+      : "送ったあとに質問がありました（解決済みでも、みなし確認にはしません。「内容を確認しました」を押してもらうようお願いしてください）";
   const clauseText = terms
     ? terms.deemedClause
       ? `取引条件の記録（版 ${terms.version}・${jpDate(terms.issuedOn)}）に条項があります`
@@ -51,7 +72,7 @@ export function DeemedCheck({ status, terms, deemedDays, sentOn = null }: { stat
       <p className="mt-1 text-muted-foreground">3 つがそろったときだけ「みなし確認」と表示します。1 つでも欠けていれば未確認のままです。</p>
       {status.deemedBlockedByClause && (
         <p role="status" className="mt-2 rounded-lg border border-warning/40 bg-warning/10 p-3 font-bold text-warning">
-          取引条件にみなし確認の条項がありません（<Link href="/terms">/terms</Link> で入れられます）
+          取引条件にみなし確認の条項がありません（<Link href={termsHref}>{termsLabel}</Link>で入れられます）
         </p>
       )}
       <ul className="mt-2 space-y-2">
@@ -69,7 +90,7 @@ export function DeemedCheck({ status, terms, deemedDays, sentOn = null }: { stat
             {clauseText}
             {!c.clause && (
               <>
-                。<Link href="/terms">取引条件の明示</Link>で、条項を入れた版を作って渡せます
+                。<Link href={termsHref}>{termsLabel}</Link>で、条項を入れた版を作って渡せます
               </>
             )}
           </span>

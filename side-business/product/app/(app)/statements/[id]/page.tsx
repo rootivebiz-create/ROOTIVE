@@ -76,7 +76,7 @@ export default async function StatementDetailPage({ params }: { params: Promise<
         </Notice>
       )}
       {/* 送ってあって、まだ確認されていない明細：みなし確認の 3 つの条件を 1 つずつ見せる */}
-      {(detail.sentAtText || detail.status.key === "deemed") && <DeemedCheck status={detail.status} terms={detail.terms} deemedDays={detail.deemedDays} sentOn={st.sentAt ? jstDateString(st.sentAt) : null} />}
+      {(detail.sentAtText || detail.status.key === "deemed") && <DeemedCheck status={detail.status} terms={detail.terms} deemedDays={detail.deemedDays} sentOn={st.sentAt ? jstDateString(st.sentAt) : null} driverId={st.driverId} />}
       {detail.status.needsResend && detail.status.key !== "changed" && (
         <Notice tone="info">送ったあとで中身が変わりました。新しい中身はまだ送っていません。リンクはそのまま使えるので、もう一度送ってください。</Notice>
       )}
@@ -136,6 +136,8 @@ export default async function StatementDetailPage({ params }: { params: Promise<
                   expiresText={link.expiresText}
                   hasPhone={!!detail.contact.phone}
                   hasEmail={!!detail.contact.email}
+                  nextToSend={nextToSend ? { href: `/statements/${nextToSend.id}`, name: nextToSend.name } : null}
+                  listHref={`/statements?m=${m}`}
                 />
               ) : (
                 <p className="text-sm text-muted-foreground">リンクを送るのは事務・オーナーの方です（見るだけの役割では出しません）。</p>
@@ -189,7 +191,7 @@ export default async function StatementDetailPage({ params }: { params: Promise<
                         <td className="py-1 text-xs">
                           {c.device ?? "—"}
                           <span className="block font-mono text-muted-foreground">
-                            IP {c.ipShort ?? "—"}・{c.hashShort}
+                            接続元 {c.ipShort ?? "—"}・{c.hashShort}
                           </span>
                         </td>
                       </tr>
@@ -198,7 +200,7 @@ export default async function StatementDetailPage({ params }: { params: Promise<
                 </table>
               </TableWrap>
             )}
-            <p className="mt-2 text-xs text-muted-foreground">IP は元の値ではなく、ハッシュの先頭だけを残しています。月の全員分は一覧の「確認の記録（CSV）」から出せます。</p>
+            <p className="mt-2 text-xs text-muted-foreground">IP は元の値を残さず、鍵をかけた目印（8 文字）だけを出しています。同じ目印なら同じ接続元です。月の全員分は一覧の「確認の記録（CSV）」から出せます。</p>
           </Card>
 
           <Card>

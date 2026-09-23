@@ -85,7 +85,19 @@ export async function updateCompany(db: Db, tenantId: string, input: CompanyInpu
   for (const key of SETTING_KEYS) {
     if (key in (before.settings ?? {}) && !(key in settings)) changed[key] = { from: (before.settings as Record<string, unknown>)[key], to: null };
   }
-  return { before, after, changed };
+  return { before, after, changed: maskRequesterAccount(changed) };
+}
+
+/**
+ * 操作の記録（消せない表）に会社の口座番号を残さない：振込依頼人の口座番号は下 3 桁だけにする
+ * （ドライバーの設定と同じ形。キーは残すので「口座番号を変えた」ことは分かる）。
+ */
+export function maskRequesterAccount<T extends Record<string, unknown>>(changed: T): T {
+  const req = changed.requester as { from?: unknown; to?: unknown } | undefined;
+  if (!req || typeof req !== "object") return changed;
+  const tail = (v: unknown) => (typeof v === "string" && v ? `…${v.slice(-3)}` : v);
+  const side = (v: unknown) => (v && typeof v === "object" && "accountNumber" in v ? { ...(v as Record<string, unknown>), accountNumber: tail((v as Record<string, unknown>).accountNumber) } : v);
+  return { ...changed, requester: { ...req, from: side(req.from), to: side(req.to) } } as T;
 }
 
 /** AI の読み取りを使ってよいか（お客様の同意）。変えたら前後を返す */

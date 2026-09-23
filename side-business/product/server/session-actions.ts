@@ -7,7 +7,7 @@ import { getDb } from "~/db/client";
 import * as s from "~/db/schema";
 import { audit } from "~/server/audit";
 import { clientIpHash, createSession } from "~/server/auth";
-import { hashPassword, passwordProblem, verifyPassword } from "~/server/password";
+import { DUMMY_PASSWORD_HASH, hashPassword, MAX_PASSWORD_LENGTH, needsRehash, passwordProblem, verifyPassword } from "~/server/password";
 import { tooMany } from "~/server/rate-limit";
 import { sha256 } from "~/server/tokens";
 
@@ -15,11 +15,16 @@ export type FormState = { error?: string; fieldErrors?: Record<string, string> }
 
 const emailSchema = z.string().trim().toLowerCase().email("メールアドレスの形が正しくありません");
 
+/** メールアドレスの長さの上限（RFC 5321 の経路の上限。これより長いものは数えずに断る） */
+const MAX_EMAIL_LENGTH = 254;
+
 export async function loginAction(_prev: FormState, form: FormData): Promise<FormState> {
   const email = String(form.get("email") ?? "").trim().toLowerCase();
   const password = String(form.get("password") ?? "");
+  // 長すぎる値は、回数の制限にも DB にも渡さない（数 MB の値を覚えさせて、サーバーのメモリを使わせない）
+  if (email.length > MAX_EMAIL_LENGTH || password.length > MAX_PASSWORD_LENGTH) return { error: "メールアドレスかパスワードが違います" };
   const ip = (await clientIpHash()) ?? "unknown";
-  if (tooMany(`login:${ip}`, 20, 15 * 60_000) || tooMany(`login:${email}`, 10, 15 * 60_000)) {
+  if (tooMany(`login:${ip}`, 20, 15 * 60_000) || tooMany(`login-email:${sha256(email)}`, 10, 15 * 60_000)) {
     return { error: "何度も失敗したので、15 分ほどおいてからお試しください" };
   }
   const db = await getDb();
@@ -32,14 +37,22 @@ export async function loginAction(_prev: FormState, form: FormData): Promise<For
     .limit(10);
   let user: (typeof rows)[number] | undefined;
   for (const candidate of rows) {
-    if (await verifyPassword(password, candidate.passwordHash ?? "")) {
+    if (!candidate.passwordHash) continue;
+    if (await verifyPassword(password, candidate.passwordHash)) {
       user = candidate;
       break;
     }
   }
-  // 利用者がいなくても同じだけ時間をかける（いるかどうかを探られないように）
-  if (rows.length === 0) await verifyPassword(password, "scrypt$16384$8$1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+  // 利用者がいない・パスワードがまだ無い（読み戻したあと）ときも同じだけ時間をかける（いるかどうかを探られないように）
+  if (!rows.some((r) => r.passwordHash)) await verifyPassword(password, DUMMY_PASSWORD_HASH);
   if (!user) return { error: "メールアドレスかパスワードが違います" };
+  // 前の強さのハッシュは、ここで今の強さに作り直す（ログインが通ったときだけ、生のパスワードが手元にある）
+  if (needsRehash(user.passwordHash)) {
+    await db
+      .update(s.users)
+      .set({ passwordHash: await hashPassword(password) })
+      .where(and(eq(s.users.tenantId, user.tenantId), eq(s.users.id, user.id)));
+  }
   await createSession(user);
   await audit(db, { tenantId: user.tenantId, userId: user.id, action: "login", entity: "user", entityId: user.id });
   redirect("/");

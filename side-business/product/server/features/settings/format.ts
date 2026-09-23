@@ -9,6 +9,7 @@ import { pct, roundYen } from "@/lib/payroll/money";
 import type { Rounding } from "@/lib/payroll/types";
 import { TAX_RATE } from "~/server/calc/statement";
 import { TAX_METHODS as ONBOARDING_TAX_METHODS, type TaxMethod } from "~/server/features/onboarding/company";
+import { BASIS } from "~/server/features/watch/sources";
 import {
   latestSafePayRule,
   paymentDeadlineCheck,
@@ -102,6 +103,15 @@ export const RULE_KIND_LABEL = { percent: "委託料 × 率", fixed: "毎月の�
 /** 振込手数料の負担についての注意（見張り番と同じ文） */
 export const FEE_BEARER_WARNING = "振込手数料をドライバーの負担にすると、報酬の減額にあたるおそれがあります（合意があっても）。";
 
+/**
+ * 「ドライバーが持つ」を選んだときの説明。
+ * この設定は計算を変えない（明細にも振込データにも手数料の行は無い）ので、「差し引きます」とは書かない。
+ */
+export const DRIVER_FEE_HELP = "しめ日ラボの明細・振込データでは差し引きません（この設定のあいだは見張り番がお知らせします）";
+
+/** 取適法の正式な略称つきの呼び方（画面で最初に出すところに使う。以降は「取適法」） */
+export const TORITEKI_FULL = BASIS.toriteki;
+
 /** 控除の合意の記録が無いときの注意 */
 export const NO_AGREEMENT_WARNING = "合意の記録が無い控除は、報酬の減額にあたるおそれがあります";
 
@@ -136,7 +146,7 @@ export type DeadlineHint = { status: DeadlineStatus | "error"; text: string; saf
 
 /**
  * 60 日（2 か月）の目安。これから 12 か月の支払日を、締め期間の最初の日・締め日から数えた期限と比べる。
- * 銀行の休みの日（土日・年末年始）は前の営業日にずらして数える（祝日は入れていない）。
+ * 銀行の休みの日（土日・祝日・年末年始。祝日の表は @/lib/tools/jp-holidays）は前の営業日にずらして数える。
  */
 export function deadlineHint(closingDay: number, payMonthOffset: number, payDay: number, today: string): DeadlineHint {
   const closing = toDayOfMonth(closingDay);

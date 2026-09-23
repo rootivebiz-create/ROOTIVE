@@ -4,7 +4,8 @@ import { NextStepLink, StepHeader } from "~/components/onboarding/step-header";
 import { Notice } from "~/components/page";
 import { getDb } from "~/db/client";
 import { requirePageUser } from "~/server/auth";
-import { loadCompanyForm, loadOnboarding } from "~/server/features/onboarding";
+import { loadCompanyForm, loadOnboarding, nextStepOf, stepHref } from "~/server/features/onboarding";
+import { monthFromParam, monthParam } from "~/server/month";
 import { payRuleText, SIZE_REASON, TAX_METHODS } from "~/server/features/onboarding/company";
 
 export const metadata = { title: "最初の設定：会社の基本" };
@@ -19,6 +20,8 @@ export default async function OnboardingCompanyPage() {
   const db = await getDb();
   const [c, progress] = await Promise.all([loadCompanyForm(db, user.tenantId), loadOnboarding(db, user.tenantId)]);
   const isOwner = user.role === "owner";
+  // 保存したあとの「次の手順」（会社の次は先月の Excel の取り込み。先月の分を開く）
+  const next = nextStepOf("company");
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -36,6 +39,7 @@ export default async function OnboardingCompanyPage() {
         <Card>
           <CompanyForm
             today={todayJst()}
+            next={next ? { href: stepHref(next, monthParam(monthFromParam(undefined))), title: next.title } : null}
             initial={{
               closingDay: c.closingDay,
               payMonthOffset: c.payMonthOffset,

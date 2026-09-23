@@ -7,7 +7,7 @@ import { colLetter, isTotalHeader } from "./detect";
 import type { ColumnRole, WorkMapping } from "./types";
 
 /** 控除の区分（見出しの言葉から） */
-export type DeductionCategory = "royalty" | "admin" | "lease" | "insurance" | "fuel" | "advance";
+export type DeductionCategory = "royalty" | "admin" | "lease" | "insurance" | "fuel" | "advance" | "toll" | "accident";
 
 export const CATEGORY_LABEL: Record<DeductionCategory, string> = {
   royalty: "ロイヤリティ",
@@ -16,6 +16,8 @@ export const CATEGORY_LABEL: Record<DeductionCategory, string> = {
   insurance: "保険",
   fuel: "燃料",
   advance: "立替の精算",
+  toll: "高速代・駐車代",
+  accident: "事故・破損の負担",
 };
 
 export type MoneyColumn =
@@ -25,9 +27,19 @@ export type MoneyColumn =
   | { col: number; header: string; kind: "base" }
   /** 振込手数料（控除のルールにはしない） */
   | { col: number; header: string; kind: "fee" }
-  | { col: number; header: string; kind: "deduction"; category: DeductionCategory };
+  | { col: number; header: string; kind: "deduction"; category: DeductionCategory }
+  /** 手当・インセンティブ（支払を増やすもの） */
+  | { col: number; header: string; kind: "allowance" }
+  /** 調整・精算（＋も−もある、その月だけの足し引き） */
+  | { col: number; header: string; kind: "adjust" };
 
-type Classified = { kind: "payout"; strength: number } | { kind: "base" } | { kind: "fee" } | { kind: "deduction"; category: DeductionCategory };
+type Classified =
+  | { kind: "payout"; strength: number }
+  | { kind: "base" }
+  | { kind: "fee" }
+  | { kind: "deduction"; category: DeductionCategory }
+  | { kind: "allowance" }
+  | { kind: "adjust" };
 
 const DEDUCTION_WORDS: [DeductionCategory, RegExp][] = [
   ["royalty", /ロイヤリティ|ロイヤルティ|ロイヤリテイ|royalty/],
@@ -36,6 +48,8 @@ const DEDUCTION_WORDS: [DeductionCategory, RegExp][] = [
   ["insurance", /保険/],
   ["fuel", /燃料|ガソリン|軽油/],
   ["advance", /立替|立て替え|たてかえ/],
+  ["toll", /高速|通行料|有料道路|駐車|(^|[^a-z])etc([^a-z]|$)/],
+  ["accident", /事故|破損|弁償|修理|違約|罰金|ペナルティ/],
 ];
 
 /** 見出しの言葉から、金額の列の種類を当てる（当たらなければ null） */
@@ -47,6 +61,8 @@ export function classifyMoneyHeader(header: string): Classified | null {
   if (/率|単価|%|％|消費税|^税$|控除合?計|控除額計|差引計/.test(h)) return null;
   if (/振込手数料|振込料|送金手数料|振替手数料/.test(h)) return { kind: "fee" };
   for (const [category, re] of DEDUCTION_WORDS) if (re.test(h)) return { kind: "deduction", category };
+  if (/手当|インセンティブ|報奨|奨励金|賞与|ボーナス|特別加算/.test(h)) return { kind: "allowance" };
+  if (/^(その他)?(調整|精算|加減算|過不足)(額|金額)?$|^その他(控除|加算)?$/.test(h)) return { kind: "adjust" };
   if (/委託料|報酬|税抜|小計/.test(h) && !/税込/.test(h)) return { kind: "base" };
   if (/税込|税抜/.test(h)) return null;
   if (/振込額|振込金額|お振込|差引支給|差引支払|差引振込|差引額|振込予定額/.test(h)) return { kind: "payout", strength: 3 };
@@ -146,4 +162,30 @@ export function readPayout(
         .map(([driverId, v]) => ({ driverId, name: names.get(driverId) ?? "", amount: Math.round(v) }))
         .sort((a, b) => a.name.localeCompare(b.name, "ja"));
   return { col: best.col, header: best.header, entries, perRow: read.perRow, unreadable: read.unreadable };
+}
+
+// ---------------------------------------------------------------- 単価・金額の列（人ごとの単価の手がかり）
+
+/**
+ * 支払の単価の列（「単価」「支払単価」）か、行ごとの支払の金額の列（「金額」「支払金額」）か。
+ * 元請からの単価（請求・受注・売上）・率・合計の列は除く
+ */
+export function classifyRateHeader(header: string): "rate" | "amount" | null {
+  const h = normalizeHeader(header);
+  if (!h) return null;
+  if (/請求|受注|売上|元請|税込|合計|総額|計$|率|%/.test(h)) return null;
+  if (/単価/.test(h)) return "rate";
+  if (/^(支払|委託|報酬)?(金額|額)$|^(支払|委託)?報酬額?$|^委託料$/.test(h)) return "amount";
+  return null;
+}
+
+/** 使わない列のうち、単価・金額の列（単価の列があれば、金額の列は見ない） */
+export function findRateColumns(header: string[], roles: ColumnRole[]): { col: number; header: string; kind: "rate" | "amount" }[] {
+  const out: { col: number; header: string; kind: "rate" | "amount" }[] = [];
+  header.forEach((h, col) => {
+    if ((roles[col] ?? "ignore") !== "ignore" || !h.trim() || isTotalHeader(h)) return;
+    const k = classifyRateHeader(h);
+    if (k) out.push({ col, header: h.trim(), kind: k });
+  });
+  return out.some((c) => c.kind === "rate") ? out.filter((c) => c.kind === "rate") : out;
 }

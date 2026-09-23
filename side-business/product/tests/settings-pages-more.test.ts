@@ -11,7 +11,7 @@ import type { SessionUser } from "~/server/auth";
 import { audit } from "~/server/audit";
 import { TAX_METHODS as ONBOARDING_TAX_METHODS } from "~/server/features/onboarding/company";
 import { CLIENT_DEACTIVATE_ACTION, deactivateClient } from "~/server/features/settings/clients";
-import { TAX_METHODS, toritekiOver, toritekiThresholdText } from "~/server/features/settings/format";
+import { DRIVER_FEE_HELP, TAX_METHODS, toritekiOver, toritekiThresholdText } from "~/server/features/settings/format";
 import { TORITEKI_CAPITAL_YEN, TORITEKI_EMPLOYEES } from "~/server/features/watch/rules";
 import { hashPassword } from "~/server/password";
 import { seedDemo } from "~/server/seed-demo";
@@ -122,6 +122,29 @@ describe("設定の続きの画面", () => {
     for (const t of ONBOARDING_TAX_METHODS) expect(owner).toContain(t.label);
     const viewer = await html("company", "viewer", { m: "2026-10" });
     expect(viewer).toContain(toritekiThresholdText({ capitalYen: TORITEKI_CAPITAL_YEN, employees: TORITEKI_EMPLOYEES }));
+    // 取適法は、画面で最初に出すところに正式な名前を添える
+    expect(owner).toContain("取適法（中小受託取引適正化法）の対象かどうかの目安に使います");
+  });
+
+  it("会社の設定：振込手数料「ドライバーが持つ」は計算を変えないので、「差し引きます」と書かない", async () => {
+    const owner = await html("company", "owner", { m: "2026-10" });
+    expect(owner).toContain(DRIVER_FEE_HELP);
+    expect(owner).not.toContain("振込額から手数料を差し引きます");
+    // ドライバーの負担にしているときは、赤の注意（リーフレット）で先に正式な名前を出し、規模の欄は短く
+    const db = state.db!;
+    const [t] = await db.select().from(s.tenants).where(eq(s.tenants.id, tenantId));
+    await db.update(s.tenants).set({ settings: { ...t.settings, transferFeeBearer: "driver" } }).where(eq(s.tenants.id, tenantId));
+    try {
+      const h = await html("company", "owner", { m: "2026-10" });
+      expect(h).toContain(DRIVER_FEE_HELP);
+      expect(h).toContain("取適法（中小受託取引適正化法）のリーフレット");
+      expect(h).toContain("取適法の対象かどうかの目安に使います");
+      expect(h.split("中小受託取引適正化法").length - 1).toBe(1);
+      expect(h).not.toContain("振込額から手数料を差し引きます");
+      for (const w of FORBIDDEN) expect(h).not.toContain(w);
+    } finally {
+      await db.update(s.tenants).set({ settings: t.settings }).where(eq(s.tenants.id, tenantId));
+    }
   });
 
   it("自分のアカウント：どの役割でも開ける。パスワードの変更・いまの端末・ほかの端末の数・最近のログイン", async () => {

@@ -146,7 +146,8 @@ export function buildExportSheet(
     const extra: ("project" | "date" | "note" | "driver")[] = [];
     const needsProject = col("project") < 0 && entries.some((e) => e.projectId !== layout.fixedProjectId);
     if (needsProject) extra.push("project");
-    if (col("driver") < 0 && entries.some((e) => !driverCode(e.driverId))) extra.push("driver");
+    // 人の列が無い形（番号の列も無い）なら、名前の列を足す（だれの稼働か分からなくならないように）
+    if (col("driver") < 0 && (col("driverCode") < 0 || entries.some((e) => !driverCode(e.driverId)))) extra.push("driver");
     if (col("date") < 0 && entries.some((e) => e.workDate)) extra.push("date");
     if (col("note") < 0 && entries.some((e) => e.note)) extra.push("note");
     const extraLabel = { project: "案件", date: "日付", note: "備考", driver: "ドライバー" } as const;

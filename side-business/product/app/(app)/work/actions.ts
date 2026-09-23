@@ -2,12 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { z } from "zod";
 import { getDb } from "~/db/client";
 import { runAction, type ActionResult } from "~/server/action";
 import { audit } from "~/server/audit";
 import { requireUser } from "~/server/auth";
 import { adjustmentSchema, idSchema, monthSchema, workEntrySchema } from "~/server/features/import/schemas";
-import { addAdjustment, addWorkEntry, deleteAdjustment, deleteWorkEntry, updateAdjustment, updateWorkEntry } from "~/server/features/import/work";
+import { addAdjustment, addWorkEntry, bulkAddAdjustments, deleteAdjustment, deleteWorkEntry, updateAdjustment, updateWorkEntry } from "~/server/features/import/work";
 import { monthParam } from "~/server/month";
 
 /**
@@ -210,4 +211,65 @@ export async function deleteAdjustmentAction(_prev: State, form: FormData): Prom
   });
   if (res.ok) redirect(back);
   return res;
+}
+
+const bulkSchema = z.object({
+  month: monthSchema,
+  text: z.string().trim().min(1, "Excel の「名前・内容・金額」の列を貼り付けてください").max(50_000, "一度に貼り付けられる量を超えています。分けて入れてください"),
+  defaultLabel: z
+    .string()
+    .trim()
+    .max(60, "内容は 60 文字までにしてください")
+    .transform((v) => v || null),
+  sign: z.enum(["asIs", "minus", "plus"], { error: "金額の向きを選んでください" }),
+  taxable: z.string().transform((v) => v === "on"),
+  agreedInWriting: z.string().transform((v) => v === "on"),
+  basis: z
+    .string()
+    .trim()
+    .max(200, "根拠は 200 文字までにしてください")
+    .transform((v) => v || null),
+});
+
+/** 調整をまとめて入れる（Excel から貼り付け）。1 行でも読めない行があれば、何も入れない */
+export async function bulkAdjustmentAction(_prev: State, form: FormData): Promise<State> {
+  let message = "";
+  const res = await runAction(async () => {
+    const user = await requireUser("staff");
+    const input = bulkSchema.parse({
+      month: text(form, "month"),
+      text: text(form, "text"),
+      defaultLabel: text(form, "defaultLabel"),
+      sign: text(form, "sign") || "asIs",
+      taxable: text(form, "taxable"),
+      agreedInWriting: text(form, "agreedInWriting"),
+      basis: text(form, "basis"),
+    });
+    const db = await getDb();
+    const { rows, skipped } = await bulkAddAdjustments(db, user.tenantId, input.month, input);
+    for (const r of rows) {
+      await audit(db, {
+        tenantId: user.tenantId,
+        userId: user.id,
+        action: "adjustment.add",
+        entity: "adjustment",
+        entityId: r.id,
+        detail: {
+          month: input.month,
+          driver: r.driverName,
+          driverId: r.driverId,
+          label: r.label,
+          amount: r.amount,
+          taxable: input.taxable,
+          agreedInWriting: input.agreedInWriting,
+          basis: input.basis,
+          source: "paste",
+        },
+      });
+    }
+    const total = rows.reduce((a, r) => a + r.amount, 0);
+    message = `調整を ${rows.length} 件入れました（合計 ${total.toLocaleString("ja-JP")}円${skipped ? `・0 円と見出しの ${skipped} 行は飛ばしました` : ""}）。${AFTER}`;
+    refresh();
+  });
+  return res.ok ? { ...res, message } : res;
 }

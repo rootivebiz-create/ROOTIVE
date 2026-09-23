@@ -81,25 +81,34 @@ export function AskButton({
   label,
   count,
   disabled,
+  compact = false,
 }: {
   token: string;
   lineKey: string;
   label: string;
   count: number;
   disabled: boolean;
+  /** 日ごとの数量の 1 行など、狭い所に出すとき（短い言葉にする） */
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="mt-1">
-      <div className="flex flex-wrap items-center gap-x-4">
+    <div className={compact ? "" : "mt-1"}>
+      <div className={`flex flex-wrap items-center gap-x-4 ${compact ? "justify-end" : ""}`}>
         {!open && (
-          <button type="button" onClick={() => setOpen(true)} className="min-h-11 text-sm text-link underline underline-offset-2" disabled={disabled}>
-            この行について質問する
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="min-h-11 text-sm text-link underline underline-offset-2"
+            disabled={disabled}
+            aria-label={compact ? `${label}について質問する` : undefined}
+          >
+            {compact ? "この日について質問する" : "この行について質問する"}
           </button>
         )}
         {count > 0 && (
           <a href={`#thread-${lineKey}`} className="inline-flex min-h-11 items-center text-sm">
-            この行のやりとり {count}件
+            {compact ? `この日のやりとり ${count}件` : `この行のやりとり ${count}件`}
           </a>
         )}
       </div>

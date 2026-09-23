@@ -132,20 +132,24 @@ describe("会社の控え（写しから）", () => {
     expect(copy.invoiceBurden).toBe(6_930);
     expect(copy.partsText).toBe(`9/21〜9/30 ¥2,700（${pct(SEP)}）／10/1〜10/20 ¥4,230（${pct(OCT)}）`);
     expect(copy.undatedAcrossStep).toBe(false);
+    // 期間全体を末日（10/20）の割合で数えた場合（国税庁の Q&A の役務の例の数え方）も、写しの数字から出す
+    expect(copy.periodEndBurden).toBe(nonDeductibleTax(303_600, "2026-10-20"));
+    expect(copy.periodEndBurden).toBe(8_280);
+    expect(copy.deductibleRatePercent).toBe(ratePercent(deductibleRateForExempt("2026-10-20")));
   });
 
   it("日付の無い稼働が期間をまたぐときは、按分せずに黄色の注意（木村さん）", async () => {
     await spanningSetup();
     const { st } = await statementOf("D07");
     const copy = companyCopy(readSnapshot(st));
-    expect(copy).toMatchObject({ unregistered: true, parts: [], partsText: null, undatedAcrossStep: true });
+    expect(copy).toMatchObject({ unregistered: true, parts: [], partsText: null, undatedAcrossStep: true, periodEndBurden: null });
     // 期間の末日（10/20）の割合で計算
     expect(copy.invoiceBurden).toBe(nonDeductibleTax(readSnapshot(st).subtotal + readSnapshot(st).tax, "2026-10-20"));
   });
 
   it("古い写し（内訳・印・割合が無い）でも壊れない", () => {
     const old = { driver: { invoiceRegistered: false }, invoiceBurden: 1_234, period: { from: "2026-10-01", to: "2026-10-31" } } as unknown as StatementDraft;
-    expect(companyCopy(old)).toEqual({ unregistered: true, invoiceBurden: 1_234, deductibleRatePercent: null, parts: [], partsText: null, undatedAcrossStep: false });
+    expect(companyCopy(old)).toEqual({ unregistered: true, invoiceBurden: 1_234, deductibleRatePercent: null, parts: [], partsText: null, undatedAcrossStep: false, periodEndBurden: null });
     const older = { driver: { invoiceRegistered: false } } as unknown as StatementDraft;
     expect(companyCopy(older).invoiceBurden).toBe(0);
   });
@@ -167,6 +171,13 @@ describe("出す所・出さない所", () => {
     expect(ueda).toContain(`9/21〜9/30 ¥2,700（${pct(SEP)}）／10/1〜10/20 ¥4,230（${pct(OCT)}）`);
     expect(ueda).toContain("¥6,930");
     expect(ueda).not.toContain("日付の無い稼働があり");
+    // 割合は「期間の末日の割合」。日ごとに分けたのは目安で、期間全体を末日の割合で数えた額も並べ、税理士に確かめてもらう
+    expect(ueda).toContain("期間の末日の割合");
+    expect(ueda).not.toContain("控除できる割合（期間の末日で判定）");
+    expect(ueda).toContain("会社が負担する消費税（日ごとに分けた目安）");
+    expect(ueda).toContain("稼働の日ごとに割合を分けた目安です。国税庁の Q&amp;A には、9月21日から提供を受けて10月20日に完了した役務を、期間全体で10月1日以後の割合とする例があります。どちらで扱うかは税理士にご確認ください");
+    expect(ueda).toContain(`期間全体を末日の割合（${pct("2026-10-20")}）で数えた場合：<span class="num whitespace-nowrap">¥8,280</span>）`);
+    expect(ueda).toContain("会計ソフト向けの仕訳の税区分は、期間の末日の割合で出します");
     const kimura = await detailHtml((await statementOf("D07")).st.id);
     expect(kimura).toContain("日付の無い稼働があり、期間の末日の割合で計算しています");
     // 登録ありの人には出さない

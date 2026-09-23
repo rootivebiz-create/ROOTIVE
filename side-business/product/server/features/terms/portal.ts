@@ -6,7 +6,7 @@ import { UserError } from "~/server/action";
 import { audit } from "~/server/audit";
 import { termsPdfFileName, termsReceivedText, toTermsDocument, type TermsRecordRow } from "~/server/features/terms";
 import { termsSections, type TermsDocument, type TermsSection } from "~/server/features/terms/document";
-import { jpDateTimeJst } from "~/server/features/terms/links";
+import { jpDateTimeJst, termsLinkToken } from "~/server/features/terms/links";
 import { isUuid } from "~/server/features/terms/schema";
 import { tooMany } from "~/server/rate-limit";
 import { verifyLink } from "~/server/tokens";
@@ -71,6 +71,11 @@ export type TermsPortalData = {
   /** このリンクの版が最新か（古い版は「受け取りました」を押せない） */
   isLatest: boolean;
   latestVersion: number;
+  /**
+   * 古い版のリンクのとき：最新の版をドライバーへ送ってあれば、そのリンクの値（同じドライバーの記録だけ）。
+   * まだ送っていなければ null（会社から届くのを待ってもらう）
+   */
+  latestToken: string | null;
   received: { at: string; version: number } | null;
   linkExpiresText: string;
 };
@@ -81,12 +86,24 @@ export async function loadTermsPortal(db: Db, token: string, now = new Date()): 
   const check = verifyLink("terms", token, Math.floor(now.getTime() / 1000));
   const [doc, latestVersion] = await Promise.all([documentOf(db, rec), latestVersionOf(db, rec)]);
   if (!doc) return null;
+  const isLatest = rec.version === latestVersion;
+  let latestToken: string | null = null;
+  if (!isLatest) {
+    // 同じドライバーの最新の版。会社が送った（sentAt がある）ときだけ開ける（明細の「ほかの月」と同じ考え方）
+    const [latest] = await db
+      .select({ id: s.termsRecords.id, linkNonce: s.termsRecords.linkNonce, sentAt: s.termsRecords.sentAt })
+      .from(s.termsRecords)
+      .where(and(eq(s.termsRecords.tenantId, rec.tenantId), eq(s.termsRecords.driverId, rec.driverId), eq(s.termsRecords.version, latestVersion)))
+      .limit(1);
+    if (latest?.sentAt) latestToken = termsLinkToken(latest, now).token;
+  }
   return {
     companyName: doc.company.name,
     doc,
     sections: termsSections(doc),
-    isLatest: rec.version === latestVersion,
+    isLatest,
     latestVersion,
+    latestToken,
     received: rec.receivedAt ? { at: jpDateTimeJst(rec.receivedAt), version: rec.version } : null,
     linkExpiresText: check.ok ? jpDateTimeJst(new Date(check.expiresAt * 1000)) : "",
   };

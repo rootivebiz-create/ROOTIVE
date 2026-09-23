@@ -199,16 +199,29 @@ function buildItems(c: CloseChecklist, m: string, canEdit: boolean, isOwner = fa
       ? {
           no: "5",
           title: "振込データ（参考）",
-          tone: tr.changed > 0 || tr.notIncluded > 0 ? "yellow" : "green",
-          status: tr.changed > 0 ? `作り直しが必要 ${tr.changed} 件` : tr.notIncluded > 0 ? `入っていない人 ${tr.notIncluded}人` : "作成済み",
+          tone: tr.changed - tr.changedExecuted > 0 || tr.notIncluded > 0 || tr.paidDiff.open > 0 ? "yellow" : "green",
+          status:
+            tr.changed - tr.changedExecuted > 0
+              ? `作り直しが必要 ${tr.changed - tr.changedExecuted} 件`
+              : tr.paidDiff.open > 0
+                ? `振り込んだ額との差 ${tr.paidDiff.open}人`
+                : tr.notIncluded > 0
+                  ? `入っていない人 ${tr.notIncluded}人`
+                  : "作成済み",
           body: (
             <div className="space-y-1">
               <p>
                 {tr.batches} 件・{tr.people}人・今の明細で合計 {yenText(tr.total)}（振り込んだ日の記録 {tr.executed} 件）
               </p>
-              {tr.changed > 0 && (
+              {tr.changed - tr.changedExecuted > 0 && (
                 <p className="text-warning">
-                  作ったあとに明細が変わった振込データが {tr.changed} 件あります。銀行にまだ出していなければ、振込データの画面で取り消して作り直してください。
+                  作ったあとに明細が変わった振込データが {tr.changed - tr.changedExecuted} 件あります。銀行にまだ出していなければ、振込データの画面で取り消して作り直してください。
+                </p>
+              )}
+              {tr.paidDiff.open > 0 && (
+                <p className="text-warning">
+                  振り込んだあとに明細が変わり、振り込んだ額と明細の額が違う人が {tr.paidDiff.open}人います（払い足りない {yenText(tr.paidDiff.underpaid)}・払いすぎ{" "}
+                  {yenText(tr.paidDiff.overpaid)}）。振込データの画面の「振り込んだ額と明細の額の差」で、精算の仕方を人ごとに記録してください。
                 </p>
               )}
               {tr.notIncluded > 0 && <p>振込額があるのに、どの振込データにも入っていない人が {tr.notIncluded}人います（口座が未登録の人など）。</p>}

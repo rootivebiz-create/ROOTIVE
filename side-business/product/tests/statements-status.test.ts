@@ -146,7 +146,7 @@ describe("明細の状態", () => {
 describe("送る文面・リンク・口座・日付", () => {
   it("決まった文面で、LINE・SMS・メールのリンクを作る", () => {
     const msg = shareMessage("青木 翔太", "2026-10-01", "https://example.test/s/abc");
-    expect(msg).toBe("青木 翔太さん　2026年10月分の支払明細です。内容をご確認のうえ『確認しました』を押してください。https://example.test/s/abc");
+    expect(msg).toBe("青木 翔太さん　2026年10月分の支払明細です。内容をご確認のうえ『内容を確認しました』を押してください。https://example.test/s/abc");
     const links = shareLinks({ message: msg, subject: "件名", phone: "090-1234-5678", email: "a@example.test" });
     expect(links.line).toBe(`https://line.me/R/msg/text/?${encodeURIComponent(msg)}`);
     expect(links.sms).toBe(`sms:09012345678?&body=${encodeURIComponent(msg)}`);

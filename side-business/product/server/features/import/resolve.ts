@@ -44,6 +44,8 @@ export type Resolution = {
   skippedQty: number;
   /** 「すべて同じ案件」の案件が台帳に無い */
   fixedProjectMissing: boolean;
+  /** 「すべて同じ人」の人が台帳に無い */
+  fixedDriverMissing: boolean;
   /** 番号と名前が別の人を指している行（番号で当てている。念のため確かめてもらう） */
   codeConflicts: { code: string; codeName: string; fileName: string; nameMatch: string; rows: number }[];
 };
@@ -64,8 +66,8 @@ function looseCode(v: string): string {
   return v.normalize("NFKC").toLowerCase().replace(/\s/g, "");
 }
 
-/** 読み取った行の名前を台帳に当てる */
-export function resolveRecords(records: RawRecord[], known: Known, fixedProjectId: string | null, skip: SkipLists): Resolution {
+/** 読み取った行の名前を台帳に当てる。fixedDriverId：「この表はすべて同じ人」（1 人 1 枚の表）の人 */
+export function resolveRecords(records: RawRecord[], known: Known, fixedProjectId: string | null, skip: SkipLists, fixedDriverId: string | null = null): Resolution {
   const driverCache = new Map<string, MatchResult | null>();
   const projectCache = new Map<string, MatchResult | null>();
   const byCode = new Map<string, KnownDriver>();
@@ -73,6 +75,7 @@ export function resolveRecords(records: RawRecord[], known: Known, fixedProjectI
   const activeDriver = new Map(known.drivers.map((d) => [d.id, d.active]));
   const activeProject = new Map(known.projects.map((p) => [p.id, p.active]));
   const fixed = fixedProjectId ? (known.projects.find((p) => p.id === fixedProjectId) ?? null) : null;
+  const fixedDriver = fixedDriverId ? (known.drivers.find((d) => d.id === fixedDriverId) ?? null) : null;
   const skipDrivers = new Set(skip.drivers);
   const skipProjects = new Set(skip.projects);
 
@@ -111,12 +114,19 @@ export function resolveRecords(records: RawRecord[], known: Known, fixedProjectI
   const conflicts = new Map<string, Resolution["codeConflicts"][number]>();
 
   for (const r of records) {
-    // ドライバー：番号が台帳にあれば番号で、無ければ名前で
-    const coded = r.code ? byCode.get(looseCode(r.code)) : undefined;
+    // ドライバー：「すべて同じ人」ならその人、番号が台帳にあれば番号で、無ければ名前で
+    const coded = !fixedDriverId && r.code ? byCode.get(looseCode(r.code)) : undefined;
     const driverRaw = r.driver || r.code;
     let dMatch: MatchResult | null;
     let dKey: string;
-    if (coded) {
+    if (fixedDriverId) {
+      if (!fixedDriver) {
+        unresolvedRecords++;
+        continue;
+      }
+      dMatch = { id: fixedDriver.id, name: fixedDriver.name, how: "exact", score: 1 };
+      dKey = `fixed:${fixedDriver.id}`;
+    } else if (coded) {
       dMatch = { id: coded.id, name: coded.name, how: "code", score: 0.97 };
       dKey = `code:${looseCode(r.code)}`;
       // 名前もあって、それが台帳の別の人に当たるときは、番号か名前の打ち間違いのおそれ（別の人に払わないように知らせる）
@@ -136,17 +146,20 @@ export function resolveRecords(records: RawRecord[], known: Known, fixedProjectI
       if (!driverCache.has(dKey)) driverCache.set(dKey, matchName(driverRaw, known.drivers));
       dMatch = driverCache.get(dKey) ?? null;
     }
-    const dSkipped = skipDrivers.has(dKey);
-    const dg = group(
-      driverGroups,
-      dKey,
-      coded ? `${driverRaw}${r.driver && r.code ? `（${r.code}）` : ""}` : driverRaw,
-      r.qty,
-      dMatch,
-      dSkipped,
-      dMatch ? activeDriver.get(dMatch.id) === false : false,
-    );
-    if (!coded) {
+    const dSkipped = !fixedDriverId && skipDrivers.has(dKey);
+    // 「すべて同じ人」の表は、名前の確認に出さない（人は読み方で決めてある）
+    const dg = fixedDriverId
+      ? null
+      : group(
+          driverGroups,
+          dKey,
+          coded ? `${driverRaw}${r.driver && r.code ? `（${r.code}）` : ""}` : driverRaw,
+          r.qty,
+          dMatch,
+          dSkipped,
+          dMatch ? activeDriver.get(dMatch.id) === false : false,
+        );
+    if (dg && !coded) {
       if (r.code && !dg.codes.includes(r.code)) dg.codes.push(r.code);
       if (!r.driver) dg.nameless = true;
     }
@@ -195,6 +208,7 @@ export function resolveRecords(records: RawRecord[], known: Known, fixedProjectI
     skippedRecords,
     skippedQty: Math.round(skippedQty * 1e4) / 1e4,
     fixedProjectMissing: !!fixedProjectId && !fixed,
+    fixedDriverMissing: !!fixedDriverId && !fixedDriver,
     codeConflicts: [...conflicts.values()],
   };
 }

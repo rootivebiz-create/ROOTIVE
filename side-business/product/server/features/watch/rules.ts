@@ -173,6 +173,11 @@ export function termsMissing(ctx: WatchContext): IssueDraft[] {
     let unsure = false;
     if (drv.startedOn && first > drv.startedOn) lateThan.push(`委託を始めた日（${jpDate(drv.startedOn)}）`);
     const fw = drv.firstWork;
+    // 「明示が仕事を始めたあと」「前か分からない」は、仕事を始めたときの話（あとの月に直せることではない）。
+    // 赤・黄で出すのは、記録の上で仕事を始めた月（最初に稼働した月）とそれより前の月だけにして、
+    // それより後の月は同じことで毎月締めを止めない（SPEC §5 事務 6）。稼働の記録が無い人は、これまでどおり毎月見る
+    const startMonth = fw?.month ?? null;
+    const inStartMonth = startMonth === null || ctx.month <= startMonth;
     if (fw) {
       const exact = fw.minDate !== null && !fw.hasUndated;
       if (fw.minDate && first > fw.minDate) {
@@ -189,17 +194,32 @@ export function termsMissing(ctx: WatchContext): IssueDraft[] {
         }
       }
     }
-    if (lateThan.length) {
+    const lateFact = `取引条件を最初に明示した日（${jpDate(first)}）が、${[...new Set(lateThan)].join("・")}より後です。`;
+    if (lateThan.length && !inStartMonth && startMonth) {
+      // 仕事を始めた月より後の月：締めを止めないお知らせ（前の月に確認済みにしていれば、画面で灰色の 1 行にたたまれる）
+      out.push({
+        ...base,
+        severity: "info",
+        title: "取引条件の明示は、仕事を始めたあとでした",
+        detail:
+          lateFact +
+          `仕事を始めたときのことなので、赤い指摘として出すのは最初に稼働した${jpMonth(startMonth)}分までです（それより後の月は、締めを止めないお知らせにしています）。` +
+          `明示した日の記録が正しいかは、${jpMonth(startMonth)}分の見張り番で確かめられます。`,
+        impact: impactOf(null, "仕事を始めたときの記録の話です（金額で出す指摘ではありません）"),
+      });
+    } else if (lateThan.length) {
       out.push({
         ...base,
         severity: "red",
         title: "取引条件の明示が、仕事を始めたあとになっています",
         detail:
-          `取引条件を最初に明示した日（${jpDate(first)}）が、${[...new Set(lateThan)].join("・")}より後です。` +
+          lateFact +
           "フリーランス法では、仕事を頼んだら直ちに取引条件を明示することになっています。明示した日の記録が正しいか確かめてください。" +
-          `記録どおりなら、いきさつを「確認済み」のメモに残してください。${pay}`,
+          "記録どおりなら、いきさつを「確認済み」のメモに残してください" +
+          (startMonth ? `（赤で出すのは、最初に稼働した${jpMonth(startMonth)}分までです。それより後の月は締めを止めません）。` : "。") +
+          pay,
       });
-    } else if (unsure && fw) {
+    } else if (unsure && fw && inStartMonth) {
       out.push({
         ...base,
         severity: "yellow",
@@ -548,7 +568,7 @@ export function sixtyDays(ctx: WatchContext): IssueDraft[] {
         detail:
           head +
           `締め日（${jpDate(dl.periodEnd)}）から数えた期限の${jpDate(dl.limitFromEnd)}より ${daysBetween(dl.limitFromEnd, dl.payDateActual)}日後です。` +
-          "フリーランス法では、報酬の支払期日は、仕事を受け取った日から60日以内のできるだけ早い日に定めることになっています。支払日の設定の確認をおすすめします。" +
+          "フリーランス法では、従業員を使っている会社など（特定業務委託事業者）は、報酬の支払期日を、仕事を受け取った日から60日以内のできるだけ早い日に定めることになっています。支払日の設定の確認をおすすめします。" +
           note,
         impact,
       },
@@ -1263,7 +1283,7 @@ export function transitionalSpan(ctx: WatchContext): IssueDraft[] {
         `${monthOf(ctx)}の締めの期間（${jpDate(from)}〜${jpDate(to)}）の途中${step ? `の${jpDate(step.from)}` : ""}で、登録の無い方への支払で控除できる割合が変わります。` +
         `${nameList(hit.map((d) => d.driver.name))}（${hit.length}人）の稼働に日付の無い行があるため、その行は期間の末日（${jpDate(to)}）の割合で数えています。` +
         `期間の初日（${jpDate(from)}）の割合で数えた場合との差は、多くて ${yenText(diff)}です。` +
-        "稼働に日付を入れる（Excel に日付の列があれば、日付つきで取り込み直す）と、日ごとの割合で分けて数えます。明細の振込額は変わりません。",
+        "日ごとに分けて数えるか、期間全体を末日の割合で数えるかは、税理士と決めてください。稼働に日付があれば（Excel に日付の列があれば、日付つきで取り込み直す）、日ごとに分けた場合の額も出します。明細の振込額は変わりません。",
       basis: BASIS.transitional,
       sourceUrl: SOURCES.invoiceTransitional,
       fixHref: FIX.work(monthQuery(ctx)),
@@ -1330,7 +1350,7 @@ export function contractEnd(ctx: WatchContext): IssueDraft[] {
         (noticed
           ? `終了を伝えた日の記録は${jpDate(noticed)}で、終了日の ${days}日前です。`
           : `終了を伝えた日の記録がありません（終了日の30日前は${jpDate(noticeBy)}${ctx.today > noticeBy ? "で、すでに過ぎています" : "です"}）。`) +
-        "6か月以上続いた委託を終える（更新しない）ときは、少なくとも30日前までに予告することが求められています（例外があります）。予告した日の記録の確認をおすすめします。",
+        "従業員を使っている会社など（特定業務委託事業者）が、6か月以上続いた委託を終える（更新しない）ときは、原則として30日前までに予告することが求められています（例外があります）。予告した日の記録の確認をおすすめします。",
       basis: BASIS.endNotice,
       sourceUrl: SOURCES.mhlwFl,
       fixHref: FIX.driver(drv.id),
@@ -1720,7 +1740,7 @@ export function feeColumnInExcel(ctx: WatchContext): IssueDraft[] {
 }
 
 export const RULES: { fn: RuleFn; doc: RuleDoc }[] = [
-  { fn: termsMissing, doc: { code: "terms_missing", severities: ["red", "yellow"], label: "取引条件の明示", what: "稼働や差し引きがある人に、取引条件を明示した日の記録（取引条件の記録・ドライバーの設定）があるか。明示が仕事を始めたあとになっていないか", basis: BASIS.terms, sourceUrl: SOURCES.flQa, asOf: AS_OF, effectiveFrom: FL } },
+  { fn: termsMissing, doc: { code: "terms_missing", severities: ["red", "yellow", "info"], label: "取引条件の明示", what: "稼働や差し引きがある人に、取引条件を明示した日の記録（取引条件の記録・ドライバーの設定）があるか。明示が仕事を始めたあとになっていないか（仕事を始めたときの話なので、赤・黄にするのは最初に稼働した月まで。それより後の月はお知らせ）", basis: BASIS.terms, sourceUrl: SOURCES.flQa, asOf: AS_OF, effectiveFrom: FL } },
   { fn: sixtyDays, doc: { code: "sixty_days", severities: ["red", "yellow", "info"], label: "60日（2か月）の期限", what: `締め日・支払日の設定で、支払日が仕事の日から60日（2か月）を超えないか。再委託の3項目の記録がある人は、元委託の支払期日から${SUBCONTRACT_DAYS}日で数える`, basis: BASIS.payDate, sourceUrl: SOURCES.flGuidelines, asOf: AS_OF, effectiveFrom: FL } },
   { fn: paidLate, doc: { code: "paid_late", severities: ["red", "yellow"], label: "支払の遅れ", what: "振り込んだ日が明細の支払期日より後になっていないか。支払期日を過ぎても振り込んだ日の記録が無い人はいないか", basis: BASIS.payDate, sourceUrl: SOURCES.flQa, asOf: AS_OF, effectiveFrom: FL } },
   { fn: latePaymentPrev, doc: { code: "late_payment_prev", severities: ["red"], label: "前の月の支払の遅れ", what: "前の月の振込が、その月の明細の支払期日より後になっていないか", basis: BASIS.payDate, sourceUrl: SOURCES.flQa, asOf: AS_OF, effectiveFrom: FL } },

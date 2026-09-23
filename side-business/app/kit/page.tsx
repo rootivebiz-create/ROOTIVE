@@ -202,7 +202,7 @@ export default function KitIndexPage() {
             <>
               <p className="mt-2 text-sm leading-relaxed">商談の5分のデモはここを使います（台本は sales-kit/07）。提案書の最後のQRと、チラシの1行もここを指します。</p>
               <p className="mt-2 break-all rounded-lg bg-muted p-3 font-mono text-sm">{productDemo}</p>
-              <a href={productDemo} target="_blank" rel="noopener noreferrer" className={cx(linkButton("secondary"), "mt-3")}>
+              <a href={productDemo} target="_blank" rel="noopener noreferrer nofollow" className={cx(linkButton("secondary"), "mt-3")}>
                 製品のデモを開く
               </a>
             </>

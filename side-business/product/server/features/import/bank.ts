@@ -6,7 +6,7 @@ import * as s from "~/db/schema";
 import { UserError } from "~/server/action";
 import { audit } from "~/server/audit";
 import { readTable, TableReadError } from "~/server/tabular";
-import { sha256 } from "~/server/tokens";
+import { keyedHash } from "~/server/tokens";
 import {
   BANK_FIELD_LABEL,
   bankOfDriver,
@@ -22,7 +22,8 @@ import {
   type BankSource,
   type LedgerDriver,
 } from "./bank-read";
-import { MAX_FILE_BYTES } from "./types";
+import { assertDemoUploadBudget, demoFileProblem } from "./demo-budget";
+import { MAX_FILE_BYTES, MAX_FILE_LABEL } from "./types";
 import { looksLikeZengin, parseZengin } from "./zengin-read";
 
 /**
@@ -58,10 +59,13 @@ export type BankView = {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** 見たときの口座の目印（会社ごとのハッシュ。口座番号そのものは画面に出さない） */
+/**
+ * 見たときの口座の目印（会社ごとの鍵つきハッシュ。口座番号そのものは画面に出さない）。
+ * 画面（ブラウザ）へ送る値なので、鍵なしの sha256 にしない（銀行・支店・名義が分かれば、番号を総当たりで割り出せるため）
+ */
 function seenOf(tenantId: string) {
   return (b: BankFields) =>
-    sha256(`bank-seen:${tenantId}|${b.bankCode}|${b.bankNameKana}|${b.branchCode}|${b.branchNameKana}|${b.accountType}|${b.accountNumber}|${b.holderKana}`).slice(0, 24);
+    keyedHash("bank-seen:v1", `bank-seen:${tenantId}|${b.bankCode}|${b.bankNameKana}|${b.branchCode}|${b.branchNameKana}|${b.accountType}|${b.accountNumber}|${b.holderKana}`).slice(0, 24);
 }
 
 async function ledger(db: Db, tenantId: string): Promise<LedgerDriver[]> {
@@ -88,7 +92,7 @@ async function ledger(db: Db, tenantId: string): Promise<LedgerDriver[]> {
 /** ファイルを読む：全銀の振込ファイルか、口座一覧の表か */
 export async function readBankFile(fileName: string, bytes: Uint8Array): Promise<{ source: BankSource; rows: BankInputRow[]; problems: string[] }> {
   if (bytes.byteLength === 0) throw new UserError("ファイルが空です（0 バイト）。保存し直したファイルを置いてください");
-  if (bytes.byteLength > MAX_FILE_BYTES) throw new UserError("ファイルが大きすぎます（10MB まで）");
+  if (bytes.byteLength > MAX_FILE_BYTES) throw new UserError(`ファイルが大きすぎます（${MAX_FILE_LABEL} まで）。口座の列だけにした CSV にしてから置いてください`);
   if (looksLikeZengin(bytes)) {
     const z = parseZengin(bytes);
     if (z.records.length === 0) throw new UserError(`振込ファイルの中に振込先がありませんでした。${z.problems.join("。")}`);
@@ -132,6 +136,8 @@ export async function createBankDraft(
   input: { fileName: string; bytes: Uint8Array; pageMonth: string },
 ): Promise<{ id: string; rows: number }> {
   const fileName = input.fileName.trim().slice(0, 200) || "口座一覧";
+  const tooBigForDemo = demoFileProblem(input.bytes.byteLength);
+  if (tooBigForDemo) throw new UserError(tooBigForDemo);
   const { source, rows, problems } = await readBankFile(fileName, input.bytes);
   if (rows.length > 2000) throw new UserError("行が多すぎます（2,000 人まで）。ファイルを分けて置いてください");
   const draft: BankDraft = {
@@ -142,6 +148,8 @@ export async function createBankDraft(
     problems,
     assign: {},
   };
+  // デモ：1 つの会社が DB をいっぱいにしないように（置いた数と中身の大きさ）
+  await assertDemoUploadBudget(db, tenantId, Buffer.byteLength(JSON.stringify(draft)));
   const [batch] = await db
     .insert(s.importBatches)
     .values({

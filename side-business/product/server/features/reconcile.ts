@@ -1,4 +1,5 @@
 import "server-only";
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
@@ -26,6 +27,8 @@ import {
 } from "~/server/features/reconcile/columns";
 import { compareNotice, itemKey, sumDiffs, type CmpLine, type CompareItem, type CompareResult, type LineRole } from "~/server/features/reconcile/compare";
 import { receivingFacts, type ReceivingFact } from "~/server/features/reconcile/facts";
+import { assignLines, joinFileNames, SAME_CONTENT_OVERRIDE, sameLines } from "~/server/features/reconcile/files";
+import { assertDemoUploadBudget, demoFileProblem } from "~/server/features/import/demo-budget";
 import { isChargeName, isUnsettled, lineKey, WAIT_ALERT_DAYS, waitingDays, type ItemKind, type ItemStatus } from "~/server/features/reconcile/labels";
 import type { LetterItem } from "~/server/features/reconcile/letter";
 import { selectPeriodWork, type ComparePeriod, type PeriodWork } from "~/server/features/reconcile/period";
@@ -41,6 +44,8 @@ export type { ComparePeriod };
  * - 上げたファイルの中身（文字の表）は import_batches（kind='payment_notice'）の summary に残し、列を選び直せるようにする
  * - 差は reconciliation_items に保存する。作り直しても、同じ鍵（種類＋案件＋名前）の状態とメモは残す
  * - 当社の記録の受注単価は、締めた月なら明細の写し（締めたときの単価）、開いている月なら今の案件の単価
+ * - 1 通のお支払通知（元請 × 月）は、何通かのファイルを足して作れる（営業所ごとに届くとき）。どの行がどのファイルのものかは
+ *   取り込みの記録の summary.lineIds に残し、ファイルごとに入れ替え・外すができる。同じファイル・同じ中身は二重に足さない
  */
 
 export const MAX_NOTICE_FILE_BYTES = 5 * 1024 * 1024;
@@ -86,6 +91,10 @@ export type NoticeBatchSummary = {
   dates: ParsedNotice["dates"];
   warnings: string[];
   notes: string[];
+  /** このファイルから入れた行の id（何通かを足したお支払通知で、ファイルごとに入れ替え・外すため） */
+  lineIds?: string[];
+  /** ファイルの中身の記録が無い（前の版・見本で入れた行を、足すときに 1 つのファイルとして残したもの）。列を選び直せない */
+  recordOnly?: boolean;
 };
 
 type ProfileRow = typeof s.mappingProfiles.$inferSelect;
@@ -155,14 +164,114 @@ function batchOf(noticeId: string) {
   return sql`${s.importBatches.summary}->>'noticeId' = ${noticeId}`;
 }
 
-async function latestBatch(db: Db, tenantId: string, noticeId: string) {
+function appliedFilesOf(tenantId: string, noticeId: string) {
+  return and(eq(s.importBatches.tenantId, tenantId), eq(s.importBatches.kind, "payment_notice"), eq(s.importBatches.status, "applied"), batchOf(noticeId));
+}
+
+/** そのお支払通知のファイル 1 つ（fileId が無ければ、いちばん新しいもの）。表の中身（summary）ごと読む */
+async function fileBatch(db: Db, tenantId: string, noticeId: string, fileId?: string | null) {
   const rows = await db
     .select()
     .from(s.importBatches)
-    .where(and(eq(s.importBatches.tenantId, tenantId), eq(s.importBatches.kind, "payment_notice"), eq(s.importBatches.status, "applied"), batchOf(noticeId)))
-    .orderBy(desc(s.importBatches.createdAt))
+    .where(fileId ? and(appliedFilesOf(tenantId, noticeId), eq(s.importBatches.id, fileId)) : appliedFilesOf(tenantId, noticeId))
+    .orderBy(desc(s.importBatches.createdAt), desc(s.importBatches.id))
     .limit(1);
   return rows[0] ?? null;
+}
+
+type NoticeFileRow = {
+  id: string;
+  fileName: string;
+  fileHash: string | null;
+  createdAt: Date;
+  lineIds: string[] | null;
+  /** そのファイルの振込手数料の行の合計（外すとき・入れ替えるときに、差し引かれた手数料から引く） */
+  feeTotal: number;
+};
+
+function jsonValue(v: unknown): unknown {
+  if (typeof v !== "string") return v;
+  try {
+    return JSON.parse(v);
+  } catch {
+    return v;
+  }
+}
+
+/** そのお支払通知を作っているファイル（取り込んだ順）。行の id の一覧だけを読み、表の中身（rows）は読まない */
+async function noticeFiles(db: Db, tenantId: string, noticeId: string): Promise<NoticeFileRow[]> {
+  const rows = await db
+    .select({
+      id: s.importBatches.id,
+      fileName: s.importBatches.fileName,
+      fileHash: s.importBatches.fileHash,
+      createdAt: s.importBatches.createdAt,
+      lineIds: sql<unknown>`${s.importBatches.summary}->'lineIds'`,
+      feeTotal: sql<unknown>`${s.importBatches.summary}->>'feeTotal'`,
+    })
+    .from(s.importBatches)
+    .where(appliedFilesOf(tenantId, noticeId))
+    .orderBy(asc(s.importBatches.createdAt), asc(s.importBatches.id));
+  return rows.map((r) => {
+    const ids = jsonValue(r.lineIds);
+    const fee = Number(r.feeTotal ?? 0);
+    return {
+      id: r.id,
+      fileName: r.fileName,
+      fileHash: r.fileHash,
+      createdAt: r.createdAt,
+      lineIds: Array.isArray(ids) ? ids.filter((x): x is string => typeof x === "string") : null,
+      feeTotal: Number.isFinite(fee) ? fee : 0,
+    };
+  });
+}
+
+async function noticeLines(db: Db, tenantId: string, noticeId: string) {
+  return db
+    .select({
+      id: s.paymentNoticeLines.id,
+      rawProject: s.paymentNoticeLines.rawProject,
+      rawDriver: s.paymentNoticeLines.rawDriver,
+      qty: s.paymentNoticeLines.qty,
+      unitPrice: s.paymentNoticeLines.unitPrice,
+      amount: s.paymentNoticeLines.amount,
+    })
+    .from(s.paymentNoticeLines)
+    .where(and(eq(s.paymentNoticeLines.tenantId, tenantId), eq(s.paymentNoticeLines.noticeId, noticeId)));
+}
+
+async function deleteLines(db: Db, tenantId: string, ids: string[]): Promise<void> {
+  for (let i = 0; i < ids.length; i += 1000) {
+    await db.delete(s.paymentNoticeLines).where(and(eq(s.paymentNoticeLines.tenantId, tenantId), inArray(s.paymentNoticeLines.id, ids.slice(i, i + 1000))));
+  }
+}
+
+async function setFileLineIds(db: Db, tenantId: string, fileId: string, lineIds: string[]): Promise<void> {
+  await db
+    .update(s.importBatches)
+    .set({ summary: sql`${s.importBatches.summary} || ${JSON.stringify({ lineIds })}::jsonb`, rowCount: lineIds.length })
+    .where(and(eq(s.importBatches.id, fileId), eq(s.importBatches.tenantId, tenantId)));
+}
+
+/**
+ * お支払通知の合計とファイル名を、今の行とファイルから出し直す（何通かを足したときは、全部の行の合計・ファイル名を「、」でつなぐ）。
+ * ファイルの記録が無いお支払通知（前の版）は、ファイル名を変えない
+ */
+async function refreshNotice(db: Db, tenantId: string, noticeId: string, extra: { feeDeducted?: number } = {}): Promise<void> {
+  const [sum] = await db
+    .select({ total: sql<string | number | null>`coalesce(sum(${s.paymentNoticeLines.amount}), 0)` })
+    .from(s.paymentNoticeLines)
+    .where(and(eq(s.paymentNoticeLines.tenantId, tenantId), eq(s.paymentNoticeLines.noticeId, noticeId)));
+  const names = joinFileNames((await noticeFiles(db, tenantId, noticeId)).map((f) => f.fileName));
+  await db
+    .update(s.paymentNotices)
+    .set({ total: Number(sum?.total ?? 0), ...(names ? { fileName: names } : {}), ...extra })
+    .where(and(eq(s.paymentNotices.id, noticeId), eq(s.paymentNotices.tenantId, tenantId)));
+}
+
+/** 同じ元請・同じ月のお支払通知を、2 つの画面から同時に変えないように押さえる（取り込み・足す・外す・列の選び直し） */
+async function lockNotice(tx: Db, tenantId: string, clientKey: string, month: string): Promise<void> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`payment_notice:${tenantId}:${clientKey}:${month}`}, 0))`);
 }
 
 /**
@@ -522,15 +631,40 @@ export async function runReconcile(db: Db, tenantId: string, noticeId: string, u
 
 // ---------------------------------------------------------------- 取り込み
 
-export type ImportNoticeInput = { clientId: string; month: string; fileName: string; bytes: Uint8Array; replace: boolean };
+export type ImportNoticeInput = {
+  clientId: string;
+  month: string;
+  fileName: string;
+  bytes: Uint8Array;
+  /** 同じ元請・同じ月のお支払通知がすでにあるとき：全部のファイルを、このファイル 1 つに入れ替える（直したお支払通知が届いたとき） */
+  replace: boolean;
+  /** 同じ元請・同じ月のお支払通知がすでにあるとき：このファイルの行を足して、合計で突き合わせる（営業所ごとなど、同じ月に何通も届くとき） */
+  add?: boolean;
+  /** 何通かを足したお支払通知のうち、このファイル（取り込みの記録の id）だけを入れ替える（1 通だけ直したものが届いたとき） */
+  replaceFileId?: string | null;
+  /** 足す・1 つだけ入れ替えるとき、ほかのファイルと行の中身が同じでも足す（別の営業所の分で、たまたま同じ数のとき。同じファイルそのものは足せない） */
+  allowSameContent?: boolean;
+};
 export type ImportNoticeResult = {
   noticeId: string;
   lineCount: number;
   replaced: boolean;
+  /** 同じ月のお支払通知に、このファイルの行を足した */
+  added: boolean;
+  /** 1 つのファイルだけを入れ替えたとき、入れ替えたファイルの名前 */
+  replacedFile: string | null;
   problem: string | null;
   warnings: string[];
   run: RunResult | null;
 };
+
+type ImportMode = "new" | "replace" | "add" | "replaceFile";
+
+function importMode(input: ImportNoticeInput): ImportMode {
+  if (input.replaceFileId) return "replaceFile";
+  if (input.add) return "add";
+  return input.replace ? "replace" : "new";
+}
 
 function pickSheet(sheets: { name: string; rows: string[][] }[], profile: ProfileRow | null) {
   const opts = profileOptions(profile);
@@ -556,20 +690,90 @@ function assertMonth(month: string): void {
   if (!/^\d{4}-(0[1-9]|1[0-2])-01$/.test(month)) throw new UserError("月の形が正しくありません");
 }
 
-/** お支払通知のファイルを取り込む。同じ元請・同じ月のものがあれば replace のときだけ行を入れ替える（状態とメモは残る） */
+/**
+ * 足す・1 つのファイルだけ入れ替える前の確かめと片付け（取り込みのトランザクションの中で呼ぶ）。
+ * - 同じファイル（ハッシュ）・同じ中身の行のファイルが、もう入っていれば止める（二重に数えない）
+ * - どの行がどのファイルのものかを残す（前の版のファイル・ファイルの記録が無い行も、ここで 1 つのファイルとして残す）
+ * - 入れ替えるときは、そのファイルの行を消し、取り込みの記録を「入れ替えた」にする
+ */
+async function prepareFileChange(
+  db: Db,
+  tenantId: string,
+  notice: typeof s.paymentNotices.$inferSelect,
+  opts: { mode: "add" | "replaceFile"; fileHash: string; targetId: string | null; lines: ParsedNotice["lines"]; allowSameContent: boolean },
+): Promise<{ replacedFile: string | null; removedFee: number }> {
+  const files = await noticeFiles(db, tenantId, notice.id);
+  const current = await noticeLines(db, tenantId, notice.id);
+  const { byFile, unclaimed } = assignLines(
+    files,
+    current.map((l) => l.id),
+  );
+  const target = opts.targetId ? files.find((f) => f.id === opts.targetId) : undefined;
+  if (opts.mode === "replaceFile" && !target) {
+    throw new UserError("入れ替えるファイルが見つかりません。すでに外したか、入れ替えたのかもしれません。画面を読み込み直してください");
+  }
+  if (opts.mode === "add" && current.length === 0) {
+    throw new UserError("今のお支払通知の行を読み取れていません。先に結果の画面で列を選ぶか、「入れ替える」で上げ直してから、足してください");
+  }
+  const others = files.filter((f) => f.id !== target?.id);
+  const sameFile = others.find((f) => f.fileHash !== null && f.fileHash === opts.fileHash);
+  if (sameFile) {
+    throw new UserError(`同じファイルが、もう入っています（${sameFile.fileName}）。二重に数えないように止めました。直したお支払通知なら「入れ替える」を使ってください。`);
+  }
+  const byId = new Map(current.map((l) => [l.id, l]));
+  const groups = [...others.map((f) => ({ name: f.fileName, ids: byFile.get(f.id) ?? [] })), ...(unclaimed.length > 0 ? [{ name: notice.fileName, ids: unclaimed }] : [])];
+  const dup = opts.allowSameContent ? undefined : groups.find((g) => sameLines(g.ids.map((id) => byId.get(id)).filter((l): l is NonNullable<typeof l> => Boolean(l)), opts.lines));
+  if (dup) {
+    throw new UserError(
+      `このファイルの行は、もう入っているお支払通知（${dup.name}）と中身が同じです。二重に数えないように止めました。直したお支払通知なら「入れ替える」を使ってください。別の営業所の分で、たまたま同じ中身のときは「${SAME_CONTENT_OVERRIDE}」にチェックを入れて、もう一度上げてください。`,
+    );
+  }
+  // どの行がどのファイルのものかを残す（ファイルごとに入れ替え・外すため）
+  for (const f of files) if (!f.lineIds) await setFileLineIds(db, tenantId, f.id, byFile.get(f.id) ?? []);
+  if (unclaimed.length > 0) {
+    // ファイルの記録が無いお支払通知（前の版・デモの見本）の行：今の行を 1 つのファイルとして残す（中身の表は無いので、列は選び直せない）
+    await db.insert(s.importBatches).values({
+      tenantId,
+      month: notice.month,
+      kind: "payment_notice",
+      fileName: notice.fileName,
+      rowCount: unclaimed.length,
+      status: "applied",
+      summary: { noticeId: notice.id, clientId: notice.clientId, recordOnly: true, lineIds: unclaimed, total: unclaimed.reduce((a, id) => a + (byId.get(id)?.amount ?? 0), 0) },
+      createdAt: notice.createdAt,
+    });
+  }
+  if (!target) return { replacedFile: null, removedFee: 0 };
+  await deleteLines(db, tenantId, byFile.get(target.id) ?? []);
+  await db
+    .update(s.importBatches)
+    .set({ status: "discarded" })
+    .where(and(eq(s.importBatches.id, target.id), eq(s.importBatches.tenantId, tenantId)));
+  return { replacedFile: target.fileName, removedFee: target.feeTotal };
+}
+
+/**
+ * お支払通知のファイルを取り込む。同じ元請・同じ月のものがあれば：
+ * - replace：全部のファイルを、このファイルに入れ替える
+ * - add：このファイルの行を足す（営業所ごとなど。合計で突き合わせる）
+ * - replaceFileId：そのファイルだけを入れ替える
+ * のどれかを選んだときだけ変える。どれでも、問い合わせの状態とメモは残る（同じ差の鍵で引き継ぐ）
+ */
 export async function importNotice(db: Db, tenantId: string, userId: string | null, input: ImportNoticeInput): Promise<ImportNoticeResult> {
   assertMonth(input.month);
+  const mode = importMode(input);
   const client = await getClient(db, tenantId, input.clientId);
   if (!client.active) {
-    // 取引をやめた元請：新しい月の通知は上げない。すでにある月の通知を、直したものに入れ替えるのはよい
+    // 取引をやめた元請：新しい月の通知は上げない。すでにある月の通知を、直したものに入れ替える・足すのはよい
     // （取引をやめたあとで、前の月の直したお支払通知が届くことがあるため。結果の画面の「上げ直す」から）
-    const had = input.replace
-      ? await db
-          .select({ id: s.paymentNotices.id })
-          .from(s.paymentNotices)
-          .where(and(eq(s.paymentNotices.tenantId, tenantId), eq(s.paymentNotices.clientId, client.id), eq(s.paymentNotices.month, input.month)))
-          .limit(1)
-      : [];
+    const had =
+      mode !== "new"
+        ? await db
+            .select({ id: s.paymentNotices.id })
+            .from(s.paymentNotices)
+            .where(and(eq(s.paymentNotices.tenantId, tenantId), eq(s.paymentNotices.clientId, client.id), eq(s.paymentNotices.month, input.month)))
+            .limit(1)
+        : [];
     if (had.length === 0) {
       throw new UserError(
         `${client.name}は「取引をやめた元請」になっています。新しい月のお支払通知を上げるときは、設定の「元請」で有効に戻してください。これまでのお支払通知は、そのまま見られます（直したお支払通知は、その結果の画面の「上げ直す」から入れ替えられます）。`,
@@ -579,6 +783,9 @@ export async function importNotice(db: Db, tenantId: string, userId: string | nu
   const tenant = await getTenant(db, tenantId);
   if (input.bytes.byteLength === 0) throw new UserError("ファイルが空です。元請から届いたファイルを選んでください");
   if (input.bytes.byteLength > MAX_NOTICE_FILE_BYTES) throw new UserError("ファイルが大きすぎます（5MB まで）。不要なシートを消すか、CSV にしてから上げてください");
+  // デモ（来た人ごとの架空の会社）では、置けるファイルの大きさと数を小さくする（小さな無料の DB をいっぱいにしない）
+  const demoProblem = demoFileProblem(input.bytes.byteLength);
+  if (demoProblem) throw new UserError(demoProblem);
 
   let read;
   try {
@@ -611,10 +818,18 @@ export async function importNotice(db: Db, tenantId: string, userId: string | nu
     )[0];
   const alreadyError = (fileName: string) =>
     new UserError(
-      `${client.name}の${input.month.slice(0, 4)}年${Number(input.month.slice(5, 7))}月分のお支払通知は、すでに上げてあります（${fileName}）。上げ直すときは「すでにあれば入れ替える」にチェックを入れてください。問い合わせの状態とメモは残ります。`,
+      `${client.name}の${input.month.slice(0, 4)}年${Number(input.month.slice(5, 7))}月分のお支払通知は、すでに上げてあります（${fileName}）。直したお支払通知なら「入れ替える」、営業所ごとなど同じ月に届いた別のお支払通知なら「足す」を選んでください。問い合わせの状態とメモは残ります。`,
     );
+  const missingError = () => new UserError("入れ替えるお支払通知が見つかりません。すでに削除されたかもしれません。画面を読み込み直してください");
   const found = await findExisting(db);
-  if (found && !input.replace) throw alreadyError(found.fileName);
+  if (found && mode === "new") throw alreadyError(found.fileName);
+  if (!found && mode === "replaceFile") throw missingError();
+  if (found && (mode === "add" || mode === "replaceFile") && pick.problem) {
+    // 列の分からないファイルを足すと、その分の行が 0 のまま突き合わせてしまう（ほかのファイルの数字だけで問い合わせ文ができる）
+    throw new UserError(
+      "このファイルは、どの列が品目・金額か分かりませんでした。足す・1 つのファイルだけ入れ替えるときは、前に上げたファイルと同じ形（見出しの並び）のファイルにしてください。形がまったく違うときは、元請を営業所ごとに分けて登録すると、それぞれで列を選べます。",
+    );
+  }
 
   const summary: NoticeBatchSummary = {
     noticeId: "",
@@ -638,19 +853,28 @@ export async function importNotice(db: Db, tenantId: string, userId: string | nu
     notes: pick.det.notes,
   };
   const lines = parsed?.lines ?? [];
+  const fileHash = createHash("sha256").update(input.bytes).digest("hex");
+  await assertDemoUploadBudget(db, tenantId, Buffer.byteLength(JSON.stringify(summary)) + Buffer.byteLength(JSON.stringify(lines)));
 
-  const { noticeId, prev } = await db.transaction(async (tx) => {
-    // 同じ元請・同じ月のお支払通知は 1 通だけ。同時に 2 回上げても 2 通にならないように、その組み合わせを押さえてから確かめ直す
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`payment_notice:${tenantId}:${client.id}:${input.month}`}, 0))`);
-    const prev = await findExisting(tx as unknown as Db);
-    if (prev && !input.replace) throw alreadyError(prev.fileName);
+  const { noticeId, prev, replacedFile } = await db.transaction(async (tx) => {
+    const txDb = tx as unknown as Db;
+    // 同じ元請・同じ月のお支払通知は 1 通（何通かのファイルを足せる）。同時に 2 回上げても 2 通にならないように、その組み合わせを押さえてから確かめ直す
+    await lockNotice(txDb, tenantId, client.id, input.month);
+    const prev = await findExisting(txDb);
+    if (prev && mode === "new") throw alreadyError(prev.fileName);
+    if (!prev && mode === "replaceFile") throw missingError();
     let id: string;
-    if (prev) {
+    let replacedFile: string | null = null;
+    let feeDeducted: number;
+    if (prev && (mode === "add" || mode === "replaceFile")) {
       id = prev.id;
-      await tx
-        .update(s.paymentNotices)
-        .set({ fileName: input.fileName, total: summary.total, feeDeducted: prev.feeDeducted || summary.feeTotal })
-        .where(and(eq(s.paymentNotices.id, id), eq(s.paymentNotices.tenantId, tenantId)));
+      const change = await prepareFileChange(txDb, tenantId, prev, { mode, fileHash, targetId: input.replaceFileId ?? null, lines, allowSameContent: input.allowSameContent === true });
+      replacedFile = change.replacedFile;
+      // 差し引かれた手数料：入れ替えたファイルの手数料の行の分を引き、このファイルの分を足す（手で直した額は、その差だけ動く）
+      feeDeducted = Math.max(0, prev.feeDeducted - change.removedFee) + summary.feeTotal;
+    } else if (prev) {
+      id = prev.id;
+      feeDeducted = prev.feeDeducted || summary.feeTotal;
       await tx.delete(s.paymentNoticeLines).where(and(eq(s.paymentNoticeLines.tenantId, tenantId), eq(s.paymentNoticeLines.noticeId, id)));
       // 前に取り込んだ記録は「入れ替えた」にする（履歴として残す）
       await tx
@@ -663,19 +887,22 @@ export async function importNotice(db: Db, tenantId: string, userId: string | nu
         .values({ tenantId, clientId: client.id, month: input.month, fileName: input.fileName, total: summary.total, feeDeducted: summary.feeTotal })
         .returning({ id: s.paymentNotices.id });
       id = n.id;
+      feeDeducted = summary.feeTotal;
     }
-    await insertLines(tx as unknown as Db, tenantId, id, lines);
+    const lineIds = await insertLines(txDb, tenantId, id, lines);
     await tx.insert(s.importBatches).values({
       tenantId,
       month: input.month,
       kind: "payment_notice",
       fileName: input.fileName,
+      fileHash,
       rowCount: lines.length,
       status: "applied",
-      summary: { ...summary, noticeId: id } as unknown as Record<string, unknown>,
+      summary: { ...summary, noticeId: id, lineIds } as unknown as Record<string, unknown>,
       createdBy: userId,
     });
-    return { noticeId: id, prev: prev ?? null };
+    await refreshNotice(txDb, tenantId, id, { feeDeducted });
+    return { noticeId: id, prev: prev ?? null, replacedFile };
   });
 
   if (!pick.problem) {
@@ -685,25 +912,96 @@ export async function importNotice(db: Db, tenantId: string, userId: string | nu
       options: { headerRow: pick.headerIndex },
     });
   }
+  const added = Boolean(prev) && mode === "add";
   const run = pick.problem ? null : await runReconcile(db, tenantId, noticeId, userId);
   await audit(db, {
     tenantId,
     userId,
-    action: prev ? "reconcile.notice_replace" : "reconcile.notice_import",
+    action: prev && !added ? "reconcile.notice_replace" : "reconcile.notice_import",
     entity: "payment_notice",
     entityId: noticeId,
-    detail: { clientId: client.id, month: input.month, fileName: input.fileName, lines: lines.length, total: summary.total, encoding: read.encoding, problem: pick.problem },
+    detail: {
+      clientId: client.id,
+      month: input.month,
+      fileName: input.fileName,
+      lines: lines.length,
+      total: summary.total,
+      encoding: read.encoding,
+      problem: pick.problem,
+      ...(prev && (mode === "add" || mode === "replaceFile") ? { mode } : {}),
+      ...(replacedFile ? { replacedFile } : {}),
+    },
   });
-  return { noticeId, lineCount: lines.length, replaced: Boolean(prev), problem: pick.problem, warnings: [...summary.notes, ...summary.warnings], run };
+  return {
+    noticeId,
+    lineCount: lines.length,
+    replaced: Boolean(prev) && !added,
+    added,
+    replacedFile,
+    problem: pick.problem,
+    warnings: [...summary.notes, ...summary.warnings],
+    run,
+  };
 }
 
-async function insertLines(db: Db, tenantId: string, noticeId: string, lines: ParsedNotice["lines"]): Promise<void> {
+async function insertLines(db: Db, tenantId: string, noticeId: string, lines: ParsedNotice["lines"]): Promise<string[]> {
+  const ids: string[] = [];
   for (let i = 0; i < lines.length; i += 500) {
     const chunk = lines.slice(i, i + 500);
-    await db.insert(s.paymentNoticeLines).values(
-      chunk.map((l) => ({ tenantId, noticeId, rawProject: l.rawProject, rawDriver: l.rawDriver, qty: l.qty, unitPrice: l.unitPrice, amount: l.amount })),
-    );
+    const rows = await db
+      .insert(s.paymentNoticeLines)
+      .values(chunk.map((l) => ({ tenantId, noticeId, rawProject: l.rawProject, rawDriver: l.rawDriver, qty: l.qty, unitPrice: l.unitPrice, amount: l.amount })))
+      .returning({ id: s.paymentNoticeLines.id });
+    ids.push(...rows.map((r) => r.id));
   }
+  return ids;
+}
+
+/**
+ * 何通かを足したお支払通知から、ファイルを 1 つ外す（まちがえて足したとき）。
+ * 残りのファイルで突き合わせ直す。ファイルが 1 つだけのときは外せない（削除か入れ替えを使う）
+ */
+export async function removeNoticeFile(db: Db, tenantId: string, userId: string | null, input: { noticeId: string; fileId: string }): Promise<{ fileName: string; run: RunResult }> {
+  const notice = await getNotice(db, tenantId, input.noticeId);
+  const done = await db.transaction(async (tx) => {
+    const txDb = tx as unknown as Db;
+    await lockNotice(txDb, tenantId, notice.clientId ?? notice.id, notice.month);
+    const fresh = await getNotice(txDb, tenantId, notice.id);
+    const files = await noticeFiles(txDb, tenantId, notice.id);
+    const target = files.find((f) => f.id === input.fileId);
+    if (!target) throw new UserError("そのファイルが見つかりません。すでに外したのかもしれません。画面を読み込み直してください");
+    if (files.length < 2) {
+      throw new UserError("ファイルが 1 つだけのお支払通知からは外せません。直したファイルがあれば「入れ替える」、要らなければ「このお支払通知を削除する」を使ってください");
+    }
+    const current = await noticeLines(txDb, tenantId, notice.id);
+    const { byFile } = assignLines(
+      files,
+      current.map((l) => l.id),
+    );
+    const ids = byFile.get(target.id) ?? [];
+    await deleteLines(txDb, tenantId, ids);
+    await tx
+      .update(s.importBatches)
+      .set({ status: "discarded" })
+      .where(and(eq(s.importBatches.id, target.id), eq(s.importBatches.tenantId, tenantId)));
+    await refreshNotice(txDb, tenantId, notice.id, { feeDeducted: Math.max(0, fresh.feeDeducted - target.feeTotal) });
+    const [after] = await tx
+      .select({ total: s.paymentNotices.total })
+      .from(s.paymentNotices)
+      .where(and(eq(s.paymentNotices.id, notice.id), eq(s.paymentNotices.tenantId, tenantId)));
+    return { fileName: target.fileName, lines: ids.length, total: after?.total ?? 0 };
+  });
+  const run = await runReconcile(db, tenantId, notice.id, userId);
+  // 操作の記録は「取り込み直した」として残す（何を外したかは detail に）
+  await audit(db, {
+    tenantId,
+    userId,
+    action: "reconcile.notice_replace",
+    entity: "payment_notice",
+    entityId: notice.id,
+    detail: { clientId: notice.clientId, month: notice.month, fileName: `${done.fileName} を外した`, removedFile: done.fileName, removedLines: done.lines, total: done.total, mode: "removeFile" },
+  });
+  return { fileName: done.fileName, run };
 }
 
 /**
@@ -725,13 +1023,17 @@ export async function readSampleNotice(): Promise<Uint8Array> {
 
 // ---------------------------------------------------------------- 列を選び直す
 
-export type ColumnsInput = { noticeId: string; headerRow: number; columns: ColumnMap };
+/** fileId：何通かを足したお支払通知で、どのファイルの列を選び直すか（無ければ、いちばん新しいファイル） */
+export type ColumnsInput = { noticeId: string; headerRow: number; columns: ColumnMap; fileId?: string | null };
 
 export async function updateNoticeColumns(db: Db, tenantId: string, userId: string | null, input: ColumnsInput): Promise<{ lineCount: number; run: RunResult }> {
   const notice = await getNotice(db, tenantId, input.noticeId);
-  const batch = await latestBatch(db, tenantId, notice.id);
-  if (!batch) throw new UserError("このお支払通知には、読み取ったファイルの記録がありません。列を選び直すには、ファイルをもう一度上げてください");
-  const summary = batch.summary as unknown as NoticeBatchSummary;
+  const batch = await fileBatch(db, tenantId, notice.id, input.fileId ?? null);
+  if (!batch && input.fileId) throw new UserError("そのファイルが見つかりません。外したか、入れ替えたのかもしれません。画面を読み込み直してください");
+  const summary = batch?.summary as unknown as NoticeBatchSummary | undefined;
+  if (!batch || !summary || summary.recordOnly || !Array.isArray(summary.rows)) {
+    throw new UserError("このお支払通知には、読み取ったファイルの記録がありません。列を選び直すには、ファイルをもう一度上げてください");
+  }
   const headerIndex = input.headerRow - 1;
   if (!Number.isInteger(headerIndex) || headerIndex < 0 || headerIndex >= summary.rows.length) throw new UserError("見出しの行の番号が正しくありません");
   const width = Math.max(...summary.rows.slice(headerIndex, headerIndex + 50).map((r) => r.length), 0);
@@ -769,23 +1071,34 @@ export async function updateNoticeColumns(db: Db, tenantId: string, userId: stri
     notes: [],
   };
   await db.transaction(async (tx) => {
-    await tx.delete(s.paymentNoticeLines).where(and(eq(s.paymentNoticeLines.tenantId, tenantId), eq(s.paymentNoticeLines.noticeId, notice.id)));
-    await insertLines(tx as unknown as Db, tenantId, notice.id, parsed.lines);
-    await tx
-      .update(s.paymentNotices)
-      .set({ total: parsed.total, feeDeducted: notice.feeDeducted || parsed.feeTotal })
-      .where(and(eq(s.paymentNotices.id, notice.id), eq(s.paymentNotices.tenantId, tenantId)));
+    const txDb = tx as unknown as Db;
+    await lockNotice(txDb, tenantId, notice.clientId ?? notice.id, notice.month);
+    // 入れ替えるのは、このファイルの行だけ（何通かを足したお支払通知の、ほかのファイルの行は残す）
+    const files = await noticeFiles(txDb, tenantId, notice.id);
+    if (!files.some((f) => f.id === batch.id)) throw new UserError("そのファイルが見つかりません。外したか、入れ替えたのかもしれません。画面を読み込み直してください");
+    const current = (await noticeLines(txDb, tenantId, notice.id)).map((l) => l.id);
+    const mine = files.length <= 1 ? current : (assignLines(files, current).byFile.get(batch.id) ?? []);
+    await deleteLines(txDb, tenantId, mine);
+    const lineIds = await insertLines(txDb, tenantId, notice.id, parsed.lines);
     await tx
       .update(s.importBatches)
-      .set({ summary: next as unknown as Record<string, unknown>, rowCount: parsed.lines.length })
+      .set({ summary: { ...next, lineIds } as unknown as Record<string, unknown>, rowCount: parsed.lines.length })
       .where(and(eq(s.importBatches.id, batch.id), eq(s.importBatches.tenantId, tenantId)));
+    await refreshNotice(txDb, tenantId, notice.id, { feeDeducted: notice.feeDeducted || parsed.feeTotal });
   });
   if (client) {
     const header = summary.rows[headerIndex] ?? [];
     await saveProfile(db, tenantId, client, { mapping: columnsToMapping(header, input.columns), headerSignature: headerSignature(header), options: { headerRow: headerIndex } });
   }
   const run = await runReconcile(db, tenantId, notice.id, userId);
-  await audit(db, { tenantId, userId, action: "reconcile.columns", entity: "payment_notice", entityId: notice.id, detail: { headerRow: input.headerRow, columns: input.columns, lines: parsed.lines.length } });
+  await audit(db, {
+    tenantId,
+    userId,
+    action: "reconcile.columns",
+    entity: "payment_notice",
+    entityId: notice.id,
+    detail: { headerRow: input.headerRow, columns: input.columns, lines: parsed.lines.length, fileName: batch.fileName },
+  });
   return { lineCount: parsed.lines.length, run };
 }
 
@@ -1086,6 +1399,38 @@ export type LineGroupView = {
 
 export type DriverGroupView = { key: string; raw: string; count: number; driverId: string | null; driverName: string | null; remembered: boolean };
 
+export type NoticeBatchView = {
+  createdAt: Date;
+  encoding: string;
+  sheetName: string;
+  sheetNames: string[];
+  headerIndex: number;
+  columns: ColumnMap;
+  fromSaved: boolean;
+  rows: string[][];
+  rowsTruncated: boolean;
+  problem: string | null;
+  skipped: SkippedRow[];
+  fileTotal: number | null;
+  taxTotal: number;
+  feeTotal: number;
+  total: number;
+  dates: ParsedNotice["dates"];
+  warnings: string[];
+  notes: string[];
+};
+
+/** お支払通知を作っているファイル 1 つ（営業所ごとなど、何通かを足したときは複数） */
+export type NoticeFileView = {
+  id: string;
+  fileName: string;
+  createdAt: Date;
+  lineCount: number;
+  total: number;
+  /** 読み取りの詳細（列を選び直せる）。ファイルの中身の記録が無い（前の版・見本の行）ときは null */
+  detail: NoticeBatchView | null;
+};
+
 export type NoticeView = {
   notice: typeof s.paymentNotices.$inferSelect;
   /** closingDay：元請の締め日（0＝月末）。月末でなければ、暦の月で比べている旨を出す */
@@ -1111,27 +1456,56 @@ export type NoticeView = {
   driverGroups: DriverGroupView[];
   projects: { id: string; name: string; own: boolean }[];
   drivers: { id: string; name: string; code: string | null }[];
-  batch: {
-    createdAt: Date;
-    encoding: string;
-    sheetName: string;
-    sheetNames: string[];
-    headerIndex: number;
-    columns: ColumnMap;
-    fromSaved: boolean;
-    rows: string[][];
-    rowsTruncated: boolean;
-    problem: string | null;
-    skipped: SkippedRow[];
-    fileTotal: number | null;
-    taxTotal: number;
-    feeTotal: number;
-    total: number;
-    dates: ParsedNotice["dates"];
-    warnings: string[];
-    notes: string[];
-  } | null;
+  /** いちばん新しいファイルの読み取りの詳細（ファイルの記録が無ければ null） */
+  batch: NoticeBatchView | null;
+  /** お支払通知を作っているファイル（取り込んだ順。足したときは 2 つ以上） */
+  files: NoticeFileView[];
 };
+
+function toBatchView(createdAt: Date, raw: unknown): NoticeBatchView | null {
+  const bs = jsonValue(raw) as Partial<NoticeBatchSummary> | null;
+  if (!bs || typeof bs !== "object" || bs.recordOnly || !bs.columns) return null;
+  return {
+    createdAt,
+    encoding: bs.encoding ?? "",
+    sheetName: bs.sheetName ?? "",
+    sheetNames: bs.sheetNames ?? [],
+    headerIndex: bs.headerIndex ?? 0,
+    columns: bs.columns,
+    fromSaved: bs.fromSaved ?? false,
+    rows: bs.rows ?? [],
+    rowsTruncated: bs.rowsTruncated ?? false,
+    problem: bs.problem ?? null,
+    skipped: bs.skipped ?? [],
+    fileTotal: bs.fileTotal ?? null,
+    taxTotal: bs.taxTotal ?? 0,
+    feeTotal: bs.feeTotal ?? 0,
+    total: bs.total ?? 0,
+    dates: bs.dates ?? null,
+    warnings: bs.warnings ?? [],
+    notes: bs.notes ?? [],
+  };
+}
+
+/** お支払通知のファイル（取り込んだ順）と読み取りの詳細。行の id の一覧（lineIds）は大きいので読まない */
+async function loadNoticeFiles(db: Db, tenantId: string, noticeId: string): Promise<NoticeFileView[]> {
+  const rows = await db
+    .select({
+      id: s.importBatches.id,
+      fileName: s.importBatches.fileName,
+      createdAt: s.importBatches.createdAt,
+      rowCount: s.importBatches.rowCount,
+      summary: sql<unknown>`${s.importBatches.summary} - 'lineIds'`,
+    })
+    .from(s.importBatches)
+    .where(appliedFilesOf(tenantId, noticeId))
+    .orderBy(asc(s.importBatches.createdAt), asc(s.importBatches.id));
+  return rows.map((r) => {
+    const summary = jsonValue(r.summary) as { total?: unknown } | null;
+    const total = Number(summary?.total ?? 0);
+    return { id: r.id, fileName: r.fileName, createdAt: r.createdAt, lineCount: r.rowCount, total: Number.isFinite(total) ? total : 0, detail: toBatchView(r.createdAt, summary) };
+  });
+}
 
 function toItemView(row: typeof s.reconciliationItems.$inferSelect, live: Map<string, CompareItem>, driverNames: Map<string, string>, all: (typeof s.reconciliationItems.$inferSelect)[]): ItemView {
   const key = itemKey(row.kind, row.projectId, row.label);
@@ -1193,13 +1567,13 @@ export async function loadNoticeView(db: Db, tenantId: string, noticeId: string)
   const ctx = await loadContext(db, tenantId, noticeId);
   const resolved = resolveAll(ctx);
   const { result: live, period } = compareWithPeriod(ctx, resolved);
-  const [rows, batch] = await Promise.all([
+  const [rows, files] = await Promise.all([
     db
       .select()
       .from(s.reconciliationItems)
       .where(and(eq(s.reconciliationItems.tenantId, tenantId), eq(s.reconciliationItems.noticeId, noticeId)))
       .orderBy(asc(s.reconciliationItems.createdAt)),
-    latestBatch(db, tenantId, noticeId),
+    loadNoticeFiles(db, tenantId, noticeId),
   ]);
   const liveByKey = new Map(live.items.map((i) => [i.key, i]));
   const driverNames = new Map(ctx.drivers.map((d) => [d.id, d.name]));
@@ -1302,7 +1676,6 @@ export async function loadNoticeView(db: Db, tenantId: string, noticeId: string)
     }))
     .sort((a, b) => Number(a.driverId !== null) - Number(b.driverId !== null) || a.raw.localeCompare(b.raw, "ja"));
 
-  const bs = batch ? (batch.summary as unknown as NoticeBatchSummary) : null;
   return {
     notice: ctx.notice,
     client: ctx.client ? { id: ctx.client.id, name: ctx.client.name, closingDay: ctx.client.closingDay } : null,
@@ -1321,29 +1694,8 @@ export async function loadNoticeView(db: Db, tenantId: string, noticeId: string)
       .map((p) => ({ id: p.id, name: p.name, own: ctx.notice.clientId !== null && p.clientId === ctx.notice.clientId }))
       .sort((a, b) => Number(b.own) - Number(a.own) || a.name.localeCompare(b.name, "ja")),
     drivers: ctx.drivers.map((d) => ({ id: d.id, name: d.name, code: d.code })),
-    batch:
-      batch && bs
-        ? {
-            createdAt: batch.createdAt,
-            encoding: bs.encoding,
-            sheetName: bs.sheetName,
-            sheetNames: bs.sheetNames ?? [],
-            headerIndex: bs.headerIndex,
-            columns: bs.columns,
-            fromSaved: bs.fromSaved,
-            rows: bs.rows ?? [],
-            rowsTruncated: bs.rowsTruncated,
-            problem: bs.problem,
-            skipped: bs.skipped ?? [],
-            fileTotal: bs.fileTotal,
-            taxTotal: bs.taxTotal ?? 0,
-            feeTotal: bs.feeTotal ?? 0,
-            total: bs.total ?? 0,
-            dates: bs.dates ?? null,
-            warnings: bs.warnings ?? [],
-            notes: bs.notes ?? [],
-          }
-        : null,
+    batch: files.length > 0 ? files[files.length - 1].detail : null,
+    files,
   };
 }
 

@@ -160,6 +160,8 @@ describe("版の履歴（純関数）", () => {
     month: "2026-10-01",
     period: { from: "2026-10-01", to: "2026-10-31" },
     payDate: "2026-11-25",
+    payDueDate: "2026-11-25",
+    payDateNote: null,
     company: { name: "サンプル", registrationNo: null },
     driver: { name: "上田 健", code: "D03", registrationNo: null, invoiceRegistered: false },
     isPurchaseStatement: false,

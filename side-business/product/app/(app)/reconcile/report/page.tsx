@@ -47,7 +47,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
       <style>{PRINT_CSS}</style>
       <div className="no-print mb-4 space-y-3">
         <p className="text-sm">
-          <Link href={`/reconcile?m=${monthParam(to)}`}>← 突合の一覧へ</Link>
+          <Link href={`/reconcile?m=${monthParam(to)}`} className="inline-flex min-h-11 items-center">← 突合の一覧へ</Link>
         </p>
         <form method="get" className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <label className="block">

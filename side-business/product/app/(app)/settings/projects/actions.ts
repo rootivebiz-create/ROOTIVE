@@ -6,6 +6,7 @@ import { runAction, type ActionResult } from "~/server/action";
 import { audit } from "~/server/audit";
 import { requireUser } from "~/server/auth";
 import { createProject, deleteProject, setProjectActive, updateProject } from "~/server/features/settings/projects";
+import { confirmKeyOf, impactDetail, runSettingsAction, withOpenMonthCheck } from "~/server/features/settings/open-months";
 import { formObject, idSchema, projectSchema } from "~/server/features/settings/schemas";
 
 /** 案件と標準の単価（事務から） */
@@ -33,13 +34,24 @@ export async function createProjectAction(_prev: State, form: FormData): Promise
 }
 
 export async function updateProjectAction(_prev: State, form: FormData): Promise<State> {
-  return runAction(async () => {
+  return runSettingsAction(async () => {
     const user = await requireUser("staff");
     const id = idOf(form);
     const input = projectSchema.parse(formObject(form));
     const db = await getDb();
-    const { after, changed } = await updateProject(db, user.tenantId, id, input);
-    await audit(db, { tenantId: user.tenantId, userId: user.id, action: "project.update", entity: "project", entityId: id, detail: { name: after.name, changed } });
+    // 支払単価を変えると、まだ締めていない月の明細も変わる：変わる月と額を見せ、「反映する」を選んだときだけ保存する
+    const {
+      result: { after, changed },
+      impact,
+    } = await withOpenMonthCheck(db, user.tenantId, confirmKeyOf(form), (t) => updateProject(t, user.tenantId, id, input));
+    await audit(db, {
+      tenantId: user.tenantId,
+      userId: user.id,
+      action: "project.update",
+      entity: "project",
+      entityId: id,
+      detail: { name: after.name, changed, ...impactDetail(impact) },
+    });
     revalidatePath("/", "layout");
   }, "保存しました。まだ締めていない月の明細は、作り直すと反映されます");
 }

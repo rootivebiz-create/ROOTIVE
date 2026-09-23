@@ -276,7 +276,8 @@ export async function loadHomeStatus(db: Db, tenantId: string, month: string, de
       total: transfers.reduce((a, b) => a + b.total, 0),
       executed: transfers.filter((b) => b.executedOn).length,
       changed: transfers.filter((b) => b.changed && !b.executedOn).length,
-      changedExecuted: transfers.filter((b) => b.changed && b.executedOn).length,
+      // 振り込んだあとに明細が変わり、振り込んだ額との差にまだ精算の記録が無い人を含むもの
+      changedExecuted: transfers.filter((b) => b.changed && b.executedOn && b.paidDiffOpen > 0).length,
       includable: plan.included.length,
       notInBatch: notInBatch.length,
       notInBatchTotal: notInBatch.reduce((a, r) => a + r.amount, 0),

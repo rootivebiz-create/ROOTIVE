@@ -4,7 +4,7 @@ import * as s from "~/db/schema";
 import { closeMonth } from "~/server/features/close";
 import { runReconcile } from "~/server/features/reconcile";
 import { homeView, loadHomeStatus, type HomeStatus } from "~/server/features/home";
-import { createTransferBatch, setTransferExecutedOn } from "~/server/features/transfer";
+import { createTransferBatch, setTransferExecutedOn, settlePaidDifference } from "~/server/features/transfer";
 import type { WatchIssue } from "~/server/features/watch-types";
 import { DEMO_MONTH, DEMO_PREV_MONTH, seedDemo } from "~/server/seed-demo";
 import { generateStatements } from "~/server/statements-core";
@@ -27,7 +27,7 @@ const redIssue: WatchIssue = {
 const view = (st: HomeStatus, canEdit = true) => homeView(st, { canEdit });
 
 describe("ホーム（今月の締め）", () => {
-  it("10 月：明細がまだ → 次は明細を作る。作る → 送る → 振込 → 締め → 振り込んだ日 → 済み", async () => {
+  it("10 月：明細がまだ → 次は明細を作る。作る → 送る → 締め → 振込 → 振り込んだ日 → 済み", async () => {
     const { db, client } = await createTestDb();
     const { tenantId } = await seedDemo(db);
 
@@ -40,6 +40,14 @@ describe("ホーム（今月の締め）", () => {
     expect(st.profit).toEqual({ sales: 3_013_300, subtotal: 2_410_600, profit: 980_270, source: "calc" });
     let v = view(st);
     expect(v.title).toBe("2026年10月分の締め");
+    // 段の順番：取り込み → 見張り番 → 明細 → 締め → 振込（振込データ・締めの画面の案内と同じ）
+    expect(v.steps.map((x) => [x.no, x.key])).toEqual([
+      [1, "import"],
+      [2, "watch"],
+      [3, "statements"],
+      [4, "close"],
+      [5, "transfer"],
+    ]);
     expect(v.steps.map((x) => x.done)).toEqual([true, true, false, false, false]);
     expect(v.next).toMatchObject({ stepKey: "statements", label: "明細を作る（8人）", href: "/statements?m=2026-10", canAct: true });
     expect(v.steps.find((x) => x.current)?.key).toBe("statements");
@@ -75,28 +83,36 @@ describe("ホーム（今月の締め）", () => {
     expect(viewer).toMatchObject({ canAct: false, label: "明細の様子を見る" });
     expect(viewer.description).toContain("事務・オーナーの方が進めます");
 
-    // 全員に送った → 次は振込
+    // 全員に送った → 次は締め（振込データより先。締めてから作ると、あとで金額が変わらない）
     await db.update(s.statements).set({ sentAt: new Date(Date.now() + 1000) }).where(and(eq(s.statements.tenantId, tenantId), eq(s.statements.month, DEMO_MONTH)));
     st = await loadHomeStatus(db, tenantId, DEMO_MONTH, quiet);
     expect(st.statements).toMatchObject({ unsent: 0, sent: 8 });
-    expect(view(st).next).toMatchObject({ stepKey: "transfer", label: "振込データを作る", href: "/transfer?m=2026-10" });
-
-    // 振込データを作る（口座の無い D07 は入らない）→ 次は締め
-    const batch = await createTransferBatch(db, tenantId, DEMO_MONTH, { transferDate: "2026-11-25", scope: "all" }, null);
-    st = await loadHomeStatus(db, tenantId, DEMO_MONTH, quiet);
-    expect(st.transfer).toMatchObject({ batches: 1, people: 7, total: 2_171_664, executed: 0, changed: 0 });
     v = view(st);
     expect(v.next).toMatchObject({ stepKey: "close", label: "2026年10月を締める", href: "/close?m=2026-10" });
-    expect(v.steps[3].lines[0]).toBe("1 件・7人・合計 2,171,664円");
+    expect(v.next?.description).toContain("振込データは締めたあとに作ると");
+    expect(v.steps.find((x) => x.current)?.key).toBe("close");
+    expect(v.steps[4]).toMatchObject({ key: "transfer", badge: "締めてから", done: false });
+    expect(v.steps[4].lines[0]).toBe("締めたら、銀行にそのまま出せる振込データ（全銀形式）を作ります。7人・合計 2,171,664円の見込みです。");
 
-    // 締める → 残りは「振り込んだ日を記録する」
+    // 締める → 次は振込データを作る
     await closeMonth(db, tenantId, DEMO_MONTH, null, quiet);
     st = await loadHomeStatus(db, tenantId, DEMO_MONTH, quiet);
     expect(st.closed).toBe(true);
     expect(st.totals).toEqual({ drivers: 8, total: 2_206_094, source: "saved" });
     expect(st.profit.profit).toBe(980_270);
     v = view(st);
-    expect(v.steps[4]).toMatchObject({ badge: "締め済み", done: true });
+    expect(v.steps[3]).toMatchObject({ key: "close", badge: "締め済み", done: true });
+    expect(v.steps[4]).toMatchObject({ key: "transfer", badge: "まだ", done: false });
+    expect(v.steps[4].lines[0]).toBe("銀行にそのまま出せる振込データ（全銀形式）を作れます。7人・合計 2,171,664円の見込みです。");
+    expect(v.next).toMatchObject({ stepKey: "transfer", label: "振込データを作る", href: "/transfer?m=2026-10" });
+    expect(v.allDone).toBe(false);
+
+    // 振込データを作る（口座の無い D07 は入らない）→ 残りは「振り込んだ日を記録する」
+    const batch = await createTransferBatch(db, tenantId, DEMO_MONTH, { transferDate: "2026-11-25", scope: "all" }, null);
+    st = await loadHomeStatus(db, tenantId, DEMO_MONTH, quiet);
+    expect(st.transfer).toMatchObject({ batches: 1, people: 7, total: 2_171_664, executed: 0, changed: 0 });
+    v = view(st);
+    expect(v.steps[4].lines[0]).toBe("1 件・7人・合計 2,171,664円");
     expect(v.next).toMatchObject({ stepKey: "executed", label: "振り込んだ日を記録する" });
     expect(v.allDone).toBe(false);
 
@@ -120,17 +136,23 @@ describe("ホーム（今月の締め）", () => {
     let st = await loadHomeStatus(db, tenantId, DEMO_MONTH, quiet);
     expect(st.transfer).toMatchObject({ batches: 0, includable: 7, notInBatch: 7, notInBatchTotal: 2_171_664, excluded: [{ name: "木村 誠", reason: "no_bank" }] });
     let v = view(st);
-    expect(v.steps[3].lines[0]).toBe("銀行にそのまま出せる振込データ（全銀形式）を作れます。7人・合計 2,171,664円の見込みです。");
-    expect(v.steps[3].lines[1]).toContain("振込データに入らない人が 1人います（木村 誠さん）");
-    expect(v.next?.label).toBe("振込データを作る");
+    expect(v.steps[4].key).toBe("transfer");
+    expect(v.steps[4].lines[0]).toBe("締めたら、銀行にそのまま出せる振込データ（全銀形式）を作ります。7人・合計 2,171,664円の見込みです。");
+    expect(v.steps[4].lines[1]).toContain("振込データに入らない人が 1人います（木村 誠さん）");
+    // 開いている月は、振込より先に締め
+    expect(v.next?.stepKey).toBe("close");
+    // 締めたあと（同じ数字で、締めた月として見る）：振込データを作る
+    const closedView = (x: HomeStatus) => view({ ...x, closed: true });
+    expect(closedView(st).steps[4].lines[0]).toBe("銀行にそのまま出せる振込データ（全銀形式）を作れます。7人・合計 2,171,664円の見込みです。");
+    expect(closedView(st).next?.label).toBe("振込データを作る");
 
-    // 7人で作る → 締めへ進める（口座の無い人のことは段に残す）
+    // 先に 7人で作ってあっても、締めへ進める（口座の無い人のことは段に残す）
     const first = await createTransferBatch(db, tenantId, DEMO_MONTH, { transferDate: "2026-11-25", scope: "all" }, null);
     v = view(await loadHomeStatus(db, tenantId, DEMO_MONTH, quiet));
-    expect(v.steps[3]).toMatchObject({ done: true, tone: "yellow", badge: "作成済み" });
+    expect(v.steps[4]).toMatchObject({ done: true, tone: "yellow", badge: "作成済み" });
     expect(v.next?.stepKey).toBe("close");
 
-    // あとから木村さんの口座を入れた → 残りの 1人（34,430円 ＝ 2,206,094 − 2,171,664）の振込データを作るまで、締めに進めない
+    // あとから木村さんの口座を入れた → 残りの 1人（34,430円 ＝ 2,206,094 − 2,171,664）。段に残りを出す。締めたあとは、その人の振込データを作らせる
     const [kimura] = await db.select().from(s.drivers).where(and(eq(s.drivers.tenantId, tenantId), eq(s.drivers.code, "D07")));
     await db
       .update(s.drivers)
@@ -139,12 +161,13 @@ describe("ホーム（今月の締め）", () => {
     st = await loadHomeStatus(db, tenantId, DEMO_MONTH, quiet);
     expect(st.transfer).toMatchObject({ batches: 1, includable: 8, notInBatch: 1, notInBatchTotal: 34_430, excluded: [] });
     v = view(st);
-    expect(v.steps[3]).toMatchObject({ done: false, badge: "残り 1人" });
-    expect(v.next).toMatchObject({ stepKey: "transfer", label: "残りの人の振込データを作る（1人）", href: "/transfer?m=2026-10" });
+    expect(v.steps[4]).toMatchObject({ done: false, badge: "残り 1人" });
+    expect(v.next?.stepKey).toBe("close");
+    expect(closedView(st).next).toMatchObject({ stepKey: "transfer", label: "残りの人の振込データを作る（1人）", href: "/transfer?m=2026-10" });
     const rest = await createTransferBatch(db, tenantId, DEMO_MONTH, { transferDate: "2026-11-25", scope: "remaining" }, null);
     st = await loadHomeStatus(db, tenantId, DEMO_MONTH, quiet);
     expect(st.transfer).toMatchObject({ batches: 2, people: 8, total: 2_206_094, notInBatch: 0 });
-    expect(view(st).steps[3]).toMatchObject({ done: true, tone: "green" });
+    expect(view(st).steps[4]).toMatchObject({ done: true, tone: "green" });
 
     // 振り込んだあとで明細が変わった：作り直しはできないので「作り直す」で止めない。確かめるよう書く
     await setTransferExecutedOn(db, tenantId, first.id, "2026-11-25", null);
@@ -155,9 +178,15 @@ describe("ホーム（今月の締め）", () => {
     st = await loadHomeStatus(db, tenantId, DEMO_MONTH, quiet);
     expect(st.transfer).toMatchObject({ changed: 0, changedExecuted: 1, executed: 2 });
     v = view(st);
-    expect(v.steps[3]).toMatchObject({ done: true, tone: "yellow" });
-    expect(v.steps[3].lines.join()).toContain("振り込んだあとに明細が変わった振込データが 1 件あります");
+    expect(v.steps[4]).toMatchObject({ done: true, tone: "yellow" });
+    expect(v.steps[4].lines.join()).toContain("振り込んだあとに明細が変わった振込データが 1 件あります");
+    expect(v.steps[4].lines.join()).toContain("「振り込んだ額と明細の額の差」");
     expect(v.next?.stepKey).toBe("close");
+    // 差の精算の仕方を記録すると（翌月の明細の調整）、注意は消える
+    await settlePaidDifference(db, tenantId, DEMO_MONTH, { driverId: kimura.id, method: "next_month", expectedOutstanding: 1_200 }, null);
+    st = await loadHomeStatus(db, tenantId, DEMO_MONTH, quiet);
+    expect(st.transfer).toMatchObject({ changed: 0, changedExecuted: 0, executed: 2 });
+    expect(view(st).steps[4]).toMatchObject({ done: true, tone: "green" });
 
     // ほかの会社の振込は混ざらない
     const other = await loadHomeStatus(db, otherId, DEMO_MONTH, quiet);
@@ -176,7 +205,7 @@ describe("ホーム（今月の締め）", () => {
     expect(st.profit.profit).toBe(1_001_435);
     const v = view(st);
     expect(v.title).toBe("2026年9月分の締め");
-    expect(v.steps.map((x) => x.badge)).toEqual(["入っています", "指摘なし", "明細なし", "明細なし", "締め済み"]);
+    expect(v.steps.map((x) => x.badge)).toEqual(["入っています", "指摘なし", "明細なし", "締め済み", "明細なし"]);
     expect(v.next).toBeNull();
     expect(v.allDone).toBe(true);
     await client.close();
@@ -248,12 +277,12 @@ describe("ホーム（今月の締め）", () => {
     await client.close();
   });
 
-  it("最初の設定の案内：デモは 7 つのうち 5 つ済み（控除はデータがあるので済み）。次は取引条件の明示（遠藤さんの記録が無い）", async () => {
+  it("最初の設定の案内：デモは 7 つのうち 5 つ済み（控除はデータがあるので済み）。次は Excel と比べる（取引条件の明示は最後。遠藤さんの記録が無い）", async () => {
     const { db, client } = await createTestDb();
     const { tenantId } = await seedDemo(db);
     const st = await loadHomeStatus(db, tenantId, DEMO_MONTH, quiet);
     expect(st.onboarding).toMatchObject({ doneCount: 5, total: 7, complete: false });
-    expect(st.onboarding.next?.key).toBe("terms");
+    expect(st.onboarding.next?.key).toBe("parallel");
     expect(st.onboarding.steps.find((x) => x.def.key === "terms")?.pending).toContain("遠藤 大輔さん");
     expect(st.onboarding.steps.find((x) => x.def.key === "rules")).toMatchObject({ state: "auto", note: "控除のルール 4 件" });
     await client.close();

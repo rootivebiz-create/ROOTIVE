@@ -4,6 +4,7 @@ import "server-only";
 import { Document, Page, StyleSheet, Text, View, renderToBuffer } from "@react-pdf/renderer";
 import { en } from "@/lib/engine/types";
 import { jpDate } from "@/lib/format";
+import { shortDate } from "@/lib/tools/torihiki-joken";
 import type { PdfSource } from "~/server/features/statements";
 import {
   jpDateTime,
@@ -54,6 +55,7 @@ const st = StyleSheet.create({
   cAmount: { flex: 15, textAlign: "right" },
   cHow: { flex: 32, paddingRight: 4, color: MUTED, fontSize: 8 },
   cTag: { flex: 13, fontSize: 8 },
+  cDays: { flex: 79, fontSize: 8 },
   sumRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 3, borderBottomWidth: 0.6, borderBottomColor: LINE },
   sumTotal: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 5, borderTopWidth: 1.2, borderTopColor: INK, marginTop: 2 },
   note: { marginTop: 12, borderWidth: 1, borderColor: LINE, borderRadius: 4, padding: 8, fontSize: 8.5 },
@@ -116,6 +118,7 @@ function StatementPages({ source, generatedAt }: { source: PdfSource; generatedA
         <View style={st.metaItem}>
           <Text style={st.small}>振込予定日</Text>
           <Text>{jpDateWithWeekday(v.payDate)}</Text>
+          {v.payDateNote ? <Text style={st.small}>（{v.payDateNote}、前の営業日）</Text> : null}
         </View>
         <View style={st.metaItem}>
           <Text style={st.small}>振込先</Text>
@@ -170,6 +173,22 @@ function StatementPages({ source, generatedAt }: { source: PdfSource; generatedA
           <Text>消費税相当額の支払はありません</Text>
         </View>
       )}
+
+      {v.lines.some((l) => (l.days ?? []).length > 0) ? (
+        <View>
+          <Text style={st.h2}>日ごとの数量</Text>
+          {v.lines
+            .filter((l) => (l.days ?? []).length > 0)
+            .map((l) => (
+              <View key={`days-${l.key}`} style={st.row} wrap={false}>
+                <Text style={st.cName}>
+                  {l.project}（{l.unit}）
+                </Text>
+                <Text style={st.cDays}>{(l.days ?? []).map((d) => `${d.date ? shortDate(d.date) : "日付なし"} ${qtyText(d.qty)}`).join("　")}</Text>
+              </View>
+            ))}
+        </View>
+      ) : null}
 
       {v.deductions.length > 0 ? (
         <View>

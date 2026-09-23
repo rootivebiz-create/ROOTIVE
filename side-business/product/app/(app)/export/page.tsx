@@ -6,8 +6,11 @@ import { MappingForm } from "~/components/export/mapping-form";
 import { AccountTotals, SlipPreview } from "~/components/export/slip-preview";
 import { getDb } from "~/db/client";
 import { requirePageUser } from "~/server/auth";
+import { deductibleRateForExempt } from "@/lib/payroll/tax";
+import { periodOf } from "~/server/calc/statement";
 import { exportFileName, loadAccountingView, parseSoftware, SOFTWARE, SOFTWARE_KEYS } from "~/server/features/accounting";
 import { monthFromParam, monthLabelJa, monthParam } from "~/server/month";
+import { getTenant } from "~/server/repo";
 
 export const metadata = { title: "会計ソフトへ" };
 
@@ -18,8 +21,12 @@ export default async function ExportPage({ searchParams }: { searchParams: Promi
   const month = monthFromParam(sp.m);
   const m = monthParam(month);
   const db = await getDb();
-  const view = await loadAccountingView(db, user.tenantId, month, parseSoftware(sp.soft));
+  const [view, tenant] = await Promise.all([loadAccountingView(db, user.tenantId, month, parseSoftware(sp.soft)), getTenant(db, user.tenantId)]);
   const { info, check } = view;
+  // 締めの期間が経過措置の段の境目をまたぐ月（例：20日締めの 9/21〜10/20）。仕訳は期間の末日の割合で、会社の控え・利益は日ごとに分けた目安
+  const period = periodOf(month, tenant.closingDay);
+  const spansStep = deductibleRateForExempt(period.from) !== deductibleRateForExempt(period.to);
+  const spanNote = spansStep ? "仕訳の税区分は締めの期間の末日の割合です（会社の控え・利益の画面は日ごとに分けた目安）。" : "";
   const hasData = check.drivers > 0;
   const showTax = info.taxMode === "inclusive";
 
@@ -196,6 +203,7 @@ export default async function ExportPage({ searchParams }: { searchParams: Promi
         <p className="text-sm text-muted-foreground">
           会社ごとに 1 回決めれば、翌月からはそのまま使います。
           {view.deductibleRate < 1 && `${monthLabelJa(month)}は、登録の無い方への支払の消費税のうち ${pct(view.deductibleRate)} を控除できる期間の税区分を使います。`}
+          {spanNote}
         </p>
         <Card>
           <MappingForm
@@ -233,7 +241,10 @@ export default async function ExportPage({ searchParams }: { searchParams: Promi
         </h2>
         <ul className="list-disc space-y-1 pl-5">
           <li>取引日はその月の末日、摘要は「ドライバー名 ◯年◯月分 委託料」などです。</li>
-          <li>委託料：借方 外注費 ／ 貸方 未払金。登録の無い方は、その月の経過措置の割合の税区分にし、消費税相当額を含めた税込の額で出します（税額の欄は空けます）。</li>
+          <li>
+            委託料：借方 外注費 ／ 貸方 未払金。登録の無い方は、その月の経過措置の割合の税区分にし、消費税相当額を含めた税込の額で出します（税額の欄は空けます）。
+            {spanNote}
+          </li>
           <li>控除（ロイヤリティ・管理費など）：借方 未払金 ／ 貸方 売上高（消費税のかからない控除は別の科目）。</li>
           <li>調整：支払を増やすものは 借方 立替金 ／ 貸方 未払金、減らすものは 借方 未払金 ／ 貸方 雑収入（どれも変えられます）。</li>
           <li>源泉徴収：借方 未払金 ／ 貸方 預り金。</li>

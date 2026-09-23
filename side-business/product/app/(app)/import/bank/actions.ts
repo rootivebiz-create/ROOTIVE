@@ -9,7 +9,7 @@ import { audit } from "~/server/audit";
 import { requireUser } from "~/server/auth";
 import { applyBankImport, assignBankRow, createBankDraft, discardBankDraft } from "~/server/features/import/bank";
 import { idSchema, monthInputSchema } from "~/server/features/import/schemas";
-import { MAX_FILE_BYTES } from "~/server/features/import/types";
+import { MAX_FILE_BYTES, MAX_FILE_LABEL } from "~/server/features/import/types";
 import { monthParam } from "~/server/month";
 
 /**
@@ -36,7 +36,7 @@ export async function bankUploadAction(_prev: State, form: FormData): Promise<St
     const pageMonth = monthInputSchema.parse(text(form, "month"));
     const file = form.get("file");
     if (!(file instanceof File) || file.name === "") throw new UserError("ファイルを選んでください");
-    if (file.size > MAX_FILE_BYTES) throw new UserError("ファイルが大きすぎます（10MB まで）");
+    if (file.size > MAX_FILE_BYTES) throw new UserError(`ファイルが大きすぎます（${MAX_FILE_LABEL} まで）`);
     const bytes = new Uint8Array(await file.arrayBuffer());
     const db = await getDb();
     const draft = await createBankDraft(db, user.tenantId, user, { fileName: file.name, bytes, pageMonth });

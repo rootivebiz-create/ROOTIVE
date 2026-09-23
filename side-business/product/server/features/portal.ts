@@ -13,6 +13,7 @@ import {
   isLineKeyOf,
   isUuid,
   jpDateTime,
+  scheduledPayDate,
   jpMonthLabel,
   jpShortDateTime,
   linkExpiresAt,
@@ -141,7 +142,8 @@ export async function loadPortal(db: Db, token: string, now = new Date()): Promi
     annualRowsFor(db, st),
   ]);
   const view = toDriverView(readSnapshot(st), st);
-  const { compare, others } = await otherMonthsFor(db, st, view, now);
+  // ほかの月のリンクは、いま開いているリンクより長く使えるようにしない（たどり直しで期限を延ばせないように）
+  const { compare, others } = await otherMonthsFor(db, st, view, now, check.ok ? check.expiresAt : 0);
   const current = confs.find((c) => c.version === st.version);
   const older = confs.filter((c) => c.version < st.version).at(-1);
   const changes = !current && older ? await changesSince(db, tenantId, st, view, older.version) : null;
@@ -172,8 +174,20 @@ export async function loadPortal(db: Db, token: string, now = new Date()): Promi
 /**
  * 同じ会社・同じドライバーの、ほかの月の明細（締めた月か、会社が送った明細だけ）。
  * 先月の明細があれば、振込額と案件ごとの数量を並べる。リンクは明細ごとに、その明細の nonce で署名する。
+ * リンクの期限は、いま開いているリンクの期限を超えない（A → B → A とたどり直しても、期限は延びない。
+ * 延ばせるのは、会社が新しいリンクを作って送ったときだけ）
  */
-async function otherMonthsFor(db: Db, st: StatementRow, view: DriverStatementView, now: Date): Promise<{ compare: MonthCompare | null; others: OtherStatement[] }> {
+export function otherMonthExpiresAt(now: Date, openedExpiresAt: number): number {
+  return Math.min(openedExpiresAt, linkExpiresAt(now));
+}
+
+async function otherMonthsFor(
+  db: Db,
+  st: StatementRow,
+  view: DriverStatementView,
+  now: Date,
+  openedExpiresAt: number,
+): Promise<{ compare: MonthCompare | null; others: OtherStatement[] }> {
   const from = shiftMonth(st.month, -OTHER_MONTHS);
   const to = shiftMonth(st.month, OTHER_MONTHS);
   const rows = await db
@@ -204,12 +218,12 @@ async function otherMonthsFor(db: Db, st: StatementRow, view: DriverStatementVie
   ]);
   const closed = new Set(closes.map((c) => c.month));
   const visible = rows.filter((r) => closed.has(r.month) || r.sentAt !== null);
-  const expiresAt = linkExpiresAt(now);
+  const expiresAt = otherMonthExpiresAt(now, openedExpiresAt);
   const others = visible.map((r) => ({
     month: r.month,
     label: jpMonthLabel(r.month),
     total: r.total,
-    payDate: readSnapshot(r).payDate,
+    payDate: scheduledPayDate(readSnapshot(r).payDate),
     href: `/s/${signStatementLink(r.id, r.linkNonce, expiresAt)}`,
     confirmed: confs.some((c) => c.statementId === r.id && c.version === r.version),
   }));
@@ -279,7 +293,7 @@ export type ConfirmResult = { at: string; version: number; already: boolean };
  */
 export async function confirmFromPortal(db: Db, token: string, input: { version: number }, ctx: PortalContext = {}): Promise<ConfirmResult> {
   const now = ctx.now ?? new Date();
-  if (ctx.byStaff) throw new UserError("会社の方のログイン中は押せません。「確認しました」はドライバーご本人が押してください（ご本人が会社の方でもあるときは、ログアウトしてから開き直してください）");
+  if (ctx.byStaff) throw new UserError("会社の方のログイン中は押せません。「内容を確認しました」はドライバーご本人が押してください（ご本人が会社の方でもあるときは、ログアウトしてから開き直してください）");
   const st = await requirePortalStatement(db, token, now);
   if (tooMany(`portal:confirm:${ctx.ipHash ?? "unknown"}:${st.id}`, 10, 10 * 60_000, now.getTime())) throw new UserError(TOO_MANY);
   if (!Number.isInteger(input.version) || input.version !== st.version) throw new UserError(STALE_VERSION);
@@ -395,7 +409,8 @@ async function annualRowsFor(db: Db, st: StatementRow): Promise<{ year: string; 
           adjustments: d.adjustmentTotal + d.adjustmentTax,
           withholding: r.withholding,
           total: r.total,
-          payDate: d.payDate,
+          // 振込予定日（銀行の休みの日なら前の営業日。明細の画面と同じ）
+          payDate: scheduledPayDate(d.payDate),
           current: r.id === st.id,
         };
       }),

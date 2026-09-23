@@ -71,7 +71,7 @@ describe("ホーム・最初の設定・Excel と比べる の画面", () => {
     expect(html).toContain('href="/statements?m=2026-10"');
     expect(html).toContain("ドライバーへの支払日は 11月25日（水）");
     expect(html).toContain("最初の設定：7 つのうち 5 つ済み");
-    expect(html).toContain("次は「取引条件の明示」です");
+    expect(html).toContain("次は「Excel と比べる」です");
     expect(html).toContain("稼働 11 件（8人）・調整 2 件");
     expect(html).toContain("¥980,270");
     // 突合：まだ「突き合わせる」を押していなくても、突合の画面・利益の画面と同じ見込みの額が出る
@@ -104,10 +104,12 @@ describe("ホーム・最初の設定・Excel と比べる の画面", () => {
     const { default: OnboardingPage } = await import("~/app/(app)/onboarding/page");
     const html = await render(OnboardingPage);
     expect(html).toContain("7 つのうち 5 つ済み");
-    expect(html).toContain("5. 取引条件の明示をはじめる（約10分）");
+    expect(html).toContain("6. Excel と比べるをはじめる（約10分）");
     expect(html).toContain('href="/terms"');
+    // 取引条件の明示は最後の手順（Excel と合うのを確かめてから）
+    expect(html).toContain("7. 取引条件の明示");
     expect(html).toContain("記録（明示書か、明示した日）が見つからない人が 1人います（有効な 8人のうち）：遠藤 大輔さん");
-    expect(html).toContain("7. Excel と比べる");
+    expect(html).toContain("2. 先月の Excel を取り込む");
     expect(html).toContain("控除のルール 4 件");
     expect(html).toContain("あとでやる");
     // 取り込み・比べ合わせは先月（今日から見て）の分を開く
@@ -120,7 +122,7 @@ describe("ホーム・最初の設定・Excel と比べる の画面", () => {
     as("staff");
     let html = await render(CompanyPage);
     expect(html).toContain("会社の基本を保存できるのはオーナーの方です（デモ 社長さん）");
-    expect(html).toContain("資本金と従業員の数は、取適法の対象かの目安に使います。");
+    expect(html).toContain("資本金と従業員の数は、取適法（中小受託取引適正化法）の対象かの目安に使います。");
     expect(html).toContain("毎月末日締め・翌月25日払い");
     expect(html).not.toContain("保存する");
     as("owner");
@@ -132,7 +134,10 @@ describe("ホーム・最初の設定・Excel と比べる の画面", () => {
     expect(html).toContain("免税（会社が消費税を納めていない）");
     // 会社の大きさ（任意）と、聞く理由の 1 行
     expect(html).toContain("会社の大きさ（任意）");
-    expect(html).toContain("取適法の対象かの目安に使います");
+    expect(html).toContain("取適法（中小受託取引適正化法）の対象かの目安に使います");
+    // 振込手数料の設定は計算を変えないので、「振込額から差し引く」とは書かない
+    expect(html).toContain("しめ日ラボの明細・振込データでは差し引きません");
+    expect(html).not.toContain("振込額から差し引く）");
     expect(html).toContain('name="capitalYen"');
     expect(html).toContain('name="employees"');
     // 済んだ手順には「あとでやる」を出さない

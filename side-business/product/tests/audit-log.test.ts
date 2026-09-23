@@ -138,6 +138,13 @@ const KNOWN_ACTIONS = [
   "export.terms_pdf_all",
   "user.password_change",
   "user.sign_out_others",
+  // 振り込んだあとに明細が変わったときの、差の精算
+  "transfer.settle",
+  "transfer.settle_undo",
+  // 読むための PDF の書き出し（年ごと）
+  "data.export_pdfs",
+  // 明細の検索（/records）の索引
+  "export.records_csv",
 ];
 
 /** いまのソースが操作の記録に書いている名前（action: "…" と *_ACTION = "…"）を集める */
@@ -372,5 +379,13 @@ describe("操作の記録を探す（範囲・種類・人・ページ）", () =
     expect((await searchAuditLog(db, otherTenantId, { month: DEMO_MONTH, who: `user:${staffId}` })).total).toBe(0);
     expect((await searchAuditLog(db, otherTenantId, { month: DEMO_MONTH, scope: "period", pageSize: 500 })).rows.some((r) => r.action === "driver.update")).toBe(false);
     expect((await auditCsvRows(db, otherTenantId, { month: DEMO_MONTH })).length).toBe(2);
+  });
+});
+
+describe("入り直しのリンク（scripts/reset-access.ts）の記録", () => {
+  it("画面の招待と見分けられる", () => {
+    expect(auditSummary("invite.create", { name: "山田", role: "owner", via: "reset-access" })).toContain("入り直しのリンク");
+    expect(auditSummary("invite.create", { name: "山田", role: "owner" })).not.toContain("入り直し");
+    expect(auditSummary("invite.revoke", { name: "山田", role: "owner", via: "reset-access" })).not.toContain("入り直し");
   });
 });

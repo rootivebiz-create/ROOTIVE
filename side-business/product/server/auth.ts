@@ -4,7 +4,7 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getDb } from "~/db/client";
 import * as s from "~/db/schema";
-import { randomToken, sha256 } from "~/server/tokens";
+import { ipFingerprint, randomToken, sha256 } from "~/server/tokens";
 
 export type Role = "owner" | "staff" | "viewer";
 export type SessionUser = { id: string; tenantId: string; email: string; name: string; role: Role };
@@ -13,7 +13,22 @@ import { SESSION_COOKIE } from "~/server/session-cookie";
 
 export { SESSION_COOKIE };
 const COOKIE = SESSION_COOKIE;
-const SESSION_DAYS = 14;
+/** 使っていない日が続いたら切れる日数（使っている間は、1 日に 1 回まで延ばす） */
+export const SESSION_IDLE_DAYS = 14;
+/** 使っていても、ログインしてからこの日数で切れる（ログインし直してもらう） */
+export const SESSION_MAX_DAYS = 90;
+const DAY_MS = 24 * 3600 * 1000;
+
+/**
+ * ログインの期限を延ばすか（純関数）。使っている間は切れない。ただし DB の書き込みは 1 日に 1 回まで、
+ * ログインしてから SESSION_MAX_DAYS を超えては延ばさない。延ばさないときは null
+ */
+export function renewedSessionExpiry(session: { createdAt: Date; expiresAt: Date }, now = new Date()): Date | null {
+  const max = session.createdAt.getTime() + SESSION_MAX_DAYS * DAY_MS;
+  const next = Math.min(now.getTime() + SESSION_IDLE_DAYS * DAY_MS, max);
+  if (next - session.expiresAt.getTime() < DAY_MS) return null;
+  return new Date(next);
+}
 
 /** 役割の強さ（数が大きいほど多くできる） */
 const RANK: Record<Role, number> = { viewer: 1, staff: 2, owner: 3 };
@@ -25,15 +40,17 @@ export function roleAtLeast(role: Role, need: Role): boolean {
 export async function createSession(user: { id: string; tenantId: string }): Promise<void> {
   const db = await getDb();
   const token = randomToken();
-  const expiresAt = new Date(Date.now() + SESSION_DAYS * 24 * 3600 * 1000);
+  const now = Date.now();
+  const expiresAt = new Date(now + SESSION_IDLE_DAYS * DAY_MS);
   await db.insert(s.sessions).values({ id: sha256(token), userId: user.id, tenantId: user.tenantId, expiresAt });
   const jar = await cookies();
+  // クッキーはいちばん長い期限まで残し、切れたかどうかは DB の期限で決める（使っている間は DB の期限を延ばす）
   jar.set(COOKIE, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
-    expires: expiresAt,
+    expires: new Date(now + SESSION_MAX_DAYS * DAY_MS),
   });
 }
 
@@ -47,20 +64,33 @@ export async function destroySession(): Promise<void> {
   jar.delete(COOKIE);
 }
 
-/** いまのログイン中の人（いなければ null） */
+/** いまのログイン中の人（いなければ null）。使っている間は、ログインの期限を延ばす（1 日に 1 回まで） */
 export async function currentUser(): Promise<SessionUser | null> {
   const jar = await cookies();
   const token = jar.get(COOKIE)?.value;
   if (!token) return null;
   const db = await getDb();
+  const now = new Date();
+  const sessionId = sha256(token);
   const rows = await db
-    .select({ id: s.users.id, tenantId: s.users.tenantId, email: s.users.email, name: s.users.name, role: s.users.role })
+    .select({
+      id: s.users.id,
+      tenantId: s.users.tenantId,
+      email: s.users.email,
+      name: s.users.name,
+      role: s.users.role,
+      sessionCreatedAt: s.sessions.createdAt,
+      sessionExpiresAt: s.sessions.expiresAt,
+    })
     .from(s.sessions)
     .innerJoin(s.users, eq(s.users.id, s.sessions.userId))
-    .where(and(eq(s.sessions.id, sha256(token)), gt(s.sessions.expiresAt, new Date()), isNull(s.users.disabledAt)))
+    .where(and(eq(s.sessions.id, sessionId), gt(s.sessions.expiresAt, now), isNull(s.users.disabledAt)))
     .limit(1);
   const u = rows[0];
-  return u ? { ...u, role: u.role as Role } : null;
+  if (!u) return null;
+  const renewed = renewedSessionExpiry({ createdAt: u.sessionCreatedAt, expiresAt: u.sessionExpiresAt }, now);
+  if (renewed) await db.update(s.sessions).set({ expiresAt: renewed }).where(eq(s.sessions.id, sessionId));
+  return { id: u.id, tenantId: u.tenantId, email: u.email, name: u.name, role: u.role as Role };
 }
 
 /** 画面用：ログインしていなければログイン画面へ（デモは自分専用の架空の会社を作る画面へ）。役割が足りなければ「権限がありません」 */
@@ -102,8 +132,9 @@ export async function createInvite(tenantId: string, email: string, name: string
   return token;
 }
 
+/** 接続元の目印（鍵つきハッシュ。IP そのものは残さない。server/tokens.ts の ipFingerprint） */
 export async function clientIpHash(): Promise<string | null> {
   const h = await headers();
-  const ip = h.get("x-forwarded-for")?.split(",")[0]?.trim() || h.get("x-real-ip") || "";
-  return ip ? sha256(`ip:${ip}`).slice(0, 32) : null;
+  const ip = (h.get("x-forwarded-for")?.split(",")[0]?.trim() || h.get("x-real-ip") || "").slice(0, 100);
+  return ip ? ipFingerprint(ip) : null;
 }

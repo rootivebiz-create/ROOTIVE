@@ -11,22 +11,29 @@ import { buildStatementDrafts, type BuildInput } from "~/server/calc/statement";
 import { saveParallelChecks } from "~/server/features/parallel";
 import { monthLabelJa, shiftMonth } from "~/server/month";
 import { isMonthClosed, loadBuildInput } from "~/server/repo";
-import { readTable, TableReadError } from "~/server/tabular";
+import { detectHeaderRow, readTable, TableReadError } from "~/server/tabular";
 import {
   baseName,
   chooseSheet,
   dataRowCount,
+  detectHeaderDepth,
   effectiveHeader,
   findProfile,
   guessMapping,
   mappingProblem,
   profileData,
   shapeSignature,
+  sheetDriverMatch,
+  sheetDriverName,
+  sheetShape,
   sheetWidth,
   suggestMonth,
   trimSheet,
+  type DriverHint,
   type ProfileLike,
 } from "./detect";
+import { adjustmentsFromColumns, type NewAdjustment } from "./adjust";
+import { assertDemoUploadBudget, demoFileProblem } from "./demo-budget";
 import { findMoneyColumns, readPayout, type PayoutRead } from "./columns";
 import { readFormulaCells } from "./formulas";
 import { emptyParse, parseWithMapping } from "./parse";
@@ -44,11 +51,15 @@ import {
 } from "./resolve";
 import {
   MAX_FILE_BYTES,
+  MAX_FILE_LABEL,
   MAX_SHEET_ROWS,
   SAMPLE_FILES,
+  type AdjustColumn,
   type ApplyMode,
   type BatchStats,
   type ColumnRole,
+  type MarkMap,
+  type RestoreAdjustment,
   type DraftSummary,
   type Learned,
   type ParseResult,
@@ -106,7 +117,52 @@ export type Computed = {
   parse: ParseResult;
   resolution: Resolution;
   problem: string | null;
+  /** シートごとに別の人の表を読んだときの気づき（読まなかったシート など） */
+  sheetNotes: string[];
 };
+
+/** シートごとに別の人の表（mapping.sheetDrivers）で読むシート：選んだシートと同じ形のシート（中身を保存しているもの） */
+export function driverSheets(summary: DraftSummary): { index: number; name: string; rows: string[][]; headerRow: number; driverName: string | null }[] {
+  const m = summary.mapping;
+  const out: { index: number; name: string; rows: string[][]; headerRow: number; driverName: string | null }[] = [];
+  summary.sheets.forEach((sh, index) => {
+    if (!sh.rows) return;
+    const shape = index === summary.sheetIndex ? { headerRow: m.headerRow } : sheetShape(sh.rows, m, summary.signature);
+    if (!shape) return;
+    out.push({ index, name: sh.name, rows: sh.rows, headerRow: shape.headerRow, driverName: sheetDriverName(sh.name, sh.rows, shape.headerRow) });
+  });
+  return out;
+}
+
+/** シートごとに読んだ結果を 1 つにまとめる（番地・理由・照合にシートの名前を付ける） */
+function parseSheets(summary: DraftSummary, month: string): { parse: ParseResult; notes: string[] } {
+  const sheets = driverSheets(summary);
+  const notes: string[] = [];
+  const merged: ParseResult = { records: [], skipped: [], emptyCells: 0, checks: [], warnings: [], dateMonths: {}, problem: null };
+  const problems: string[] = [];
+  const unknown = sheets.filter((sh) => !sh.driverName).map((sh) => `「${sh.name}」`);
+  if (unknown.length) notes.push(`${unknown.join("・")}のシートは、だれの表か分からないので読んでいません（シートの名前を人の名前にするか、表の上に「氏名：〇〇」と書いてください）`);
+  const unstored = summary.sheets.filter((sh) => !sh.rows).length;
+  if (unstored) notes.push(`大きすぎて中身を保存していないシートが ${unstored} 枚あります（読んでいません）`);
+  const tag = (name: string) => `【${name}】`;
+  for (const sh of sheets) {
+    if (!sh.driverName) continue;
+    const p = parseWithMapping(sh.rows, { ...summary.mapping, headerRow: sh.headerRow }, month, { driverName: sh.driverName });
+    if (p.problem) {
+      problems.push(`${tag(sh.name)}${p.problem}`);
+      continue;
+    }
+    for (const r of p.records) merged.records.push({ ...r, sheet: sh.index, cell: `${sh.name}!${r.cell}` });
+    for (const k of p.skipped) merged.skipped.push({ ...k, cell: k.cell ? `${sh.name}!${k.cell}` : undefined, reason: `${tag(sh.name)}${k.reason}` });
+    merged.emptyCells += p.emptyCells;
+    for (const c of p.checks) merged.checks.push({ ...c, label: `${tag(sh.name)}${c.label}` });
+    for (const w of p.warnings) merged.warnings.push(`${tag(sh.name)}${w}`);
+    for (const [ym, n] of Object.entries(p.dateMonths)) merged.dateMonths[ym] = (merged.dateMonths[ym] ?? 0) + n;
+  }
+  if (merged.records.length === 0 && problems.length) merged.problem = problems[0];
+  else merged.warnings.push(...problems);
+  return { parse: merged, notes };
+}
 
 /** 下書きの中身（シート・読み方・取り込まない名前）から、行と名前の当たりを出す */
 export function computeDraft(summary: DraftSummary, month: string, known: Known): Computed {
@@ -114,22 +170,31 @@ export function computeDraft(summary: DraftSummary, month: string, known: Known)
   const emptyRes = resolveRecords([], known, null, { drivers: [], projects: [] });
   if (!rows) {
     const problem = "このシートの中身は保存していません。シートを切り替えるには、ファイルをもう一度置いてください";
-    return { rows: [], header: [], parse: emptyParse(problem), resolution: emptyRes, problem };
+    return { rows: [], header: [], parse: emptyParse(problem), resolution: emptyRes, problem, sheetNotes: [] };
   }
   const header = effectiveHeader(rows, summary.mapping.headerRow, summary.mapping.headerDepth);
-  const parse = parseWithMapping(rows, summary.mapping, month);
-  const resolution = resolveRecords(parse.records, known, summary.mapping.fixedProjectId, summary.skip);
-  const truncated = summary.sheets[summary.sheetIndex]?.truncated
+  const mappingIssue = mappingProblem(summary.mapping);
+  const multi = summary.mapping.sheetDrivers && !mappingIssue ? parseSheets(summary, month) : null;
+  const parse = multi ? multi.parse : parseWithMapping(rows, summary.mapping, month);
+  const resolution = resolveRecords(parse.records, known, summary.mapping.fixedProjectId, summary.skip, summary.mapping.fixedDriverId ?? null);
+  const truncatedSheet = multi ? driverSheets(summary).some((sh) => summary.sheets[sh.index]?.truncated) : summary.sheets[summary.sheetIndex]?.truncated;
+  const truncated = truncatedSheet
     ? `このシートは ${MAX_SHEET_ROWS.toLocaleString("ja-JP")} 行を超えていて、途中から先を読めていないおそれがあります。月の前半・後半などに分けたファイルにして、1 つずつ置いてください`
     : null;
   let problem =
-    truncated ?? parse.problem ?? (resolution.fixedProjectMissing ? "「この表はすべて同じ案件」で選んだ案件が見つかりません。選び直してください" : null);
+    truncated ??
+    parse.problem ??
+    (resolution.fixedProjectMissing
+      ? "「この表はすべて同じ案件」で選んだ案件が見つかりません。選び直してください"
+      : resolution.fixedDriverMissing
+        ? "「この表はすべて同じ人」で選んだドライバーが見つかりません。選び直してください"
+        : null);
   // 人の列が無く、単価・金額の列がある表は、元請の支払通知のことが多い
   const roles = summary.mapping.roles;
   if (problem && !roles.includes("driver") && !roles.includes("driverCode") && header.some((h) => /単価|金額|支払額|請求/.test(h))) {
     problem += "。元請からの支払通知なら、「元請との突合」の画面で取り込みます";
   }
-  return { rows, header, parse, resolution, problem };
+  return { rows, header, parse, resolution, problem, sheetNotes: multi?.notes ?? [] };
 }
 
 export function statsOf(c: Computed, known: Known): BatchStats {
@@ -166,7 +231,7 @@ export async function readSampleFile(key: SampleKey): Promise<{ fileName: string
 function fileProblem(fileName: string, size: number): string | null {
   const lower = fileName.toLowerCase();
   if (size === 0) return "ファイルが空です（0 バイト）。保存し直したファイルを置いてください";
-  if (size > MAX_FILE_BYTES) return "ファイルが大きすぎます（10MB まで）。使っていないシートや画像を消してから置いてください";
+  if (size > MAX_FILE_BYTES) return `ファイルが大きすぎます（${MAX_FILE_LABEL} まで）。使っていないシートや画像を消すか、CSV にしてから置いてください`;
   if (lower.endsWith(".xls")) return "古い形式の Excel（.xls）は読めません。Excel で「名前を付けて保存」→「Excel ブック（.xlsx）」にしてから置いてください";
   if (lower.endsWith(".pdf"))
     return "PDF は読めません。元の Excel か、CSV で書き出したファイルを置いてください（元請の画面なら、CSV のダウンロードがないか確かめてください）";
@@ -183,7 +248,7 @@ export async function createDraftFromFile(
   input: { fileName: string; bytes: Uint8Array; pageMonth: string; sample?: boolean },
 ): Promise<{ id: string; month: string }> {
   const fileName = input.fileName.trim().slice(0, 200) || "ファイル";
-  const problem = fileProblem(fileName, input.bytes.byteLength);
+  const problem = fileProblem(fileName, input.bytes.byteLength) ?? demoFileProblem(input.bytes.byteLength);
   if (problem) throw new UserError(problem);
   // 銀行に出す振込ファイル（全銀）は稼働の表ではない。口座の取り込みへ案内する
   if (looksLikeZengin(input.bytes)) {
@@ -225,7 +290,7 @@ export async function createDraftFromFile(
   const known = await loadKnown(db, tenantId);
   const profiles = await loadProfiles(db, tenantId);
   const rows = counted[sheetIndex].rows;
-  const { mapping, from, profileId } = readingFor(rows, known, profiles);
+  const { mapping, from, profileId } = readingFor(rows, known, profiles, driverHintFor(counted, sheetIndex, known));
   const header = effectiveHeader(rows, mapping.headerRow, mapping.headerDepth);
   // シート名の月（「10月」）は Excel のときだけ見る（CSV のシート名はファイル名と同じ）
   const sheetHint = read.encoding === "xlsx" ? { name: counted[sheetIndex].name, near: input.pageMonth } : undefined;
@@ -269,6 +334,8 @@ export async function createDraftFromFile(
     learned: [],
   };
   summary.stats = statsOf(computeDraft(summary, month, known), known);
+  // デモ：1 つの会社が DB をいっぱいにしないように（置いた数と、保存する中身の大きさ）
+  await assertDemoUploadBudget(db, tenantId, Buffer.byteLength(JSON.stringify(summary)));
 
   const [batch] = await db
     .insert(s.importBatches)
@@ -288,11 +355,30 @@ export async function createDraftFromFile(
   return { id: batch.id, month };
 }
 
-/** 覚えた読み方があればそれ、無ければ推測 */
+/**
+ * 人の列が無い表の、人の決め方の手がかり：
+ * 同じ形のシートが 2 枚以上あり、シートの名前（か表題の「氏名」）が人の名前 → シートごとに別の人。
+ * 1 枚だけで、シートの名前か表題が台帳の人に当たる → その人の表（1 人 1 枚）
+ */
+function driverHintFor(sheets: { name: string; rows: string[][] | null }[], sheetIndex: number, known: Known): DriverHint | null {
+  const sel = sheets[sheetIndex];
+  if (!sel?.rows || sel.rows.length === 0) return null;
+  const headerRow = detectHeaderRow(sel.rows);
+  const depth = detectHeaderDepth(sel.rows, headerRow);
+  const signature = shapeSignature(effectiveHeader(sel.rows, headerRow, depth));
+  const same = sheets.filter((sh, i) => sh.rows && (i === sheetIndex || sheetShape(sh.rows, { headerRow, headerDepth: depth }, signature)));
+  const named = same.filter((sh) => sheetDriverName(sh.name, sh.rows!, headerRow));
+  if (same.length >= 2 && named.length >= 2) return { sheetDrivers: true };
+  const match = sheetDriverMatch(sel.name, sel.rows, headerRow, known);
+  return match ? { fixedDriverId: match.id } : null;
+}
+
+/** 覚えた読み方があればそれ、無ければ推測。1 人 1 枚の表なら、人はシートの名前・表題から毎回当て直す */
 function readingFor(
   rows: string[][],
   known: Known,
   profiles: ProfileLike[],
+  hint: DriverHint | null = null,
 ): { mapping: WorkMapping; from: DraftSummary["mappingFrom"]; profileId: string | null } {
   const found = findProfile(rows, profiles);
   if (found) {
@@ -300,9 +386,13 @@ function readingFor(
     const roles = [...found.mapping.roles];
     while (roles.length < width) roles.push("ignore");
     const knownFixed = found.mapping.fixedProjectId && known.projects.some((p) => p.id === found.mapping.fixedProjectId) ? found.mapping.fixedProjectId : null;
-    return { mapping: { ...found.mapping, roles, fixedProjectId: knownFixed }, from: "profile", profileId: found.profile.id };
+    const mapping: WorkMapping = { ...found.mapping, roles, fixedProjectId: knownFixed };
+    // 人の列が無い形（1 人 1 枚）を覚えていたら、今度のファイルの人を当て直す（前の人を当てない）
+    const hasDriverCol = roles.includes("driver") || roles.includes("driverCode") || roles.includes("driverValue");
+    if (!hasDriverCol && !mapping.sheetDrivers && hint?.fixedDriverId) mapping.fixedDriverId = hint.fixedDriverId;
+    return { mapping, from: "profile", profileId: found.profile.id };
   }
-  return { mapping: guessMapping(rows, known).mapping, from: "guess", profileId: null };
+  return { mapping: guessMapping(rows, known, { driverHint: hint }).mapping, from: "guess", profileId: null };
 }
 
 // ---------------------------------------------------------------- 下書きを読む・書く
@@ -349,7 +439,7 @@ export async function selectSheet(db: Db, tenantId: string, batchId: string, she
   if (!sheet) throw new UserError("そのシートは見つかりません");
   if (!sheet.rows) throw new UserError("このシートの中身は保存していません（ファイルが大きいため）。このシートだけにしたファイルを置いてください");
   const known = await loadKnown(db, tenantId);
-  const { mapping, from, profileId } = readingFor(sheet.rows, known, await loadProfiles(db, tenantId));
+  const { mapping, from, profileId } = readingFor(sheet.rows, known, await loadProfiles(db, tenantId), driverHintFor(summary.sheets, sheetIndex, known));
   summary.sheetIndex = sheetIndex;
   summary.sheetFrom = "user";
   summary.mapping = mapping;
@@ -378,14 +468,26 @@ export async function setHeaderRow(db: Db, tenantId: string, batchId: string, he
   if (!Number.isInteger(headerRow) || headerRow < 0 || headerRow >= rows.length - 1)
     throw new UserError("その行は選べません。見出しの行（その下にデータがある行）を選んでください");
   const known = await loadKnown(db, tenantId);
-  const g = guessMapping(rows, known, { headerRow });
-  summary.mapping = { ...g.mapping, fixedProjectId: summary.mapping.fixedProjectId };
+  const prev = summary.mapping;
+  const g = guessMapping(rows, known, { headerRow, driverHint: { fixedDriverId: prev.fixedDriverId ?? null, sheetDrivers: prev.sheetDrivers } });
+  summary.mapping = { ...g.mapping, fixedProjectId: prev.fixedProjectId };
   summary.mappingFrom = "user";
   summary.signature = shapeSignature(g.header);
   await saveDraft(db, tenantId, batchId, batch.month, summary, known);
 }
 
-export type MappingInput = { roles: ColumnRole[]; fixedProjectId: string | null; useDates: boolean; remember: boolean };
+export type MappingInput = {
+  roles: ColumnRole[];
+  fixedProjectId: string | null;
+  useDates: boolean;
+  remember: boolean;
+  /** 「この表はすべて同じ人」（1 人 1 枚の表） */
+  fixedDriverId?: string | null;
+  /** シートごとに別の人の表（同じ形のシートをすべて読む） */
+  sheetDrivers?: boolean;
+  /** 印（○・出・休）の数え方。undefined なら今のまま */
+  marks?: MarkMap | null;
+};
 
 /** 列の役目を決める。remember なら、同じ形のファイルに次から使う */
 export async function updateMapping(db: Db, tenantId: string, batchId: string, input: MappingInput): Promise<{ problem: string | null }> {
@@ -395,9 +497,16 @@ export async function updateMapping(db: Db, tenantId: string, batchId: string, i
   const width = sheetWidth(rows);
   if (input.roles.length > width) throw new UserError("列の数が合いません。画面を読み直してください");
   if (input.fixedProjectId) await assertProject(db, tenantId, input.fixedProjectId);
+  if (input.fixedDriverId) await assertDriver(db, tenantId, input.fixedDriverId);
+  if (input.fixedDriverId && input.sheetDrivers) throw new UserError("「この表はすべて同じ人」と「シートごとに別の人」は、どちらか一方にしてください");
   const roles = [...input.roles];
   while (roles.length < width) roles.push("ignore");
   const mapping: WorkMapping = { ...summary.mapping, roles, fixedProjectId: input.fixedProjectId, useDates: input.useDates };
+  if (input.fixedDriverId !== undefined) mapping.fixedDriverId = input.fixedDriverId || null;
+  if (input.sheetDrivers !== undefined) mapping.sheetDrivers = input.sheetDrivers || undefined;
+  if (input.marks !== undefined) mapping.marks = input.marks;
+  // 調整として入れる列は「使わない」の列だけ（役目を付けた列は外す）
+  if (mapping.adjust) mapping.adjust = mapping.adjust.filter((a) => (roles[a.col] ?? "ignore") === "ignore");
   summary.mapping = mapping;
   summary.mappingFrom = "user";
   summary.remember = input.remember;
@@ -408,6 +517,36 @@ export async function updateMapping(db: Db, tenantId: string, batchId: string, i
   }
   await saveDraft(db, tenantId, batchId, batch.month, summary);
   return { problem };
+}
+
+export type AdjustColumnInput =
+  | { col: number; enabled: false }
+  | { col: number; enabled: true; label: string; sign: AdjustColumn["sign"]; taxable: boolean; agreedInWriting: boolean; basis: string | null };
+
+/**
+ * 金額の列を、その月の調整（人ごとの足し引き）として入れるかを決める。
+ * 「次から同じ読み方で読む」なら、覚えた読み方にも残す（2 か月目からは、置いて反映するだけ）
+ */
+export async function setAdjustColumn(db: Db, tenantId: string, batchId: string, input: AdjustColumnInput): Promise<{ header: string; count: number }> {
+  const { batch, summary } = await getDraft(db, tenantId, batchId);
+  const rows = summary.sheets[summary.sheetIndex]?.rows;
+  if (!rows) throw new UserError("このシートの中身は保存していません");
+  if (summary.mapping.sheetDrivers) throw new UserError("シートごとに別の人の表では、金額の列を調整として入れられません。「稼働と調整」でまとめて貼り付けてください");
+  const header = effectiveHeader(rows, summary.mapping.headerRow, summary.mapping.headerDepth);
+  if (!Number.isInteger(input.col) || input.col < 0 || input.col >= header.length) throw new UserError("その列が見つかりません。画面を読み直してください");
+  if ((summary.mapping.roles[input.col] ?? "ignore") !== "ignore") throw new UserError("数量などとして読んでいる列は、調整にできません。読み方で「使わない」にしてください");
+  const rest = (summary.mapping.adjust ?? []).filter((a) => a.col !== input.col);
+  if (input.enabled) {
+    const label = input.label.trim();
+    if (!label) throw new UserError("明細に出す名前を入れてください（例：燃料代）");
+    rest.push({ col: input.col, label: label.slice(0, 60), sign: input.sign, taxable: input.taxable, agreedInWriting: input.agreedInWriting, basis: input.basis?.trim() || null });
+    rest.sort((x, y) => x.col - y.col);
+  }
+  summary.mapping = { ...summary.mapping, adjust: rest.length ? rest : undefined };
+  if (!summary.mapping.adjust) delete summary.mapping.adjust;
+  if (summary.remember !== false && !mappingProblem(summary.mapping)) summary.profileId = await upsertProfile(db, tenantId, summary, header);
+  await saveDraft(db, tenantId, batchId, batch.month, summary);
+  return { header: (header[input.col] ?? "").trim(), count: rest.length };
 }
 
 /** 書き込む月を変える */
@@ -645,7 +784,15 @@ type AppliedBatchLite = {
   mappingProfileId: string | null;
   appliedAt: string | null;
   appliedBy: string | null;
+  /** この取り込みで入れた調整（金額の列から） */
+  adjustmentIds: string[] | null;
 };
+
+/** その月の調整（取り込みで入れたものも、手で入れたものも） */
+type AdjLite = { id: string; driverId: string; label: string; amount: number; taxable: boolean; agreedInWriting: boolean; basis: string | null };
+
+/** 取り込む調整と、今ある調整（手入力・消えずに残る取り込みの分）で、同じ人・同じ名前のもの */
+export type AdjustDuplicate = { driverId: string; driverName: string; label: string; incoming: number; existing: number };
 
 /**
  * 同じファイルか：中身のハッシュが同じで、同じシートを読んだもの。
@@ -705,6 +852,10 @@ export type ModeOption = {
   duplicateYen: number;
   /** 同じファイルがすでに反映されている（足すと倍になる） */
   sameFileApplied: boolean;
+  /** 入れ替えで消える、前の取り込みで入れた調整の数 */
+  removeAdjustments: number;
+  /** 今ある調整と重なる、取り込む調整（同じ人・同じ名前） */
+  adjustDuplicates: AdjustDuplicate[];
 };
 
 export type DraftView = {
@@ -736,6 +887,8 @@ export type DraftView = {
     prevMonth: string;
     /** 同じファイルが反映済みのとき：「取り消して入れ直す」の中身（前の取り込みと入れ替える） */
     reapply: ModeOption | null;
+    /** 金額の列から入れる調整（読み方で「調整として入れる」にした列） */
+    adjustments: { count: number; total: number; drivers: number };
   } | null;
   /** 反映済みのとき：この取り込みで入っている稼働（いまの DB） */
   appliedTotals: ReturnType<typeof totalsOf> | null;
@@ -882,6 +1035,7 @@ async function appliedBatches(db: Db, tenantId: string, month: string): Promise<
       mappingProfileId: s.importBatches.mappingProfileId,
       appliedAt: sql<string | null>`${s.importBatches.summary}->'applied'->>'at'`,
       appliedBy: sql<string | null>`${s.importBatches.summary}->'applied'->>'by'`,
+      adjustmentIds: sql<string[] | null>`${s.importBatches.summary}->'applied'->'adjustments'->'ids'`,
     })
     .from(s.importBatches)
     .where(
@@ -917,6 +1071,31 @@ function removalFor(
   return { removed: entries.filter((e) => e.importBatchId && ids.has(e.importBatchId)), batches: same, kept: shape.filter((b) => !ids.has(b.id)) };
 }
 
+function looseLabel(v: string): string {
+  return v.normalize("NFKC").replace(/\s/g, "").toLowerCase();
+}
+
+/** 入れ替えで消える調整（入れ替える取り込みで入れたもの）と、取り込む調整と重なる今ある調整 */
+function adjustmentPlan(
+  batches: AppliedBatchLite[],
+  existing: AdjLite[],
+  incoming: NewAdjustment[],
+  known: Known,
+): { removed: (AdjLite & { importBatchId: string })[]; duplicates: AdjustDuplicate[] } {
+  const owner = new Map<string, string>();
+  for (const b of batches) for (const id of b.adjustmentIds ?? []) owner.set(id, b.id);
+  const removed = existing.filter((a) => owner.has(a.id)).map((a) => ({ ...a, importBatchId: owner.get(a.id)! }));
+  const remaining = existing.filter((a) => !owner.has(a.id));
+  const dName = new Map(known.drivers.map((d) => [d.id, d.name]));
+  const duplicates: AdjustDuplicate[] = [];
+  for (const n of incoming) {
+    const same = remaining.filter((r) => r.driverId === n.driverId && looseLabel(r.label) === looseLabel(n.label));
+    if (same.length === 0) continue;
+    duplicates.push({ driverId: n.driverId, driverName: dName.get(n.driverId) ?? "", label: n.label, incoming: n.amount, existing: same.reduce((a, r) => a + r.amount, 0) });
+  }
+  return { removed, duplicates: duplicates.sort((a, b) => a.driverName.localeCompare(b.driverName, "ja")) };
+}
+
 function modeOption(
   mode: ApplyMode,
   batchId: string,
@@ -927,8 +1106,10 @@ function modeOption(
   known: Known,
   input: BuildInput,
   force: Set<string> = new Set(),
+  adj: { existing: AdjLite[]; incoming: NewAdjustment[] } = { existing: [], incoming: [] },
 ): ModeOption {
   const { removed, batches, kept } = removalFor(mode, batchId, summary, entries, applied, resolved, force);
+  const adjPlan = adjustmentPlan(batches, adj.existing, adj.incoming, known);
   const removedIds = new Set(removed.map((e) => e.id));
   const remaining = entries.filter((e) => !removedIds.has(e.id));
   const fileName = new Map(applied.map((b) => [b.id, b.fileName]));
@@ -945,7 +1126,37 @@ function modeOption(
     duplicateYen: duplicates.reduce((a, d) => a + d.yen, 0),
     // 同じファイルの前の取り込みの稼働が残っているときだけ（みな消してあれば、足しても倍にならない）
     sameFileApplied: mode === "add" && applied.some((b) => b.id !== batchId && isSameFile(b, summary) && entries.some((e) => e.importBatchId === b.id)),
+    removeAdjustments: adjPlan.removed.length,
+    adjustDuplicates: adjPlan.duplicates,
   };
+}
+
+async function monthAdjustments(db: Db, tenantId: string, month: string): Promise<AdjLite[]> {
+  return db
+    .select({
+      id: s.adjustments.id,
+      driverId: s.adjustments.driverId,
+      label: s.adjustments.label,
+      amount: s.adjustments.amount,
+      taxable: s.adjustments.taxable,
+      agreedInWriting: s.adjustments.agreedInWriting,
+      basis: s.adjustments.basis,
+    })
+    .from(s.adjustments)
+    .where(and(eq(s.adjustments.tenantId, tenantId), eq(s.adjustments.month, month)));
+}
+
+/** 読み方で「調整として入れる」にした金額の列から、反映のときに作る調整（シートごとに別の人の表では作らない） */
+function incomingAdjustments(summary: DraftSummary, computed: Computed, known: Known): NewAdjustment[] {
+  if (summary.mapping.sheetDrivers || !summary.mapping.adjust?.length || computed.problem) return [];
+  const driverIds = new Set(known.drivers.map((d) => d.id));
+  return adjustmentsFromColumns({
+    rows: computed.rows,
+    mapping: summary.mapping,
+    header: computed.header,
+    resolved: computed.resolution.resolved,
+    fileName: summary.file.name,
+  }).filter((a) => driverIds.has(a.driverId));
 }
 
 /** 入れ替えで消えずに残る稼働のうち、取り込む分と重なる行の数 */
@@ -997,39 +1208,49 @@ export async function loadDraftView(db: Db, tenantId: string, batchId: string, o
       );
     else if (computed.resolution.resolved.length === 0) blockers.push("取り込める行がありません。読み方と、取り込まない名前を確かめてください");
 
-    const [entries, applied, input, prev, others] = await Promise.all([
+    const [entries, applied, input, prev, others, adjustments] = await Promise.all([
       monthEntries(db, tenantId, batch.month),
       appliedBatches(db, tenantId, batch.month),
       loadBuildInput(db, tenantId, batch.month),
       monthEntries(db, tenantId, shiftMonth(batch.month, -1)),
       sameHashOtherMonths(db, tenantId, batch.month, summary.file.hash, summary.sheetIndex),
+      monthAdjustments(db, tenantId, batch.month),
     ]);
     sameFileOtherMonths = others;
     const resolved = computed.resolution.resolved;
+    const adj = { existing: adjustments, incoming: incomingAdjustments(summary, computed, known) };
     const same = await sameFileOf(db, tenantId, batch.id, summary, entries, applied, resolved, known, input);
     sameFile = same?.info ?? null;
     const modes = {
-      replace: modeOption("replace", batch.id, summary, entries, applied, resolved, known, input),
-      replaceAll: modeOption("replaceAll", batch.id, summary, entries, applied, resolved, known, input),
-      add: modeOption("add", batch.id, summary, entries, applied, resolved, known, input),
+      replace: modeOption("replace", batch.id, summary, entries, applied, resolved, known, input, undefined, adj),
+      replaceAll: modeOption("replaceAll", batch.id, summary, entries, applied, resolved, known, input, undefined, adj),
+      add: modeOption("add", batch.id, summary, entries, applied, resolved, known, input, undefined, adj),
     };
     // 同じファイルが反映済み：前の取り込みと入れ替える（取り消して入れ直す）ことだけを出す
-    const reapply = same ? modeOption("replace", batch.id, summary, entries, applied, resolved, known, input, same.ids) : null;
+    const reapply = same ? modeOption("replace", batch.id, summary, entries, applied, resolved, known, input, same.ids, adj) : null;
     // 今ある稼働がすべてこのファイルと重なっているなら、「すべて入れ替える」を先に選んでおく（丸ごと出し直したファイル）
     const suggested: ApplyMode =
       modes.replace.duplicates.length > 0 && modes.replace.removeEntries + coveredCount(modes.replace, entries, modes.replace.removeBatches) === entries.length
         ? "replaceAll"
         : "replace";
     const mode = opts.mode ?? suggested;
-    const { removed } = same ? removalFor("replace", batch.id, summary, entries, applied, resolved, same.ids) : removalFor(mode, batch.id, summary, entries, applied, resolved);
+    const { removed, batches: removedBatches } = same
+      ? removalFor("replace", batch.id, summary, entries, applied, resolved, same.ids)
+      : removalFor(mode, batch.id, summary, entries, applied, resolved);
     const removedIds = new Set(removed.map((e) => e.id));
     // 反映したあとの稼働（日付も持たせる：明細の計算が日付を使うようになっても、そのまま同じ結果になるように）
     const after = [
       ...entries.filter((e) => !removedIds.has(e.id)).map((e) => ({ driverId: e.driverId, projectId: e.projectId, qty: e.qty, workDate: e.workDate })),
       ...resolved.map((r) => ({ driverId: r.driverId, projectId: r.projectId, qty: r.qty, workDate: r.date })),
     ];
+    // 反映したあとの調整（入れ替える取り込みで入れた調整を除き、このファイルの金額の列から入れる調整を足す）
+    const goneAdj = new Set(adjustmentPlan(removedBatches, adjustments, [], known).removed.map((a) => a.id));
+    const afterAdjustments = [
+      ...adjustments.filter((a) => !goneAdj.has(a.id)),
+      ...adj.incoming,
+    ].map((a) => ({ driverId: a.driverId, label: a.label, amount: a.amount, taxable: a.taxable, agreedInWriting: a.agreedInWriting }));
     const before = buildStatementDrafts(input);
-    const afterDrafts = buildStatementDrafts({ ...input, work: after });
+    const afterDrafts = buildStatementDrafts({ ...input, work: after, adjustments: afterAdjustments });
     const b = new Map(before.map((d) => [d.driverId, d]));
     const a = new Map(afterDrafts.map((d) => [d.driverId, d]));
     const ids = new Set([...b.keys(), ...a.keys()]);
@@ -1059,9 +1280,14 @@ export async function loadDraftView(db: Db, tenantId: string, batchId: string, o
       unchangedStatements: unchanged,
       prevMonth: shiftMonth(batch.month, -1),
       reapply,
+      adjustments: {
+        count: adj.incoming.length,
+        total: adj.incoming.reduce((a, x) => a + x.amount, 0),
+        drivers: new Set(adj.incoming.map((x) => x.driverId)).size,
+      },
     };
-    // 金額の列（振込額・控除・振込手数料）：読み方と名前が決まってから読む
-    if (!computed.problem && computed.resolution.unresolvedRecords === 0 && resolved.length > 0) {
+    // 金額の列（振込額・控除・振込手数料・調整・単価）：読み方と名前が決まってから読む（シートごとに別の人の表では読まない）
+    if (!computed.problem && computed.resolution.unresolvedRecords === 0 && resolved.length > 0 && !summary.mapping.sheetDrivers) {
       extras = moneyExtras({
         rows: computed.rows,
         mapping: summary.mapping,
@@ -1084,6 +1310,8 @@ export async function loadDraftView(db: Db, tenantId: string, batchId: string, o
         })),
         rounding: input.tenant.amountRounding,
         formulas: summary.formulas?.[summary.sheets[summary.sheetIndex]?.name ?? ""],
+        projects: input.projects.map((p) => ({ id: p.id, name: p.name, unit: p.unit, payRate: p.payRate, billRate: p.billRate })),
+        overrides: input.overrides,
       });
     }
   } else {
@@ -1194,6 +1422,11 @@ export type ApplyResult = {
   reappliedFrom?: string[];
   /** ファイルの振込額の列を、並行運用の比べ合わせに入れた結果 */
   payouts?: PayoutSaved;
+  /** 金額の列から入れた調整の数と合計（＋は支払を増やす） */
+  adjustments?: number;
+  adjustmentTotal?: number;
+  /** 入れ替えで消した、前の取り込みの調整の数 */
+  removedAdjustments?: number;
 };
 
 /**
@@ -1234,11 +1467,13 @@ export async function applyBatch(
   if (resolved.some((r) => !driverIds.has(r.driverId) || !projectIds.has(r.projectId)))
     throw new UserError("台帳に無いドライバーか案件があります。画面を読み直してください");
 
-  const [entries, applied, input] = await Promise.all([
+  const [entries, applied, input, adjustments] = await Promise.all([
     monthEntries(db, tenantId, month),
     appliedBatches(db, tenantId, month),
     loadBuildInput(db, tenantId, month),
+    monthAdjustments(db, tenantId, month),
   ]);
+  const incoming = incomingAdjustments(summary, computed, known);
   const same = await sameFileOf(db, tenantId, batch.id, summary, entries, applied, resolved, known, input);
   if (same && !opts.reapply) {
     throw new UserError(`${sameFileMessage(same.info)}。前の取り込みを取り消して入れ直すときは「取り消して入れ直す」を押してください`);
@@ -1246,9 +1481,18 @@ export async function applyBatch(
   // 入れ直すときは、同じファイルの前の取り込みと入れ替える（手入力の分・別のファイルの分は残す）
   const mode: ApplyMode = same ? "replace" : opts.mode;
   const force = same?.ids ?? new Set<string>();
-  const option = modeOption(mode, batch.id, summary, entries, applied, resolved, known, input, force);
+  const option = modeOption(mode, batch.id, summary, entries, applied, resolved, known, input, force, { existing: adjustments, incoming });
   if (option.sameFileApplied) {
     throw new UserError("同じファイルがこの月にもう反映されています。足すと数量が倍になります。「入れ替える」を選んでください");
+  }
+  if (option.adjustDuplicates.length > 0 && !opts.confirmDuplicates) {
+    const ex = option.adjustDuplicates
+      .slice(0, 3)
+      .map((d) => `${d.driverName}・${d.label}`)
+      .join("、");
+    throw new UserError(
+      `今ある調整と、同じ人・同じ名前の調整があります（${ex}${option.adjustDuplicates.length > 3 ? ` ほか ${option.adjustDuplicates.length - 3} 件` : ""}）。二重に足し引きしないか確かめてから、チェックを付けてください`,
+    );
   }
   if (option.duplicates.length > 0 && !opts.confirmDuplicates) {
     const ex = option.duplicates
@@ -1260,7 +1504,9 @@ export async function applyBatch(
     );
   }
   const { removed, batches } = removalFor(mode, batch.id, summary, entries, applied, resolved, force);
+  const removedAdj = adjustmentPlan(batches, adjustments, [], known).removed;
   const now = new Date().toISOString();
+  let adjustmentIds: string[] = [];
   const rows = computed.rows;
   const header = effectiveHeader(rows, summary.mapping.headerRow, summary.mapping.headerDepth);
 
@@ -1300,10 +1546,22 @@ export async function applyBatch(
     }));
     for (let i = 0; i < values.length; i += INSERT_CHUNK) await t.insert(s.workEntries).values(values.slice(i, i + INSERT_CHUNK));
 
+    // 金額の列から入れる調整：入れ替える前の取り込みの調整を消してから入れる（取り消しで戻せるように、消したものを残す）
+    if (removedAdj.length > 0) {
+      await t.delete(s.adjustments).where(and(eq(s.adjustments.tenantId, tenantId), inArray(s.adjustments.id, removedAdj.map((a) => a.id))));
+    }
+    if (incoming.length > 0) {
+      const made = await t
+        .insert(s.adjustments)
+        .values(incoming.map((a) => ({ tenantId, month, ...a })))
+        .returning({ id: s.adjustments.id });
+      adjustmentIds = made.map((r) => r.id);
+    }
+
     // 「次から同じ読み方で読む」を外していなければ、この形を覚える（来月は置いて反映するだけ）
     if (summary.remember !== false) summary.profileId = await upsertProfile(t, tenantId, summary, header);
     summary.stats = statsOf(computed, known);
-    const feeColumns = findMoneyColumns(header, summary.mapping.roles)
+    const feeColumns = (summary.mapping.sheetDrivers ? [] : findMoneyColumns(header, summary.mapping.roles))
       .filter((c) => c.kind === "fee")
       .map((c) => c.header);
     summary.applied = {
@@ -1312,6 +1570,16 @@ export async function applyBatch(
       mode,
       ...(same ? { reappliedFrom: [...same.ids] } : {}),
       ...(feeColumns.length ? { feeColumns } : {}),
+      ...(incoming.length || removedAdj.length
+        ? {
+            adjustments: {
+              ids: adjustmentIds,
+              count: incoming.length,
+              total: incoming.reduce((a, x) => a + x.amount, 0),
+              removed: removedAdj.map<RestoreAdjustment>(({ id: _id, ...a }) => a),
+            },
+          }
+        : {}),
       entries: values.length,
       replacedBatchIds: batches.map((b) => b.id),
       removed: removed.map<RestoreEntry>((e) => ({
@@ -1330,7 +1598,8 @@ export async function applyBatch(
   });
 
   // 今の Excel の振込額（振込額・差引支給額 などの列）を、並行運用の比べ合わせに入れる。うまくいかなくても反映はそのまま
-  const payoutRead = readPayout(rows, summary.mapping, header, resolved, new Map(known.drivers.map((d) => [d.id, d.name])));
+  // シートごとに別の人の表は、行の番号がシートごとに重なるので、振込額の列は読まない
+  const payoutRead = summary.mapping.sheetDrivers ? null : readPayout(rows, summary.mapping, header, resolved, new Map(known.drivers.map((d) => [d.id, d.name])));
   let payouts: PayoutSaved | undefined;
   if (payoutRead && payoutRead.entries.length > 0) {
     payouts = await saveImportedPayouts(db, tenantId, month, payoutRead, user.id);
@@ -1343,6 +1612,8 @@ export async function applyBatch(
     entries: resolved.length,
     removedEntries: removed.length,
     replacedBatches: batches.length,
+    ...(incoming.length ? { adjustments: incoming.length, adjustmentTotal: incoming.reduce((a, x) => a + x.amount, 0) } : {}),
+    ...(removedAdj.length ? { removedAdjustments: removedAdj.length } : {}),
     month,
     ...(same ? { reappliedFrom: [...same.ids] } : {}),
     ...(payouts ? { payouts } : {}),
@@ -1380,7 +1651,12 @@ export async function saveImportedPayouts(db: Db, tenantId: string, month: strin
 }
 
 /** 取り消し：この取り込みで入れた稼働を消し、入れ替えで消した稼働を戻す（締めた月はできない） */
-export async function undoBatch(db: Db, tenantId: string, user: ImportUser, batchId: string): Promise<{ deleted: number; restored: number; month: string }> {
+export async function undoBatch(
+  db: Db,
+  tenantId: string,
+  user: ImportUser,
+  batchId: string,
+): Promise<{ deleted: number; restored: number; month: string; deletedAdjustments?: number; restoredAdjustments?: number }> {
   const batch = await getBatch(db, tenantId, batchId);
   if (batch.status !== "applied") throw new UserError("反映済みの取り込みだけ取り消せます");
   if (await isMonthClosed(db, tenantId, batch.month)) {
@@ -1393,6 +1669,8 @@ export async function undoBatch(db: Db, tenantId: string, user: ImportUser, batc
   const now = new Date().toISOString();
   let deleted = 0;
   let restored = 0;
+  let deletedAdjustments = 0;
+  let restoredAdjustments = 0;
 
   await db.transaction(async (tx) => {
     const t = tx as unknown as Db;
@@ -1408,6 +1686,15 @@ export async function undoBatch(db: Db, tenantId: string, user: ImportUser, batc
       .where(and(eq(s.workEntries.tenantId, tenantId), eq(s.workEntries.importBatchId, batch.id)))
       .returning({ id: s.workEntries.id });
     deleted = gone.length;
+    // 金額の列から入れた調整も消す（あとで手で直したものも、この取り込みで入れたものなので消す）
+    const madeAdj = summary.applied?.adjustments?.ids ?? [];
+    if (madeAdj.length > 0) {
+      const goneAdj = await t
+        .delete(s.adjustments)
+        .where(and(eq(s.adjustments.tenantId, tenantId), inArray(s.adjustments.id, madeAdj)))
+        .returning({ id: s.adjustments.id });
+      deletedAdjustments = goneAdj.length;
+    }
 
     // 入れ替えられた取り込みのうち、まだ「入れ替えで消えた」ままのものだけ戻す
     const replaced = summary.applied?.replacedBatchIds ?? [];
@@ -1427,10 +1714,26 @@ export async function undoBatch(db: Db, tenantId: string, user: ImportUser, batc
       await t.insert(s.workEntries).values(restore.slice(i, i + INSERT_CHUNK).map((e) => ({ tenantId, month: batch.month, ...e })));
     }
     restored = restore.length;
+    // 入れ替えで消した調整も戻す（戻した調整は新しい番号になるので、戻す取り込みの記録も書き換える）
+    const restoreAdj = (summary.applied?.adjustments?.removed ?? []).filter((a) => driverIds.has(a.driverId) && revive.has(a.importBatchId));
+    const newAdjIds = new Map<string, string[]>();
+    for (const a of restoreAdj) {
+      const { importBatchId, ...values } = a;
+      const [row] = await t
+        .insert(s.adjustments)
+        .values({ tenantId, month: batch.month, ...values })
+        .returning({ id: s.adjustments.id });
+      newAdjIds.set(importBatchId, [...(newAdjIds.get(importBatchId) ?? []), row.id]);
+    }
+    restoredAdjustments = restoreAdj.length;
     for (const id of revive) {
+      const ids = newAdjIds.get(id);
+      const revived = ids
+        ? sql`jsonb_set(${s.importBatches.summary} - 'discarded', '{applied,adjustments,ids}', ${JSON.stringify(ids)}::jsonb)`
+        : sql`${s.importBatches.summary} - 'discarded'`;
       await t
         .update(s.importBatches)
-        .set({ status: "applied", summary: sql`${s.importBatches.summary} - 'discarded'` })
+        .set({ status: "applied", summary: revived })
         .where(and(eq(s.importBatches.id, id), eq(s.importBatches.tenantId, tenantId)));
     }
     summary.discarded = { at: now, by: user.id, reason: "undo" };
@@ -1439,7 +1742,13 @@ export async function undoBatch(db: Db, tenantId: string, user: ImportUser, batc
       .set({ status: "discarded", summary: summary as unknown as Record<string, unknown> })
       .where(and(eq(s.importBatches.id, batch.id), eq(s.importBatches.tenantId, tenantId)));
   });
-  return { deleted, restored, month: batch.month };
+  return {
+    deleted,
+    restored,
+    month: batch.month,
+    ...(deletedAdjustments ? { deletedAdjustments } : {}),
+    ...(restoredAdjustments ? { restoredAdjustments } : {}),
+  };
 }
 
 // ---------------------------------------------------------------- 履歴と、覚えた読み方

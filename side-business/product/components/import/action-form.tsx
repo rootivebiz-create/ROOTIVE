@@ -1,44 +1,11 @@
 "use client";
 
-import { startTransition, useActionState, useState, type FormEvent, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui";
-import type { ActionResult } from "~/server/action";
+import { ResultLine, useFormAction, type FormAction } from "~/components/form-field";
 
-export type FormState = ActionResult<unknown> | undefined;
-export type FormAction = (prev: FormState, form: FormData) => Promise<FormState>;
-
-/**
- * フォームを Server Action で送る。form の action に直接渡すと、React が送ったあとに入力を空に戻すため、
- * 入力の誤りを直すときに打ち直しになる。ここでは onSubmit から送り、入力はそのまま残す。
- */
-export function useFormAction(action: FormAction) {
-  const [state, dispatch, pending] = useActionState(action, undefined);
-  const onSubmit = (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const submitter = (e.nativeEvent as SubmitEvent).submitter;
-    const data = new FormData(e.currentTarget, submitter ?? undefined);
-    startTransition(() => dispatch(data));
-  };
-  return { state, pending, onSubmit };
-}
-
-/** 結果（うまくいった・だめだった）を 1 行で出す */
-export function ResultLine({ state }: { state: FormState }) {
-  if (!state) return null;
-  if (!state.ok) {
-    return (
-      <p role="alert" className="rounded-lg border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
-        {state.error}
-      </p>
-    );
-  }
-  if (!state.message) return null;
-  return (
-    <p role="status" className="rounded-lg border border-success/40 bg-success/10 p-3 text-sm text-success">
-      {state.message}
-    </p>
-  );
-}
+// 送り方・結果の出し方・入力欄の誤りは、製品の共通の部品（components/form-field.tsx）
+export { ResultLine, useFormAction, type FormAction, type FormState } from "~/components/form-field";
 
 /**
  * ボタン 1 つで送る小さなフォーム（隠した値は children で渡す）。

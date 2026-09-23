@@ -20,6 +20,10 @@ export type ProvisionInput = {
   demo?: boolean;
   /** 既定のブランチ */
   ref?: string;
+  /** ヘルプの画面に出す問い合わせ先（メール）。無ければ「導入を担当した者に」と出る */
+  supportEmail?: string;
+  /** ヘルプの画面に出す問い合わせ先（LINE の友だち追加などの https:// のリンク） */
+  supportLineUrl?: string;
 };
 
 export type EnvVar = { key: string; value: string; type: "encrypted" | "plain"; target: ("production" | "preview" | "development")[] };
@@ -55,20 +59,46 @@ export function validateInput(input: ProvisionInput): string[] {
   if (!/^postgres(ql)?:\/\/.+/.test(input.databaseUrl)) problems.push("DATABASE_URL は postgres:// で始まる接続文字列にしてください");
   if (!/^[\w.-]+\/[\w.-]+$/.test(input.repo)) problems.push("--repo は owner/name の形にしてください（例：my-account/shimebi）");
   if (!input.rootDirectory.trim() || input.rootDirectory.startsWith("/")) problems.push("--root は リポジトリの中の相対パスにしてください（例：product）");
+  if (input.supportEmail && !/^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/.test(input.supportEmail.trim())) {
+    problems.push("--support-email はメールアドレスの形にしてください（例：support@example.com）");
+  }
+  if (input.supportLineUrl && !/^https:\/\/\S+$/.test(input.supportLineUrl.trim())) {
+    problems.push("--support-line は https:// で始まるリンクにしてください（LINE の友だち追加のリンクなど）");
+  }
   return problems;
 }
 
+/**
+ * 環境変数は「本番（production）」と「プレビュー（preview）」で分ける。
+ * - 本番だけ：DATABASE_URL・APP_SECRET・SETUP_TOKEN（デモは DEMO_MODE）。お客様の DB と、ドライバーのリンクの署名の鍵
+ * - プレビューだけ：PGLITE_DIR=memory・DEMO_MODE=1・別に作った APP_SECRET。
+ *   Vercel は本番のブランチ以外への push ごとにプレビューを作る。そこに本番の値があると、確かめる前のコードが
+ *   お客様の本番の DB を読み書きし（ビルドの前のマイグレーションも当たる）、本物の鍵で明細のリンクを作れてしまう。
+ *   プレビューは、揮発する DB の架空の会社（デモ）として開けるだけにする
+ */
 export function buildPlan(input: ProvisionInput, random: (n: number) => string = (n) => randomBytes(n).toString("base64url")): ProvisionPlan {
   const projectName = projectNameFor(input.client, input.demo);
   const appSecret = random(48);
   const setupToken = random(24);
+  const previewSecret = random(48);
+  const production: EnvVar["target"] = ["production"];
+  const preview: EnvVar["target"] = ["preview"];
   const prodPreview: EnvVar["target"] = ["production", "preview"];
   const env: EnvVar[] = [
-    { key: "DATABASE_URL", value: input.databaseUrl, type: "encrypted", target: prodPreview },
-    { key: "APP_SECRET", value: appSecret, type: "encrypted", target: prodPreview },
+    { key: "DATABASE_URL", value: input.databaseUrl, type: "encrypted", target: production },
+    { key: "APP_SECRET", value: appSecret, type: "encrypted", target: production },
   ];
-  if (input.demo) env.push({ key: "DEMO_MODE", value: "1", type: "plain", target: prodPreview });
-  else env.push({ key: "SETUP_TOKEN", value: setupToken, type: "encrypted", target: prodPreview });
+  if (input.demo) env.push({ key: "DEMO_MODE", value: "1", type: "plain", target: production });
+  else env.push({ key: "SETUP_TOKEN", value: setupToken, type: "encrypted", target: production });
+  // プレビュー：本番の DB・鍵を持たせない。揮発する PGlite のデモとして開ける
+  env.push(
+    { key: "APP_SECRET", value: previewSecret, type: "encrypted", target: preview },
+    { key: "PGLITE_DIR", value: "memory", type: "plain", target: preview },
+    { key: "DEMO_MODE", value: "1", type: "plain", target: preview },
+  );
+  // ヘルプの画面の問い合わせ先（画面に出す値なので plain。ビルドのときに読まれる NEXT_PUBLIC_）
+  if (input.supportEmail?.trim()) env.push({ key: "NEXT_PUBLIC_SUPPORT_EMAIL", value: input.supportEmail.trim(), type: "plain", target: prodPreview });
+  if (input.supportLineUrl?.trim()) env.push({ key: "NEXT_PUBLIC_SUPPORT_LINE_URL", value: input.supportLineUrl.trim(), type: "plain", target: prodPreview });
   return {
     projectName,
     env,
@@ -93,5 +123,11 @@ export function summaryLines(plan: ProvisionPlan, url: string, demo: boolean): s
     lines.push("↑ このリンクは、お客様の社長（最初のオーナー）にだけ渡してください。登録が済むと二度と使えません。");
   }
   lines.push("APP_SECRET と SETUP_TOKEN は Vercel の環境変数に入っています。この画面の控えは安全な場所に移し、チャットやメールに貼らないでください。");
+  lines.push("本番のブランチ以外への push で作られるプレビューは、揮発する架空の会社（デモ）として開きます。お客様の DB と本番の鍵は本番のデプロイにだけ入っています。");
+  if (!plan.env.some((e) => e.key === "NEXT_PUBLIC_SUPPORT_EMAIL" || e.key === "NEXT_PUBLIC_SUPPORT_LINE_URL")) {
+    lines.push(
+      "問い合わせ先（--support-email・--support-line）が入っていません。ヘルプの画面には「導入を担当した者にご連絡ください」と出ます。入れるときは Vercel の環境変数に足して、デプロイし直してください。",
+    );
+  }
   return lines;
 }

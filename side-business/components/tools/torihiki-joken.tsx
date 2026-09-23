@@ -21,6 +21,7 @@ import {
   STATUS_LABELS,
   buildTorihikiJoken,
   dayLabel,
+  JP_HOLIDAYS_THROUGH,
   latestSafePayRule,
   shortDate,
   torihikiPlainText,
@@ -702,7 +703,7 @@ function DeadlineCard({ deadline, safePayLabel }: { deadline: DeadlineResult; sa
           </TableWrap>
           <p className="mt-2 text-xs text-muted-foreground">
             日数は、その日を1日目として、支払日が何日目かです（法律の「60日」も同じ数え方です）。月ごとに締める場合は、60日を「2か月」として数える扱いがあり（31日の月も1か月）、61日目や62日目でも
-            OK になる月があります。支払日は土日と年末年始（12月31日〜1月3日）をずらして計算しています。祝日は入れていません。
+            OK になる月があります。支払日は土日・祝日・年末年始（12月31日〜1月3日）をずらして計算しています（祝日は{JP_HOLIDAYS_THROUGH}年の分まで）。
           </p>
         </div>
       </details>

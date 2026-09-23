@@ -3,10 +3,12 @@
 import { useMemo, useState } from "react";
 import { Input, NumberInput, Select } from "@/components/ui";
 import { jpDate, jpMonth, yenText } from "@/lib/format";
+import { JP_HOLIDAYS_THROUGH } from "@/lib/tools/jp-holidays";
 import { payDateFor, periodOf } from "~/server/calc/statement";
 import {
   deadlineHint,
   deemedNote,
+  DRIVER_FEE_HELP,
   FEE_BEARER_WARNING,
   isStandardNote,
   payRuleSentence,
@@ -14,6 +16,7 @@ import {
   readNumber,
   ROUNDING_CHOICES,
   TAX_METHODS,
+  TORITEKI_FULL,
   toritekiOver,
   toritekiThresholdText,
   wordingWarnings,
@@ -199,7 +202,7 @@ export function CompanyForm({ action, initial, canEdit, today, month, periodWord
               <p>{hint.text}</p>
               {hint.safer && <p className="mt-1">{hint.safer}</p>}
               <p className="mt-1 text-xs">
-                銀行の休みの日（土日・年末年始）は前の営業日にずらして数えています。祝日は入れていません。{" "}
+                銀行の休みの日（土日・祝日・年末年始）は前の営業日にずらして数えています（祝日は{JP_HOLIDAYS_THROUGH}年の分まで）。{" "}
                 <SourceLink href={sources.flGuidelines}>フリーランス法 解釈ガイドライン</SourceLink>
               </p>
             </Callout>
@@ -236,12 +239,12 @@ export function CompanyForm({ action, initial, canEdit, today, month, periodWord
             disabled={!canEdit}
             options={[
               { id: "company", label: "会社が持つ", help: "振込額はそのまま届きます" },
-              { id: "driver", label: "ドライバーが持つ", help: "振込額から手数料を差し引きます" },
+              { id: "driver", label: "ドライバーが持つ", help: DRIVER_FEE_HELP },
             ]}
           />
           {fee === "driver" && (
             <Callout tone="red">
-              {FEE_BEARER_WARNING}見張り番が毎月この設定を指摘します。 <SourceLink href={sources.toritekiLeaflet}>取適法 リーフレット</SourceLink>
+              {FEE_BEARER_WARNING}見張り番が毎月この設定を指摘します。 <SourceLink href={sources.toritekiLeaflet}>{TORITEKI_FULL}のリーフレット</SourceLink>
             </Callout>
           )}
         </Section>
@@ -250,7 +253,8 @@ export function CompanyForm({ action, initial, canEdit, today, month, periodWord
           title="会社の規模（取適法の目安）"
           description={
             <>
-              取適法の対象かどうかの目安に使います。運送の委託では、委託する会社が「{torText}」で、相手が個人か、それより小さい会社のときが目安です（見張り番も同じ目安でお知らせします）。{" "}
+              {/* 正式な名前は画面で最初に出すところだけ（振込手数料の注意が出ていれば、そちらが最初） */}
+              {fee === "driver" ? "取適法" : TORITEKI_FULL}の対象かどうかの目安に使います。運送の委託では、委託する会社が「{torText}」で、相手が個人か、それより小さい会社のときが目安です（見張り番も同じ目安でお知らせします）。{" "}
               <SourceLink href={sources.toritekiOverview}>取適法の概要</SourceLink>
             </>
           }

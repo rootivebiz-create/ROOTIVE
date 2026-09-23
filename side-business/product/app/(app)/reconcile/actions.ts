@@ -13,6 +13,7 @@ import {
   markItemsAsked,
   MAX_NOTICE_FILE_BYTES,
   readSampleNotice,
+  removeNoticeFile,
   runReconcile,
   SAMPLE_NOTICE_FILE,
   SAMPLE_NOTICE_MONTH,
@@ -24,6 +25,7 @@ import {
   type LineTarget,
 } from "~/server/features/reconcile";
 import { COLUMN_ROLES, type ColumnMap } from "~/server/features/reconcile/roles";
+import { MAX_PASTE_CHARS, pastedTableToTsv, pasteFileName } from "~/server/features/reconcile/paste";
 import { ITEM_STATUSES } from "~/server/features/reconcile/labels";
 
 /**
@@ -42,32 +44,81 @@ function revalidateAll(): void {
 
 // ---------------------------------------------------------------- 取り込み
 
-const uploadSchema = z.object({
-  clientId: z.uuid("元請を選んでください"),
-  month: monthSchema,
-  replace: z.boolean(),
-});
+/**
+ * 同じ元請・同じ月のお支払通知がすでにあるとき：
+ * new（止める）・replace（全部を入れ替える）・add（足す。営業所ごとなど）・replaceFile（そのファイルだけ入れ替える。fileId が要る）
+ */
+const UPLOAD_MODES = ["new", "replace", "add", "replaceFile"] as const;
 
-export async function uploadNoticeAction(_prev: ActionResult<{ noticeId: string }> | undefined, form: FormData): Promise<ActionResult<{ noticeId: string }>> {
+const uploadSchema = z
+  .object({
+    clientId: z.uuid("元請を選んでください"),
+    month: monthSchema,
+    mode: z.enum(UPLOAD_MODES, "すでにあるときの扱いを選んでください"),
+    fileId: z.union([z.literal(""), idSchema]),
+  })
+  .refine((v) => v.mode !== "replaceFile" || v.fileId !== "", { message: "入れ替えるファイルが分かりません。画面を読み込み直してください", path: ["fileId"] });
+
+/** ファイルか、貼り付けた表（TSV にする）。どちらも無ければ断る */
+async function uploadedBytes(form: FormData): Promise<{ fileName: string; bytes: Uint8Array }> {
+  const file = form.get("file");
+  if (file instanceof File && file.size > 0) {
+    if (file.size > MAX_NOTICE_FILE_BYTES) throw new UserError("ファイルが大きすぎます（5MB まで）。不要なシートを消すか、CSV にしてから上げてください");
+    return { fileName: file.name || "お支払通知.csv", bytes: new Uint8Array(await file.arrayBuffer()) };
+  }
+  const pasted = String(form.get("pasted") ?? "");
+  if (pasted.trim()) {
+    if (pasted.length > MAX_PASTE_CHARS) throw new UserError("貼り付けた表が長すぎます。ファイル（CSV か Excel）にしてから上げてください");
+    const table = pastedTableToTsv(pasted);
+    if (table.rows < 2 || table.columns < 2) {
+      throw new UserError("貼り付けた文字から、表を読み取れませんでした。見出しの行（品目・数量・単価・金額など）から下を、まとめてコピーして貼り付けてください");
+    }
+    return { fileName: pasteFileName(String(form.get("pasteName") ?? "")), bytes: new TextEncoder().encode(table.tsv) };
+  }
+  throw new UserError("元請から届いたファイル（CSV か Excel）を選ぶか、表を貼り付けてください");
+}
+
+function uploadModeOf(form: FormData): string {
+  const mode = form.get("mode");
+  if (typeof mode === "string" && mode) return mode;
+  // 前の画面（「すでにあれば入れ替える」のチェック）から送られたとき
+  return form.get("replace") === "1" ? "replace" : "new";
+}
+
+export async function uploadNoticeAction(_prev: ActionResult<{ noticeId: string; done: string }> | undefined, form: FormData): Promise<ActionResult<{ noticeId: string; done: string }>> {
   const result = await runAction(async () => {
     const user = await requireUser("staff");
-    const input = uploadSchema.parse({ clientId: form.get("clientId"), month: form.get("month"), replace: form.get("replace") === "1" });
-    const file = form.get("file");
-    if (!(file instanceof File) || file.size === 0) throw new UserError("元請から届いたファイル（CSV か Excel）を選んでください");
-    if (file.size > MAX_NOTICE_FILE_BYTES) throw new UserError("ファイルが大きすぎます（5MB まで）。不要なシートを消すか、CSV にしてから上げてください");
+    const input = uploadSchema.parse({ clientId: form.get("clientId"), month: form.get("month"), mode: uploadModeOf(form), fileId: String(form.get("fileId") ?? "") });
+    const { fileName, bytes } = await uploadedBytes(form);
     const db = await getDb();
     const res = await importNotice(db, user.tenantId, user.id, {
       clientId: input.clientId,
       month: `${input.month}-01`,
-      fileName: file.name || "お支払通知.csv",
-      bytes: new Uint8Array(await file.arrayBuffer()),
-      replace: input.replace,
+      fileName,
+      bytes,
+      replace: input.mode === "replace",
+      add: input.mode === "add",
+      replaceFileId: input.mode === "replaceFile" ? input.fileId : null,
+      allowSameContent: form.get("allowSameContent") === "1",
     });
     revalidateAll();
-    return { noticeId: res.noticeId };
+    // 結果の画面の知らせ：足した・1 つのファイルだけ入れ替えた・取り込んだ（新しく・全部を入れ替えて）
+    return { noticeId: res.noticeId, done: res.added ? "add" : res.replacedFile ? "replaceFile" : "import" };
   }, "取り込みました");
-  if (result.ok && result.data) redirect(`/reconcile/${result.data.noticeId}?done=import`);
+  if (result.ok && result.data) redirect(`/reconcile/${result.data.noticeId}?done=${result.data.done}`);
   return result;
+}
+
+/** 何通かを足したお支払通知から、ファイルを 1 つ外す（まちがえて足したとき） */
+export async function removeNoticeFileAction(_prev: ActionResult<void> | undefined, form: FormData): Promise<ActionResult<void>> {
+  return runAction(async () => {
+    const user = await requireUser("staff");
+    const input = z.object({ noticeId: idSchema, fileId: idSchema }).parse({ noticeId: form.get("noticeId"), fileId: form.get("fileId") });
+    if (form.get("confirm") !== "1") throw new UserError("外すときは「外してよい」にチェックを入れてください");
+    const db = await getDb();
+    await removeNoticeFile(db, user.tenantId, user.id, input);
+    revalidateAll();
+  }, "ファイルを外して、残りのファイルで突き合わせ直しました");
 }
 
 /** 見本（架空の A物流・2026年10月分）を入れて試す */
@@ -136,11 +187,16 @@ export async function updateColumnsAction(_prev: ActionResult<void> | undefined,
     const user = await requireUser("staff");
     const shape = Object.fromEntries(COLUMN_ROLES.map((r) => [r, colSchema])) as Record<keyof ColumnMap, typeof colSchema>;
     const input = z
-      .object({ noticeId: idSchema, headerRow: z.coerce.number().int().min(1, "見出しの行を選んでください").max(5000), ...shape })
-      .parse({ noticeId: form.get("noticeId"), headerRow: form.get("headerRow"), ...Object.fromEntries(COLUMN_ROLES.map((r) => [r, form.get(r)])) });
+      .object({ noticeId: idSchema, fileId: z.union([z.literal(""), idSchema]), headerRow: z.coerce.number().int().min(1, "見出しの行を選んでください").max(5000), ...shape })
+      .parse({
+        noticeId: form.get("noticeId"),
+        fileId: String(form.get("fileId") ?? ""),
+        headerRow: form.get("headerRow"),
+        ...Object.fromEntries(COLUMN_ROLES.map((r) => [r, form.get(r)])),
+      });
     const columns = Object.fromEntries(COLUMN_ROLES.map((r) => [r, input[r] as number | null])) as ColumnMap;
     const db = await getDb();
-    await updateNoticeColumns(db, user.tenantId, user.id, { noticeId: input.noticeId, headerRow: input.headerRow, columns });
+    await updateNoticeColumns(db, user.tenantId, user.id, { noticeId: input.noticeId, headerRow: input.headerRow, columns, fileId: input.fileId || null });
     revalidateAll();
   }, "列の対応を覚えて、読み直しました");
 }

@@ -2,14 +2,19 @@ import Link from "next/link";
 import { eq } from "drizzle-orm";
 import { Card, Money, TableWrap, buttonClass } from "@/components/ui";
 import { EmptyState, Notice, PageHeader } from "~/components/page";
+import { termsHrefFor } from "~/components/statements/deemed-check";
 import { GenerateForm } from "~/components/statements/generate-form";
+import { SendListCopy } from "~/components/statements/send-list";
 import { StatusChips } from "~/components/statements/status-chips";
 import { getDb } from "~/db/client";
 import * as s from "~/db/schema";
 import { requirePageUser, roleAtLeast } from "~/server/auth";
-import { listMonthStatements, sumItems, type StatementListItem } from "~/server/features/statements";
+import { listMonthStatements, sendListFor, sumItems, type StatementListItem } from "~/server/features/statements";
+import { requestOrigin } from "~/server/features/statements/request";
+import { sendListText } from "~/server/features/statements/view";
 import { unresolvedQuestionCount } from "~/server/features/statements/inbox";
 import { FILTERS, countsSentence, matchesFilter, parseFilter } from "~/server/features/statements/status";
+import { SOURCES } from "~/server/features/watch/sources";
 import { monthFromParam, monthLabelJa, monthParam } from "~/server/month";
 import { isMonthClosed } from "~/server/repo";
 import { statementsStatus } from "~/server/statements-core";
@@ -56,6 +61,8 @@ export default async function StatementsPage({ searchParams }: { searchParams: P
   const toSend = list.items.filter((i) => i.status.key === "unsent" || i.status.needsResend);
   // 日数と質問の条件はそろったのに、取引条件に条項が無いので未確認のままの人
   const blocked = list.items.filter((i) => i.status.deemedBlockedByClause);
+  // 送る一覧（名前とリンク）：LINE・LINE WORKS に 1 人ずつ貼るため（リンクは事務・オーナーの画面でだけ作る）
+  const sendList = canEdit && toSend.length > 0 ? await sendListFor(db, user.tenantId, month, toSend.map((i) => i.id), await requestOrigin()) : [];
 
   return (
     <div>
@@ -63,11 +70,14 @@ export default async function StatementsPage({ searchParams }: { searchParams: P
         title="支払明細"
         month={month}
         basePath="/statements"
-        description="明細を作って、ドライバーにリンクを送ります。ドライバーはスマホで開き「確認しました」を押します。質問も明細の行から届きます。"
+        description="明細を作って、ドライバーにリンクを送ります。ドライバーはスマホで開き「内容を確認しました」を押します。質問も明細の行から届きます。"
         actions={
           <>
             <Link href="/statements/inbox" className={buttonClass(questions > 0 ? "accent" : "secondary")}>
               {questions > 0 ? `質問の一覧（未解決 ${questions}件）` : "質問の一覧"}
+            </Link>
+            <Link href="/records" className={buttonClass("secondary")}>
+              過去の明細を探す
             </Link>
             {hasStatements && (
               <>
@@ -86,7 +96,7 @@ export default async function StatementsPage({ searchParams }: { searchParams: P
       <div className="space-y-4">
         {closed ? (
           <Notice tone="info">
-            {monthLabelJa(month)}は締め済みです。明細は作り直せません（直すときは、オーナーが「締め」の画面で締めを解除します）。リンクを送る・確認・質問への返事は、このまま使えます。
+            {monthLabelJa(month)}は締め済みです。明細は作り直せません（直すときは、オーナーが「締め」の画面で締めを外します）。リンクを送る・確認・質問への返事は、このまま使えます。
           </Notice>
         ) : (
           <Card>
@@ -129,7 +139,7 @@ export default async function StatementsPage({ searchParams }: { searchParams: P
         {!hasStatements ? (
           <EmptyState title="この月の明細はまだありません">
             {closed
-              ? "この月は明細を作らないまま締められています。明細を作るには、オーナーが「締め」の画面で締めを解除してから作ってください。"
+              ? "この月は明細を作らないまま締められています。明細を作るには、オーナーが「締め」の画面で締めを外してから作ってください。"
               : canEdit
                 ? "上の「明細を作る」を押すと、稼働と控除のルールから 1 人ずつ明細ができます。"
                 : "事務の方が明細を作ると、ここに並びます。"}
@@ -145,15 +155,26 @@ export default async function StatementsPage({ searchParams }: { searchParams: P
                   </Link>
                 )}
               </div>
+              {sendList.length > 0 && (
+                <div className="mt-2">
+                  <SendListCopy ids={sendList.map((i) => i.id)} text={sendListText(month, sendList)} count={sendList.length} />
+                </div>
+              )}
               {blocked.length > 0 && (
                 <p className="mt-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm">
                   送ってから {list.deemedDays}日たち質問も無いものの、取引条件にみなし確認の条項が無いため、未確認のままの人がいます（{blocked.length}人：
-                  {blocked.map((b) => b.name).join("、")}）。条項は<Link href="/terms">取引条件の明示</Link>で入れられます。
+                  {blocked.map((b, i) => (
+                    <span key={b.id}>
+                      {i > 0 && "、"}
+                      <Link href={termsHrefFor(b.driverId)}>{b.name}</Link>
+                    </span>
+                  ))}
+                  ）。条項は、名前から 1 人ずつ、または<Link href="/terms">取引条件の明示</Link>でまとめて入れられます。
                 </p>
               )}
               <p className="text-xs text-muted-foreground">
                 「みなし確認」は、送ってから {list.deemedDays}日たっても質問が無く、取引条件にその条項がある明細です。明細の注記（連絡が無ければ確認とみなす）に沿った状態の表示で、扱いは会社と税理士でお決めください（
-                <a href="https://www.nta.go.jp/taxes/shiraberu/zeimokubetsu/shohi/keigenzeiritsu/pdf/qa/113-3.pdf" target="_blank" rel="noopener noreferrer">
+                <a href={SOURCES.purchaseStatementQa} target="_blank" rel="noopener noreferrer">
                   国税庁 インボイス Q&A 問86
                 </a>
                 ）。
@@ -210,8 +231,30 @@ export default async function StatementsPage({ searchParams }: { searchParams: P
                       <span className="font-bold">合計（{shown.length}人）</span>
                       <Money value={totals.total} className="text-lg font-bold" />
                     </div>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      委託料 <Money value={totals.subtotal} />・消費税 <Money value={totals.tax} />・控除 <Money value={-totals.deductions} />
+                    {/* 足し引きがそのまま合計になるように、調整・源泉徴収も 0 円でなければ出す */}
+                    <p className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-xs text-muted-foreground" aria-label="合計の内訳">
+                      <span>
+                        委託料 <Money value={totals.subtotal} />
+                      </span>
+                      <span>
+                        ＋ 消費税 <Money value={totals.tax} />
+                      </span>
+                      <span>
+                        − 控除 <Money value={totals.deductions} />
+                      </span>
+                      {totals.adjustments !== 0 && (
+                        <span>
+                          {totals.adjustments > 0 ? "＋" : "−"} 調整 <Money value={Math.abs(totals.adjustments)} />
+                        </span>
+                      )}
+                      {totals.withholding !== 0 && (
+                        <span>
+                          − 源泉徴収 <Money value={totals.withholding} />
+                        </span>
+                      )}
+                      <span>
+                        ＝ 合計 <Money value={totals.total} />
+                      </span>
                     </p>
                   </li>
                 </ul>

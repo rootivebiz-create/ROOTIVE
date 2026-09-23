@@ -86,7 +86,9 @@ describe("明示書の事項（フリーランス法 第3条で明示する事�
     expect(by.commissioned.paragraphs).toEqual(["2026年4月15日"]);
     expect(by.period.paragraphs).toEqual(["2026年5月1日から2027年3月31日まで"]);
     expect(by.fee.emphasis).toBe(true);
-    expect(by.fee.paragraphs[0]).toContain("受託者（ドライバー）の負担");
+    // 設定は計算を変えない（明細・振込データで差し引かない）ので、明示書にも「振込額から差し引きます」と書かない
+    expect(by.fee.paragraphs).toEqual(["振込手数料は、受託者（ドライバー）の負担とします。"]);
+    expect(by.fee.paragraphs.join("")).not.toContain("差し引");
   });
 
   it("中身の写しが無い記録（手で入れた版）は、そう書く", () => {

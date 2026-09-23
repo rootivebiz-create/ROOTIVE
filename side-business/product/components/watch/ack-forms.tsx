@@ -2,7 +2,7 @@
 
 import { useActionState, useId, useState } from "react";
 import { Button } from "@/components/ui";
-import { ackWatchAction, unackWatchAction, type WatchFormState } from "~/app/(app)/watch/actions";
+import { ackManyWatchAction, ackWatchAction, unackWatchAction, type WatchFormState } from "~/app/(app)/watch/actions";
 
 type Key = { month: string; code: string; subjectId: string };
 
@@ -11,7 +11,7 @@ function Result({ state }: { state: WatchFormState }) {
   if (!state.ok) {
     return (
       <p role="alert" className="rounded-lg border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
-        {state.fieldErrors?.note ?? state.error}
+        {state.fieldErrors?.note ?? state.fieldErrors?.subjectIds ?? state.error}
       </p>
     );
   }
@@ -95,6 +95,78 @@ export function AckForm({
         </p>
         <Button type="submit" className="w-full sm:w-auto" disabled={pending || note.trim().length < minLength}>
           {pending ? "保存しています…" : "確認済みにする"}
+        </Button>
+      </form>
+    </details>
+  );
+}
+
+/**
+ * 「同じ理由でまとめて確認済みにする」：同じ種類・同じ見出しの指摘が何件も並ぶとき（導入の月の「明示が仕事を始めたあと」など）。
+ * 印とメモは 1 件ずつ残るので、あとで 1 件だけ外せる。ふだんは畳んでおく
+ */
+export function BulkAckForm({
+  month,
+  code,
+  title,
+  subjects,
+  minLength,
+  red,
+}: {
+  month: string;
+  code: string;
+  title: string;
+  /** まとめる指摘の対象（id と名前） */
+  subjects: { id: string; label: string }[];
+  minLength: number;
+  red: boolean;
+}) {
+  const [state, action, pending] = useActionState(ackManyWatchAction, undefined);
+  const noteId = useId();
+  const [note, setNote] = useState("");
+  return (
+    <details className="group rounded-lg border border-border bg-card" open={state !== undefined && !state.ok ? true : undefined}>
+      <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold hover:bg-muted [&::-webkit-details-marker]:hidden">
+        <span className="min-w-0 flex-1 break-words">
+          同じ理由でまとめて確認済みにする（「{title}」{subjects.length} 件）
+        </span>
+        <span aria-hidden className="shrink-0 text-muted-foreground group-open:rotate-180">
+          ▾
+        </span>
+      </summary>
+      <form action={action} className="space-y-3 border-t border-border p-3">
+        <input type="hidden" name="month" value={month} />
+        <input type="hidden" name="code" value={code} />
+        {subjects.map((x) => (
+          <input key={x.id} type="hidden" name="subjectId" value={x.id} />
+        ))}
+        <p className="break-words text-sm">対象：{subjects.map((x) => x.label).join("・")}</p>
+        <label htmlFor={noteId} className="block text-sm font-bold">
+          何を確かめたか（{minLength} 文字以上。全員に同じメモが残ります）
+        </label>
+        <textarea
+          id={noteId}
+          name="note"
+          required
+          minLength={minLength}
+          maxLength={500}
+          rows={3}
+          value={note}
+          onChange={(e) => setNote(e.currentTarget.value)}
+          placeholder="例：導入前は口頭で伝えていた。2026年9月23日に全員へ明示書を渡した"
+          className="block min-h-24 w-full rounded-lg border border-border bg-card px-3 py-2 text-base text-foreground focus:border-foreground"
+        />
+        <p className="text-xs text-muted-foreground">
+          理由が全員に当てはまるときだけ使ってください。違う人がいれば、その人は下の一覧から 1 件ずつ確認済みにしてください。
+          {red && "赤い指摘は、確認済みにすると締めを止めなくなります。"}
+          印とメモは 1 件ずつ記録に残り、あとで 1 件だけ外すこともできます。
+        </p>
+        <Result state={state} />
+        <p className="text-xs text-muted-foreground" aria-live="polite">
+          いま {note.trim().length} 文字
+        </p>
+        <Button type="submit" className="w-full sm:w-auto" disabled={pending || note.trim().length < minLength}>
+          {pending ? "保存しています…" : `${subjects.length} 件を確認済みにする`}
         </Button>
       </form>
     </details>

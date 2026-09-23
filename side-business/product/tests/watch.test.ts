@@ -1,11 +1,11 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PGlite } from "@electric-sql/pglite";
 import type { Db } from "~/db/client";
 import * as s from "~/db/schema";
 import { buildStatementDrafts } from "~/server/calc/statement";
 import { runWatch, watchMonth } from "~/server/features/watch";
-import { ackWatchIssue, changedSinceAck, monthAckDetails, previousAcks, unackWatchIssue } from "~/server/features/watch/acks";
+import { ackWatchIssue, ackWatchIssues, changedSinceAck, monthAckDetails, previousAcks, unackWatchIssue } from "~/server/features/watch/acks";
 import { FEE_SENTENCE } from "~/server/features/watch/rules";
 import { SOURCES } from "~/server/features/watch/sources";
 import type { WatchIssue } from "~/server/features/watch-types";
@@ -297,26 +297,35 @@ describe("見張り番：記録を変えたときの指摘", () => {
 
   const run = (month = DEMO_MONTH, today = TODAY) => runWatch(db, tenantId, month, { today });
 
-  it("明示の日が最初の稼働より後 → 赤。最初の版の記録があれば、そちらで比べる", async () => {
+  it("明示の日が最初の稼働より後 → 最初に稼働した月は赤、次の月はお知らせ。最初の版の記録があれば、そちらで比べる", async () => {
     await db.update(s.drivers).set({ termsIssuedOn: "2026-10-15" }).where(eq(s.drivers.id, ids.D01));
-    const [i] = find(await run(), "terms_missing", ids.D01);
+    // 青木さんが最初に稼働したのは 9 月（締め済み）：9 月は赤
+    const [i] = find(await run(DEMO_PREV_MONTH), "terms_missing", ids.D01);
     expect(i.severity).toBe("red");
     expect(i.title).toBe("取引条件の明示が、仕事を始めたあとになっています");
     expect(i.detail).toContain("2026年10月15日");
     expect(i.detail).toContain("2026年9月");
+    // 10 月は同じことで締めを止めない（お知らせ）
+    const [oct] = find(await run(), "terms_missing", ids.D01);
+    expect(oct).toMatchObject({ severity: "info", blocksClose: false, title: "取引条件の明示は、仕事を始めたあとでした" });
+    expect(oct.detail).toContain("2026年10月15日");
+    expect(oct.detail).toContain("2026年9月分の見張り番で確かめられます");
 
     // 4 月に最初の版を出していた（最新の版だけが台帳に入っている）
     await db.insert(s.termsRecords).values({ tenantId, driverId: ids.D01, version: 1, issuedOn: "2026-04-01", content: {} });
     expect(find(await run(), "terms_missing", ids.D01)).toHaveLength(0);
+    expect(find(await run(DEMO_PREV_MONTH), "terms_missing", ids.D01)).toHaveLength(0);
   });
 
   it("日付の無い稼働の月の途中で明示 → 黄（委託を始めた日で確かめられる）。日付のある稼働より後の明示 → 赤", async () => {
     await db.update(s.drivers).set({ termsIssuedOn: "2026-09-10" }).where(eq(s.drivers.id, ids.D02));
-    const unsure = find(await run(), "terms_missing", ids.D02)[0];
+    // 最初に稼働した 9 月の話なので、黄は 9 月に出す（10 月は毎月くり返さない）
+    const unsure = find(await run(DEMO_PREV_MONTH), "terms_missing", ids.D02)[0];
     expect(unsure.severity).toBe("yellow");
     expect(unsure.detail).toContain("日付が無い");
-    await db.update(s.drivers).set({ startedOn: "2026-09-15" }).where(eq(s.drivers.id, ids.D02));
     expect(find(await run(), "terms_missing", ids.D02)).toHaveLength(0);
+    await db.update(s.drivers).set({ startedOn: "2026-09-15" }).where(eq(s.drivers.id, ids.D02));
+    expect(find(await run(DEMO_PREV_MONTH), "terms_missing", ids.D02)).toHaveLength(0);
     await db.update(s.drivers).set({ termsIssuedOn: "2026-04-01", startedOn: null }).where(eq(s.drivers.id, ids.D02));
 
     // 10 月から始めた人：10/3 に稼働して、明示は 10/10
@@ -330,6 +339,70 @@ describe("見張り番：記録を変えたときの指摘", () => {
     await db.update(s.workEntries).set({ workDate: "2026-10-12" }).where(eq(s.workEntries.driverId, newbie.id));
     expect(find(await run(), "terms_missing", newbie.id)).toHaveLength(0);
     await db.delete(s.drivers).where(eq(s.drivers.id, newbie.id));
+  });
+
+  it("導入の日に明示書を作ってから先月の Excel を取り込んでも、赤はその先月だけ。まとめて確認済みにでき、次の月は締めを止めない", async () => {
+    const [p] = await db.select().from(s.projects).where(eq(s.projects.tenantId, tenantId));
+    const staff = (await db.select().from(s.users).where(and(eq(s.users.tenantId, tenantId), eq(s.users.role, "staff"))))[0];
+    const NOV = "2026-11-01";
+    const DEC = "2026-12-01";
+    // 12/10 に明示書を作った（導入の日）。11 月の Excel（日付なし）と 12 月の稼働を取り込んだ
+    const made = await db
+      .insert(s.drivers)
+      .values([
+        { tenantId, code: "D10", name: "北村 修", termsIssuedOn: "2026-12-10", startedOn: "2024-04-01" },
+        { tenantId, code: "D11", name: "南 由美", termsIssuedOn: "2026-12-10" },
+      ])
+      .returning();
+    const ids2 = made.map((d) => d.id);
+    await db.insert(s.workEntries).values(
+      made.flatMap((d) => [
+        { tenantId, month: NOV, driverId: d.id, projectId: p.id, qty: 120 },
+        { tenantId, month: DEC, driverId: d.id, projectId: p.id, qty: 120, workDate: "2026-12-12" },
+      ]),
+    );
+    const note = "導入前は口頭で伝えていた。12/10 に明示書を渡した";
+    try {
+      const nov = (await run(NOV, "2026-12-10")).filter((i) => i.code === "terms_missing" && ids2.includes(i.subjectId));
+      expect(nov.map((i) => [i.severity, i.blocksClose])).toEqual([
+        ["red", true],
+        ["red", true],
+      ]);
+      expect(nov[0].detail).toContain("最初に稼働した月（2026年11月）");
+
+      // まとめて確認済みにする：いま出ていない指摘が混ざっていれば、どれにも付けない
+      const many = { month: NOV, code: "terms_missing", note };
+      await expect(ackWatchIssues(db, tenantId, { ...many, subjectIds: [...ids2, ids.D01] }, staff.id, { today: "2026-12-10" })).rejects.toThrow("いまは出ていない指摘");
+      await expect(ackWatchIssues(db, tenantId, { ...many, subjectIds: ids2, note: "確認した" }, staff.id, { today: "2026-12-10" })).rejects.toThrow("10 文字以上");
+      expect(await db.select().from(s.watchAcks).where(and(eq(s.watchAcks.tenantId, tenantId), eq(s.watchAcks.month, NOV)))).toHaveLength(0);
+      const done = await ackWatchIssues(db, tenantId, { ...many, subjectIds: [...ids2, ` ${ids2[0]} `] }, staff.id, { today: "2026-12-10" });
+      expect(done.map((i) => [i.subjectId, i.acked, i.blocksClose])).toEqual(ids2.map((id) => [id, true, false]));
+      const acked = (await run(NOV, "2026-12-10")).filter((i) => i.code === "terms_missing" && ids2.includes(i.subjectId));
+      expect(acked.every((i) => i.acked && i.ackNote === note && !i.blocksClose)).toBe(true);
+      // 操作の記録は 1 件ずつ（まとめて付けた件数つき）
+      const log = (await db.select().from(s.auditLog).where(and(eq(s.auditLog.tenantId, tenantId), eq(s.auditLog.action, "watch.ack")))).filter((r) =>
+        ids2.includes((r.detail as { subjectId?: string }).subjectId ?? ""),
+      );
+      expect(log.map((r) => (r.detail as { bulk?: number }).bulk)).toEqual([2, 2]);
+
+      // 次の月（12 月）：赤は出ない。締めを止めないお知らせで、前の月のメモは画面でたたむのに使える
+      const dec = await run(DEC, "2026-12-31");
+      for (const id of ids2) {
+        const [info] = find(dec, "terms_missing", id);
+        expect(info).toMatchObject({ severity: "info", acked: false, blocksClose: false });
+        expect(dec.filter((i) => i.blocksClose && i.subjectId === id)).toHaveLength(0);
+      }
+      expect((await previousAcks(db, tenantId, DEC)).get(`terms_missing\u0000${ids2[0]}`)).toMatchObject({ month: NOV, note });
+      // その次の月も同じ（毎月の赤にしない）
+      await db.insert(s.workEntries).values({ tenantId, month: "2027-01-01", driverId: ids2[0], projectId: p.id, qty: 120, workDate: "2027-01-08" });
+      expect(find(await run("2027-01-01", "2027-01-31"), "terms_missing", ids2[0]).map((i) => i.severity)).toEqual(["info"]);
+      // 締めた月には、まとめても付けられない
+      await expect(ackWatchIssues(db, tenantId, { month: DEMO_PREV_MONTH, code: "terms_missing", subjectIds: [ids.D01], note }, staff.id, { today: TODAY })).rejects.toThrow("締め済み");
+    } finally {
+      await db.delete(s.watchAcks).where(and(eq(s.watchAcks.tenantId, tenantId), inArray(s.watchAcks.subjectId, ids2)));
+      await db.delete(s.workEntries).where(inArray(s.workEntries.driverId, ids2));
+      await db.delete(s.drivers).where(inArray(s.drivers.id, ids2));
+    }
   });
 
   it("支払期日の文言：「まで」「請求書受領」→ 黄、日を特定した書き方 → 出ない", async () => {

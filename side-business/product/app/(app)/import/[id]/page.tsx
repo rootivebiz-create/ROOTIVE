@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { buttonClass } from "@/components/ui";
+import { Money, buttonClass } from "@/components/ui";
 import { ActionForm } from "~/components/import/action-form";
 import { MoneyExtrasSection } from "~/components/import/extras";
 import { MappingForm, type MappingColumn } from "~/components/import/mapping-form";
@@ -21,12 +21,14 @@ import {
 import { Badge, Notice, PageHeader } from "~/components/page";
 import { getDb } from "~/db/client";
 import { requirePageUser, roleAtLeast } from "~/server/auth";
-import { baseName, colLetter, dayOfHeader, unitHint } from "~/server/features/import/detect";
+import { baseName, colLetter, dayOfHeader, marksText, unitHint } from "~/server/features/import/detect";
 import { registrableDrivers, type NameGroup } from "~/server/features/import/resolve";
 import { columnSamples, isApplyMode, listClients, loadDraftView, sameFileMessage, type DraftView } from "~/server/features/import/service";
 import { APPLY_MODE_LABEL, layoutOf, ROLE_LABEL, type ApplyMode, type ColumnRole } from "~/server/features/import/types";
 import { monthLabelJa, monthParam } from "~/server/month";
 import {
+  adjustColumnAction,
+  adoptRatesAction,
   adoptRuleAction,
   applyAction,
   discardAction,
@@ -74,6 +76,11 @@ function readingText(header: string[], roles: ColumnRole[]): string[] {
   for (const r of ["driver", "driverCode", "project", "qty", "date", "note"] as ColumnRole[]) {
     const i = roles.indexOf(r);
     if (i >= 0) out.push(`${ROLE_LABEL[r]}＝${name(i)}`);
+  }
+  const people = roles.flatMap((r, i) => (r === "driverValue" ? [i] : []));
+  if (people.length) {
+    const heads = people.map((i) => header[i]).filter(Boolean);
+    out.push(`人ごとの数＝${people.length}列（${heads.slice(0, 5).join("・")}${heads.length > 5 ? " ほか" : ""}）`);
   }
   const values = roles.flatMap((r, i) => (r === "value" ? [i] : []));
   if (values.length) {
@@ -322,7 +329,13 @@ async function DraftBody({ view, canEdit, tenantId, openMapping }: { view: Draft
         )}
         {rows.length > 0 && (
           <>
-            <p className="text-sm">{layout === "long" ? "1 行が 1 件の表として読みました。" : "人ごとに数が横に並ぶ表として読みました。"}</p>
+            <p className="text-sm">
+              {layout === "long"
+                ? "1 行が 1 件の表として読みました。"
+                : layout === "byDriver"
+                  ? "人が横に並ぶ表（行が日付か案件、列がドライバー）として読みました。"
+                  : "人ごとに数が横に並ぶ表として読みました。"}
+            </p>
             <ul className="list-disc space-y-0.5 pl-5 text-sm">
               {readingText(computed.header, mapping.roles).map((t) => (
                 <li key={t}>{t}</li>
@@ -330,6 +343,18 @@ async function DraftBody({ view, canEdit, tenantId, openMapping }: { view: Draft
               {mapping.fixedProjectId && (
                 <li>案件＝すべて「{view.known.projects.find((p) => p.id === mapping.fixedProjectId)?.name ?? "（見つかりません）"}」</li>
               )}
+              {mapping.fixedDriverId && (
+                <li>ドライバー＝すべて「{view.known.drivers.find((d) => d.id === mapping.fixedDriverId)?.name ?? "（見つかりません）"}」（1 人 1 枚の表）</li>
+              )}
+              {mapping.sheetDrivers && (
+                <li>ドライバー＝シートごと（シートの名前か、表の上の「氏名」）。同じ形のシートをすべて読みました</li>
+              )}
+              {mapping.marks && <li>印の数え方＝{marksText(mapping.marks)}</li>}
+              {(mapping.adjust ?? []).map((a) => (
+                <li key={a.col}>
+                  調整として入れる＝{colLetter(a.col)}列「{computed.header[a.col] ?? ""}」→「{a.label}」
+                </li>
+              ))}
               <li>
                 見出し＝{mapping.headerRow + 1}行目{mapping.headerDepth === 2 ? `と${mapping.headerRow + 2}行目（2 段）` : ""}
               </li>
@@ -337,6 +362,11 @@ async function DraftBody({ view, canEdit, tenantId, openMapping }: { view: Draft
           </>
         )}
         {problem && <Notice tone="error">{problem}</Notice>}
+        {computed.sheetNotes.map((n) => (
+          <p key={n} className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm">
+            {n}
+          </p>
+        ))}
         {rows.length > 0 && (
           <details id="mapping" open={!!problem || openMapping}>
             <summary className="min-h-11 cursor-pointer py-2 text-sm font-bold">
@@ -370,13 +400,18 @@ async function DraftBody({ view, canEdit, tenantId, openMapping }: { view: Draft
                     </label>
                   </ActionForm>
                   <MappingForm
-                    key={`${summary.sheetIndex}:${mapping.headerRow}:${mapping.roles.join(",")}:${mapping.fixedProjectId ?? ""}:${mapping.useDates}`}
+                    key={`${summary.sheetIndex}:${mapping.headerRow}:${mapping.roles.join(",")}:${mapping.fixedProjectId ?? ""}:${mapping.useDates}:${mapping.fixedDriverId ?? ""}:${mapping.sheetDrivers ? 1 : 0}:${marksText(mapping.marks)}`}
                     action={mappingAction}
                     batchId={batch.id}
                     columns={columns}
                     projects={allProjects}
                     fixedProjectId={mapping.fixedProjectId}
                     useDates={mapping.useDates}
+                    drivers={allDrivers}
+                    driverMode={mapping.fixedDriverId ? "fixed" : mapping.sheetDrivers ? "sheets" : "column"}
+                    fixedDriverId={mapping.fixedDriverId ?? null}
+                    sheetCount={summary.sheets.length}
+                    marks={marksText(mapping.marks)}
                   />
                 </>
               )}
@@ -474,7 +509,7 @@ async function DraftBody({ view, canEdit, tenantId, openMapping }: { view: Draft
               </>
             ) : (
               <p className="text-sm">
-                名前はすべて台帳に当たりました（ドライバー {new Set(res.drivers.map((g) => g.match?.id)).size} 人・案件{" "}
+                名前はすべて台帳に当たりました（ドライバー {mapping.fixedDriverId ? 1 : new Set(res.drivers.map((g) => g.match?.id)).size} 人・案件{" "}
                 {mapping.fixedProjectId ? 1 : new Set(res.projects.map((g) => g.match?.id)).size} 件）。
               </p>
             )}
@@ -573,7 +608,22 @@ async function DraftBody({ view, canEdit, tenantId, openMapping }: { view: Draft
       </Section>
 
       {/* 金額の列（振込額・控除・振込手数料） */}
-      {view.extras && <MoneyExtrasSection extras={view.extras} canEdit={canEdit} batchId={batch.id} month={m} adopt={adoptRuleAction} />}
+      {view.extras && (
+        <MoneyExtrasSection
+          extras={view.extras}
+          canEdit={canEdit}
+          batchId={batch.id}
+          month={m}
+          adopt={adoptRuleAction}
+          adjustAction={adjustColumnAction}
+          ratesAction={adoptRatesAction}
+        />
+      )}
+      {mapping.sheetDrivers && !problem && (
+        <p className="rounded-lg border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
+          シートごとに別の人の表では、金額の列（振込額・控除・調整）は読みません。燃料・立替などの人ごとの額は、「稼働と調整」でまとめて貼り付けられます。
+        </p>
+      )}
 
       {/* 5. 反映 */}
       {ready && preview && view.sameFile && (
@@ -593,6 +643,9 @@ async function DraftBody({ view, canEdit, tenantId, openMapping }: { view: Draft
             <StatementDiffTable rows={preview.statements} unchanged={preview.unchangedStatements} />
           </div>
           {preview.reapply && <DuplicateList rows={preview.reapply.duplicates} total={preview.reapply.duplicateYen} />}
+          {preview.reapply && (
+            <AdjustmentPreview adjustments={preview.adjustments} duplicates={preview.reapply.adjustDuplicates} removed={preview.reapply.removeAdjustments} />
+          )}
           {view.blockers.map((b) => (
             <Notice key={b} tone="error">
               {b}
@@ -615,7 +668,7 @@ async function DraftBody({ view, canEdit, tenantId, openMapping }: { view: Draft
               <input type="hidden" name="batchId" value={batch.id} />
               <input type="hidden" name="mode" value="replace" />
               <input type="hidden" name="reapply" value="1" />
-              {preview.reapply && preview.reapply.duplicates.length > 0 && (
+              {preview.reapply && (preview.reapply.duplicates.length > 0 || preview.reapply.adjustDuplicates.length > 0) && (
                 <label className="mb-3 flex min-h-11 items-start gap-3 text-sm">
                   <input type="checkbox" name="confirmDuplicates" required className="mt-1 h-5 w-5 shrink-0" />
                   <span>重なっている所は二重ではない（別の仕事の分）ことを確かめました</span>
@@ -697,6 +750,7 @@ async function DraftBody({ view, canEdit, tenantId, openMapping }: { view: Draft
             <Notice tone="error">同じファイルがこの月にもう反映されています。足すと数量が倍になるので、「入れ替える」を選んでください。</Notice>
           )}
           <DuplicateList rows={option.duplicates} total={option.duplicateYen} />
+          <AdjustmentPreview adjustments={preview.adjustments} duplicates={option.adjustDuplicates} removed={option.removeAdjustments} />
           <div>
             <h3 className="mb-2 text-sm font-bold">反映すると、明細の金額はこうなります（明細と同じ計算）</h3>
             <StatementDiffTable rows={preview.statements} unchanged={preview.unchangedStatements} />
@@ -716,7 +770,7 @@ async function DraftBody({ view, canEdit, tenantId, openMapping }: { view: Draft
             >
               <input type="hidden" name="batchId" value={batch.id} />
               <input type="hidden" name="mode" value={mode} />
-              {option.duplicates.length > 0 && (
+              {(option.duplicates.length > 0 || option.adjustDuplicates.length > 0) && (
                 <label className="mb-3 flex min-h-11 items-start gap-3 text-sm">
                   <input type="checkbox" name="confirmDuplicates" required className="mt-1 h-5 w-5 shrink-0" />
                   <span>重なっている所は二重ではない（別の仕事の分）ことを確かめました</span>
@@ -741,6 +795,42 @@ async function DraftBody({ view, canEdit, tenantId, openMapping }: { view: Draft
         </Section>
       )}
     </>
+  );
+}
+
+/** 金額の列から入れる調整（反映の前の確かめ） */
+function AdjustmentPreview({
+  adjustments,
+  duplicates,
+  removed,
+}: {
+  adjustments: NonNullable<DraftView["preview"]>["adjustments"];
+  duplicates: NonNullable<DraftView["preview"]>["modes"][ApplyMode]["adjustDuplicates"];
+  removed: number;
+}) {
+  if (adjustments.count === 0 && removed === 0) return null;
+  return (
+    <div className="rounded-lg border border-border bg-muted/40 p-3 text-sm">
+      {adjustments.count > 0 && (
+        <p>
+          金額の列から、その月の調整を <b>{adjustments.count} 件</b>（{adjustments.drivers}人・合計 <Money value={adjustments.total} />）入れます。
+        </p>
+      )}
+      {removed > 0 && <p className="mt-1">入れ替える前の取り込みで入れた調整 {removed} 件は消します（取り消すと戻ります）。</p>}
+      {duplicates.length > 0 && (
+        <div className="mt-2 rounded-lg border border-warning/40 bg-warning/10 p-2">
+          <p className="font-bold">今ある調整と、同じ人・同じ名前のものがあります（二重に足し引きしないか確かめてください）</p>
+          <ul className="mt-1 space-y-0.5">
+            {duplicates.slice(0, 10).map((d) => (
+              <li key={`${d.driverId}|${d.label}`}>
+                {d.driverName}・{d.label}：今ある <Money value={d.existing} />、取り込む <Money value={d.incoming} />
+              </li>
+            ))}
+            {duplicates.length > 10 && <li>ほか {duplicates.length - 10} 件</li>}
+          </ul>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -792,6 +882,14 @@ function DoneBody({ view, canEdit }: { view: DraftView; canEdit: boolean }) {
               )}
             </div>
           )}
+          {applied.adjustments && applied.adjustments.count > 0 && (
+            <p className="text-sm">
+              金額の列から、その月の調整を {applied.adjustments.count} 件（合計 <Money value={applied.adjustments.total} />）入れました。
+              <Link href={`/work?m=${m}#adjustments`} className="ml-1 inline-block min-h-11 py-2 font-bold">
+                調整を見る
+              </Link>
+            </p>
+          )}
           {applied.replacedBatchIds.length > 0 && (
             <p className="text-sm">
               入れ替えた前の取り込み：
@@ -832,7 +930,9 @@ function DoneBody({ view, canEdit }: { view: DraftView; canEdit: boolean }) {
               confirm={
                 <>
                   この取り込みで入れた稼働 {view.appliedEntries} 件を消します。
+                  {(applied.adjustments?.ids.length ?? 0) > 0 && `金額の列から入れた調整 ${applied.adjustments!.ids.length} 件も消します（あとで直したものも消えます）。`}
                   {applied.removed.length > 0 && `反映したときに入れ替えで消した稼働 ${applied.removed.length} 件は、元に戻します。`}
+                  {(applied.adjustments?.removed.length ?? 0) > 0 && `入れ替えで消した調整 ${applied.adjustments!.removed.length} 件も戻します。`}
                   明細は、あとで作り直してください。
                 </>
               }

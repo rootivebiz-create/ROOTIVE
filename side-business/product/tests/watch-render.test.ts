@@ -286,4 +286,70 @@ describe("見張り番の画面", () => {
     expect(await unackWatchAction(undefined, denied)).toMatchObject({ ok: true });
     expect(await acksOf()).toHaveLength(0);
   });
+
+  it("導入の月：「明示が仕事を始めたあと」が何人も並ぶ → 同じ理由でまとめて確認済みにできる。次の月は赤にせず、灰色の 1 行にたたむ", async () => {
+    const { ackManyWatchAction } = await import("~/app/(app)/watch/actions");
+    const db = state.db!;
+    const [p] = await db.select().from(s.projects).where(eq(s.projects.tenantId, tenantId));
+    // 12/10 に明示書を作ってから、11 月の Excel（日付なし）と 12 月の稼働を取り込んだ
+    const made = await db
+      .insert(s.drivers)
+      .values([
+        { tenantId, code: "D21", name: "北村 修", termsIssuedOn: "2026-12-10" },
+        { tenantId, code: "D22", name: "南 由美", termsIssuedOn: "2026-12-10" },
+      ])
+      .returning();
+    const work = await db
+      .insert(s.workEntries)
+      .values(
+        made.flatMap((d) => [
+          { tenantId, month: "2026-11-01", driverId: d.id, projectId: p.id, qty: 200 },
+          { tenantId, month: "2026-12-01", driverId: d.id, projectId: p.id, qty: 200, workDate: "2026-12-14" },
+        ]),
+      )
+      .returning();
+    const LATE = "取引条件の明示が、仕事を始めたあとになっています";
+    const form = () => {
+      const f = new FormData();
+      f.set("month", "2026-11-01");
+      f.set("code", "terms_missing");
+      for (const d of made) f.append("subjectId", d.id);
+      f.set("note", "導入前は口頭で伝えていた。12/10 に全員へ明示書を渡した");
+      return f;
+    };
+    try {
+      as("viewer");
+      expect(await render("2026-11")).not.toContain("同じ理由でまとめて確認済みにする");
+      as("staff");
+      const nov = await render("2026-11");
+      expect(nov).toContain(`同じ理由でまとめて確認済みにする（「${LATE}」2 件）`);
+      expect(nov).toContain("北村 修");
+      expect(nov).toContain("南 由美");
+      expect(nov).toContain("2 件を確認済みにする");
+      expect(nov).toContain("赤で出すのは、最初に稼働した2026年11月分までです");
+
+      as("viewer");
+      expect(await ackManyWatchAction(undefined, form())).toEqual({ ok: false, error: "この操作をする権限がありません" });
+      as("staff");
+      const one = form();
+      one.delete("subjectId");
+      one.append("subjectId", made[0].id);
+      expect(await ackManyWatchAction(undefined, one)).toMatchObject({ ok: false, fieldErrors: { subjectIds: "まとめて確認済みにするのは 2 件からです" } });
+      expect(await ackManyWatchAction(undefined, form())).toMatchObject({ ok: true });
+      const acks = await db.select().from(s.watchAcks).where(and(eq(s.watchAcks.tenantId, tenantId), eq(s.watchAcks.month, "2026-11-01"), eq(s.watchAcks.code, "terms_missing")));
+      expect(acks.map((a) => a.subjectId).sort()).toEqual(made.map((d) => d.id).sort());
+      expect(await render("2026-11")).not.toContain(`同じ理由でまとめて確認済みにする（「${LATE}」`);
+
+      // 次の月（12 月）：赤にしない。お知らせで、前の月に確認済みにしたので灰色の 1 行にたたむ
+      const dec = await render("2026-12");
+      expect(dec).not.toContain(LATE);
+      expect(dec).toContain("お知らせ・取引条件の明示は、仕事を始めたあとでした（北村 修）");
+      expect(dec).toContain("お知らせ・取引条件の明示は、仕事を始めたあとでした（南 由美）");
+      expect(dec.match(/2026年11月に確認済み<\/span>/g)).toHaveLength(2);
+    } finally {
+      await db.delete(s.watchAcks).where(and(eq(s.watchAcks.tenantId, tenantId), eq(s.watchAcks.month, "2026-11-01"), eq(s.watchAcks.code, "terms_missing")));
+      for (const w of work) await db.delete(s.workEntries).where(eq(s.workEntries.id, w.id));
+      for (const d of made) await db.delete(s.drivers).where(eq(s.drivers.id, d.id));
+    }
+  });
 });

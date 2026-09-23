@@ -49,7 +49,7 @@ export function FinalCta({
           相談フォームから送る
         </Link>
         {demoUrl && (
-          <a href={demoUrl} target="_blank" rel="noopener" className={OUTLINE}>
+          <a href={demoUrl} target="_blank" rel="noopener nofollow" className={OUTLINE}>
             製品のデモを触る
             <NewTabNote />
           </a>

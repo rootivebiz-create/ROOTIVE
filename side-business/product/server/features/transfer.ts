@@ -1,17 +1,18 @@
 import "server-only";
-import { and, asc, desc, eq, getTableColumns, gt, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, gt, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import type { Db } from "~/db/client";
 import * as s from "~/db/schema";
 import { UserError } from "~/server/action";
 import { audit } from "~/server/audit";
 import { payDateFor } from "~/server/calc/statement";
-import { monthLabelJa } from "~/server/month";
+import { monthLabelJa, shiftMonth } from "~/server/month";
 import { getTenant, isMonthClosed } from "~/server/repo";
 import { readSnapshot, statementsStatus } from "~/server/statements-core";
 import { csvText } from "~/server/download";
-import { sha256 } from "~/server/tokens";
+import { keyedHash, sha256 } from "~/server/tokens";
 import { deemedDaysOf, statementStatus } from "~/server/features/statements/status";
 import { deemedClauseMap } from "~/server/features/terms-content";
+import { addAdjustment } from "~/server/features/import/work";
 import type { AccountType } from "@/lib/payroll/types";
 import { buildZenginRecords, toZenginKana, validateTransfers, zenginBytes, type Requester, type Transfer } from "@/lib/payroll/zengin";
 import { adjustForBankHoliday, isBankHoliday, isDateString, shortDate } from "@/lib/tools/torihiki-joken";
@@ -78,6 +79,11 @@ export type BatchView = {
   changed: boolean;
   currentCount: number;
   currentTotal: number;
+  /**
+   * 振り込んだ日が入っているデータのうち、振り込んだ額と今の明細の額に差があって、まだ精算の記録が無い人の数
+   * （振り込んだあとに締めを外して明細を作り直したとき。loadPaidDifferences）
+   */
+  paidDiffOpen: number;
 };
 
 export type TransferPlan = {
@@ -221,20 +227,34 @@ function csvSafe(value: string): string {
 
 /**
  * 振込データに入れたときの口座の目印。口座番号そのものは残さず、「同じか・どこが違うか」だけが分かる形にする。
- * - fp：銀行・支店・種目・番号・名義をまとめたハッシュ（会社ごとに変わる）
- * - n / h：番号だけ・名義だけのハッシュ（どこが変わったかを言うため）
+ * - fp：銀行・支店・種目・番号・名義をまとめた鍵つきハッシュ（会社ごとに変わる）
+ * - n / h：番号だけ・名義だけの鍵つきハッシュ（どこが変わったかを言うため）
  * - tail：番号の下 3 桁（画面で「****567」と見せるため）
+ * - v：目印の作り方（2＝APP_SECRET から作った鍵の HMAC。無い＝前の作り方の sha256。読み比べるときだけ使う）
  */
-export type BankStamp = { fp: string; bankCode: string; branchCode: string; accountType: AccountType; tail: string; n: string; h: string };
+export type BankStamp = { fp: string; bankCode: string; branchCode: string; accountType: AccountType; tail: string; n: string; h: string; v?: number };
+
+/** いまの目印の作り方 */
+const STAMP_VERSION = 2;
 
 /** 名義は半角カナにそろえてから比べる（全角・半角の違いだけでは「変わった」にしない） */
 function holderKey(holderKana: string): string {
   return toZenginKana(holderKana).value.replace(/\s+/g, " ").trim();
 }
 
-/** 口座の目印（sha256。会社の id を混ぜるので、他社の記録と照らし合わせても番号は分からない） */
+/**
+ * 口座の目印は、APP_SECRET から作った口座の目印用の鍵の HMAC（server/tokens.ts の keyedHash）。
+ * 鍵なしの sha256 だと、会社の id（操作の記録の CSV に出る）と下 3 桁から、残りの桁を総当たりで割り出せてしまうため。
+ * APP_SECRET を変えると前の目印と比べられなくなり、次の振込で全員が「口座が変わった人」に出る（確かめる側に倒れる）。
+ * 本番で APP_SECRET が 32 文字未満なら、署名つきリンクと同じく止める。
+ */
+function keyedStamp(value: string): string {
+  return keyedHash("bank-stamp:v2", value);
+}
+
+/** 口座の目印（鍵つき。会社の id も混ぜるので、他社の記録と照らし合わせても番号は分からない） */
 export function bankFingerprint(tenantId: string, b: BankFields): string {
-  return sha256(`bank:${tenantId}|${b.bankCode}|${b.branchCode}|${b.accountType}|${b.accountNumber}|${holderKey(b.holderKana)}`);
+  return keyedStamp(`bank:${tenantId}|${b.bankCode}|${b.branchCode}|${b.accountType}|${b.accountNumber}|${holderKey(b.holderKana)}`);
 }
 
 export function bankStamp(tenantId: string, b: BankFields): BankStamp {
@@ -244,9 +264,36 @@ export function bankStamp(tenantId: string, b: BankFields): BankStamp {
     branchCode: b.branchCode,
     accountType: b.accountType,
     tail: b.accountNumber.slice(-3),
+    n: keyedStamp(`bank-number:${tenantId}|${b.accountNumber}`).slice(0, 16),
+    h: keyedStamp(`bank-holder:${tenantId}|${holderKey(b.holderKana)}`).slice(0, 16),
+    v: STAMP_VERSION,
+  };
+}
+
+/**
+ * 前の作り方（鍵なしの sha256）の目印。すでに操作の記録に残っている目印と比べるときだけ使う（新しく残さない）。
+ * 操作の記録は消せないので、前の目印は画面・CSV に出すときに外している（close.ts の maskAuditDetail）。
+ */
+function legacyBankStamp(tenantId: string, b: BankFields): BankStamp {
+  return {
+    fp: sha256(`bank:${tenantId}|${b.bankCode}|${b.branchCode}|${b.accountType}|${b.accountNumber}|${holderKey(b.holderKana)}`),
+    bankCode: b.bankCode,
+    branchCode: b.branchCode,
+    accountType: b.accountType,
+    tail: b.accountNumber.slice(-3),
     n: sha256(`bank-number:${tenantId}|${b.accountNumber}`).slice(0, 16),
     h: sha256(`bank-holder:${tenantId}|${holderKey(b.holderKana)}`).slice(0, 16),
   };
+}
+
+/** 今の口座を、記録に残っている目印と同じ作り方で目印にする（作り方が違うと、同じ口座でも違って見えるため） */
+function stampLike(tenantId: string, recorded: BankStamp, b: BankFields): BankStamp {
+  return recorded.v === STAMP_VERSION ? bankStamp(tenantId, b) : legacyBankStamp(tenantId, b);
+}
+
+/** 記録の目印と今の口座が同じか（前の作り方の目印とも比べる） */
+export function sameBankAsStamp(tenantId: string, recorded: BankStamp, b: BankFields): boolean {
+  return recorded.fp === stampLike(tenantId, recorded, b).fp;
 }
 
 const ACCOUNT_TYPE_JA: Record<AccountType, string> = { ordinary: "普通", checking: "当座" };
@@ -378,12 +425,14 @@ export async function reviewBankChanges(db: Db, tenantId: string, targets: Revie
     }
     const before = last.lines.find((l) => l.driverId === t.driverId && l.bank)!.bank!;
     const now = bankStamp(tenantId, t.bank);
-    if (before.fp === now.fp) continue;
+    // 記録の目印と同じ作り方で比べる（前の作り方の目印でも、同じ口座なら「変わった」にしない）
+    const nowLike = stampLike(tenantId, before, t.bank);
+    if (before.fp === nowLike.fp) continue;
     const change: BankChange = {
       ...who,
       previous: { batchId: last.batchId, fileName: last.fileName, month: last.month, at: last.at, deleted: last.deleted, masked: maskedBank(before) },
       currentMasked: maskedBank(now),
-      fields: stampDiff(before, now),
+      fields: stampDiff(before, nowLike),
       edits: [],
       checkKey: sha256(`bank-check:${t.driverId}|${now.fp}`).slice(0, 16),
     };
@@ -674,7 +723,7 @@ async function batchesWithBankChanges(db: Db, tenantId: string, month: string): 
   for (const b of batches) {
     const stamps = await batchStamps(db, tenantId, b.id);
     if (!stamps) continue;
-    const names = drivers.filter((d) => stamps.has(d.id) && stamps.get(d.id)!.fp !== bankFingerprint(tenantId, bankOf(d))).map((d) => d.name);
+    const names = drivers.filter((d) => stamps.has(d.id) && !sameBankAsStamp(tenantId, stamps.get(d.id)!, bankOf(d))).map((d) => d.name);
     if (names.length) out.push({ batchId: b.id, drivers: names.sort((a, c) => a.localeCompare(c, "ja")) });
   }
   return out;
@@ -707,9 +756,17 @@ export async function listTransferBatches(db: Db, tenantId: string, month: strin
   const userName = new Map(users.map((u) => [u.id, u.name]));
   const totalById = new Map(statements.map((st) => [st.id, st.total]));
   const driverOf = new Map<string, string>([...versions.map((v) => [v.statementId, v.driverId] as const), ...statements.map((st) => [st.id, st.driverId] as const)]);
+  // 振り込んだあとに明細が変わったデータがあるときだけ、振り込んだ額との差を人ごとに見る
+  const isChanged = (b: (typeof batches)[number]) => {
+    const current = b.statementIds.map((id) => totalById.get(id)).filter((t): t is number => t !== undefined);
+    return b.versionChanged || current.length !== b.count || current.reduce((a, t) => a + t, 0) !== b.total;
+  };
+  const needsDiff = batches.some((b) => b.executedOn && isChanged(b));
+  const open = needsDiff ? new Set((await loadPaidDifferences(db, tenantId, month)).rows.filter((r) => r.outstanding !== 0).map((r) => r.driverId)) : new Set<string>();
   return batches.map((b) => {
     const current = b.statementIds.map((id) => totalById.get(id)).filter((t): t is number => t !== undefined);
     const currentTotal = current.reduce((a, t) => a + t, 0);
+    const driverIds = [...new Set(b.statementIds.map((id) => driverOf.get(id)).filter((d): d is string => d !== undefined))];
     return {
       id: b.id,
       month: b.month,
@@ -720,11 +777,12 @@ export async function listTransferBatches(db: Db, tenantId: string, month: strin
       fileName: b.fileName,
       createdAt: b.createdAt,
       createdByName: b.createdBy ? userName.get(b.createdBy) ?? null : null,
-      changed: b.versionChanged || current.length !== b.count || currentTotal !== b.total,
+      changed: isChanged(b),
       currentCount: current.length,
       currentTotal,
+      paidDiffOpen: b.executedOn ? driverIds.filter((d) => open.has(d)).length : 0,
       statementIds: b.statementIds,
-      driverIds: [...new Set(b.statementIds.map((id) => driverOf.get(id)).filter((d): d is string => d !== undefined))],
+      driverIds,
     };
   });
 }
@@ -965,7 +1023,7 @@ async function loadBatchLines(db: Db, tenantId: string, batch: StoredBatch): Pro
   // 作ったあとに口座が変わった人がいれば出さない（ファイルは今の口座で作るため、確かめていない口座に振り込まないように）
   const stamps = await batchStamps(db, tenantId, batch.id);
   if (stamps) {
-    const moved = lines.filter((l) => stamps.has(l.row.driverId) && stamps.get(l.row.driverId)!.fp !== bankFingerprint(tenantId, l.row.bank));
+    const moved = lines.filter((l) => stamps.has(l.row.driverId) && !sameBankAsStamp(tenantId, stamps.get(l.row.driverId)!, l.row.bank));
     if (moved.length) {
       const who = moved.map((l) => l.row.driverName).join("、");
       throw new UserError(
@@ -1090,5 +1148,388 @@ export async function auditTransferDownload(
     entity: "transfer_batch",
     entityId: batch.id,
     detail: { month: batch.month, format, count: batch.count, total: batch.total },
+  });
+}
+
+// ---------------------------------------------------------------- 振り込んだあとに明細が変わったとき（差の精算）
+
+/**
+ * 振り込んだ日が入っている振込データがある月で、締めを外して明細を作り直すと、振り込んだ額と明細の額が合わなくなる。
+ * 二重に振り込まないよう、その人は「まだ入っていない人だけ」の振込データには入らない。そこで差を人ごとに出し、
+ * 精算の仕方を記録する：翌月の明細の調整で精算する（調整を 1 行足す）か、別の方法で精算したと記録する（別に振り込んだ・返してもらった など）。
+ * 精算の記録は操作の記録（transfer.settle）に残す（消せない表なので、あとから「どう精算したか」を必ずたどれる）。
+ */
+
+export type SettlementMethod = "next_month" | "outside";
+
+export type Settlement = {
+  /** 操作の記録の番号 */
+  id: number;
+  method: SettlementMethod;
+  /** 精算した額（＋は払い足した、−は払いすぎの分を精算した） */
+  amount: number;
+  at: Date;
+  userName: string | null;
+  /** 翌月の明細の調整（next_month） */
+  nextMonth: string | null;
+  adjustmentId: string | null;
+  /** 翌月の調整が消されていて、精算になっていない */
+  voided: boolean;
+  /** 別の方法で精算した日とメモ（outside） */
+  settledOn: string | null;
+  note: string | null;
+};
+
+export type PaidDiffRow = {
+  driverId: string;
+  driverName: string;
+  driverCode: string | null;
+  /** 振り込んだ額（振り込んだ日が入っている振込データに入れた額の合計） */
+  paid: number;
+  /** 振り込んだときの明細の版 */
+  paidVersions: number[];
+  /** 振り込んだ日 */
+  paidOn: string[];
+  /** 今の明細（無くなっていれば null・0 円） */
+  statementId: string | null;
+  statementVersion: number | null;
+  statementTotal: number;
+  /** 今の明細 − 振り込んだ額（＋：払い足りない／−：払いすぎ） */
+  difference: number;
+  settlements: Settlement[];
+  /** 精算の記録の合計（消された調整は数えない） */
+  settled: number;
+  /** まだ精算の記録が無い差 */
+  outstanding: number;
+};
+
+export type PaidDiffReport = {
+  month: string;
+  /** 振り込んだ日が入っている振込データの数 */
+  executedBatches: number;
+  /** 差がある人・精算の記録がある人 */
+  rows: PaidDiffRow[];
+  /** まだ精算の記録が無い差がある人数 */
+  openCount: number;
+  /** まだ精算していない、払い足りない額の合計 */
+  underpaid: number;
+  /** まだ精算していない、払いすぎの額の合計（正の数） */
+  overpaid: number;
+  /** 精算に使う翌月と、その月が締めてあるか */
+  nextMonth: string;
+  nextMonthClosed: boolean;
+};
+
+const SETTLE_ACTION = "transfer.settle";
+const SETTLE_UNDO_ACTION = "transfer.settle_undo";
+
+type PaidLine = { driverId: string; statementId: string; amount: number; version: number | null; executedOn: string };
+
+/** 振り込んだ日が入っている振込データに、だれに・いくら入れたか（作ったときの記録から。記録が無ければ、作ったときの明細の版から） */
+async function executedPaidLines(
+  db: Db,
+  tenantId: string,
+  batches: { id: string; statementIds: string[]; executedOn: string; createdAt: Date }[],
+): Promise<PaidLine[]> {
+  if (batches.length === 0) return [];
+  const logs = await db
+    .select({ entityId: s.auditLog.entityId, detail: s.auditLog.detail })
+    .from(s.auditLog)
+    .where(and(eq(s.auditLog.tenantId, tenantId), eq(s.auditLog.action, "transfer.create"), inArray(s.auditLog.entityId, batches.map((b) => b.id))))
+    .orderBy(desc(s.auditLog.id));
+  const linesOf = new Map<string, PaidLine[]>();
+  const executedOf = new Map(batches.map((b) => [b.id, b.executedOn]));
+  for (const log of logs) {
+    if (!log.entityId || linesOf.has(log.entityId)) continue;
+    const raw = Array.isArray(log.detail?.lines) ? (log.detail.lines as Record<string, unknown>[]) : [];
+    const lines = raw
+      .filter((l) => l && typeof l.driverId === "string" && typeof l.statementId === "string" && typeof l.amount === "number")
+      .map((l) => ({
+        driverId: l.driverId as string,
+        statementId: l.statementId as string,
+        amount: l.amount as number,
+        version: typeof l.version === "number" ? l.version : null,
+        executedOn: executedOf.get(log.entityId!)!,
+      }));
+    if (lines.length) linesOf.set(log.entityId, lines);
+  }
+  const out: PaidLine[] = [];
+  const missing = batches.filter((b) => !linesOf.has(b.id));
+  for (const b of batches) out.push(...(linesOf.get(b.id) ?? []));
+  if (missing.length) {
+    // 作ったときの記録が無い振込データ：作った時点でいちばん新しい明細の版の振込額
+    const ids = [...new Set(missing.flatMap((b) => b.statementIds))];
+    const versions = ids.length
+      ? await db
+          .select({
+            statementId: s.statementVersions.statementId,
+            driverId: s.statementVersions.driverId,
+            version: s.statementVersions.version,
+            total: s.statementVersions.total,
+            createdAt: s.statementVersions.createdAt,
+          })
+          .from(s.statementVersions)
+          .where(and(eq(s.statementVersions.tenantId, tenantId), inArray(s.statementVersions.statementId, ids)))
+      : [];
+    for (const b of missing) {
+      for (const id of b.statementIds) {
+        const at = versions
+          .filter((v) => v.statementId === id && v.createdAt.getTime() <= b.createdAt.getTime())
+          .sort((a, c) => c.version - a.version)[0];
+        if (at) out.push({ driverId: at.driverId, statementId: id, amount: at.total, version: at.version, executedOn: b.executedOn });
+      }
+    }
+  }
+  return out;
+}
+
+/** 振り込んだ額と、今の明細の額の差（人ごと）。精算の記録も合わせて返す */
+export async function loadPaidDifferences(db: Db, tenantId: string, month: string): Promise<PaidDiffReport> {
+  assertMonth(month);
+  const nextMonth = shiftMonth(month, 1);
+  const [executed, nextMonthClosed] = await Promise.all([
+    db
+      .select({ id: s.transferBatches.id, statementIds: s.transferBatches.statementIds, executedOn: s.transferBatches.executedOn, createdAt: s.transferBatches.createdAt })
+      .from(s.transferBatches)
+      .where(and(eq(s.transferBatches.tenantId, tenantId), eq(s.transferBatches.month, month), isNotNull(s.transferBatches.executedOn))),
+    isMonthClosed(db, tenantId, nextMonth),
+  ]);
+  const report: PaidDiffReport = { month, executedBatches: executed.length, rows: [], openCount: 0, underpaid: 0, overpaid: 0, nextMonth, nextMonthClosed };
+  if (executed.length === 0) return report;
+
+  const paidLines = await executedPaidLines(
+    db,
+    tenantId,
+    executed.map((b) => ({ id: b.id, statementIds: b.statementIds, executedOn: b.executedOn!, createdAt: b.createdAt })),
+  );
+  const [statements, drivers, settleLogs, users] = await Promise.all([
+    db
+      .select({ id: s.statements.id, driverId: s.statements.driverId, total: s.statements.total, version: s.statements.version, snapshot: s.statements.snapshot })
+      .from(s.statements)
+      .where(and(eq(s.statements.tenantId, tenantId), eq(s.statements.month, month))),
+    db.select({ id: s.drivers.id, name: s.drivers.name, code: s.drivers.code }).from(s.drivers).where(eq(s.drivers.tenantId, tenantId)),
+    db
+      .select({ id: s.auditLog.id, action: s.auditLog.action, userId: s.auditLog.userId, detail: s.auditLog.detail, createdAt: s.auditLog.createdAt })
+      .from(s.auditLog)
+      .where(and(eq(s.auditLog.tenantId, tenantId), inArray(s.auditLog.action, [SETTLE_ACTION, SETTLE_UNDO_ACTION]), sql`"audit_log"."detail"->>'month' = ${month}`))
+      .orderBy(asc(s.auditLog.id)),
+    db.select({ id: s.users.id, name: s.users.name }).from(s.users).where(eq(s.users.tenantId, tenantId)),
+  ]);
+  const userName = new Map(users.map((u) => [u.id, u.name]));
+  const driverById = new Map(drivers.map((d) => [d.id, d]));
+  const statementOf = new Map(statements.map((st) => [st.driverId, st]));
+
+  // 精算の記録（取り消したものは外す）。翌月の調整は、今もあるものだけを今の額で数える
+  const undone = new Set(settleLogs.filter((l) => l.action === SETTLE_UNDO_ACTION && typeof l.detail?.settleId === "number").map((l) => l.detail.settleId as number));
+  const settleRows = settleLogs.filter((l) => l.action === SETTLE_ACTION && !undone.has(l.id) && typeof l.detail?.driverId === "string");
+  const adjustmentIds = settleRows.map((l) => l.detail.adjustmentId).filter((v): v is string => typeof v === "string" && isUuid(v));
+  const adjustments = adjustmentIds.length
+    ? await db
+        .select({ id: s.adjustments.id, amount: s.adjustments.amount, month: s.adjustments.month })
+        .from(s.adjustments)
+        .where(and(eq(s.adjustments.tenantId, tenantId), inArray(s.adjustments.id, adjustmentIds)))
+    : [];
+  const adjustmentById = new Map(adjustments.map((a) => [a.id, a]));
+  const settlementsOf = new Map<string, Settlement[]>();
+  for (const l of settleRows) {
+    const d = l.detail;
+    const method: SettlementMethod = d.method === "next_month" ? "next_month" : "outside";
+    const adjustmentId = typeof d.adjustmentId === "string" ? d.adjustmentId : null;
+    const adj = adjustmentId ? adjustmentById.get(adjustmentId) : undefined;
+    const voided = method === "next_month" && !adj;
+    const amount = method === "next_month" ? adj?.amount ?? 0 : typeof d.amount === "number" ? d.amount : 0;
+    const list = settlementsOf.get(d.driverId as string) ?? [];
+    list.push({
+      id: l.id,
+      method,
+      amount,
+      at: l.createdAt,
+      userName: l.userId ? userName.get(l.userId) ?? null : null,
+      nextMonth: method === "next_month" ? (adj?.month ?? (typeof d.nextMonth === "string" ? d.nextMonth : null)) : null,
+      adjustmentId,
+      voided,
+      settledOn: typeof d.settledOn === "string" ? d.settledOn : null,
+      note: typeof d.note === "string" && d.note ? d.note : null,
+    });
+    settlementsOf.set(d.driverId as string, list);
+  }
+
+  const paidBy = new Map<string, { paid: number; versions: Set<number>; on: Set<string>; name: string | null }>();
+  for (const l of paidLines) {
+    const p = paidBy.get(l.driverId) ?? { paid: 0, versions: new Set<number>(), on: new Set<string>(), name: null };
+    p.paid += l.amount;
+    if (l.version !== null) p.versions.add(l.version);
+    p.on.add(l.executedOn);
+    paidBy.set(l.driverId, p);
+  }
+
+  for (const [driverId, p] of paidBy) {
+    const st = statementOf.get(driverId);
+    const statementTotal = st?.total ?? 0;
+    const difference = statementTotal - p.paid;
+    const settlements = settlementsOf.get(driverId) ?? [];
+    if (difference === 0 && settlements.length === 0) continue;
+    const settled = settlements.reduce((a, x) => a + (x.voided ? 0 : x.amount), 0);
+    const d = driverById.get(driverId);
+    const snap = st ? readSnapshot(st) : null;
+    report.rows.push({
+      driverId,
+      driverName: d?.name ?? snap?.driver?.name ?? "（不明）",
+      driverCode: d?.code ?? snap?.driver?.code ?? null,
+      paid: p.paid,
+      paidVersions: [...p.versions].sort((a, b) => a - b),
+      paidOn: [...p.on].sort(),
+      statementId: st?.id ?? null,
+      statementVersion: st?.version ?? null,
+      statementTotal,
+      difference,
+      settlements,
+      settled,
+      outstanding: difference - settled,
+    });
+  }
+  report.rows.sort((a, b) => (a.driverCode ?? "").localeCompare(b.driverCode ?? "", "ja") || a.driverName.localeCompare(b.driverName, "ja"));
+  for (const r of report.rows) {
+    if (r.outstanding === 0) continue;
+    report.openCount++;
+    if (r.outstanding > 0) report.underpaid += r.outstanding;
+    else report.overpaid += -r.outstanding;
+  }
+  return report;
+}
+
+function versionsText(versions: number[]): string {
+  return versions.length ? versions.map((v) => `第${v}版`).join("・") : "版の記録なし";
+}
+
+/** 翌月の調整の名前（60 文字まで） */
+export function settlementLabel(month: string): string {
+  return `${monthLabelJa(month)}分の精算（振込済みの額との差）`;
+}
+
+/** 翌月の調整の根拠（200 文字まで）：どの版の額を振り込み、どの版との差か */
+export function settlementBasis(month: string, row: Pick<PaidDiffRow, "paid" | "paidVersions" | "paidOn" | "statementTotal" | "statementVersion">): string {
+  const now = row.statementVersion === null ? "明細なし" : `明細 ${row.statementTotal.toLocaleString("ja-JP")}円（第${row.statementVersion}版）`;
+  return `${monthLabelJa(month)}分：${row.paidOn.join("・")} に振り込んだ額 ${row.paid.toLocaleString("ja-JP")}円（${versionsText(row.paidVersions)}）と、${now}の差`;
+}
+
+export type SettleInput = {
+  driverId: string;
+  method: SettlementMethod;
+  /** 画面で見た「まだ精算していない差」（開いたあとに変わっていたら止める） */
+  expectedOutstanding: number;
+  /** 別の方法で精算した日（outside のとき必須） */
+  settledOn?: string | null;
+  note?: string | null;
+};
+
+export type SettleResult = { amount: number; method: SettlementMethod; nextMonth: string | null; adjustmentId: string | null; driverName: string };
+
+/** 操作の記録に直接書く（精算の記録は、それ自体が「どう精算したか」の記録なので、書けなかったら操作ごと止める） */
+async function insertSettleLog(db: Db, entry: { tenantId: string; userId: string | null; action: string; entityId: string; detail: Record<string, unknown> }) {
+  const [row] = await db
+    .insert(s.auditLog)
+    .values({ tenantId: entry.tenantId, userId: entry.userId, action: entry.action, entity: "driver", entityId: entry.entityId, detail: entry.detail })
+    .returning({ id: s.auditLog.id });
+  return row.id;
+}
+
+/**
+ * 振り込んだ額と明細の額の差を精算したことを記録する。
+ * - next_month：翌月の明細に調整を 1 行足す（消費税・源泉の対象にしない。差は税・源泉を含めた振込額どうしの差のため）
+ * - outside：別の方法で精算した日とメモを残す（別に振り込んだ・返してもらった など）
+ * 同じ差を二重に精算しないよう、会社の行に鍵をかけ、画面で見た差と今の差が同じときだけ記録する。
+ */
+export async function settlePaidDifference(db: Db, tenantId: string, month: string, input: SettleInput, userId: string | null): Promise<SettleResult> {
+  assertMonth(month);
+  if (!isUuid(input.driverId)) throw new UserError("ドライバーが見つかりません。画面を読み直してください");
+  if (input.method !== "next_month" && input.method !== "outside") throw new UserError("精算の仕方を選んでください");
+  if (!Number.isInteger(input.expectedOutstanding)) throw new UserError("画面を読み直してください");
+  const settledOn = (input.settledOn ?? "").trim();
+  const note = (input.note ?? "").trim();
+  if (input.method === "outside") {
+    if (!isDateString(settledOn)) throw new UserError("精算した日を正しい日付で入れてください（例：2026-12-10）");
+    if (settledOn < month) throw new UserError("精算した日が、対象の月より前になっています。日付を確かめてください");
+    if (note.length > 200) throw new UserError("メモは 200 文字までにしてください");
+  }
+  return db.transaction(async (tx) => {
+    const t = tx as unknown as Db;
+    await lockTenant(t, tenantId);
+    const report = await loadPaidDifferences(t, tenantId, month);
+    const row = report.rows.find((r) => r.driverId === input.driverId);
+    if (!row || row.outstanding === 0) throw new UserError("この人には、まだ精算していない差はありません。画面を読み直してください");
+    if (row.outstanding !== input.expectedOutstanding) {
+      throw new UserError(
+        `画面を開いたあとに差が変わりました（いま ${row.outstanding < 0 ? "−" : ""}${Math.abs(row.outstanding).toLocaleString("ja-JP")}円）。画面を読み直して、もう一度確かめてください。`,
+      );
+    }
+    const amount = row.outstanding;
+    const base = {
+      month,
+      driverId: row.driverId,
+      driverName: row.driverName,
+      amount,
+      paid: row.paid,
+      paidVersions: row.paidVersions,
+      paidOn: row.paidOn,
+      statementId: row.statementId,
+      statementVersion: row.statementVersion,
+      statementTotal: row.statementTotal,
+      difference: row.difference,
+    };
+    if (input.method === "next_month") {
+      if (report.nextMonthClosed) {
+        throw new UserError(`${monthLabelJa(report.nextMonth)}は締めてあるため、調整を足せません。別の方法で精算したら、その日を記録してください。`);
+      }
+      const label = settlementLabel(month);
+      const basis = settlementBasis(month, row);
+      const { row: adj, driver } = await addAdjustment(t, tenantId, report.nextMonth, {
+        driverId: row.driverId,
+        label,
+        amount,
+        taxable: false,
+        // 払いすぎの分を差し引くときは、ご本人との合意の記録が要る（見張り番が合意の記録を確かめる）
+        agreedInWriting: false,
+        basis,
+      });
+      await audit(t, {
+        tenantId,
+        userId,
+        action: "adjustment.add",
+        entity: "adjustment",
+        entityId: adj.id,
+        detail: { month: report.nextMonth, driver: driver.name, driverId: driver.id, label, amount, taxable: false, agreedInWriting: false, basis, source: SETTLE_ACTION, settledMonth: month },
+      });
+      await insertSettleLog(t, { tenantId, userId, action: SETTLE_ACTION, entityId: row.driverId, detail: { ...base, method: "next_month", nextMonth: report.nextMonth, adjustmentId: adj.id } });
+      return { amount, method: "next_month" as const, nextMonth: report.nextMonth, adjustmentId: adj.id, driverName: row.driverName };
+    }
+    await insertSettleLog(t, { tenantId, userId, action: SETTLE_ACTION, entityId: row.driverId, detail: { ...base, method: "outside", settledOn, note: note || null } });
+    return { amount, method: "outside" as const, nextMonth: null, adjustmentId: null, driverName: row.driverName };
+  });
+}
+
+/**
+ * 「別の方法で精算した」記録を取り消す（記録は消さず、取り消したことを足す）。
+ * 翌月の調整で精算したものは、その調整を「稼働と調整」で消すと精算にならなくなる（ここでは取り消さない）。
+ */
+export async function undoSettlement(db: Db, tenantId: string, month: string, settleId: number, userId: string | null): Promise<void> {
+  assertMonth(month);
+  if (!Number.isInteger(settleId) || settleId <= 0) throw new UserError("精算の記録が見つかりません。画面を読み直してください");
+  await db.transaction(async (tx) => {
+    const t = tx as unknown as Db;
+    await lockTenant(t, tenantId);
+    const report = await loadPaidDifferences(t, tenantId, month);
+    const target = report.rows.flatMap((r) => r.settlements.map((x) => ({ row: r, x }))).find((p) => p.x.id === settleId);
+    if (!target) throw new UserError("精算の記録が見つかりません（すでに取り消したかもしれません）。画面を読み直してください");
+    if (target.x.method === "next_month") {
+      throw new UserError(`翌月の調整で精算した記録は、${monthLabelJa(target.x.nextMonth ?? report.nextMonth)}の「稼働と調整」でその調整を消すと、精算していない差に戻ります。`);
+    }
+    await insertSettleLog(t, {
+      tenantId,
+      userId,
+      action: SETTLE_UNDO_ACTION,
+      entityId: target.row.driverId,
+      detail: { month, settleId, driverId: target.row.driverId, driverName: target.row.driverName, amount: target.x.amount, settledOn: target.x.settledOn },
+    });
   });
 }

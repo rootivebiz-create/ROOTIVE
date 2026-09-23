@@ -15,6 +15,10 @@
  */
 import { groupDigits, jpDate } from "@/lib/format";
 import { daysBetween } from "@/lib/tools/invoice-cost";
+import { isJpHoliday, jpHolidayName, JP_HOLIDAYS_THROUGH } from "@/lib/tools/jp-holidays";
+
+/** 祝日の表がある最後の年（画面の説明に使う） */
+export { JP_HOLIDAYS_THROUGH };
 
 /** この道具がもとにしている制度の時点 */
 export const TORIHIKI_RULES_AS_OF = "2026年9月";
@@ -84,13 +88,26 @@ export function shortDate(date: string): string {
 }
 
 /**
- * 銀行が休みの日か。土日と年末年始（12月31日〜1月3日）だけを見る。祝日は入れていない（画面でそう書く）。
+ * 銀行が休みの日か。土日・国民の祝日と休日（振替休日を含む。表は jp-holidays.ts、JP_HOLIDAYS_THROUGH の年まで）・
+ * 年末年始（12月31日〜1月3日）を見る。表より先の年の祝日は見ない（画面でそう書く）。
  */
 export function isBankHoliday(date: string): boolean {
   const wd = weekday(date);
   if (wd === 0 || wd === 6) return true;
+  if (isJpHoliday(date)) return true;
   const { m, d } = parse(date);
   return (m === 12 && d === 31) || (m === 1 && d <= 3);
+}
+
+/** 銀行の休みの日の理由（土曜・日曜・祝日の名前・年末年始）。休みでなければ null */
+export function bankHolidayReason(date: string): string | null {
+  const wd = weekday(date);
+  if (wd === 6) return "土曜日";
+  if (wd === 0) return "日曜日";
+  const name = jpHolidayName(date);
+  if (name) return name;
+  const { m, d } = parse(date);
+  return (m === 12 && d === 31) || (m === 1 && d <= 3) ? "年末年始" : null;
 }
 
 /** 支払日が銀行の休みの日なら、前（または次）の営業日へずらす */

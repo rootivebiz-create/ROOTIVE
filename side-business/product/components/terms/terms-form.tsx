@@ -251,7 +251,7 @@ export function TermsForm({
         <div className="text-sm">
           <p className="font-bold">振込手数料</p>
           <p className={preview.feeByDriver ? "mt-1 font-bold text-danger" : "mt-1"}>
-            {preview.feeByDriver ? "ドライバーの負担（振込額から差し引く）設定になっています" : "会社が負担します"}
+            {preview.feeByDriver ? "ドライバーの負担にする設定になっています（しめ日ラボでは差し引きません）" : "会社が負担します"}
           </p>
         </div>
       </Section>

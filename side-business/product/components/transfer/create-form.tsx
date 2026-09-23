@@ -1,11 +1,12 @@
 "use client";
 
-import { useActionState, useState } from "react";
-import { Button, Field, Input, buttonClass } from "@/components/ui";
+import { useActionState, useRef, useState } from "react";
+import { Button, Input, buttonClass } from "@/components/ui";
 import { yenText } from "@/lib/format";
-import { adjustForBankHoliday, isBankHoliday, isDateString, shortDate } from "@/lib/tools/torihiki-joken";
+import { adjustForBankHoliday, isBankHoliday, isDateString, JP_HOLIDAYS_THROUGH, shortDate } from "@/lib/tools/torihiki-joken";
 import { createTransferAction, type CreateTransferState } from "~/app/(app)/transfer/actions";
 import { daysBetween, todayJst } from "~/components/close/format";
+import { F, fieldMessages, useFocusFirstError } from "~/components/form-field";
 
 type Props = {
   month: string;
@@ -40,6 +41,8 @@ export function CreateTransferForm({
   bankKeys = { all: "", remaining: "" },
 }: Props) {
   const [state, action, pending] = useActionState<CreateTransferState, FormData>(createTransferAction, undefined);
+  const formRef = useRef<HTMLFormElement>(null);
+  useFocusFirstError(state, formRef);
   const [date, setDate] = useState(defaultDate);
   const [scope, setScope] = useState<"all" | "remaining">(earlierBatches > 0 ? "remaining" : "all");
   const [confirmed, setConfirmed] = useState(false);
@@ -72,17 +75,17 @@ export function CreateTransferForm({
   const fe = state && !state.ok ? state.fieldErrors ?? {} : {};
 
   return (
-    <form action={action} className="space-y-4">
+    <form ref={formRef} action={action} className="space-y-4">
       <input type="hidden" name="month" value={month} />
-      <Field label="振込指定日（お金が相手に届く日）" hint={fe.transferDate}>
+      <F label="振込指定日（お金が相手に届く日）" error={fe.transferDate}>
         <Input type="date" name="transferDate" value={date} onChange={(e) => setDate(e.target.value)} required className="max-w-xs" />
-      </Field>
+      </F>
       <p className="text-sm text-muted-foreground">
         明細に書いた支払日は <strong className="text-foreground">{shortDate(promisedPayDate)}</strong> です。
         {defaultDate !== promisedPayDate
           ? `銀行の休みの日なので、前の営業日の ${shortDate(defaultDate)} にしています。前にずらせば、約束の日までに届きます。`
           : "この日を初期値にしています。"}
-        土日と年末年始は見ていますが、祝日は見ていません。祝日に当たるときは、前の営業日に直してください。
+        土日・祝日・年末年始を銀行の休みの日として見ています（祝日は{JP_HOLIDAYS_THROUGH}年の分まで）。
       </p>
       {notes.map((n) => (
         <p key={n.text} role="alert" className={`rounded-lg border p-3 text-sm ${n.tone === "red" ? "border-danger/40 bg-danger/10 text-danger" : "border-warning/40 bg-warning/10 text-warning"}`}>
@@ -146,7 +149,7 @@ export function CreateTransferForm({
 
       {state && !state.ok && (
         <p role="alert" className="whitespace-pre-line rounded-lg border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
-          {state.error}
+          {[state.error, ...fieldMessages(state).map((m) => `・${m}`)].join("\n")}
         </p>
       )}
       {state?.ok && state.data && (

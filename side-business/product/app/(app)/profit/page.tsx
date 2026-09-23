@@ -33,7 +33,7 @@ function SortLinks({ m, sort }: { m: string; sort: SortKey }) {
   );
 }
 
-/** 利益：どの案件・元請・ドライバーでもうかっているか・損をしているか。推移と、インボイスの経過措置の負担も */
+/** 利益：どの案件・元請・ドライバーでもうかっているか・損をしているか。推移と、免税の方への支払で会社がかぶる消費税（インボイスの経過措置）も */
 export default async function ProfitPage({ searchParams }: { searchParams: Promise<{ m?: string; sort?: string }> }) {
   const user = await requirePageUser("viewer");
   const sp = await searchParams;
@@ -100,7 +100,7 @@ export default async function ProfitPage({ searchParams }: { searchParams: Promi
                 <dd className="num">{en(t.deductions)}</dd>
               </div>
               <div className="flex justify-between gap-3 border-b border-border py-1">
-                <dt>− 経過措置の負担</dt>
+                <dt>− 会社がかぶる消費税（免税の方への支払）</dt>
                 <dd className="num">{en(-t.burden)}</dd>
               </div>
               <div className="flex justify-between gap-3 border-b-2 border-foreground py-1 font-bold">
@@ -126,7 +126,7 @@ export default async function ProfitPage({ searchParams }: { searchParams: Promi
       </section>
 
       {hasData && (
-        <section id="tables" aria-labelledby="tables-heading" className="scroll-mt-24 space-y-6">
+        <section id="tables" aria-labelledby="tables-heading" className="space-y-6">
           <div className="space-y-3">
             <h2 id="tables-heading" className="text-lg font-bold">
               どこでもうかっているか
@@ -150,20 +150,20 @@ export default async function ProfitPage({ searchParams }: { searchParams: Promi
             )}
           </div>
 
-          <div id="projects" className="scroll-mt-24 space-y-2">
+          <div id="projects" className="space-y-2">
             <h3 className="font-bold">案件ごと</h3>
             <ProjectTable rows={sortRows(current.projects, sort)} totals={t} />
           </div>
 
-          <div id="clients" className="scroll-mt-24 space-y-2">
+          <div id="clients" className="space-y-2">
             <h3 className="font-bold">元請ごと</h3>
             <ClientTable rows={sortRows(current.clients, sort)} totals={t} />
           </div>
 
-          <div id="drivers" className="scroll-mt-24 space-y-2">
+          <div id="drivers" className="space-y-2">
             <h3 className="font-bold">ドライバーごと</h3>
             <p className="text-sm text-muted-foreground">
-              会社の利益 ＝ 売上 − 委託料 ＋ 控除 − 経過措置の負担。どの案件を担当しているかで大きく変わります。
+              会社の利益 ＝ 売上 − 委託料 ＋ 控除 − 会社がかぶる消費税（免税の方への支払）。どの案件を担当しているかで大きく変わります。
             </p>
             <DriverTable rows={sortRows(current.drivers, sort)} totals={t} />
           </div>
@@ -180,7 +180,7 @@ export default async function ProfitPage({ searchParams }: { searchParams: Promi
         <Card className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
             <p className="font-bold">社長の1枚（PDF）</p>
-            <p className="text-sm text-muted-foreground">この月の利益・前月比・案件の上位と下位・経過措置の負担・見つけたお金（確定と見込み）・突合の差・見張り番・ドライバーの確認・振込を A4 の 1 枚にまとめます。</p>
+            <p className="text-sm text-muted-foreground">この月の利益・前月比・案件の上位と下位・会社がかぶる消費税（免税の方への支払）・見つけたお金（確定と見込み）・突合の差・見張り番・ドライバーの確認・振込を A4 の 1 枚にまとめます。</p>
           </div>
           <a href={`/api/profit/pdf?m=${m}`} className={buttonClass("secondary")}>
             PDF をダウンロード

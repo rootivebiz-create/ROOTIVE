@@ -93,6 +93,21 @@ describe("会計ソフトへの出力の画面", () => {
     expect(generic).toContain("仮払消費税等");
   });
 
+  it("締めの期間が経過措置の境目をまたぐ月（20日締めの 10 月）は、仕訳の税区分が期間の末日の割合だと書く", async () => {
+    state.user = asUser("staff", otherId);
+    const note = "仕訳の税区分は締めの期間の末日の割合です（会社の控え・利益の画面は日ごとに分けた目安）。";
+    expect(await renderPage({ m: "2026-10" })).not.toContain(note);
+    await state.db!.update(s.tenants).set({ closingDay: 20 }).where(eq(s.tenants.id, otherId));
+    try {
+      const html = await renderPage({ m: "2026-10" });
+      expect(html).toContain(note);
+      // 境目をまたがない月（20日締めの 11 月 ＝ 10/21〜11/20）には出さない
+      expect(await renderPage({ m: "2026-11" })).not.toContain(note);
+    } finally {
+      await state.db!.update(s.tenants).set({ closingDay: 0 }).where(eq(s.tenants.id, otherId));
+    }
+  });
+
   it("明細の無い月は、取り込みへの案内", async () => {
     state.user = asUser("staff");
     const html = await renderPage({ m: "2026-05" });

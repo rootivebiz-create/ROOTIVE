@@ -45,7 +45,9 @@ export async function loadExportLayout(db: Db, tenantId: string, month?: string)
     .limit(1);
   const r = rows[0];
   const m = r?.mapping;
-  if (!r || !m || !Array.isArray(r.head) || !Array.isArray(m.roles) || r.head.length <= m.headerRow) {
+  // 人が横に並ぶ表・1 人 1 枚の表・シートごとに別の人の表は、月の全員を同じ形では書き出せない（ふつうの 1 行 1 件の表にする）
+  const byPerson = Array.isArray(m?.roles) && (m.roles.includes("driverValue") || !!m.sheetDrivers || !!m.fixedDriverId);
+  if (!r || !m || !Array.isArray(r.head) || !Array.isArray(m.roles) || r.head.length <= m.headerRow || byPerson) {
     return { source: "plain", fileName: null, labels: [], roles: [], headerDepth: 1, fixedProjectId: null };
   }
   const head = r.head.map((row) => (Array.isArray(row) ? row.map((c) => String(c ?? "")) : []));

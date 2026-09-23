@@ -467,6 +467,9 @@ describe("経過措置の境目（transitional_span）と次の段（transitiona
     expect(i.impact).toEqual({ yen: 1500, label: "期間の初日の割合で数えた場合との差（多くて）" });
     expect(i.detail).toContain("2026年9月21日〜2026年10月20日");
     expect(i.detail).toContain("途中の2026年10月1日で");
+    // 日ごとに分けるのが正しいとは言わない（期間全体を末日の割合で数える考え方もある。どちらかは税理士と決める）
+    expect(i.detail).toContain("日ごとに分けて数えるか、期間全体を末日の割合で数えるかは、税理士と決めてください。");
+    expect(i.detail).not.toContain("日ごとの割合で分けて数えます");
   });
 
   it("日付がある・末締め（またがない）・登録のある方 → 出ない", () => {

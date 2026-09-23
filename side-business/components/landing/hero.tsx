@@ -11,7 +11,7 @@ import { ArrowIcon, CheckIcon, ctaClass, NewTabNote } from "./section";
 function points() {
   const maker = makerCopy();
   return [
-    { title: "今の Excel のまま", body: "形を変えずに置くだけ。ファイルの形と名前の表記ゆれを覚えます" },
+    { title: "今の Excel のまま", body: "形を変えずに置くだけ。ファイルの形と名前の表記ゆれを覚えます（読めるかは、お試しで実物のファイルで先に確かめます）" },
     { title: "1 円まで確かめてから", body: "今の Excel の振込額と 1 人ずつ比べ、合うか差の理由が分かってから本番へ" },
     { title: "データは御社のもの", body: "御社の Vercel と Postgres に置きます。全データをいつでも書き出せます" },
     { title: maker.pointTitle, body: maker.pointBody },
@@ -30,7 +30,7 @@ export function ProductDemoButton({
 }) {
   if (!url) return null;
   return (
-    <a href={url} target="_blank" rel="noopener" className={ctaClass("primary", className)}>
+    <a href={url} target="_blank" rel="noopener nofollow" className={ctaClass("primary", className)}>
       {label}
       <NewTabNote />
     </a>

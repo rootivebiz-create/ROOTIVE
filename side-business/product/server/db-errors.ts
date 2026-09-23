@@ -21,7 +21,7 @@ export function isMonthClosedError(error: unknown): boolean {
 /** 画面に出す日本語（DB の中身をそのまま見せない） */
 export function friendlyDbError(error: unknown): string {
   const msg = pgErrorMessage(error);
-  if (msg.includes("MONTH_CLOSED")) return "この月は締め済みです。直すときは、先に締めを解除してください。";
+  if (msg.includes("MONTH_CLOSED")) return "この月は締め済みです。直すときは、オーナーが「締め」の画面で締めを外してください。";
   if (msg.includes("AUDIT_APPEND_ONLY")) return "操作の記録は変更できません。";
   if (/duplicate key|unique/i.test(msg)) return "同じものがすでに登録されています。";
   if (/violates foreign key/i.test(msg)) return "ほかのデータから使われているため、変更できません。";

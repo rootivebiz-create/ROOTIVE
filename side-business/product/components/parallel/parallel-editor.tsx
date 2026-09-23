@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useActionState, useState, useTransition, type FormEvent } from "react";
+import { startTransition, useActionState, useEffect, useState, useTransition, type FormEvent } from "react";
 import { Button, Input, Money, NumberInput, Select } from "@/components/ui";
 import { parseAmount } from "@/lib/payroll/money";
 import {
@@ -13,6 +13,7 @@ import {
 } from "~/app/(app)/parallel/actions";
 import { Badge } from "~/components/page";
 import { Breakdown, Explanations, signedYen } from "~/components/parallel/diff-detail";
+import { draftKey, draftText, parseDraft, readDraftStorage, useUnsavedGuard, writeDraftStorage, type DraftValue } from "~/components/parallel/unsaved";
 import { explainDiff, type DiffParts } from "~/server/features/parallel/explain";
 
 export type EditorRow = {
@@ -50,6 +51,8 @@ function colLabel(i: number, header: string): string {
 /**
  * Excel の振込額を入れる：1 人ずつ打つ・「名前と金額」の 2 列を貼り付ける・ファイルを置く。
  * 入れるとすぐに差と理由の見当が出る。「保存する」までは保存しない。
+ * 保存していない入力があるあいだは、ほかの画面へ移る前に確かめる。入力はこのタブに下書きとして残し、戻ってきたら入れ直す。
+ * 月ごとに別の下書き（画面は key={month} で月ごとに作り直す）。
  */
 export function ParallelEditor({ month, rows, otherDrivers }: { month: string; rows: EditorRow[]; otherDrivers: { id: string; name: string; code: string | null }[] }) {
   // 保存すると一覧が読み直されるので、そのときは入力を今の保存内容に戻す
@@ -58,11 +61,16 @@ export function ParallelEditor({ month, rows, otherDrivers }: { month: string; r
   const [values, setValues] = useState<Record<string, Value>>(() => initialValues(rows));
   const [extra, setExtra] = useState<EditorRow[]>([]);
   const [askClear, setAskClear] = useState(false);
+  /** 下書きから入れ直した人数（0 なら知らせを出さない） */
+  const [restored, setRestored] = useState(0);
+  /** 下書きを読み終えたか（読む前に「変えたところなし」で下書きを消さないため） */
+  const [hydrated, setHydrated] = useState(false);
   if (seen !== signature) {
     setSeen(signature);
     setValues(initialValues(rows));
     setExtra([]);
     setAskClear(false);
+    setRestored(0);
   }
 
   const [saveState, saveAction, saving] = useActionState<SaveParallelState, FormData>(saveParallelAction, undefined);
@@ -85,6 +93,47 @@ export function ParallelEditor({ month, rows, otherDrivers }: { month: string; r
     return v.excel.trim() !== i.excel.trim() || v.note.trim() !== i.note.trim();
   });
   const invalid = dirty.filter((r) => amountOf(valueOf(r.driverId).excel) === undefined);
+
+  // 保存していない入力があるあいだは、移る前に確かめる
+  useUnsavedGuard(dirty.length > 0);
+
+  // 開いたとき：このタブに残した下書きがあり、保存内容がそのときと同じなら入れ直す（ブラウザの中だけ。サーバーには送らない）
+  useEffect(() => {
+    const draft = parseDraft(readDraftStorage(draftKey(month)), signature);
+    if (draft) {
+      const known = new Set([...rows.map((r) => r.driverId), ...otherDrivers.map((d) => d.id)]);
+      const values = Object.fromEntries(Object.entries(draft.values).filter(([id]) => known.has(id)));
+      const listed = new Set(rows.map((r) => r.driverId));
+      const add = draft.extra
+        .filter((x) => !listed.has(x.driverId) && otherDrivers.some((d) => d.id === x.driverId))
+        .map((x): EditorRow => ({ driverId: x.driverId, name: x.name, code: x.code, ours: null, source: null, stale: false, draftTotal: null, excelTotal: null, note: null, parts: null }));
+      if (Object.keys(values).length > 0) {
+        setValues((prev) => ({ ...prev, ...values }));
+        if (add.length) setExtra(add);
+        setRestored(Object.keys(values).length);
+      }
+    }
+    setHydrated(true);
+    // 開いたときに 1 回だけ（月が変われば画面ごと作り直す）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 入力のたびに下書きを残す（変えたところが無くなれば消す）
+  const draft = draftText(
+    signature,
+    Object.fromEntries(dirty.map((r): [string, DraftValue] => [r.driverId, valueOf(r.driverId)])),
+    extra.filter((r) => dirty.includes(r)).map((r) => ({ driverId: r.driverId, name: r.name, code: r.code })),
+  );
+  useEffect(() => {
+    if (hydrated) writeDraftStorage(draftKey(month), draft);
+  }, [hydrated, month, draft]);
+
+  const discardDraft = () => {
+    setValues(initialValues(rows));
+    setExtra([]);
+    setRestored(0);
+    writeDraftStorage(draftKey(month), null);
+  };
 
   const set = (id: string, patch: Partial<Value>) => setValues((prev) => ({ ...prev, [id]: { ...valueOf(id), ...prev[id], ...patch } }));
 
@@ -130,6 +179,14 @@ export function ParallelEditor({ month, rows, otherDrivers }: { month: string; r
 
   return (
     <div className="space-y-6">
+      {restored > 0 && dirty.length > 0 && (
+        <div role="status" className="flex flex-col gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm sm:flex-row sm:items-center">
+          <p className="min-w-0 flex-1">前にこの画面で入れて、保存していなかった額（{restored}人ぶん）を戻しました。まだ保存していません。</p>
+          <Button variant="ghost" onClick={discardDraft}>
+            戻した入力を捨てる
+          </Button>
+        </div>
+      )}
       <section aria-labelledby="import-heading" className="rounded-card border border-border bg-card p-4">
         <h2 id="import-heading" className="font-bold">
           Excel から貼り付ける・ファイルを置く
@@ -233,7 +290,7 @@ export function ParallelEditor({ month, rows, otherDrivers }: { month: string; r
             const explanations = diff === null ? [] : explainDiff(r.parts, diff);
             const changed = dirty.includes(r);
             return (
-              <li key={r.driverId} id={`row-${r.driverId}`} className={`scroll-mt-24 rounded-card border bg-card p-3 ${diff !== null && diff !== 0 ? "border-warning/60" : "border-border"}`}>
+              <li key={r.driverId} id={`row-${r.driverId}`} className={`rounded-card border bg-card p-3 ${diff !== null && diff !== 0 ? "border-warning/60" : "border-border"}`}>
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="min-w-0 flex-1 font-bold">
                     {r.name}

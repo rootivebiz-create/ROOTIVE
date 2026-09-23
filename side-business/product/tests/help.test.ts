@@ -49,14 +49,14 @@ afterEach(() => {
 });
 
 describe("ヘルプの中身", () => {
-  it("月末の流れは 6 つ。取り込み → 見張り番 → 明細 → 振込 → 締め → 突合・利益・会計の順", () => {
+  it("月末の流れは 6 つ。取り込み → 見張り番 → 明細 → 締め → 振込 → 突合・利益・会計の順（ホームの段と同じ）", () => {
     expect(MONTH_END_STEPS).toHaveLength(6);
-    expect(MONTH_END_STEPS.map((s) => s.links[0].href)).toEqual(["/import", "/watch", "/statements", "/transfer", "/close", "/reconcile"]);
+    expect(MONTH_END_STEPS.map((s) => s.links[0].href)).toEqual(["/import", "/watch", "/statements", "/close", "/transfer", "/reconcile"]);
   });
 
   it("よくある質問に、事務の困りごと 6 つがそろっている", () => {
     const qs = FAQS.map((f) => f.q).join("\n");
-    for (const topic of ["名前が合わない", "明細を直したい", "締めを外したい", "振込データを銀行に取り込む", "ドライバーが明細を開けない", "会計ソフトに取り込みたい"]) {
+    for (const topic of ["名前が合わない", "明細を直したい", "締めを外したい", "振り込んだあとに間違いが分かったら", "振込データを銀行に取り込む", "ドライバーが明細を開けない", "会計ソフトに取り込みたい"]) {
       expect(qs).toContain(topic);
     }
   });
@@ -76,6 +76,9 @@ describe("ヘルプの中身", () => {
       ["リンクを作り直す", "components/statements/link-panel.tsx"],
       ["締めを外す", "components/close/close-forms.tsx"],
       ["実際に振り込んだ日", "app/(app)/transfer/page.tsx"],
+      ["振り込んだ額と明細の額の差", "app/(app)/transfer/page.tsx"],
+      ["別の方法で精算したと記録する", "components/transfer/paid-diff.tsx"],
+      ["まだ振込データに入っていない人だけ", "components/transfer/create-form.tsx"],
       ["招待のリンクを作る", "components/settings/user-forms.tsx"],
     ];
     for (const [label, file] of labels) {

@@ -181,7 +181,7 @@ export default async function ImportPage({ searchParams }: { searchParams: Promi
             Excel（.xlsx）と CSV が読めます。1 行が 1 件の表（ドライバー・案件・数量）でも、人ごとに案件や日付が横に並ぶ表でも、そのまま読めます。
             何月分かは、ファイルの日付や表題から読み取ります（読み取れなければ {monthLabelJa(month)}分）。
           </p>
-          <UploadForm action={uploadAction} month={monthParam(month)} showSamples={process.env.DEMO_MODE === "1"} />
+          <UploadForm action={uploadAction} month={monthParam(month)} showSamples={process.env.DEMO_MODE === "1"} demo={process.env.DEMO_MODE === "1"} />
         </Card>
       ) : (
         <Notice tone="info">閲覧の役割では、取り込みの履歴だけ見られます。ファイルを置くのは事務・オーナーの役割です。</Notice>

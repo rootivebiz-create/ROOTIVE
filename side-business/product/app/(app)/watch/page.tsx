@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Card, buttonClass } from "@/components/ui";
 import { jpDate, jpMonth } from "@/lib/format";
 import { EmptyState, Notice, PageHeader } from "~/components/page";
+import { BulkAckForm } from "~/components/watch/ack-forms";
 import { IssueCard, SEVERITY_LABEL } from "~/components/watch/issue-card";
 import { getDb } from "~/db/client";
 import { requirePageUser, roleAtLeast } from "~/server/auth";
@@ -9,7 +10,7 @@ import { ackKey, watchMonth, type WatchMonth } from "~/server/features/watch";
 import { ackAllowed, ackNoteMin, changedSinceAck, monthAckDetails, previousAcks, type AckDetail, type PreviousAck } from "~/server/features/watch/acks";
 import { RULES } from "~/server/features/watch/rules";
 import { SOURCES, WATCH_RULES_AS_OF } from "~/server/features/watch/sources";
-import { countIssues, groupBySeverity } from "~/server/features/watch/summary";
+import { bulkAckGroups, countIssues, groupBySeverity } from "~/server/features/watch/summary";
 import type { WatchSeverity } from "~/server/features/watch-types";
 import { monthFromParam, monthLabelJa, monthParam } from "~/server/month";
 
@@ -111,6 +112,20 @@ export default async function WatchPage({ searchParams }: { searchParams: Promis
                   {sev !== "red" && groups[sev].some((i) => i.acked || previous.has(ackKey(i.code, i.subjectId))) && "確認済みのもの（前の月に確認済みにしたものを含む）は、灰色の 1 行にたたんでいます。"}
                 </p>
               </div>
+              {canEdit &&
+                bulkAckGroups(groups[sev])
+                  .filter((g) => ackAllowed(g.code, closed))
+                  .map((g) => (
+                    <BulkAckForm
+                      key={`${g.code}:${g.title}`}
+                      month={month}
+                      code={g.code}
+                      title={g.title}
+                      subjects={g.issues.map((i) => ({ id: i.subjectId, label: i.subjectLabel }))}
+                      minLength={ackNoteMin(g.severity)}
+                      red={g.severity === "red"}
+                    />
+                  ))}
               <ul className="space-y-3">
                 {groups[sev].map((i) => {
                   const key = ackKey(i.code, i.subjectId);

@@ -17,13 +17,16 @@ import {
   jpDateTime,
   linkExpiresAt,
   maskAccount,
+  replyShareMessage,
+  replyShareSubject,
+  shareLinks,
   toDriverView,
   type DriverStatementView,
   type MaskedAccount,
 } from "~/server/features/statements/view";
 import { getTenant } from "~/server/repo";
 import { readSnapshot } from "~/server/statements-core";
-import { signStatementLink } from "~/server/tokens";
+import { ipMarker, signStatementLink } from "~/server/tokens";
 
 /**
  * 支払明細（会社の側）：一覧・中身・送った記録・リンクの作り直し・質問への返事と解決・確認の記録。
@@ -379,7 +382,7 @@ export async function getStatementDetail(db: Db, tenantId: string, id: string, n
         version: c.version,
         hashShort: c.hash.slice(0, 12),
         total: c.totalAtConfirm,
-        ipShort: c.ipHash ? c.ipHash.slice(0, 8) : null,
+        ipShort: c.ipHash ? ipMarker(c.ipHash) : null,
         device: deviceHint(c.userAgent),
         current: c.version === st.version,
       }))
@@ -404,6 +407,60 @@ export async function getStatementDetail(db: Db, tenantId: string, id: string, n
 export function staffLinkToken(st: Pick<StatementRow, "id" | "linkNonce">, now = new Date()): { token: string; expiresAt: number } {
   const expiresAt = linkExpiresAt(now);
   return { token: signStatementLink(st.id, st.linkNonce, expiresAt), expiresAt };
+}
+
+/** 会社の画面で使う、ドライバー用のリンクの URL（origin は https://… の頭の部分） */
+export function staffLinkUrl(origin: string, st: Pick<StatementRow, "id" | "linkNonce">, now = new Date()): string {
+  return `${origin}/s/${staffLinkToken(st, now).token}`;
+}
+
+export type SendListItem = { id: string; name: string; code: string | null; url: string };
+
+/**
+ * 送る一覧（名前とリンク）。渡した id のうち、この会社・この月の明細だけ。並びは渡した順（一覧の並び）。
+ * 1 人ずつ、その人とのトークに貼るためのもの（会社の画面でだけ作る）
+ */
+export async function sendListFor(db: Db, tenantId: string, month: string, ids: string[], origin: string, now = new Date()): Promise<SendListItem[]> {
+  const valid = ids.filter(isUuid);
+  if (valid.length === 0) return [];
+  const rows = await db
+    .select()
+    .from(s.statements)
+    .where(and(eq(s.statements.tenantId, tenantId), eq(s.statements.month, month), inArray(s.statements.id, valid)));
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  return valid
+    .map((id) => byId.get(id))
+    .filter((r): r is StatementRow => !!r)
+    .map((r) => {
+      const d = readSnapshot(r);
+      return { id: r.id, name: d.driver.name, code: d.driver.code, url: staffLinkUrl(origin, r, now) };
+    });
+}
+
+export type ReplyShare = { url: string; message: string; links: { line: string; sms: string; mail: string }; hasPhone: boolean; hasEmail: boolean };
+
+/**
+ * 返事を書いたことをドライバーに知らせる文面とリンク（返事はドライバーに自動では届かない）。会社で絞る。
+ * リンクは明細のリンクと同じ（新しく作り直さない）
+ */
+export async function replyShareFor(db: Db, tenantId: string, id: string, origin: string, now = new Date()): Promise<ReplyShare | null> {
+  const st = await getStatementRow(db, tenantId, id);
+  if (!st) return null;
+  const [driver] = await db
+    .select({ phone: s.drivers.phone, email: s.drivers.email })
+    .from(s.drivers)
+    .where(and(eq(s.drivers.tenantId, tenantId), eq(s.drivers.id, st.driverId)))
+    .limit(1);
+  const d = readSnapshot(st);
+  const url = staffLinkUrl(origin, st, now);
+  const message = replyShareMessage(d.driver.name, st.month, url);
+  return {
+    url,
+    message,
+    links: shareLinks({ message, subject: replyShareSubject(st.month, d.company.name), phone: driver?.phone ?? null, email: driver?.email ?? null }),
+    hasPhone: !!driver?.phone,
+    hasEmail: !!driver?.email,
+  };
 }
 
 /**
@@ -614,7 +671,7 @@ export const CONFIRMATION_CSV_HEADER = [
   "確認した版",
   "確認したハッシュ",
   "確認時の振込額",
-  "IPのハッシュ（先頭8文字）",
+  "接続元の目印（IPから作った8文字）",
   "端末",
 ];
 
@@ -636,7 +693,7 @@ export async function confirmationRecordRows(db: Db, tenantId: string, month: st
     const mine = confs.filter((c) => c.statementId === st.id);
     if (mine.length === 0) out.push([...base, "", "", "", "", "", ""]);
     for (const c of mine) {
-      out.push([...base, jpDateTime(c.createdAt), c.version, c.hash, c.totalAtConfirm, c.ipHash ? c.ipHash.slice(0, 8) : "", deviceHint(c.userAgent) ?? ""]);
+      out.push([...base, jpDateTime(c.createdAt), c.version, c.hash, c.totalAtConfirm, c.ipHash ? ipMarker(c.ipHash) : "", deviceHint(c.userAgent) ?? ""]);
     }
   }
   return out;

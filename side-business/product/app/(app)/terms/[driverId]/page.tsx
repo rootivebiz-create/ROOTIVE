@@ -9,7 +9,7 @@ import { TermsDocumentView } from "~/components/terms/terms-document-view";
 import { TermsForm } from "~/components/terms/terms-form";
 import { getDb } from "~/db/client";
 import { requirePageUser, roleAtLeast } from "~/server/auth";
-import { loadTermsDriver, type TermsVersionView } from "~/server/features/terms";
+import { listTerms, loadTermsDriver, type TermsListRow, type TermsVersionView } from "~/server/features/terms";
 import { deductionText, TERMS_SOURCES } from "~/server/features/terms/document";
 import { jpDateTimeJst, termsLinkToken, termsShareMessage, termsShareSubject, todayJst } from "~/server/features/terms/links";
 import { termsOrigin } from "~/server/features/terms/request";
@@ -29,6 +29,13 @@ export default async function TermsDriverPage({ params }: { params: Promise<{ dr
   const d = detail.driver;
   const latest = detail.latest;
   const today = todayJst();
+  // 次に送る人（明示書が無い・まだ送っていない・明示のあとで条件が変わった人）。一覧の並びで、この人の次から順に
+  const nextToSend = canEdit ? nextTermsToSend((await listTerms(db, user.tenantId)).rows, d.id) : null;
+  const nextLink = nextToSend ? (
+    <Link href={`/terms/${nextToSend.driverId}`} className={buttonClass("secondary", "w-full")}>
+      次に送る人へ（{nextToSend.name}・{nextToSend.status === "none" ? "未作成" : nextToSend.status === "unsent" ? "未送付" : "条件が変わった"}）→
+    </Link>
+  ) : null;
 
   let link: { url: string; message: string; links: ReturnType<typeof shareLinks>; expiresText: string } | null = null;
   if (canEdit && latest) {
@@ -117,7 +124,7 @@ export default async function TermsDriverPage({ params }: { params: Promise<{ dr
       )}
       {detail.warnings.feeByDriver && (
         <p role="alert" className="rounded-lg border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
-          振込手数料をドライバーが負担する設定です。報酬から振込手数料を差し引く扱いは、報酬の減額にあたるおそれがあります（フリーランス法 第5条・中小受託取引適正化法）。
+          振込手数料をドライバーが負担する設定です。報酬から振込手数料を差し引く扱いは、報酬の減額にあたるおそれがあります（フリーランス法 第5条・取適法（中小受託取引適正化法））。
           <Link href="/settings/company" className="mx-1">
             設定 → 会社
           </Link>
@@ -127,7 +134,7 @@ export default async function TermsDriverPage({ params }: { params: Promise<{ dr
           </a>
           ・
           <a href={TERMS_SOURCES.toritekiLeaflet} target="_blank" rel="noopener noreferrer" className="ml-1">
-            中小受託取引適正化法のリーフレット
+            取適法のリーフレット
           </a>
         </p>
       )}
@@ -200,13 +207,15 @@ export default async function TermsDriverPage({ params }: { params: Promise<{ dr
                   <p className="text-sm text-muted-foreground">ドライバー用のリンクは、見るだけの役割では出しません。送るのは事務・オーナーの方です。</p>
                 )}
               </div>
+              {/* 送ったら、そのまま次の人へ（スマホでは一番下まで行かなくてよいように、送るボタンの下に置く） */}
+              {nextLink && <div className="mt-3">{nextLink}</div>}
             </Card>
           </div>
         </div>
       )}
 
       {form && (
-        <section id="new" className="scroll-mt-4 space-y-3">
+        <section id="new" className="space-y-3">
           <h2 className="text-lg font-bold">{latest ? "新しい版を作る" : "明示書を作る（版 1）"}</h2>
           <p className="text-sm text-muted-foreground">
             単価・控除・支払日は台帳から入ります。書き換えるのは、仕事の中身・場所・期間などの文と、条項の有無だけです。保存したら、上の「ドライバーへ送る」から送ってください。
@@ -216,6 +225,7 @@ export default async function TermsDriverPage({ params }: { params: Promise<{ dr
       )}
 
       {!canEdit && !latest && <p className="text-sm text-muted-foreground">明示書を作るのは、事務・オーナーの方です。</p>}
+      {!latest && nextLink && <nav aria-label="次に送る人">{nextLink}</nav>}
 
       {detail.versions.length > 0 && (
         <section className="space-y-3">
@@ -248,6 +258,13 @@ export default async function TermsDriverPage({ params }: { params: Promise<{ dr
       </footer>
     </div>
   );
+}
+
+/** 次に送る人：一覧の並びで、この人の次から順に見て、明示書が無い・まだ送っていない・条件が変わった人（いなければ null） */
+function nextTermsToSend(rows: TermsListRow[], currentDriverId: string): TermsListRow | null {
+  const i = rows.findIndex((r) => r.driverId === currentDriverId);
+  const rotated = i >= 0 ? [...rows.slice(i + 1), ...rows.slice(0, i)] : rows;
+  return rotated.find((r) => r.status === "none" || r.status === "unsent" || r.changes.length > 0) ?? null;
 }
 
 function VersionItem({ v }: { v: TermsVersionView }) {

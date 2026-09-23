@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { listArticles, getArticle, parseFrontmatter, renderMarkdown } from "@/lib/content";
 
@@ -46,5 +48,37 @@ describe("リンクの属性", () => {
     expect(html).toContain('href="https://example.com/?q=1&amp;r=2"');
     expect(html).toContain('title="say &quot;hi&quot;"');
     expect(html).toContain('rel="noopener noreferrer"');
+  });
+});
+
+describe("記事の「しめ日ラボでできること」は、製品にあることだけを書く", () => {
+  const dir = path.join(process.cwd(), "content", "articles");
+  /** 記事ごとの「## しめ日ラボでできること」の節（次の h2 まで） */
+  const sections = fs
+    .readdirSync(dir)
+    .filter((f) => f.endsWith(".md"))
+    .map((f) => {
+      const body = fs.readFileSync(path.join(dir, f), "utf8");
+      const m = body.match(/^## しめ日ラボでできること\n([\s\S]*?)(?=^## |(?![\s\S]))/m);
+      return { file: f, text: m?.[1] ?? "" };
+    });
+
+  it("すべての記事にこの節がある", () => {
+    expect(sections.length).toBeGreaterThan(0);
+    for (const s of sections) expect(s.text.trim().length, s.file).toBeGreaterThan(50);
+  });
+
+  it("締め日と支払日は会社で 1 つ（ドライバーごとに持つとは書かない）", () => {
+    for (const s of sections) expect(s.text, s.file).not.toMatch(/ドライバーごとの(締め日|支払日)/);
+  });
+
+  it("台帳に登録日は無い（持つのは登録番号と、公表サイトで確かめた日）", () => {
+    for (const s of sections) expect(s.text, s.file).not.toMatch(/登録日/);
+  });
+
+  it("明細の表題は製品と同じ「支払明細書（仕入明細書）」", () => {
+    for (const s of sections) {
+      for (const title of s.text.match(/支払明細書（[^）]*）/g) ?? []) expect(title, s.file).toBe("支払明細書（仕入明細書）");
+    }
   });
 });
