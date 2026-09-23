@@ -18,5 +18,5 @@
     "paths": { "@/*": ["./*"] }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules", "tests/e2e/supabase-lite/**", "playwright-report", "test-results"]
+  "exclude": ["node_modules", "side-business/**", "tests/e2e/supabase-lite/**", "playwright-report", "test-results"]
 }
