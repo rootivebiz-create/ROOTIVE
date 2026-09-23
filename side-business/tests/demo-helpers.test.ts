@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { jpDate, jpMonth } from "@/lib/format";
 import { buildStatements } from "@/lib/payroll/calc";
 import { sampleData } from "@/lib/payroll/sample";
 import { buildZenginRecords, validateTransfers, zenginBytes } from "@/lib/payroll/zengin";
@@ -6,8 +7,6 @@ import {
   isDate,
   isMonth,
   isRegistrationNo,
-  jpDate,
-  jpMonth,
   normalizeMonth,
   parseNonNegative,
   parseYen,

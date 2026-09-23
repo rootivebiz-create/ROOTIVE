@@ -3,26 +3,14 @@
  * 数字はここに書かない（見本の入力から毎回計算する）。サーバーで描くだけで、状態は持たない。
  */
 import { Card, Money } from "@/components/ui";
+import { cx } from "@/lib/cx";
 import { calcModel } from "@/lib/engine/payModels";
 import { getPreset, withServiceDate, type PresetSample } from "@/lib/engine/presets";
 import { buildPayout, type PayoutResult } from "@/lib/engine/statement";
+import { jpDate, monthLabel } from "@/lib/format";
 import { pct } from "@/lib/payroll/money";
 
-const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
-
 const TRUCKING = getPreset("trucking");
-
-/** 2026-10-31 → 2026年10月分 */
-function monthLabel(date: string): string {
-  const [y, m] = date.split("-").map(Number);
-  return `${y}年${m}月分`;
-}
-
-/** 2026-11-30 → 2026年11月30日 */
-function jpDate(date: string): string {
-  const [y, m, d] = date.split("-").map(Number);
-  return `${y}年${m}月${d}日`;
-}
 
 type Computed = {
   sample: PresetSample;

@@ -5,7 +5,7 @@ published: 2026-09-23
 updated: 2026-09-23
 category: フリーランス法
 order: 4
-sources: https://laws.e-gov.go.jp/law/505AC0000000025 https://www.jftc.go.jp/file/fl_jftcmhlwguidelines.pdf https://www.chusho.meti.go.jp/keiei/torihiki/download/freelance/law_qa.pdf https://www.jftc.go.jp/fllaw_limited/fllaw_qa.html https://www.chusho.meti.go.jp/keiei/torihiki/download/freelance/law_02.pdf https://www.jftc.go.jp/file/flpamph.pdf https://j-net21.smrj.go.jp/law/20240906.html https://www.jftc.go.jp/FL/FLkankoku/index.html
+sources: https://laws.e-gov.go.jp/law/505AC0000000025 https://www.jftc.go.jp/file/fl_jftcmhlwguidelines.pdf https://www.jftc.go.jp/fllaw_limited/fllaw_qa.html https://www.chusho.meti.go.jp/keiei/torihiki/download/freelance/law_02.pdf https://www.jftc.go.jp/file/flpamph.pdf https://j-net21.smrj.go.jp/law/20240906.html https://www.jftc.go.jp/FL/FLkankoku/index.html https://x.com/jftc/status/1998227675962601689 https://www.jftc.go.jp/file/toriteki_leaflet.pdf
 ---
 
 > **この記事のまとめ**
@@ -128,7 +128,7 @@ sources: https://laws.e-gov.go.jp/law/505AC0000000025 https://www.jftc.go.jp/fil
 
 - **あとから増やさない**：従業員がいる会社などが1か月以上続く仕事を頼む場合、ドライバーに責任がないのに、決めた報酬を後から減らすことは禁止されています（第5条）。話し合わずに差し引くものを足したり、金額を上げたりすると、これにあたるおそれがあります。
 - **無理に使わせない**：正当な理由がないのに、会社が指定する車のリースや保険などを使うよう強いることも、同じく禁止されています。
-- **振込手数料は差し引かない**：中小企業庁・公正取引委員会のQ&A（2026年1月1日時点）は、合意があってもなくても、振込手数料をドライバーに負担させて報酬から差し引くことは「報酬の減額」として問題になると示しています。
+- **振込手数料は差し引かない**：振込手数料は、会社（支払う側）の負担にしておくのが安全です。取適法（旧下請法）の運用では、合意があっても代金から差し引くと「減額」とされえます。フリーランス法でも、公正取引委員会は、2026年1月1日以後に発注する取引から考え方が変わり、合意があっても報酬から差し引くと「報酬の減額」などにあたりうると案内しています。
 - **罰金や弁償**：誤配や遅れの罰金、事故の弁償などを報酬から差し引く取り決めは、判断が難しいところです。明示書に書く前に、弁護士に確かめてください。
 
 ## 支払期日の書き方

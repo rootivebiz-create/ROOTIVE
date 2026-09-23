@@ -3,8 +3,6 @@ import Link from "next/link";
 import {
   SCHOOL,
   SchoolExample,
-  jpDate,
-  manYen,
   schoolBurdenCompare,
   schoolLateExample,
   schoolOffsetExample,
@@ -22,6 +20,7 @@ import {
   calcWithholding,
   withholdingRateFor,
 } from "@/lib/engine/withholding";
+import { jpDate, jpMonth, manYen } from "@/lib/format";
 import { pct } from "@/lib/payroll/money";
 import { TRANSITIONAL_SOURCE, TRANSITIONAL_STEPS } from "@/lib/payroll/tax";
 import { SITE } from "@/site.config";
@@ -36,11 +35,6 @@ const AS_OF = "2026年9月";
 const PAYOUT_TOOL = "/tools/payout?preset=school";
 
 const monthOf = (d: string) => `${Number(d.split("-")[1])}月`;
-
-const ymOf = (d: string) => {
-  const [y, m] = d.split("-").map(Number);
-  return `${y}年${m}月`;
-};
 
 /* ───────────── 率は表（lib/engine/withholding・lib/payroll/tax）から引く。本文に直書きしない ───────────── */
 
@@ -158,7 +152,7 @@ const ADJUSTMENTS = [
   "教室・スタジオ・楽器の使用料の相殺：契約で決めて明示・合意しておくもの。源泉は相殺の前の額にかけます",
   "教材などの立替の精算：事前に合意したものだけ",
   "欠講・振替の精算：契約で決めた算定方法で",
-  "振込手数料：支払う側が負担します。公正取引委員会は、合意の有無にかかわらず、振込手数料を報酬から差し引くことは報酬の減額などとして違反になると案内しています",
+  "振込手数料：支払う側の負担が安全です。取適法（旧下請法）の運用では、合意があっても報酬から差し引くと減額とされえます。フリーランス法でも、公正取引委員会は、2026年1月1日以後に発注する取引から考え方が変わり、合意があっても差し引くと報酬の減額などにあたりうると案内しています",
 ];
 
 export const metadata: Metadata = {
@@ -202,7 +196,7 @@ export default function SchoolPage() {
           {CURRENT_STEP && PREVIOUS_STEP
             ? `${jpDate(CURRENT_STEP.from)}から、免税の講師への支払で控除できる割合は${pct(PREVIOUS_STEP.rate)}から${pct(CURRENT_STEP.rate)}になります（負担が出るのは原則課税の教室）。`
             : "免税の講師への支払で控除できる割合は、経過措置で段階的に下がります（負担が出るのは原則課税の教室）。"}
-          フリーランス法では、頼んだらすぐに条件を示し、従業員がいる教室は、授業などを受け取った日（月で締めるなら締切日）から60日以内に払います。
+          フリーランス法では、頼んだらすぐに条件を示し、従業員がいる教室は、授業などを受け取った日から60日以内に払います（月ごとに締めるなら、締め期間の最初の日から2か月以内が目安）。
         </li>
       </ul>
       <div className="mt-4 flex flex-col gap-2 sm:flex-row">
@@ -364,7 +358,7 @@ export default function SchoolPage() {
           )}
           {EXPECTED && (
             <li>
-              {ymOf(EXPECTED.from)}
+              {jpMonth(EXPECTED.from)}
               からは、防衛特別所得税が加わり、復興特別所得税の率が下がります（国税庁がQ&Aを出しています）。報酬・料金の合計の率は
               {EXPECTED.basicBp === RATE.basicBp
                 ? `${BASIC}のまま変わらない見込みです`
@@ -423,7 +417,7 @@ export default function SchoolPage() {
           </li>
           <li>
             負担が出るのは、消費税を<strong>原則課税</strong>
-            で計算している教室だけです。簡易課税や免税事業者の教室なら、講師が登録しているかどうかで納める消費税は変わりません
+            で計算している教室だけです。簡易課税・2割特例・免税事業者の教室なら、講師が登録しているかどうかで納める消費税は変わりません
             {burden ? (
               <>
                 （上の例と同じ支払でも、簡易課税の教室なら{" "}
@@ -486,7 +480,7 @@ export default function SchoolPage() {
           </li>
           <li>
             <strong>60日以内の支払（4条）</strong>
-            ：従業員を使っている教室は、給付を受け取った日（月単位で締めるなら締切日）から60日以内に支払期日を決めて払います。月末締め・翌月末払いなら60日以内です。「請求書を受け取った月の翌月末」のように、請求書の受け取りから数える決め方は、60日を超えるおそれがあります。
+            ：従業員を使っている教室は、給付を受け取った日から60日以内に支払期日を決めて払います。月単位で締める場合は「60日」を「2か月」として扱い、締め期間の最初の日から数えて2か月以内が目安です。月末締め・翌月末払いなら収まります。同じ種類の授業を続けて受ける場合は、明示書に書いておくなどの条件を満たせば、月の締切日に受け取ったものとして数えられます。「請求書を受け取った月の翌月末」のように、請求書の受け取りから数える決め方は、60日を超えるおそれがあります。
             {late && (
               <>
                 上の例の{late.name}は、{jpDate(late.receivedOn)}締めの分を
@@ -497,7 +491,7 @@ export default function SchoolPage() {
           </li>
           <li>
             <strong>禁止されること（5条）</strong>
-            ：1か月以上の業務委託では、受領拒否・報酬の減額・買いたたき・購入や利用の強制・不当な経済上の利益の提供の要請・不当な内容の変更ややり直しなどが禁止されています。決めた報酬をあとから一方的に下げる、合意の無い差し引きをする、教材や物販を買わせる、授業の準備・研修・代講を無償で求める、といった運用は、これらにあたるおそれがあります。振込手数料は、合意があっても報酬から差し引かず、支払う側が負担してください。
+            ：1か月以上の業務委託では、受領拒否・報酬の減額・買いたたき・購入や利用の強制・不当な経済上の利益の提供の要請・不当な内容の変更ややり直しなどが禁止されています。決めた報酬をあとから一方的に下げる、合意の無い差し引きをする、教材や物販を買わせる、授業の準備・研修・代講を無償で求める、といった運用は、これらにあたるおそれがあります。振込手数料は報酬から差し引かず、支払う側が負担するのが安全です（取適法の運用では、合意があっても差し引くと減額とされえます）。
           </li>
           <li>
             <strong>6か月以上続く契約（16条）</strong>

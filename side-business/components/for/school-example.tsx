@@ -4,42 +4,23 @@
  * 数字はここに書かない（見本の入力から毎回計算する）。サーバーで描くだけで、状態は持たない。
  */
 import { Card, Money } from "@/components/ui";
+import { cx } from "@/lib/cx";
 import {
   getPreset,
   withServiceDate,
   type PresetSample,
 } from "@/lib/engine/presets";
 import { buildPayout, type PayoutResult } from "@/lib/engine/statement";
-import { num } from "@/lib/engine/types";
 import {
   BASE_RULE_LABELS,
   WITHHOLDING_CATEGORIES,
   paymentReportRequired,
 } from "@/lib/engine/withholding";
+import { jpDate, manYen, monthLabel } from "@/lib/format";
 import { pct } from "@/lib/payroll/money";
 import { sixtyDayLimit } from "@/lib/tools/torihiki-joken";
 
-const cx = (...c: (string | false | null | undefined)[]) =>
-  c.filter(Boolean).join(" ");
-
 export const SCHOOL = getPreset("school");
-
-/** 2026-10-31 → 2026年10月分 */
-export function monthLabel(date: string): string {
-  const [y, m] = date.split("-").map(Number);
-  return `${y}年${m}月分`;
-}
-
-/** 2026-12-31 → 2026年12月31日 */
-export function jpDate(date: string): string {
-  const [y, m, d] = date.split("-").map(Number);
-  return `${y}年${m}月${d}日`;
-}
-
-/** 50000 → 5万円 */
-export function manYen(value: number): string {
-  return `${num(value / 10_000)}万円`;
-}
 
 type Computed = {
   sample: PresetSample;

@@ -4,11 +4,15 @@ import {
   CONTACT_TEXT,
   DEFAULT_FROM_EMAIL,
   DISCORD_CONTENT_MAX,
+  SOURCE_MAX,
+  SOURCE_STORAGE_KEY,
+  captureSource,
   clientIp,
   createRateLimiter,
   escapeSlack,
   formatInquiry,
   formatJst,
+  formatSource,
   hasDelivery,
   inquirySubject,
   isHoneypotFilled,
@@ -16,6 +20,8 @@ import {
   normalizePhone,
   notReadyMessage,
   readDeliveryConfig,
+  readStoredSource,
+  sourceFromLocation,
   truncateChars,
   validateInquiry,
   webhookPayload,
@@ -159,6 +165,7 @@ describe("通知の文面", () => {
         "電話：03-1234-5678",
         "ドライバーの人数：6〜15人",
         "相談したいこと：支払明細、振込データ",
+        "流入元：（記録なし：直接の入力・ブックマークなど）",
         "",
         "■ ご相談の内容",
         "明細は Excel で作っています。",
@@ -226,6 +233,103 @@ describe("通知の文面", () => {
     expect(notReadyMessage(true)).toContain("メールでご連絡ください");
     expect(notReadyMessage(false)).not.toContain("メール");
     expect(notReadyMessage(false).startsWith("ただいまフォームの準備中です。")).toBe(true);
+  });
+});
+
+describe("流入元（FAX・メール・紹介の効果を数える）", () => {
+  const loc = (over: Partial<Parameters<typeof sourceFromLocation>[0]> = {}) => ({
+    search: "",
+    pathname: "/",
+    host: "shimebi.example",
+    referrer: "",
+    ...over,
+  });
+
+  /** テスト用の sessionStorage */
+  function memoryStorage(initial: Record<string, string> = {}) {
+    const map = new Map(Object.entries(initial));
+    return {
+      getItem: (k: string) => map.get(k) ?? null,
+      setItem: vi.fn((k: string, v: string) => void map.set(k, v)),
+      map,
+    };
+  }
+
+  it("URL の utm と、前のサイトのホスト名だけを取る（パス・検索語は持たない）", () => {
+    expect(
+      sourceFromLocation(
+        loc({
+          search: "?utm_source=fax&utm_medium=print&utm_campaign=2026-10-a&x=1",
+          pathname: "/tools/invoice-cost",
+          referrer: "https://www.google.com/search?q=%E6%94%AF%E6%89%95%E6%98%8E%E7%B4%B0",
+        }),
+      ),
+    ).toEqual({
+      utm_source: "fax",
+      utm_medium: "print",
+      utm_campaign: "2026-10-a",
+      referrer: "www.google.com",
+      landing: "/tools/invoice-cost",
+    });
+  });
+
+  it("自分のサイトの中の移動は参照元にしない。壊れた referrer は捨てる", () => {
+    expect(sourceFromLocation(loc({ referrer: "https://shimebi.example/demo" }))).toEqual({ landing: "/" });
+    expect(sourceFromLocation(loc({ referrer: "not a url" }))).toEqual({ landing: "/" });
+  });
+
+  it("長い値・改行・制御文字は短い 1 行にする", () => {
+    const s = sourceFromLocation(loc({ search: `?utm_source=${"a".repeat(300)}&utm_campaign=a%0Ab%00c` }));
+    expect(s?.utm_source).toHaveLength(SOURCE_MAX);
+    expect(s?.utm_campaign).toBe("a bc");
+  });
+
+  it("最初に開いたときだけ覚え、あとのページで上書きしない", () => {
+    const store = memoryStorage();
+    const first = captureSource(store, loc({ search: "?utm_source=fax", pathname: "/tools/invoice-cost" }));
+    expect(first).toEqual({ utm_source: "fax", landing: "/tools/invoice-cost" });
+    const later = captureSource(store, loc({ search: "?utm_source=other", pathname: "/contact", referrer: "https://x.example/" }));
+    expect(later).toEqual(first);
+    expect(store.setItem).toHaveBeenCalledTimes(1);
+    expect(readStoredSource(store)).toEqual(first);
+  });
+
+  it("保存が使えない・壊れているときも止まらない", () => {
+    const throwing = {
+      getItem: () => {
+        throw new Error("SecurityError");
+      },
+      setItem: () => {
+        throw new Error("QuotaExceededError");
+      },
+    };
+    expect(captureSource(throwing, loc({ search: "?utm_source=fax" }))).toBeUndefined();
+    expect(readStoredSource(throwing)).toBeUndefined();
+    expect(readStoredSource(null)).toBeUndefined();
+    expect(captureSource(null, loc({ search: "?utm_source=mail" }))).toEqual({ utm_source: "mail", landing: "/" });
+    expect(readStoredSource(memoryStorage({ [SOURCE_STORAGE_KEY]: "{not json" }))).toBeUndefined();
+    expect(readStoredSource(memoryStorage({ [SOURCE_STORAGE_KEY]: "{}" }))).toBeUndefined();
+  });
+
+  it("申し込みに付けて送れる。知らない項目は落とし、形がおかしければ流入元だけ捨てる（申し込みは通す）", () => {
+    const d = ok({ ...valid, source: { utm_source: " fax ", landing: "/tools/torihiki-joken", extra: "x", referrer: "" } });
+    expect(d.source).toEqual({ utm_source: "fax", landing: "/tools/torihiki-joken" });
+    expect(ok({ ...valid, source: { utm_source: "a".repeat(SOURCE_MAX + 1) } }).source).toBeUndefined();
+    expect(ok({ ...valid, source: "fax" }).source).toBeUndefined();
+    expect(ok({ ...valid, source: { utm_source: 1 } }).source).toBeUndefined();
+    expect(ok({ ...valid, source: {} }).source).toBeUndefined();
+    expect(ok(valid).source).toBeUndefined();
+  });
+
+  it("通知の文面に「流入元」を 1 行で入れる（本文より前）", () => {
+    expect(formatSource(undefined)).toBe("（記録なし：直接の入力・ブックマークなど）");
+    expect(formatSource({ utm_source: "fax", referrer: "www.google.com", landing: "/" })).toBe(
+      "utm_source=fax, 参照元=www.google.com, 最初のページ=/",
+    );
+    const d = ok({ ...valid, source: { utm_source: "fax", utm_medium: "print", utm_campaign: "a", landing: "/tools/invoice-cost" } });
+    const text = formatInquiry(d, new Date("2026-09-23T05:05:00Z"));
+    expect(text).toContain("流入元：utm_source=fax, utm_medium=print, utm_campaign=a, 最初のページ=/tools/invoice-cost");
+    expect(text.indexOf("流入元：")).toBeLessThan(text.indexOf("■ ご相談の内容"));
   });
 });
 
@@ -340,7 +444,64 @@ describe("受け付けの API（/api/contact）", () => {
   it("JSON でなければ 400、大きすぎれば 413", async () => {
     expect((await post("{not json")).status).toBe(400);
     expect((await post("[1,2]")).status).toBe(400);
+    expect((await post("")).status).toBe(400);
     expect((await post({ ...valid, message: "あ".repeat(40_000) })).status).toBe(413);
+  });
+
+  it("Content-Type が JSON でなければ 415（ほかのサイトのフォームから送らせない）", async () => {
+    vi.stubEnv("CONTACT_WEBHOOK_URL", "https://discord.com/api/webhooks/1/abc");
+    for (const type of ["text/plain", "application/x-www-form-urlencoded", ""]) {
+      const res = await POST(
+        new Request("http://localhost/api/contact", {
+          method: "POST",
+          headers: type ? { "content-type": type } : {},
+          body: JSON.stringify(valid),
+        }),
+      );
+      expect(res.status).toBe(415);
+    }
+    const withCharset = await POST(
+      new Request("http://localhost/api/contact", {
+        method: "POST",
+        headers: { "content-type": "application/json; charset=utf-8", "x-forwarded-for": "192.0.2.60" },
+        body: JSON.stringify(valid),
+      }),
+    );
+    expect(withCharset.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("Content-Length が無くても、読みながら上限で止めて 413", async () => {
+    const chunk = new TextEncoder().encode("a".repeat(16_000));
+    let sent = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (sent >= 20) return controller.close();
+        sent++;
+        controller.enqueue(chunk);
+      },
+    });
+    const res = await POST(
+      new Request("http://localhost/api/contact", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body,
+        duplex: "half",
+      } as RequestInit),
+    );
+    expect(res.status).toBe(413);
+    expect(sent).toBeLessThan(20);
+  });
+
+  it("UTF-8 として読めない本文は 400", async () => {
+    const res = await POST(
+      new Request("http://localhost/api/contact", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: new Uint8Array([0x7b, 0xff, 0xfe, 0x7d]),
+      }),
+    );
+    expect(res.status).toBe(400);
   });
 
   it("おとりの欄が埋まっていれば、送ったふり（200）だけで何も送らない", async () => {
@@ -362,6 +523,18 @@ describe("受け付けの API（/api/contact）", () => {
     expect(sent.content).toContain("会社名：株式会社テスト運送");
     expect(sent.text).toContain("会社名：株式会社テスト運送");
     expect(sent.allowed_mentions).toEqual({ parse: [] });
+  });
+
+  it("流入元を付けて送ると、通知に載る。流入元の形がおかしくても受け付ける", async () => {
+    vi.stubEnv("CONTACT_WEBHOOK_URL", "https://discord.com/api/webhooks/1/abc");
+    const res = await post({ ...valid, source: { utm_source: "fax", landing: "/tools/invoice-cost" } }, "192.0.2.89");
+    expect(res.status).toBe(200);
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).content).toContain(
+      "流入元：utm_source=fax, 最初のページ=/tools/invoice-cost",
+    );
+    const bad = await post({ ...valid, source: { utm_source: "x".repeat(500) } }, "192.0.2.90");
+    expect(bad.status).toBe(200);
+    expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body)).content).toContain("流入元：（記録なし");
   });
 
   it("Resend にメールを送る（返信先は申し込んだ人）", async () => {
@@ -408,6 +581,17 @@ describe("受け付けの API（/api/contact）", () => {
     expect(logged).not.toContain("taro@example.com");
     expect(logged).not.toContain("月末に2日");
     expect(logged).not.toContain("secret-token");
+
+    // 誤りの文言に鍵や URL が混ざっていても伏せる
+    errorLog.mockClear();
+    fetchMock.mockImplementation(async (url) => {
+      throw new TypeError(`request to ${String(url)} failed (Bearer re_test)`);
+    });
+    expect((await post(valid)).status).toBe(502);
+    const leaked = errorLog.mock.calls.flat().map(String).join("\n");
+    expect(leaked).toContain("[redacted]");
+    expect(leaked).not.toContain("secret-token");
+    expect(leaked).not.toContain("re_test");
   });
 
   it("同じ IP から 10 分に 6 回目は 429", async () => {

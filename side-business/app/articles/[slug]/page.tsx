@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { JsonLd } from "@/components/json-ld";
 import { getArticle, listArticles } from "@/lib/content";
 import { SITE } from "@/site.config";
 
@@ -20,7 +21,17 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     title: a.title,
     description: a.description,
     alternates: { canonical: `/articles/${a.slug}` },
-    openGraph: { type: "article", title: a.title, description: a.description, publishedTime: a.published, modifiedTime: a.updated },
+    // openGraph はレイアウトの値を丸ごと置きかえるので、locale と siteName もここで入れる
+    openGraph: {
+      type: "article",
+      locale: SITE.locale,
+      siteName: SITE.name,
+      title: a.title,
+      description: a.description,
+      url: `/articles/${a.slug}`,
+      publishedTime: a.published,
+      modifiedTime: a.updated,
+    },
   };
 }
 
@@ -38,12 +49,14 @@ export default async function ArticlePage({ params }: Props) {
     description: a.description,
     datePublished: a.published,
     dateModified: a.updated,
+    inLanguage: "ja",
     mainEntityOfPage: `${SITE.url}/articles/${a.slug}`,
-    publisher: { "@type": "Organization", name: SITE.name },
+    author: { "@type": "Organization", name: SITE.name, url: `${SITE.url}/` },
+    publisher: { "@type": "Organization", name: SITE.name, url: `${SITE.url}/` },
   };
   return (
     <article className="mx-auto max-w-3xl">
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <JsonLd data={jsonLd} />
       <nav className="text-sm text-muted-foreground" aria-label="パンくず">
         <Link href="/articles">記事</Link> <span aria-hidden>›</span> {a.category}
       </nav>

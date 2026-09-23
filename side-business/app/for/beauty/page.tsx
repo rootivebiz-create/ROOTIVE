@@ -7,13 +7,13 @@ import {
   beautyBurdenCompare,
   beautyDisclosureExample,
   beautyDueExamples,
-  jpDate,
 } from "@/components/for/beauty-example";
 import { BeautyPayModels } from "@/components/for/beauty-pay-models";
 import { ctaClass } from "@/components/landing/section";
 import { Card, Money, TableWrap } from "@/components/ui";
 import { bpText, en, num } from "@/lib/engine/types";
 import { WITHHOLDING_CATEGORIES, WITHHOLDING_RATES, applyBp, withholdingRateFor } from "@/lib/engine/withholding";
+import { jpDate } from "@/lib/format";
 import { pct } from "@/lib/payroll/money";
 import { TRANSITIONAL_SOURCE, TRANSITIONAL_STEPS } from "@/lib/payroll/tax";
 import { SITE } from "@/site.config";
@@ -203,7 +203,7 @@ export default function BeautyPage() {
           ))}
         </ul>
         <p>
-          遅刻・当日欠勤の罰金は、減額のおそれに加えて、働き方を管理している事情と見られることがあります。振込手数料は、支払う側（サロン）の負担を基本にしてください。
+          遅刻・当日欠勤の罰金は、減額のおそれに加えて、働き方を管理している事情と見られることがあります。振込手数料は、支払う側（サロン）の負担が安全です（取適法の運用では、合意があっても報酬から差し引くと減額とされえます）。
         </p>
       </div>
 
@@ -328,7 +328,7 @@ export default function BeautyPage() {
               : ""}
           </li>
           <li>
-            負担が増えるのは、消費税を原則課税で計算しているサロンです。サロンが簡易課税や免税事業者なら、この負担は出ません。登録済みのスタッフへの支払にも出ません。
+            負担が増えるのは、消費税を原則課税で計算しているサロンです。サロンが簡易課税・2割特例・免税事業者なら、この負担は出ません。登録済みのスタッフへの支払にも出ません。
           </li>
           {compare && (
             <li>

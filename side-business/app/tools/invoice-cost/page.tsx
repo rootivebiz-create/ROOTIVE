@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { JsonLd, faqPageLd } from "@/components/json-ld";
 import { InvoiceCostCalculator } from "@/components/tools/invoice-cost";
 import { buttonClass, Card } from "@/components/ui";
+import { groupDigits, jpDate } from "@/lib/format";
 import { pct } from "@/lib/payroll/money";
 import { TRANSITIONAL_SOURCE, TRANSITIONAL_STEPS, nonDeductibleTax } from "@/lib/payroll/tax";
-import { RULES_AS_OF_LABEL, creditableTaxOf, groupDigits, jpDate } from "@/lib/tools/invoice-cost";
+import { RULES_AS_OF_LABEL, creditableTaxOf } from "@/lib/tools/invoice-cost";
 import { SITE } from "@/site.config";
 
 const PATH = "/tools/invoice-cost";
@@ -42,7 +44,7 @@ const FAQ = [
   },
   {
     q: "簡易課税や2割特例でも負担は増えますか？",
-    a: "増えません。簡易課税や2割特例は売上の消費税をもとに納める額を計算するので、相手がインボイス登録をしていなくても、納める消費税は変わりません。影響があるのは原則課税の会社です。",
+    a: "増えません。簡易課税や2割特例は売上の消費税をもとに納める額を計算するので、相手がインボイス登録をしていなくても、納める消費税は変わりません。影響があるのは原則課税の会社です。なお、2割特例を使えるのは2026年9月30日をふくむ課税期間まで（3月決算の会社なら2027年3月期まで）です。そのあと原則課税になる会社には、負担が出はじめます。",
   },
 ];
 
@@ -55,21 +57,9 @@ export const metadata: Metadata = {
 };
 
 export default function InvoiceCostPage() {
-  const faqLd = {
-    "@context": "https://schema.org",
-    "@type": "FAQPage",
-    mainEntity: FAQ.map((f) => ({
-      "@type": "Question",
-      name: f.q,
-      acceptedAnswer: { "@type": "Answer", text: f.a },
-    })),
-  };
   return (
     <div className="mx-auto max-w-3xl">
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqLd).replace(/</g, "\\u003c") }}
-      />
+      <JsonLd data={faqPageLd(FAQ)} />
       <p className="text-sm font-bold text-muted-foreground">無料の計算ツール</p>
       <h1 className="mt-1 text-2xl font-bold leading-snug sm:text-3xl">
         免税ドライバーへの支払で、会社が負担する消費税はいくら？
@@ -156,7 +146,7 @@ export default function InvoiceCostPage() {
 
         <h2>影響があるのは「原則課税」の会社だけ</h2>
         <p>
-          消費税を原則課税（一般課税）で計算している会社は、仕入れの消費税を実際の額で差し引くので、この負担が出ます。簡易課税や2割特例の会社は、売上の消費税をもとに納める額を計算するため、相手がインボイス登録をしていなくても、納める消費税は変わりません。
+          消費税を原則課税（一般課税）で計算している会社は、仕入れの消費税を実際の額で差し引くので、この負担が出ます。簡易課税や2割特例の会社は、売上の消費税をもとに納める額を計算するため、相手がインボイス登録をしていなくても、納める消費税は変わりません。ただし、2割特例を使えるのは2026年9月30日をふくむ課税期間まで（3月決算の会社なら2027年3月期まで）です。そのあと原則課税になる会社には、負担が出はじめます。
         </p>
         <p>どちらで計算しているか分からなければ、顧問の税理士に確かめてください。</p>
 
@@ -168,7 +158,7 @@ export default function InvoiceCostPage() {
 
         <h2>1つの相手から年1億円を超える分は対象外</h2>
         <p>
-          2026年10月1日以後に始まる課税期間からは、1つの免税の相手からの仕入れが1年（会社なら1事業年度）で1億円を超えると、超えた部分には経過措置が使えません。個人のドライバー1人への支払がここまで大きくなることは、ほとんどありません。
+          2026年10月1日以後に始まる課税期間からは、1つの免税の相手からの仕入れ（税込）が1年（会社なら1事業年度）で1億円を超えると、超えた部分には経過措置が使えません。個人のドライバー1人への支払がここまで大きくなることは、ほとんどありません。
         </p>
       </div>
 

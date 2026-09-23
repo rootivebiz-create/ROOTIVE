@@ -5,14 +5,13 @@
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { Button, Card, Money, TableWrap, buttonClass } from "@/components/ui";
+import { cx } from "@/lib/cx";
 import type { IndustryPreset } from "@/lib/engine/presets";
 import type { PayoutInput, PayoutResult } from "@/lib/engine/statement";
 import { DEFAULT_CONSUMPTION_TAX_RATE, bpText, en, num, percent, type EngineWarning, type WarningLevel } from "@/lib/engine/types";
 import { BASE_RULE_LABELS, WITHHOLDING_CATEGORIES, withholdingRateFor } from "@/lib/engine/withholding";
-import { jpDate, jpMonth } from "@/lib/tools/invoice-cost";
+import { jpDate, jpMonth } from "@/lib/format";
 import { ORDER_SIDE_METHODS, burdenRows, isMonth, methodText, monthText, summaryTaxRows } from "./state";
-
-const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
 
 const BASE_RULE_SHORT: Record<PayoutResult["withholdingRule"], string> = {
   excl_tax_separated: "税抜",

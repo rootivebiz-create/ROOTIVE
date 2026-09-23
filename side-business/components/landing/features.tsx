@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { Money, TableWrap } from "@/components/ui";
+import { cx } from "@/lib/cx";
+import { jpMonth } from "@/lib/format";
 import { summarize } from "@/lib/payroll/calc";
 import { pct } from "@/lib/payroll/money";
 import { sampleData } from "@/lib/payroll/sample";
 import { deductibleRateForExempt } from "@/lib/payroll/tax";
-import { jpMonth } from "@/lib/tools/invoice-cost";
 import { OPTIONS, PLANS } from "@/site.config";
-import { ArrowIcon, Section, cx } from "./section";
+import { NextStep } from "./primary-cta";
+import { ArrowIcon, Section } from "./section";
 
 type Feature = {
   title: string;
@@ -178,6 +180,7 @@ export function Features() {
         ))}
       </ul>
       <DemoPreview />
+      <NextStep>御社の単価・控除・元請の形で同じように動くかは、30分の相談でお答えします。</NextStep>
     </Section>
   );
 }

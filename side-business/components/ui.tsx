@@ -1,7 +1,7 @@
 /** 小さな UI 部品（Tailwind のみ）。ボタン・カード・入力欄・数値の表示 */
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from "react";
-
-const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
+import { cx } from "@/lib/cx";
+import { yen } from "@/lib/payroll/money";
 
 type Variant = "primary" | "secondary" | "ghost" | "accent";
 
@@ -12,13 +12,16 @@ const VARIANT: Record<Variant, string> = {
   ghost: "text-foreground hover:bg-muted",
 };
 
+/** ボタン。type を書き忘れてもフォームを送らないよう、既定は type="button"（送るボタンは type="submit" を渡す） */
 export function Button({
   variant = "primary",
   className,
+  type = "button",
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant }) {
   return (
     <button
+      type={type}
       className={cx(
         "inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-50",
         VARIANT[variant],
@@ -53,7 +56,7 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
 }
 
 const inputBase =
-  "block w-full min-h-11 rounded-lg border border-border bg-card px-3 text-base text-foreground outline-none focus:border-foreground";
+  "block w-full min-h-11 rounded-lg border border-border bg-card px-3 text-base text-foreground focus:border-foreground";
 
 export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
   return <input className={cx(inputBase, className)} {...props} />;
@@ -74,9 +77,7 @@ export function Select({ className, children, ...props }: SelectHTMLAttributes<H
 
 /** 金額（等幅・右寄せ・マイナスは赤） */
 export function Money({ value, className }: { value: number; className?: string }) {
-  const v = Math.round(value);
-  const text = `${v < 0 ? "-" : ""}¥${new Intl.NumberFormat("ja-JP").format(Math.abs(v))}`;
-  return <span className={cx("num whitespace-nowrap", v < 0 && "text-danger", className)}>{text}</span>;
+  return <span className={cx("num whitespace-nowrap", Math.round(value) < 0 && "text-danger", className)}>{yen(value)}</span>;
 }
 
 /** 横にはみ出す表を包む（スマホでは横スクロール） */

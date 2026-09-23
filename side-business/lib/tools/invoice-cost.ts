@@ -2,6 +2,7 @@
  * 計算ツール「免税ドライバーへの支払で、会社が負担する消費税はいくら？」の純関数。
  * 割合と 1 円未満の扱いは lib/payroll/tax.ts（TRANSITIONAL_STEPS・nonDeductibleTax）に任せ、ここでは並べて比べるだけ。
  */
+import { jpMonth } from "@/lib/format";
 import { parseAmount, roundYen, yen } from "@/lib/payroll/money";
 import { TRANSITIONAL_STEPS, nonDeductibleTax } from "@/lib/payroll/tax";
 
@@ -60,18 +61,6 @@ function ym(date: string): { y: number; m: number; d: number } {
   return { y, m, d };
 }
 
-/** 2026-10-01 → 2026年10月 */
-export function jpMonth(date: string): string {
-  const { y, m } = ym(date);
-  return `${y}年${m}月`;
-}
-
-/** 2026-10-01 → 2026年10月1日 */
-export function jpDate(date: string): string {
-  const { y, m, d } = ym(date);
-  return `${y}年${m}月${d}日`;
-}
-
 /** 期間の表示。2026-10-01〜2028-09-30 → 「2026年10月〜2028年9月」、終わりが無ければ「2031年10月〜」 */
 export function periodLabel(from: string, to: string | null): string {
   return `${jpMonth(from)}〜${to ? jpMonth(to) : ""}`;
@@ -88,11 +77,6 @@ export function daysBetween(from: string, to: string): number {
   const a = ym(from);
   const b = ym(to);
   return Math.round((Date.UTC(b.y, b.m - 1, b.d) - Date.UTC(a.y, a.m - 1, a.d)) / 86_400_000);
-}
-
-/** 1100000 → "1,100,000"（入力欄に戻すときの書式） */
-export function groupDigits(value: number): string {
-  return new Intl.NumberFormat("ja-JP").format(Math.round(value));
 }
 
 /**

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ctaClass } from "@/components/landing/section";
 import { TruckingExample, truckingBurdenCompare } from "@/components/for/trucking-example";
 import { Card, Money } from "@/components/ui";
+import { jpDate } from "@/lib/format";
 import { pct } from "@/lib/payroll/money";
 import { TRANSITIONAL_SOURCE, TRANSITIONAL_STEPS } from "@/lib/payroll/tax";
 import { SITE } from "@/site.config";
@@ -42,11 +43,6 @@ const DEDUCTIONS = [
   "車両のリース代・保険料など、会社が用意したものの代金",
   "高速代・駐車場代などの立替（報酬とは別に精算する）",
 ];
-
-const jpDate = (d: string) => {
-  const [y, m, day] = d.split("-").map(Number);
-  return `${y}年${m}月${day}日`;
-};
 
 export const metadata: Metadata = {
   title: TITLE,
@@ -166,7 +162,7 @@ export default function TruckingPage() {
             で決まります。9月に走ってもらった分を10月に払うなら、80%の期間の仕入れです。
           </li>
           <li>
-            負担が増えるのは、消費税を原則課税で計算している会社です。発注する側が簡易課税や免税事業者なら、この負担は出ません。
+            負担が増えるのは、消費税を原則課税で計算している会社です。発注する側が簡易課税・2割特例・免税事業者なら、この負担は出ません。
           </li>
           <li>経過措置を使うには、帳簿に経過措置の適用を受ける旨を書き、必要な事項が書かれた請求書などを保存しておく必要があります。</li>
           {compare && (
@@ -206,7 +202,7 @@ export default function TruckingPage() {
             <strong>差し引くもの</strong>
             ：ロイヤリティ・管理費・車両のリース代・保険料などは、取引条件として示し、合意したものだけにします。1か月以上の委託で一方的に差し引くと、報酬の減額にあたるおそれがあります。合意があっても、会社の車両や保険を無理に使わせる形は、購入・利用の強制などの問題になりえます。計算の道具では、合意の印が無い差し引きに注意を出します。
           </li>
-          <li>振込手数料は、会社（支払う側）の負担を基本にしてください。合意していても、報酬から差し引く運用は減額として問題とされうるため、見直しをおすすめします。</li>
+          <li>振込手数料は、会社（支払う側）の負担が安全です。取適法の運用では、合意があっても報酬から差し引くと減額とされえます。フリーランス法でも問題とされうるため、差し引いているなら見直しをおすすめします。</li>
         </ul>
         <p>
           <Link href="/tools/torihiki-joken" className="inline-flex min-h-11 items-center">

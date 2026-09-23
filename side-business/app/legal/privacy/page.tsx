@@ -70,6 +70,11 @@ export default function PrivacyPage() {
               ：会社名、お名前、メールアドレス、電話番号、ドライバーの人数、相談したいこと、ご相談の内容
             </li>
             <li>
+              <strong>どこからサイトに来たか（流入元）</strong>
+              ：最初に開いたページ、前に見ていたサイトのホスト名（ページの URL までは記録しません）、URL に付いた utm_source・utm_medium・utm_campaign
+              の値。ブラウザのタブを閉じるまでブラウザの中（sessionStorage）だけに置き、相談フォームを送ったときだけ、内容と一緒に届きます。
+            </li>
+            <li>
               <strong>アクセスの記録</strong>
               ：IPアドレス、ブラウザの種類、見たページ、日時など。サイトを配信するサービスが自動で記録します。
             </li>

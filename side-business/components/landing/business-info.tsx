@@ -1,7 +1,8 @@
 import Link from "next/link";
+import { regNoText } from "@/lib/format";
 import type { BusinessInfo as Info } from "@/site.config";
 import { SITE } from "@/site.config";
-import { Section, regNoText } from "./section";
+import { Section } from "./section";
 
 export function BusinessInfo({ info, email }: { info: Info; email: string | null }) {
   const rows: { label: string; value: string; href?: string }[] = [{ label: "屋号", value: SITE.name }];

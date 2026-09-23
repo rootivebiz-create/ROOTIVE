@@ -1,8 +1,7 @@
-/** トップページ（/）の共通の部品：見出し付きの区切り・リンクのボタン・金額の書式・構造化データ */
+/** トップページ（/）の共通の部品：見出し付きの区切り・リンクのボタン・飾りの印。円の書式は lib/format、構造化データは components/json-ld */
 import type { ReactNode } from "react";
 import { buttonClass } from "@/components/ui";
-
-export const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
+import { cx } from "@/lib/cx";
 
 type Variant = NonNullable<Parameters<typeof buttonClass>[0]>;
 
@@ -12,31 +11,6 @@ type Variant = NonNullable<Parameters<typeof buttonClass>[0]>;
  */
 export function ctaClass(variant: Variant, className?: string) {
   return buttonClass(variant, className);
-}
-
-const yenFormat = new Intl.NumberFormat("ja-JP");
-
-/** 250000 → 250,000円 */
-export function yenText(value: number): string {
-  return `${yenFormat.format(Math.round(value))}円`;
-}
-
-/** 250000 → 25万円、18000 → 1.8万円（千円単位で割り切れないときは 12,345円 のまま） */
-export function compactYen(value: number): string {
-  if (value >= 10_000 && value % 1_000 === 0) return `${value / 10_000}万円`;
-  return yenText(value);
-}
-
-/** 250000, 480000 → 25万〜48万円 */
-export function rangeYen(min: number, max: number): string {
-  if (min === max) return compactYen(min);
-  return `${compactYen(min).replace(/円$/, "")}〜${compactYen(max)}`;
-}
-
-/** インボイスの登録番号。数字だけで入っていたら頭に T を付ける（T1234567890123） */
-export function regNoText(value: string): string {
-  const v = value.replace(/\s+/g, "");
-  return /^\d{13}$/.test(v) ? `T${v}` : v;
 }
 
 /** 別のタブで開くリンクに添える、読み上げ用のひとこと */
@@ -69,11 +43,6 @@ export function Section({
       <div className="mt-6">{children}</div>
     </section>
   );
-}
-
-/** 構造化データ（JSON-LD）。</script> を閉じられないよう < を逃がす */
-export function JsonLd({ data }: { data: unknown }) {
-  return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(data).replace(/</g, "\\u003c") }} />;
 }
 
 /** チェックの印（飾り） */

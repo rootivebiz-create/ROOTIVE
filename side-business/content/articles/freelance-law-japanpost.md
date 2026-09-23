@@ -5,7 +5,7 @@ published: 2026-09-23
 updated: 2026-09-23
 category: フリーランス法
 order: 3
-sources: https://www.jftc.go.jp/FL/FLkankoku/index.html https://www.lnews.jp/2026/09/s0902505.html https://www.jftc.go.jp/houdou/pressrelease/2026/jun/260610_FL.html https://www.chusho.meti.go.jp/keiei/torihiki/download/freelance/law_02.pdf https://www.chusho.meti.go.jp/keiei/torihiki/download/freelance/law_05.pdf https://www.chusho.meti.go.jp/keiei/torihiki/download/freelance/law_qa.pdf https://www.jftc.go.jp/fllaw_limited/fllaw_qa.html https://www.jftc.go.jp/file/flpamph.pdf
+sources: https://www.jftc.go.jp/FL/FLkankoku/index.html https://www.lnews.jp/2026/09/s0902505.html https://www.jftc.go.jp/houdou/pressrelease/2026/jun/260610_FL.html https://www.chusho.meti.go.jp/keiei/torihiki/download/freelance/law_02.pdf https://www.chusho.meti.go.jp/keiei/torihiki/download/freelance/law_05.pdf https://www.jftc.go.jp/fllaw_limited/fllaw_qa.html https://www.jftc.go.jp/file/flpamph.pdf
 ---
 
 > **この記事のまとめ**

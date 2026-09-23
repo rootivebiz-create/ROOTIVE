@@ -1,4 +1,4 @@
-/** デモの表示に使う小さな書式（純関数）。金額は lib/payroll/money の yen / pct を使う */
+/** デモの入力の読み方と表示の小さな書式（純関数）。金額は lib/payroll/money の yen / pct、日付と月は lib/format の jpDate / jpMonth を使う */
 import { parseAmount } from "@/lib/payroll/money";
 import { monthEnd } from "@/lib/payroll/tax";
 
@@ -38,20 +38,6 @@ export function normalizeMonth(text: string): string | null {
 export function readNumberDraft(text: string, parse: (text: string) => number | null, emptyAs = 0): number | null {
   const t = text.trim().replace(/[.．]$/, "");
   return t === "" ? emptyAs : parse(t);
-}
-
-/** 2026-11-25 → 2026年11月25日（形が違えばそのまま返す） */
-export function jpDate(date: string): string {
-  const m = DATE_RE.exec(date);
-  if (!m) return date;
-  return `${Number(m[1])}年${Number(m[2])}月${Number(m[3])}日`;
-}
-
-/** 2026-10 → 2026年10月 */
-export function jpMonth(month: string): string {
-  const m = MONTH_RE.exec(month);
-  if (!m) return month;
-  return `${Number(m[1])}年${Number(m[2])}月`;
 }
 
 /** 2026-10 → 2026年10月1日〜10月31日 */

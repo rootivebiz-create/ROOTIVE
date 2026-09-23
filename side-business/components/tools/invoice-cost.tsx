@@ -6,12 +6,11 @@
  */
 import { useId, useState, useSyncExternalStore } from "react";
 import { Button, Card, Field, Money, NumberInput, TableWrap } from "@/components/ui";
+import { cx } from "@/lib/cx";
+import { groupDigits, jpDate, jpMonth } from "@/lib/format";
 import { pct, yen } from "@/lib/payroll/money";
 import {
   calcInvoiceCost,
-  groupDigits,
-  jpDate,
-  jpMonth,
   readAmount,
   shareText,
   toDateString,
@@ -20,8 +19,6 @@ import {
   type InvoiceCostRow,
   type TaxMethod,
 } from "@/lib/tools/invoice-cost";
-
-const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
 
 // 「今日」と共有ボタンの有無は端末でしか分からない。サーバーの HTML では null / false にして、表示のあとで入れかえる
 const noSubscribe = () => () => {};

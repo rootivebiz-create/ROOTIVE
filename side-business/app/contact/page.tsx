@@ -45,6 +45,27 @@ export default function ContactPage() {
       <p className="mt-3">
         業務委託ドライバーの支払明細・振込データ・案件ごとの利益など、月末の作業で困っていることを聞かせてください。
       </p>
+      <p className="mt-3 font-bold">相談だけでも歓迎です。売り込みはしません。</p>
+
+      <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+        {bookingUrl && (
+          <a
+            href={bookingUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={buttonClass("accent", "w-full text-base sm:w-auto sm:min-w-64")}
+          >
+            カレンダーから日時を選ぶ
+            <span className="sr-only">（新しいタブで開きます）</span>
+          </a>
+        )}
+        <a href="#form" className={buttonClass(bookingUrl ? "secondary" : "accent", "w-full text-base sm:w-auto sm:min-w-64")}>
+          フォームで申し込む
+        </a>
+      </div>
+      {bookingUrl && (
+        <p className="mt-2 text-sm text-muted-foreground">カレンダーは別のタブで開きます。空いている30分を選んでください。</p>
+      )}
 
       <section aria-labelledby="flow" className="mt-8">
         <h2 id="flow" className="text-lg font-bold">
@@ -69,32 +90,14 @@ export default function ContactPage() {
             </li>
           ))}
         </ol>
-        <p className="mt-5 rounded-card border-l-4 border-accent bg-card px-4 py-3 font-bold">
-          相談だけでも歓迎です。売り込みはしません。
-        </p>
       </section>
 
-      {bookingUrl && (
-        <Card className="mt-8 border-2 border-foreground">
-          <h2 className="text-lg font-bold">日時をすぐ決めたいとき</h2>
-          <p className="mt-1 text-sm text-muted-foreground">予約のページが別のタブで開きます。空いている30分を選んでください。</p>
-          <a
-            href={bookingUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={buttonClass("accent", "mt-4 w-full text-base sm:w-auto sm:min-w-64")}
-          >
-            カレンダーから日時を選ぶ
-          </a>
-        </Card>
-      )}
-
       <p className="mt-8 rounded-card bg-muted px-4 py-3 text-sm">
-        いま使っている Excel や明細の見本があれば、当日画面で見せていただくのがいちばん早いです。
+        いま使っている Excel や明細の見本があれば、当日画面で見せていただくのがいちばん早いです（ドライバーの名前は隠したままで大丈夫です）。
       </p>
 
       <section aria-labelledby="form" className="mt-10">
-        <h2 id="form" className="text-lg font-bold">
+        <h2 id="form" className="scroll-mt-20 text-lg font-bold">
           フォームで申し込む
         </h2>
         {!formReady && (
@@ -116,7 +119,8 @@ export default function ContactPage() {
           </p>
         )}
         <p className="mt-2 text-sm text-muted-foreground">
-          入力いただいた内容は、ご相談へのお返事と見積もりのために使います（<Link href="/legal/privacy">プライバシーポリシー</Link>）。
+          書いていただくのは、会社名・お名前・メールアドレス・ドライバーの人数の4つだけです（ほかは任意）。入力いただいた内容は、ご相談へのお返事と見積もりのために使います。
+          あわせて、このサイトに来たきっかけ（FAX・チラシなどの資料の種類や、前に見ていたサイトの名前）もお送りします（<Link href="/legal/privacy">プライバシーポリシー</Link>）。
         </p>
         <Card className="mt-4 sm:p-6">
           <ContactForm fallbackEmail={CONTACT.email} bookingUrl={bookingUrl} />

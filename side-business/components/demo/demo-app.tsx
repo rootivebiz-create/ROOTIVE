@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Money } from "@/components/ui";
+import { cx } from "@/lib/cx";
+import { jpMonth } from "@/lib/format";
 import { summarize } from "@/lib/payroll/calc";
-import { jpMonth } from "./format";
-import { cx } from "./parts";
 import { ProfitTab } from "./profit-tab";
 import { SettingsTab } from "./settings-tab";
 import { useDemoState, useRequesterState } from "./state";

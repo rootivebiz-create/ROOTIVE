@@ -3,8 +3,8 @@
  * 印刷の寸法は app/kit/proposal/page.tsx の DECK_CSS（.kit-slide）が決める。
  */
 import type { ReactNode } from "react";
+import { cx } from "@/lib/cx";
 import { SITE } from "@/site.config";
-import { cx } from "./format";
 
 export function Slide({
   id,

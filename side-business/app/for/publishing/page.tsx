@@ -3,8 +3,6 @@ import Link from "next/link";
 import {
   PUBLISHING,
   PublishingExample,
-  jpDate,
-  manYen,
   publishingBurdenCompare,
   publishingLateExample,
   publishingTaxBaseCompare,
@@ -19,6 +17,7 @@ import {
   calcWithholding,
   withholdingRateFor,
 } from "@/lib/engine/withholding";
+import { jpDate, manYen } from "@/lib/format";
 import { pct } from "@/lib/payroll/money";
 import { TRANSITIONAL_SOURCE, TRANSITIONAL_STEPS } from "@/lib/payroll/tax";
 import { SITE } from "@/site.config";
@@ -309,7 +308,7 @@ export default function PublishingPage() {
               : ""}
           </li>
           <li>
-            負担が増えるのは、消費税を原則課税で計算している会社です。発注する側が簡易課税や免税事業者なら、この負担は出ません。
+            負担が増えるのは、消費税を原則課税で計算している会社です。発注する側が簡易課税・2割特例・免税事業者なら、この負担は出ません。
           </li>
           {burden && (
             <li>
@@ -359,7 +358,7 @@ export default function PublishingPage() {
           </li>
           <li>
             <strong>差し引くもの</strong>
-            ：源泉徴収のほかに差し引くものは、取引条件として示し、合意したものだけにします。一方的に差し引くと、報酬の減額にあたるおそれがあります。振込手数料は、支払う側の負担を基本にしてください。
+            ：源泉徴収のほかに差し引くものは、取引条件として示し、合意したものだけにします。一方的に差し引くと、報酬の減額にあたるおそれがあります。振込手数料は、支払う側の負担が安全です（取適法の運用では、合意があっても報酬から差し引くと減額とされえます）。
           </li>
         </ul>
       </div>

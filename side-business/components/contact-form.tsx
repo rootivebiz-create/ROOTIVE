@@ -3,9 +3,11 @@
 /**
  * 相談フォーム。入力は送る前に lib/contact.ts の同じ決まりで確かめ、/api/contact に送る。
  * 入力の中身は端末に保存しない。送れないとき（準備中・送信の失敗）は、メールの下書きで送れるようにする。
+ * 流入元（utm_*・前のサイトのホスト名・最初のページ）は sessionStorage に覚えたものを一緒に送る（無ければ送らない）。
  */
 import Link from "next/link";
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { captureCurrentSource } from "@/components/landing/source-capture";
 import { Button, Input, Select, buttonClass } from "@/components/ui";
 import {
   CONTACT_TEXT,
@@ -18,8 +20,7 @@ import {
   type Inquiry,
   type InquiryField,
 } from "@/lib/contact";
-
-const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
+import { cx } from "@/lib/cx";
 
 type FormState = {
   company: string;
@@ -126,6 +127,11 @@ export function ContactForm({
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const sending = status.kind === "sending";
 
+  // このページから入ってきた人の流入元も覚える（最初の 1 回だけ。すでにあれば上書きしない）
+  useEffect(() => {
+    captureCurrentSource();
+  }, []);
+
   useEffect(() => {
     if (status.kind === "done") {
       doneRef.current?.focus();
@@ -159,7 +165,8 @@ export function ContactForm({
     if (sending) return;
 
     // おとりの欄は画面では確かめない（機械に気づかせない）。サーバーが判断する
-    const checked = validateInquiry({ ...form, website: "" });
+    const source = captureCurrentSource();
+    const checked = validateInquiry({ ...form, website: "", source });
     if (!checked.ok) {
       showFieldErrors(checked.errors);
       return;
@@ -172,7 +179,7 @@ export function ContactForm({
       res = await fetch("/api/contact", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify(source ? { ...form, source } : form),
       });
     } catch {
       setStatus({ kind: "error", message: CONTACT_TEXT.network, draft: checked.data });
@@ -208,11 +215,18 @@ export function ContactForm({
         <p className="mt-2 text-sm">
           <span className="break-all font-bold">{status.email}</span> あてにお送りします。届かないときは、迷惑メールのフォルダも見てください。
         </p>
+        <h3 className="mt-4 text-sm font-bold">このあとの流れ</h3>
+        <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm leading-relaxed">
+          <li>メールで、30分のオンライン相談の日時を決めます（候補の日時か、予約のページをお送りします）。</li>
+          <li>当日は、いまの Excel か支払明細の見本を画面で見せていただくのがいちばん早いです（ドライバーの名前は隠したままで大丈夫です）。</li>
+          <li>相談のあと、御社のやり方に合わせた見本と見積もりをお送りします。決めるのは、それを見てからで大丈夫です。</li>
+        </ol>
         {bookingUrl && (
           <p className="mt-4 text-sm">
             日時をすぐ決めたいときは、
             <a href={bookingUrl} target="_blank" rel="noopener noreferrer">
               カレンダーから選べます
+              <span className="sr-only">（新しいタブで開きます）</span>
             </a>
             。
           </p>
@@ -327,11 +341,11 @@ export function ContactForm({
             <Badge required={false} />
             <span className="font-normal text-muted-foreground">（いくつでも）</span>
           </legend>
-          <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div className="mt-2 grid grid-cols-2 gap-2">
             {TOPIC_OPTIONS.map((t) => (
               <label
                 key={t}
-                className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border border-border bg-card px-3 py-2 text-sm has-[:checked]:border-foreground has-[:checked]:font-bold has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-foreground"
+                className="flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-2 text-sm leading-snug sm:gap-3 sm:px-3 has-[:checked]:border-foreground has-[:checked]:font-bold has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-foreground"
               >
                 <input
                   type="checkbox"
@@ -364,7 +378,7 @@ export function ContactForm({
             aria-invalid={invalid("message")}
             aria-describedby={describedBy("message", true)}
             className={cx(
-              "mt-1 block min-h-32 w-full rounded-lg border border-border bg-card px-3 py-2 text-base text-foreground outline-none focus:border-foreground",
+              "mt-1 block min-h-32 w-full rounded-lg border border-border bg-card px-3 py-2 text-base text-foreground focus:border-foreground",
               errors.message && invalidClass,
             )}
           />

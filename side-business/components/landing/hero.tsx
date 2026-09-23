@@ -1,20 +1,24 @@
 import Link from "next/link";
+import { compactYen } from "@/lib/format";
+import { buildPlans, trialPlan } from "@/lib/plans";
 import { SITE } from "@/site.config";
-import { buildPlans, trialPlan } from "./pricing";
-import { ArrowIcon, CheckIcon, compactYen, ctaClass } from "./section";
+import { PrimaryCta } from "./primary-cta";
+import { ArrowIcon, CheckIcon, ctaClass } from "./section";
 
 const POINTS = [
   { title: "今のExcelのルールのまま", body: "単価・控除・端数・元請ごとの締めを、そのまま再現します" },
   { title: "データもシステムも御社のもの", body: "御社のアカウントに作ります。ソースもお渡しします" },
-  { title: "月額は定額", body: "ドライバーは何人でも同じ料金です" },
+  { title: "作るのは軽貨物会社の代表", body: "自分の会社でも、支払明細と利益の管理を仕組みにして毎月使っています" },
 ] as const;
 
 export function Hero() {
   const trial = trialPlan();
-  const minMonthly = Math.min(...buildPlans().map((p) => p.monthlyYen));
+  const packs = buildPlans();
+  const minMonthly = Math.min(...packs.map((p) => p.monthlyYen));
+  const minInitial = Math.min(...packs.map((p) => p.initialYen));
   return (
     <section aria-labelledby="hero-title" className="pt-2 sm:pt-10">
-      <p className="text-sm font-bold text-muted-foreground">軽貨物・運送会社の、業務委託ドライバーの支払に</p>
+      <p className="text-sm font-bold text-muted-foreground">業務委託ドライバーに毎月支払っている、軽貨物・運送会社向け</p>
       <h1
         id="hero-title"
         className="mt-2 max-w-3xl text-[1.75rem] font-bold leading-snug tracking-tight [word-break:auto-phrase] sm:text-[2.6rem] sm:leading-tight"
@@ -22,7 +26,8 @@ export function Hero() {
         {SITE.tagline}
       </h1>
       <p className="mt-4 max-w-2xl text-base leading-relaxed sm:text-lg">
-        今のExcelのルールのまま。御社のアカウントに作るので、データもシステムも御社のもの。
+        ドライバーの稼働と単価から、<strong>支払明細のPDF・銀行の振込データ・案件ごとの利益</strong>
+        までを出す仕組みを、今のExcelのルールのまま御社のアカウントに作ります。データもシステムも御社のものです。
       </p>
 
       <Link
@@ -36,21 +41,22 @@ export function Hero() {
         <ArrowIcon className="transition group-hover:translate-x-0.5" />
       </Link>
 
-      <div className="no-print mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-        <Link href="/tools/invoice-cost" className={ctaClass("accent", "w-full px-5 text-base sm:w-auto")}>
-          70%の負担を計算する（無料）
-        </Link>
-        <Link href="/demo" className={ctaClass("primary", "w-full px-5 text-base sm:w-auto")}>
-          デモを触る
-        </Link>
-        <Link href="/contact" className={ctaClass("secondary", "w-full px-5 text-base sm:w-auto")}>
-          無料で相談する
-        </Link>
+      <div className="no-print mt-6 max-w-2xl">
+        <PrimaryCta className="sm:min-w-72" />
+        <p className="mt-2 text-sm text-muted-foreground">オンラインで30分・無料。今の締め方を聞かせてください。売り込みはしません。</p>
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">
+          <Link href="/demo" className={ctaClass("secondary", "sm:px-5 sm:text-base")}>
+            デモを触る
+          </Link>
+          <Link href="/tools/invoice-cost" className={ctaClass("secondary", "sm:px-5 sm:text-base")}>
+            負担を計算（無料）
+          </Link>
+        </div>
       </div>
-      <p className="mt-3 text-sm text-muted-foreground">
-        料金は
-        {trial ? `お試し${compactYen(trial.initialYen)}、` : ""}
-        月額{compactYen(minMonthly)}から（税抜）。
+      <p className="mt-4 text-sm leading-relaxed">
+        <span className="font-bold">料金（税抜）</span>：
+        {trial ? `お試し${compactYen(trial.initialYen)}（本契約で差し引き）／` : ""}
+        作る費用{compactYen(minInitial)}〜＋月額{compactYen(minMonthly)}〜。月額はドライバーが何人でも同じです（サーバー代は別）。
         <a href="#ryokin" className="ml-1 inline-flex min-h-11 items-center underline-offset-2 hover:underline">
           料金を見る
         </a>

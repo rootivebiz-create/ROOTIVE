@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { JsonLd, faqPageLd } from "@/components/json-ld";
 import { PayoutTool } from "@/components/tools/payout/payout-tool";
 import { parsePresetParam } from "@/components/tools/payout/state";
 import { Card, buttonClass } from "@/components/ui";
@@ -12,9 +13,9 @@ import {
   calcWithholding,
   withholdingRateFor,
 } from "@/lib/engine/withholding";
+import { jpMonth } from "@/lib/format";
 import { pct } from "@/lib/payroll/money";
 import { TRANSITIONAL_SOURCE, TRANSITIONAL_STEPS } from "@/lib/payroll/tax";
-import { jpMonth } from "@/lib/tools/invoice-cost";
 import { SITE } from "@/site.config";
 
 const PATH = "/tools/payout";
@@ -121,21 +122,9 @@ type Props = { searchParams: Promise<Record<string, string | string[] | undefine
 
 export default async function PayoutPage({ searchParams }: Props) {
   const initialPreset = parsePresetParam((await searchParams).preset);
-  const faqLd = {
-    "@context": "https://schema.org",
-    "@type": "FAQPage",
-    mainEntity: FAQ.map((f) => ({
-      "@type": "Question",
-      name: f.q,
-      acceptedAnswer: { "@type": "Answer", text: f.a },
-    })),
-  };
   return (
     <div className="mx-auto max-w-3xl">
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqLd).replace(/</g, "\\u003c") }}
-      />
+      <JsonLd data={faqPageLd(FAQ)} />
       <p className="text-sm font-bold text-muted-foreground">無料の計算ツール</p>
       <h1 className="mt-1 text-2xl font-bold leading-snug sm:text-3xl">
         業務委託の報酬・源泉徴収・振込額の計算

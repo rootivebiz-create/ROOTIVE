@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { SourceCapture } from "@/components/landing/source-capture";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { SITE } from "@/site.config";
@@ -29,8 +30,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="ja">
       <body className="min-h-dvh antialiased">
+        {/* 流入元はどのページから入っても拾う（FAX の QR は /tools/* に来る） */}
+        <SourceCapture />
         <SiteHeader />
-        <main className="mx-auto w-full max-w-5xl px-4 pb-8 pt-6">{children}</main>
+        <main id="main" className="mx-auto w-full max-w-5xl scroll-mt-16 px-4 pb-8 pt-6">{children}</main>
         <SiteFooter />
       </body>
     </html>

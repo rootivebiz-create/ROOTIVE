@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import { PlateLogo } from "@/components/plate-logo";
 import { BENEFITS, FEATURES, FREE_CHECK, FREELANCE, STEP_70_DATE } from "@/components/kit/content";
-import { buildPlans, displayUrl, kitUrl, trialPlan, yenText } from "@/components/kit/format";
+import { displayUrl, kitUrl } from "@/components/kit/format";
 import { KitToolbar, PaperStyle } from "@/components/kit/paper";
 import { Qr } from "@/components/kit/qr";
 import { SenderBlock, SetupWarning } from "@/components/kit/sender";
+import { yenText } from "@/lib/format";
+import { buildPlans, trialPlan } from "@/lib/plans";
 import { OPTIONS, PLANS, SITE } from "@/site.config";
 
 export const metadata: Metadata = {

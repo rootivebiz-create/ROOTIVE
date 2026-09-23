@@ -8,9 +8,6 @@ import { SITE } from "@/site.config";
 export const DRIVER_OPTIONS = ["〜5人", "6〜15人", "16〜30人", "31〜50人", "51人〜"] as const;
 export const TOPIC_OPTIONS = ["支払明細", "利益の見える化", "振込データ", "点呼・業務記録", "請求書", "その他"] as const;
 
-export type DriverOption = (typeof DRIVER_OPTIONS)[number];
-export type TopicOption = (typeof TOPIC_OPTIONS)[number];
-
 export const LIMITS = {
   company: 100,
   name: 50,
@@ -53,6 +50,123 @@ export function normalizePhone(v: string): string {
 }
 
 const digitCount = (v: string) => v.replace(/\D/g, "").length;
+
+// ---------------------------------------------------------------------------
+// 流入元（どこから来たか。FAX・メール・紹介などの効果を数えるため）
+// ---------------------------------------------------------------------------
+
+/** 流入元の 1 項目の長さの上限 */
+export const SOURCE_MAX = 100;
+
+/** 1 行にして、制御文字を消す */
+const sourceText = (v: string) => oneLine(v).replace(/[\u0000-\u001f\u007f]/g, "");
+
+const sourceField = z
+  .string()
+  .overwrite(sourceText)
+  .max(SOURCE_MAX)
+  .optional()
+  .transform((v) => (v ? v : undefined));
+
+/**
+ * 流入元。画面から見えない情報なので、形がおかしくても申し込み自体は止めない（丸ごと捨てる）。
+ *   utm_source / utm_medium / utm_campaign：最初に開いた URL の値
+ *   referrer：前にいたサイトのホスト名だけ（パスや検索語は持たない）
+ *   landing：最初に開いたページのパス（FAX の A/B は QR の行き先のページで分かれる）
+ */
+export const leadSourceSchema = z
+  .object({
+    utm_source: sourceField,
+    utm_medium: sourceField,
+    utm_campaign: sourceField,
+    referrer: sourceField,
+    landing: sourceField,
+  })
+  .transform((s) => {
+    const entries = Object.entries(s).filter(([, v]) => v !== undefined);
+    return entries.length > 0 ? (Object.fromEntries(entries) as Partial<Record<keyof typeof s, string>>) : undefined;
+  });
+
+export type LeadSource = NonNullable<z.output<typeof leadSourceSchema>>;
+
+/** 端末に覚えておくときのキー（sessionStorage。タブを閉じると消える） */
+export const SOURCE_STORAGE_KEY = "shimebi-lab:source";
+
+/** 最初に開いたページの URL と前のページから、流入元を作る（自分のサイトの中の移動は参照元にしない） */
+export function sourceFromLocation(loc: {
+  search: string;
+  pathname: string;
+  host: string;
+  referrer: string;
+}): LeadSource | undefined {
+  const params = new URLSearchParams(loc.search);
+  let referrer: string | undefined;
+  if (loc.referrer) {
+    try {
+      const host = new URL(loc.referrer).host.toLowerCase();
+      if (host && host !== loc.host.toLowerCase()) referrer = host;
+    } catch {
+      referrer = undefined;
+    }
+  }
+  const cut = (v: string | null | undefined) => (v ? sourceText(v).slice(0, SOURCE_MAX) : undefined);
+  const parsed = leadSourceSchema.safeParse({
+    utm_source: cut(params.get("utm_source")),
+    utm_medium: cut(params.get("utm_medium")),
+    utm_campaign: cut(params.get("utm_campaign")),
+    referrer: cut(referrer),
+    landing: cut(loc.pathname),
+  });
+  return parsed.success ? parsed.data : undefined;
+}
+
+type StorageLike = Pick<Storage, "getItem" | "setItem">;
+
+/** 覚えている流入元を読む（読めない・形が違うときは undefined） */
+export function readStoredSource(storage: StorageLike | null | undefined): LeadSource | undefined {
+  try {
+    const raw = storage?.getItem(SOURCE_STORAGE_KEY);
+    if (!raw) return undefined;
+    const parsed = leadSourceSchema.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 最初に開いたときだけ流入元を覚える（あとのページで上書きしない）。
+ * 流入元が何も無い（直接来た）ときも、最初のページだけは覚えて、そのあとの移動で上書きされないようにする。
+ */
+export function captureSource(
+  storage: StorageLike | null | undefined,
+  loc: Parameters<typeof sourceFromLocation>[0],
+): LeadSource | undefined {
+  try {
+    if (!storage) return sourceFromLocation(loc);
+    const stored = storage.getItem(SOURCE_STORAGE_KEY);
+    if (stored) return readStoredSource(storage);
+    const source = sourceFromLocation(loc);
+    storage.setItem(SOURCE_STORAGE_KEY, JSON.stringify(source ?? {}));
+    return source;
+  } catch {
+    return undefined;
+  }
+}
+
+/** 通知に載せる 1 行（例：utm_source=fax, landing=/tools/invoice-cost） */
+export function formatSource(source: LeadSource | undefined): string {
+  if (!source) return "（記録なし：直接の入力・ブックマークなど）";
+  const labels: [keyof LeadSource, string][] = [
+    ["utm_source", "utm_source"],
+    ["utm_medium", "utm_medium"],
+    ["utm_campaign", "utm_campaign"],
+    ["referrer", "参照元"],
+    ["landing", "最初のページ"],
+  ];
+  const parts = labels.filter(([k]) => source[k]).map(([k, label]) => `${label}=${source[k]}`);
+  return parts.length > 0 ? parts.join(", ") : "（記録なし：直接の入力・ブックマークなど）";
+}
 
 export const inquirySchema = z.object({
   company: z
@@ -101,6 +215,8 @@ export const inquirySchema = z.object({
     .overwrite((v) => v.trim())
     .max(0, { error: "この欄は空のままにしてください" })
     .nullish(),
+  /** 流入元（任意）。形がおかしければ捨てる（申し込みは止めない） */
+  source: leadSourceSchema.optional().catch(undefined),
 });
 
 export type Inquiry = z.output<typeof inquirySchema>;
@@ -161,6 +277,8 @@ export function formatInquiry(inquiry: Inquiry, receivedAt: Date): string {
     `電話：${inquiry.phone || "（なし）"}`,
     `ドライバーの人数：${inquiry.drivers}`,
     `相談したいこと：${inquiry.topics.length > 0 ? inquiry.topics.join("、") : "（選択なし）"}`,
+    // 長い本文で Webhook の上限に切られても残るよう、本文より前に置く
+    `流入元：${formatSource(inquiry.source)}`,
     "",
     "■ ご相談の内容",
     inquiry.message || "（なし）",

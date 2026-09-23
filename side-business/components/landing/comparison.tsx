@@ -1,65 +1,11 @@
+import { COMPARISON_CRITERIA, COMPARISON_NOTE, comparisonChoices } from "@/components/kit/content";
+import { cx } from "@/lib/cx";
 import { SITE } from "@/site.config";
-import { buildPlans, trialPlan } from "./pricing";
-import { Section, compactYen, cx, rangeYen } from "./section";
-
-const CRITERIA = [
-  { key: "fit", label: "形に合わせる必要" },
-  { key: "monthly", label: "月額の決まり方" },
-  { key: "data", label: "データの持ち主" },
-  { key: "initial", label: "初期費用の目安" },
-] as const;
-
-type Key = (typeof CRITERIA)[number]["key"];
-type Choice = { name: string; ours?: boolean; values: Record<Key, string> };
-
-function choices(): Choice[] {
-  const packs = buildPlans();
-  const trial = trialPlan();
-  const monthly = packs.map((p) => p.monthlyYen);
-  const initial = packs.map((p) => p.initialYen);
-  return [
-    {
-      name: "1人あたり課金のアプリ",
-      values: {
-        fit: "あり。決まった画面と計算の形に合わせる",
-        monthly: "ドライバー1人ごと（1人月1,000円前後）。人が増えると上がる",
-        data: "サービス会社のサーバー。やめるときの持ち出しは各社の条件しだい",
-        initial: "0円のことが多い",
-      },
-    },
-    {
-      name: "運送業向けのクラウドサービス",
-      values: {
-        fit: "あり。設定できる範囲で合わせる",
-        monthly: "プランごと（月1万〜5万円前後）。機能や台数・人数で変わる",
-        data: "サービス会社のサーバー。やめるときの持ち出しは各社の条件しだい",
-        initial: "0円のところが多い。見積のところもある",
-      },
-    },
-    {
-      name: "kintone・受託開発",
-      values: {
-        fit: "なし。自由に作れる",
-        monthly: "kintoneは利用者ごとのライセンス（作り込める版で月1.8万円前後から）。保守を外に頼むと別に費用",
-        data: "kintoneはサービス会社のクラウド。受託開発は契約しだい",
-        initial: "作る範囲しだい（数十万〜300万円以上）",
-      },
-    },
-    {
-      name: SITE.name,
-      ours: true,
-      values: {
-        fit: "なし。今のExcelのルールに合わせて作る",
-        monthly: `定額（月${rangeYen(Math.min(...monthly), Math.max(...monthly))}）。ドライバーは何人でも同じ。サーバー代は御社が直接`,
-        data: "御社のアカウントに置く。データもソースも御社のもの",
-        initial: `${rangeYen(Math.min(...initial), Math.max(...initial))}${trial ? `（お試し${compactYen(trial.initialYen)}は本契約で差し引き）` : ""}`,
-      },
-    },
-  ];
-}
+import { NextStep } from "./primary-cta";
+import { Section } from "./section";
 
 export function Comparison() {
-  const list = choices();
+  const list = comparisonChoices();
   return (
     <Section
       id="hikaku"
@@ -79,7 +25,7 @@ export function Comparison() {
           >
             <h3 className="font-bold">{c.name}</h3>
             <dl className="mt-2 space-y-2 text-sm">
-              {CRITERIA.map((k) => (
+              {COMPARISON_CRITERIA.map((k) => (
                 <div key={k.key}>
                   <dt className="text-xs font-bold text-muted-foreground">{k.label}</dt>
                   <dd className="leading-relaxed">{c.values[k.key]}</dd>
@@ -115,7 +61,7 @@ export function Comparison() {
             </tr>
           </thead>
           <tbody>
-            {CRITERIA.map((k) => (
+            {COMPARISON_CRITERIA.map((k) => (
               <tr key={k.key}>
                 <th scope="row" className="border-b border-border py-3 pr-3 text-left align-top text-xs font-bold text-muted-foreground">
                   {k.label}
@@ -138,8 +84,9 @@ export function Comparison() {
       </div>
 
       <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-        2026年9月時点の公開情報をもとにした目安。各社の最新の料金は各社のサイトでご確認ください。
+        {COMPARISON_NOTE}
       </p>
+      <NextStep>どれが合うか迷ったら、相談で正直にお答えします。既製品で足りるなら、そうお伝えします。</NextStep>
     </Section>
   );
 }

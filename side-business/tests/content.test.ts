@@ -39,3 +39,12 @@ describe("記事の読み込み", () => {
     expect(getArticle("nope")).toBeNull();
   });
 });
+
+describe("リンクの属性", () => {
+  it("href と title の \" を逃がし、外部リンクは新しいタブで開く", () => {
+    const { html } = renderMarkdown('[a](https://example.com/?q=1&r=2 "say \\"hi\\"")');
+    expect(html).toContain('href="https://example.com/?q=1&amp;r=2"');
+    expect(html).toContain('title="say &quot;hi&quot;"');
+    expect(html).toContain('rel="noopener noreferrer"');
+  });
+});

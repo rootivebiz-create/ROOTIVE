@@ -12,6 +12,12 @@ const NAV = [
 export function SiteHeader() {
   return (
     <header className="no-print sticky top-0 z-30 border-b border-border bg-background/90 backdrop-blur">
+      <a
+        href="#main"
+        className="sr-only rounded-lg bg-card px-4 py-2 font-bold text-foreground focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-40"
+      >
+        本文へ移動
+      </a>
       <div className="mx-auto flex h-14 max-w-5xl items-center gap-3 px-4">
         <Link href="/" className="flex items-center gap-2 font-bold text-foreground no-underline">
           <PlateLogo />
@@ -22,7 +28,7 @@ export function SiteHeader() {
             <Link
               key={item.href}
               href={item.href}
-              className="whitespace-nowrap rounded-md px-2 py-1.5 text-foreground no-underline hover:bg-muted"
+              className="inline-flex min-h-11 items-center whitespace-nowrap rounded-md px-2 text-foreground no-underline hover:bg-muted"
             >
               {item.label}
             </Link>

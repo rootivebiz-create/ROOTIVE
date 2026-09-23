@@ -13,7 +13,8 @@
  * 判定は安全側に倒す：期間の初日から数えて期限内なら ok、締め日から数えてはじめて期限内なら caution（条件つき）、
  * 締め日から数えても超えるなら ng。
  */
-import { daysBetween, groupDigits, jpDate } from "@/lib/tools/invoice-cost";
+import { groupDigits, jpDate } from "@/lib/format";
+import { daysBetween } from "@/lib/tools/invoice-cost";
 
 /** この道具がもとにしている制度の時点 */
 export const TORIHIKI_RULES_AS_OF = "2026年9月";
@@ -593,7 +594,7 @@ export function buildTorihikiJoken(input: TorihikiInput): TorihikiDoc {
   });
   if (input.transferFeeBearer === "driver") {
     warnings.push(
-      "2026年1月1日以後に発注する取引では、合意があっても振込手数料を報酬から差し引くと「報酬の減額」などとして違反になると、公正取引委員会が示しています。",
+      "振込手数料は、会社（支払う側）の負担にしておくのが安全です。取適法（旧下請法）の運用では、合意があっても報酬から差し引くと「減額」とされえます。フリーランス法でも、公正取引委員会は、2026年1月1日以後に発注する取引から考え方が変わると案内しています（判断は専門家へ）。",
     );
   }
 

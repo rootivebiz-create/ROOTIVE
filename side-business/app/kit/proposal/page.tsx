@@ -22,16 +22,17 @@ import {
   perHeadEquivalent,
   shortSource,
 } from "@/components/kit/content";
-import { addressee, cx, displayUrl, jpToday, kitUrl, yenText } from "@/components/kit/format";
+import { addressee, displayUrl, kitUrl } from "@/components/kit/format";
 import { KitToolbar, PaperStyle } from "@/components/kit/paper";
 import { Qr } from "@/components/kit/qr";
 import { SenderBlock, SetupWarning } from "@/components/kit/sender";
 import { DemoBadge, MiniTable, Slide } from "@/components/kit/slide";
+import { cx } from "@/lib/cx";
+import { jpDate, jpMonth, jpToday, yenText } from "@/lib/format";
 import { summarize } from "@/lib/payroll/calc";
 import { pct, yen } from "@/lib/payroll/money";
 import { sampleData } from "@/lib/payroll/sample";
 import { deductibleRateForExempt } from "@/lib/payroll/tax";
-import { jpDate, jpMonth } from "@/lib/tools/invoice-cost";
 import { CONTACT, MAINTENANCE_INCLUDES, OPTIONS, PLANS, SITE, businessInfo, type Plan } from "@/site.config";
 
 type Props = { searchParams: Promise<Record<string, string | string[] | undefined>> };
@@ -151,7 +152,7 @@ export default async function ProposalPage({ searchParams }: Props) {
               defaultValue={typeof sp.company === "string" ? sp.company : ""}
               maxLength={40}
               placeholder="例：サンプル運送株式会社"
-              className="mt-1 block min-h-11 w-full rounded-lg border border-border bg-card px-3 text-base text-foreground outline-none focus:border-foreground"
+              className="mt-1 block min-h-11 w-full rounded-lg border border-border bg-card px-3 text-base text-foreground focus:border-foreground"
             />
           </label>
           <button

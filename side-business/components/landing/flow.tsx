@@ -1,19 +1,13 @@
-import { buildPlans, trialPlan } from "./pricing";
-import { Section, compactYen } from "./section";
+import { compactYen } from "@/lib/format";
+import { buildWeeksText, trialPlan } from "@/lib/plans";
+import { NextStep } from "./primary-cta";
+import { Section } from "./section";
 
 type Step = { title: string; time?: string; body: string };
 
 function steps(): Step[] {
   const trial = trialPlan();
-  const weeks = buildPlans()
-    .map((p) => Number(/(\d+)/.exec(p.weeks)?.[1]))
-    .filter((n) => Number.isFinite(n));
-  const buildTime =
-    weeks.length > 0
-      ? Math.min(...weeks) === Math.max(...weeks)
-        ? `${weeks[0]}週間`
-        : `${Math.min(...weeks)}〜${Math.max(...weeks)}週間`
-      : undefined;
+  const buildTime = buildWeeksText();
   return [
     {
       title: "無料の相談・診断",
@@ -66,6 +60,7 @@ export function Flow() {
           </li>
         ))}
       </ol>
+      <NextStep>まずは①の無料相談から。決めるのは、見積と動く見本を見てからで大丈夫です。</NextStep>
     </Section>
   );
 }

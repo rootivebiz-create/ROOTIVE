@@ -3,11 +3,10 @@
 /** デモの画面で共通に使う小さな部品（数値の入力欄・開け閉めできるカード・インボイスの札・表のクラス） */
 import { useId, useState, type InputHTMLAttributes, type ReactNode } from "react";
 import { Input, NumberInput } from "@/components/ui";
+import { cx } from "@/lib/cx";
 import type { AccountType } from "@/lib/payroll/types";
 import { toZenginKana } from "@/lib/payroll/zengin";
 import { normalizeMonth, parseNonNegative, readNumberDraft } from "./format";
-
-export const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
 
 /** 表のセル */
 export const th = "border-b border-border px-2 py-2 sm:px-3 text-left text-xs font-bold text-muted-foreground whitespace-nowrap";

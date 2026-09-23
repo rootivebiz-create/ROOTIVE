@@ -2,8 +2,9 @@
  * 営業資料の差出人（屋号・事業者名・所在地・電話・メール・登録番号）と、送る前に埋めるべき設定の警告。
  * 値は site.config.ts（businessInfo・CONTACT）から読み、未設定なら【所在地】のような目印を出す。
  */
+import { cx } from "@/lib/cx";
 import { CONTACT, SITE, businessInfo } from "@/site.config";
-import { cx, isLocalSiteUrl } from "./format";
+import { isLocalSiteUrl } from "./format";
 
 export type SenderRow = {
   label: string;

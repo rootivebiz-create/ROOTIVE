@@ -1,18 +1,13 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { TRANSITIONAL_SOURCE, TRANSITIONAL_STEPS, nonDeductibleTax } from "@/lib/payroll/tax";
-import { jpDate, jpMonth } from "@/lib/tools/invoice-cost";
-import { ArrowIcon, NewTabNote, Section, yenText } from "./section";
+import { EXAMPLE_PAID, STEP_70_DATE, burdenExample } from "@/components/kit/content";
+import { yenText } from "@/lib/format";
+import { TRANSITIONAL_SOURCE } from "@/lib/payroll/tax";
+import { NextStep } from "./primary-cta";
+import { ArrowIcon, NewTabNote, Section } from "./section";
 
-/** 例：免税の方へ税込 11 万円を払ったとき、控除できずに会社が負担する消費税（期間ごと） */
-const EXAMPLE_PAID = 110_000;
-const EXAMPLE = TRANSITIONAL_STEPS.map((s, i) => ({
-  label: i === 0 && s.to ? `${jpMonth(s.to)}まで` : `${jpMonth(s.from)}から`,
-  rate: s.rate,
-  burden: nonDeductibleTax(EXAMPLE_PAID, s.from),
-}));
-/** 80% → 70% に変わる日（2026-10-01） */
-const STEP_70 = TRANSITIONAL_STEPS.find((s) => s.rate === 0.7);
+/** 例：免税の方へ税込 11 万円を払ったとき、控除できずに会社が負担する消費税（期間ごと。提案書・FAX と同じ数字） */
+const EXAMPLE = burdenExample();
 
 type Source = { label: string; url: string };
 
@@ -67,7 +62,7 @@ export function Deadlines() {
     >
       <ol className="grid gap-4 lg:grid-cols-3">
         <DeadlineCard
-          date={STEP_70 ? jpDate(STEP_70.from) : "2026年10月1日"}
+          date={STEP_70_DATE}
           tag="消費税"
           title="免税ドライバーへの支払の控除が、80%から70%に"
           sources={[{ label: "国税庁「インボイス制度の見直し」（令和8年度税制改正）", url: TRANSITIONAL_SOURCE }]}
@@ -82,7 +77,7 @@ export function Deadlines() {
                 <li key={e.label} className="flex items-baseline justify-between gap-3">
                   <span>
                     {e.label}
-                    <span className="ml-1 text-xs text-muted-foreground">（{e.rate > 0 ? `控除${Math.round(e.rate * 100)}%` : "控除なし"}）</span>
+                    <span className="ml-1 text-xs text-muted-foreground">（{e.rateLabel}）</span>
                   </span>
                   <span className="num font-bold">{yenText(e.burden)}</span>
                 </li>
@@ -132,6 +127,9 @@ export function Deadlines() {
           </p>
         </DeadlineCard>
       </ol>
+      <NextStep alt={{ href: "/tools/torihiki-joken", label: "取引条件の明示書を作ってみる（無料）" }}>
+        期限に向けて、支払明細や取引条件の出し方を整えたいときは、ご相談ください。
+      </NextStep>
     </Section>
   );
 }

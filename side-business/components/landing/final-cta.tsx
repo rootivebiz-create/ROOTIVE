@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { NewTabNote, cx } from "./section";
+import { cx } from "@/lib/cx";
+import { NewTabNote } from "./section";
 
 const BASE =
   "inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg px-5 text-base font-bold no-underline transition sm:w-auto";

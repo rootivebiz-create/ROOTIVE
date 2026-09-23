@@ -1,6 +1,6 @@
 /** QR コード（サーバーで SVG にして埋め込む。画像の読み込みも外部のサービスも使わない） */
 import QRCode from "qrcode";
-import { cx } from "./format";
+import { cx } from "@/lib/cx";
 
 const LEVEL = "M" as const;
 /** 読み取りに必要な周りの白い余白（マスの数） */

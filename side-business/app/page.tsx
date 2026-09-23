@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { JsonLd, faqPageLd } from "@/components/json-ld";
 import { BusinessInfo } from "@/components/landing/business-info";
 import { Comparison } from "@/components/landing/comparison";
 import { Deadlines } from "@/components/landing/deadlines";
@@ -10,8 +11,8 @@ import { Hero } from "@/components/landing/hero";
 import { Maker } from "@/components/landing/maker";
 import { Pains } from "@/components/landing/pains";
 import { Pricing } from "@/components/landing/pricing";
-import { JsonLd, regNoText } from "@/components/landing/section";
 import { Trust } from "@/components/landing/trust";
+import { regNoText } from "@/lib/format";
 import { CONTACT, PLANS, SITE, businessInfo, type BusinessInfo as Info } from "@/site.config";
 
 const OG_TITLE = `${SITE.name}｜${SITE.tagline}`;
@@ -84,16 +85,11 @@ function businessLd(info: Info) {
 export default function HomePage() {
   const info = businessInfo();
   const faq = landingFaq();
-  const faqLd = {
-    "@context": "https://schema.org",
-    "@type": "FAQPage",
-    mainEntity: faq.map((f) => ({ "@type": "Question", name: f.q, acceptedAnswer: { "@type": "Answer", text: f.a } })),
-  };
 
   return (
     <>
       <JsonLd data={businessLd(info)} />
-      <JsonLd data={faqLd} />
+      <JsonLd data={faqPageLd(faq)} />
       <Hero />
       <Pains />
       <Deadlines />

@@ -18,6 +18,7 @@ import {
   applyBp,
   withholdingRateFor,
 } from "@/lib/engine/withholding";
+import { jpDate, jpMonth } from "@/lib/format";
 import { pct } from "@/lib/payroll/money";
 import { TRANSITIONAL_SOURCE, TRANSITIONAL_STEPS } from "@/lib/payroll/tax";
 import { SITE } from "@/site.config";
@@ -31,17 +32,7 @@ const AS_OF = "2026年9月";
 
 const PAYOUT_TOOL = "/tools/payout?preset=it";
 
-const jpDate = (d: string) => {
-  const [y, m, day] = d.split("-").map(Number);
-  return `${y}年${m}月${day}日`;
-};
-
 const monthOf = (d: string) => `${Number(d.split("-")[1])}月`;
-
-const ymOf = (d: string) => {
-  const [y, m] = d.split("-").map(Number);
-  return `${y}年${m}月`;
-};
 
 /* ───────────── 率は表（lib/engine/withholding・lib/payroll/tax）から引く。本文に直書きしない ───────────── */
 
@@ -334,7 +325,7 @@ export default function ItPage() {
           )}
           {EXPECTED && (
             <li>
-              {ymOf(EXPECTED.from)}
+              {jpMonth(EXPECTED.from)}
               からは、防衛特別所得税が加わり、そのぶん復興特別所得税の率が下がります。合計の率は
               {EXPECTED.basicBp === RATE.basicBp
                 ? `${BASIC}のまま変わらない見込みです`
@@ -396,7 +387,7 @@ export default function ItPage() {
               : ""}
           </li>
           <li>
-            負担が増えるのは、消費税を原則課税で計算している会社です。発注する側が簡易課税や免税事業者なら、この負担は出ません。
+            負担が増えるのは、消費税を原則課税で計算している会社です。発注する側が簡易課税・2割特例・免税事業者なら、この負担は出ません。
           </li>
           {compare && (
             <li>
@@ -447,7 +438,7 @@ export default function ItPage() {
           </li>
           <li>
             <strong>禁止されること（5条）</strong>
-            ：1か月以上の業務委託では、受領拒否・報酬の減額・買いたたき・不当なやり直しなどが禁止されています。合意の無い差し引きや、免税であることを理由に消費税相当額を一方的に差し引くことは、減額・買いたたきにあたるおそれがあります。振込手数料は、支払う側の負担を基本にしてください。
+            ：1か月以上の業務委託では、受領拒否・報酬の減額・買いたたき・不当なやり直しなどが禁止されています。合意の無い差し引きや、免税であることを理由に消費税相当額を一方的に差し引くことは、減額・買いたたきにあたるおそれがあります。振込手数料は、支払う側の負担が安全です（取適法の運用では、合意があっても報酬から差し引くと減額とされえます）。
           </li>
           <li>
             <strong>6か月以上続く契約</strong>

@@ -2,12 +2,14 @@
 
 import { useMemo, useState } from "react";
 import { Button, Card, Field, Input, Money, Select, TableWrap } from "@/components/ui";
+import { cx } from "@/lib/cx";
+import { jpDate } from "@/lib/format";
 import type { MonthSummary } from "@/lib/payroll/calc";
 import { sum } from "@/lib/payroll/money";
 import { parseWorkPaste } from "@/lib/payroll/paste";
 import type { MonthData } from "@/lib/payroll/types";
-import { jpDate, parseYen, qtyText, unitPrice } from "./format";
-import { MonthField, NumberField, SectionTitle, commaDisplay, cx, td, tdNum, textButton, th, thNum } from "./parts";
+import { parseYen, qtyText, unitPrice } from "./format";
+import { MonthField, NumberField, SectionTitle, commaDisplay, td, tdNum, textButton, th, thNum } from "./parts";
 import { pasteExample, qtyOf, type PasteMode } from "./reducer";
 import type { DemoActions } from "./state";
 
@@ -186,7 +188,7 @@ function PasteBox({ data, onApply }: { data: MonthData; onApply: DemoActions["ap
             rows={6}
             spellCheck={false}
             placeholder={"ドライバー\t案件\t数量\n青木 翔太\t宅配（個建て）\t2310"}
-            className="block w-full rounded-lg border border-border bg-card px-3 py-2 font-mono text-base text-foreground outline-none focus:border-foreground sm:text-sm"
+            className="block w-full rounded-lg border border-border bg-card px-3 py-2 font-mono text-base text-foreground focus:border-foreground sm:text-sm"
           />
         </label>
         <div className="mt-2 flex flex-wrap items-center gap-2">

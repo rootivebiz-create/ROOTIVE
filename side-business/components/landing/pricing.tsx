@@ -1,16 +1,8 @@
-import Link from "next/link";
+import { cx } from "@/lib/cx";
+import { regNoText, yenText } from "@/lib/format";
 import { MAINTENANCE_INCLUDES, OPTIONS, PLANS, type Plan } from "@/site.config";
-import { CheckIcon, Section, cx, ctaClass, regNoText, yenText } from "./section";
-
-/** 月額のない「お試し」（無ければ null） */
-export function trialPlan(): Plan | null {
-  return PLANS.find((p) => p.monthlyYen === 0) ?? null;
-}
-
-/** 構築して毎月使うパック（月額のあるもの） */
-export function buildPlans(): Plan[] {
-  return PLANS.filter((p) => p.monthlyYen > 0);
-}
+import { NextStep } from "./primary-cta";
+import { CheckIcon, Section } from "./section";
 
 function PriceRow({ label, value, sub, plain }: { label: string; value: string; sub?: string; plain?: boolean }) {
   return (
@@ -114,14 +106,9 @@ export function Pricing({ invoiceRegNo }: { invoiceRegNo: string | null }) {
         </section>
       </div>
 
-      <div className="no-print mt-6 flex flex-col gap-3 sm:flex-row">
-        <Link href="/contact" className={ctaClass("accent", "w-full sm:w-auto")}>
-          見積を相談する（無料）
-        </Link>
-        <Link href="/demo" className={ctaClass("secondary", "w-full sm:w-auto")}>
-          先にデモを触る
-        </Link>
-      </div>
+      <NextStep alt={{ href: "/demo", label: "先にデモを触る" }}>
+        御社の見積は、30分の相談で今の締め方をうかがってからお送りします。
+      </NextStep>
     </Section>
   );
 }

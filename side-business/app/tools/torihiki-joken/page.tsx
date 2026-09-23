@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { JsonLd, faqPageLd } from "@/components/json-ld";
 import { TorihikiJokenTool } from "@/components/tools/torihiki-joken";
 import { buttonClass, Card } from "@/components/ui";
 import {
@@ -32,10 +33,8 @@ const SOURCES = [
     label: "公正取引委員会（公正取引委員会関係 特定受託事業者に係る取引の適正化等に関する法律施行規則）",
     url: "https://www.jftc.go.jp/fllawjftcrules.html",
   },
-  {
-    label: "中小企業庁（フリーランス法 Q&A。2026年1月1日時点）",
-    url: "https://www.chusho.meti.go.jp/keiei/torihiki/download/freelance/law_qa.pdf",
-  },
+  { label: "公正取引委員会（フリーランス法 Q&A）", url: "https://www.jftc.go.jp/fllaw_limited/fllaw_qa.html" },
+  { label: "公正取引委員会・中小企業庁（取適法のリーフレット）", url: "https://www.jftc.go.jp/file/toriteki_leaflet.pdf" },
   { label: "公正取引委員会（フリーランス法にもとづく勧告の一覧）", url: "https://www.jftc.go.jp/FL/FLkankoku/index.html" },
   { label: "LNEWS（2026年9月2日 日本郵便への勧告の記事）", url: "https://www.lnews.jp/2026/09/s0902505.html" },
   { label: "公正取引委員会の公式 X（振込手数料の扱い）", url: "https://x.com/jftc/status/2010909678080073897" },
@@ -78,7 +77,7 @@ const FAQ = [
   },
   {
     q: "振込手数料をドライバーの報酬から差し引いてもいいですか？",
-    a: "公正取引委員会は、2026年1月1日以後に発注する取引では、合意があってもなくても、振込手数料を報酬から差し引くことは「報酬の減額」などとして違反になると示しています。振込手数料は会社が負担する形にしておきましょう。",
+    a: "振込手数料は、会社（支払う側）の負担にしておくのが安全です。取適法（旧下請法）の運用では、合意があっても代金から差し引くと「減額」とされえます。フリーランス法でも、公正取引委員会は、2026年1月1日以後に発注する取引から考え方が変わり、合意があっても報酬から差し引くと「報酬の減額」などにあたりうると案内しています。",
   },
 ];
 
@@ -91,21 +90,9 @@ export const metadata: Metadata = {
 };
 
 export default function TorihikiJokenPage() {
-  const faqLd = {
-    "@context": "https://schema.org",
-    "@type": "FAQPage",
-    mainEntity: FAQ.map((f) => ({
-      "@type": "Question",
-      name: f.q,
-      acceptedAnswer: { "@type": "Answer", text: f.a },
-    })),
-  };
   return (
     <div className="mx-auto max-w-5xl">
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqLd).replace(/</g, "\\u003c") }}
-      />
+      <JsonLd data={faqPageLd(FAQ)} />
       <div className="no-print max-w-3xl">
         <p className="text-sm font-bold text-muted-foreground">無料のひな形づくり</p>
         <h1 className="mt-1 text-2xl font-bold leading-snug sm:text-3xl">
@@ -237,13 +224,13 @@ export default function TorihikiJokenPage() {
         <h2>振込手数料と、報酬から差し引くもの</h2>
         <p>
           公正取引委員会は、<strong>2026年1月1日以後に発注する取引</strong>
-          では、合意があってもなくても、振込手数料を報酬から差し引くことは「報酬の減額」などとして違反になると示しています。
+          から考え方が変わり、合意があっても振込手数料を報酬から差し引くと「報酬の減額」などにあたりうると案内しています。取適法（旧下請法）の運用でも、合意があっても差し引くと「減額」とされえます。振込手数料は、会社（支払う側）の負担にしておくのが安全です。
         </p>
         <p>
           管理費・ロイヤリティ・車両のリース代などを報酬から差し引くなら、先に話し合って決め、明示書に書いておきます。1か月以上続く業務委託などでは、ドライバーに責任がないのに、決めた報酬を後から減らすことは禁止されています。
         </p>
         <p>
-          ただし、明示書に書けば何でも差し引けるわけではありません。振込手数料のように、合意があっても違反とされるものがあります。何の費用として、いくら差し引くのかを説明できるようにしておき、迷うものは弁護士などに確かめてください。
+          ただし、明示書に書けば何でも差し引けるわけではありません。振込手数料のように、合意があっても減額とされうるものがあります。何の費用として、いくら差し引くのかを説明できるようにしておき、迷うものは弁護士などに確かめてください。
         </p>
 
         <h2>LINE・メールで送るとき</h2>

@@ -12,6 +12,7 @@
  *
  * 労働者性・偽装請負は判定しない（注意だけ出す）。免税の方への支払を下げるよう勧めない。
  */
+import { jpDate } from "@/lib/format";
 import { roundYen } from "@/lib/payroll/money";
 import { deductibleRateForExempt, nonDeductibleTax } from "@/lib/payroll/tax";
 import { addDays, dayInMonth, daysInMonth, sixtyDayLimit, type DeadlineStatus } from "@/lib/tools/torihiki-joken";
@@ -82,7 +83,7 @@ export type Deduction = {
 export type OrderSideTaxMethod = "general" | "simplified" | "exempt";
 
 export type PaymentTerms = {
-  /** 給付を受け取った日（役務の提供を受けた日。月単位で締めるならその締切日） */
+  /** 給付を受け取った日（役務の提供を受けた日。月単位で締めるならその締切日。60日は締め期間の最初の日から数える） */
   receivedOn: string;
   /** 支払日 */
   payOn: string;
@@ -372,7 +373,7 @@ export function buildPayout(input: PayoutInput): PayoutResult {
         code: "due_from_invoice_receipt",
         level: "warning",
         message:
-          "支払期日は、請求書を受け取った日ではなく、給付を受け取った日（月単位で締めるなら締切日）から数えます。請求書の受け取りを起点にすると60日を超えるおそれがあります。",
+          "支払期日は、請求書を受け取った日ではなく、給付を受け取った日から数えます。月単位で締めるなら、締め期間の最初の日から数えるのが安全です（60日は2か月として数えます）。請求書の受け取りを起点にすると60日を超えるおそれがあります。",
       });
     }
     const check = dueCheck;
@@ -442,11 +443,6 @@ export function buildPayout(input: PayoutInput): PayoutResult {
     notes,
     explanation,
   };
-}
-
-function jpDate(date: string): string {
-  const [y, m, d] = date.split("-").map(Number);
-  return `${y}年${m}月${d}日`;
 }
 
 function explain(p: {

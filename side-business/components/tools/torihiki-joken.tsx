@@ -7,8 +7,10 @@
  */
 import { useId, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Button, Card, Field, Input, NumberInput, Select, TableWrap } from "@/components/ui";
+import { cx } from "@/lib/cx";
+import { groupDigits } from "@/lib/format";
 import { parseAmount } from "@/lib/payroll/money";
-import { groupDigits, readAmount, toDateString } from "@/lib/tools/invoice-cost";
+import { readAmount, toDateString } from "@/lib/tools/invoice-cost";
 import {
   BLANK,
   DAY_CHOICES,
@@ -34,8 +36,6 @@ import {
   type RateUnitId,
   type TorihikiDoc,
 } from "@/lib/tools/torihiki-joken";
-
-const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
 
 // 「今日」と共有ボタンの有無は端末でしか分からない。サーバーの HTML では null / false にして、表示のあとで入れかえる
 const noSubscribe = () => () => {};
@@ -65,7 +65,7 @@ const DEFAULT_EXPENSES: ExpenseRow[] = [
 ];
 
 const textareaClass =
-  "block w-full rounded-lg border border-border bg-card px-3 py-2 text-base text-foreground outline-none focus:border-foreground";
+  "block w-full rounded-lg border border-border bg-card px-3 py-2 text-base text-foreground focus:border-foreground";
 
 const STATUS_BADGE: Record<DeadlineStatus, string> = {
   ok: "bg-success text-card",
@@ -485,7 +485,7 @@ export function TorihikiJokenTool() {
             </Field>
             {transferFeeBearer === "driver" && (
               <p role="alert" className="-mt-2 text-sm font-bold text-danger">
-                2026年1月1日以後に発注する取引では、合意があっても振込手数料を報酬から差し引くと違反になると、公正取引委員会が示しています。
+                振込手数料は、会社（支払う側）の負担にしておくのが安全です。取適法（旧下請法）の運用では、合意があっても報酬から差し引くと「減額」とされえます。フリーランス法でも、公正取引委員会は、2026年1月1日以後に発注する取引から考え方が変わると案内しています（判断は専門家へ）。
               </p>
             )}
             <p className="text-xs text-muted-foreground">支払方法は銀行振込で作ります。手形・電子記録債権・デジタル払いなどで払う場合は、別に書く事項があります。</p>
@@ -586,7 +586,7 @@ export function TorihikiJokenTool() {
                   value={plainText}
                   rows={14}
                   aria-label="LINE・メールで送る文面"
-                  className="block w-full resize-y border-0 border-t border-border bg-card p-3 font-mono text-xs leading-relaxed text-foreground outline-none"
+                  className="block w-full resize-y border-0 border-t border-border bg-card p-3 font-mono text-xs leading-relaxed text-foreground"
                 />
               </details>
             </Card>

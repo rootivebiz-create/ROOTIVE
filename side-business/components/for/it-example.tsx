@@ -3,6 +3,7 @@
  * 数字はここに書かない（見本の入力から毎回計算する）。サーバーで描くだけで、状態は持たない。
  */
 import { Card, Money, TableWrap } from "@/components/ui";
+import { cx } from "@/lib/cx";
 import {
   calcModel,
   calcSettlement,
@@ -22,18 +23,10 @@ import {
 } from "@/lib/engine/statement";
 import { en, num } from "@/lib/engine/types";
 import { BASE_RULE_LABELS } from "@/lib/engine/withholding";
+import { monthLabel } from "@/lib/format";
 import { pct } from "@/lib/payroll/money";
 
-const cx = (...c: (string | false | null | undefined)[]) =>
-  c.filter(Boolean).join(" ");
-
 export const IT = getPreset("it");
-
-/** 2026-10-31 → 2026年10月分 */
-export function monthLabel(date: string): string {
-  const [y, m] = date.split("-").map(Number);
-  return `${y}年${m}月分`;
-}
 
 /** 行のうち、最初の精算幅の行の入力（無ければ null） */
 function settlementOf(lines: PayoutLine[] | undefined): SettlementInput | null {

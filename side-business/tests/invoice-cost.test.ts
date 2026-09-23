@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { groupDigits, jpDate } from "@/lib/format";
 import {
   calcInvoiceCost,
   creditableTaxOf,
   daysBetween,
-  groupDigits,
-  jpDate,
   periodLabel,
   readAmount,
   shareText,

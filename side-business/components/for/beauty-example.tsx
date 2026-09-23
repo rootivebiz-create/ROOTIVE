@@ -4,29 +4,17 @@
  * 労働者性は判定しない（エンジンが出す注意をそのまま見せるだけ）。
  */
 import { Card, Money } from "@/components/ui";
+import { cx } from "@/lib/cx";
 import { calcModel } from "@/lib/engine/payModels";
 import { getPreset, withServiceDate, type PresetSample } from "@/lib/engine/presets";
 import { buildPayout, type Payee, type PayoutInput, type PayoutResult } from "@/lib/engine/statement";
 import type { WarningLevel } from "@/lib/engine/types";
 import { BASE_RULE_LABELS } from "@/lib/engine/withholding";
+import { jpDate, monthLabel } from "@/lib/format";
 import { pct } from "@/lib/payroll/money";
 import { paymentDeadlineCheck, type DayOfMonth, type PayMonthOffset } from "@/lib/tools/torihiki-joken";
 
-const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
-
 export const BEAUTY = getPreset("beauty");
-
-/** 2026-10-31 → 2026年10月31日 */
-export function jpDate(date: string): string {
-  const [y, m, d] = date.split("-").map(Number);
-  return `${y}年${m}月${d}日`;
-}
-
-/** 2026-10-31 → 2026年10月分 */
-export function monthLabel(date: string): string {
-  const [y, m] = date.split("-").map(Number);
-  return `${y}年${m}月分`;
-}
 
 type Burden = { date: string; rate: number; burden: number };
 

@@ -3,10 +3,12 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { FREE_CHECK, shortSource } from "@/components/kit/content";
 import { FAX_HOOK_IDS, faxHook, parseFaxHook } from "@/components/kit/fax-hooks";
-import { cx, displayUrl, kitUrl, priceSummary } from "@/components/kit/format";
+import { displayUrl, kitUrl } from "@/components/kit/format";
 import { KitToolbar, PaperStyle } from "@/components/kit/paper";
 import { Qr } from "@/components/kit/qr";
 import { SenderBlock, SetupWarning, stopContact } from "@/components/kit/sender";
+import { cx } from "@/lib/cx";
+import { priceSummary } from "@/lib/plans";
 import { SITE } from "@/site.config";
 
 type Props = { searchParams: Promise<Record<string, string | string[] | undefined>> };

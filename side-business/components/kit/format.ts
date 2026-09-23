@@ -1,46 +1,5 @@
-/** 営業資料（/kit）で使う小さな書式と、料金・リンクの組み立て（純関数）。料金は site.config.ts の PLANS だけを見る */
-import { PLANS, SITE, type Plan } from "@/site.config";
-
-export const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
-
-const yenFormat = new Intl.NumberFormat("ja-JP");
-
-/** 250000 → 250,000円 */
-export function yenText(value: number): string {
-  return `${yenFormat.format(Math.round(value))}円`;
-}
-
-/** 250000 → 25万円、18000 → 1.8万円（千円単位で割り切れないときは 12,345円 のまま） */
-export function compactYen(value: number): string {
-  if (value >= 10_000 && value % 1_000 === 0) return `${value / 10_000}万円`;
-  return yenText(value);
-}
-
-/** 250000, 480000 → 25万〜48万円 */
-export function rangeYen(min: number, max: number): string {
-  if (min === max) return compactYen(min);
-  return `${compactYen(min).replace(/円$/, "")}〜${compactYen(max)}`;
-}
-
-/** 月額のない「お試し」（無ければ null） */
-export function trialPlan(plans: Plan[] = PLANS): Plan | null {
-  return plans.find((p) => p.monthlyYen === 0) ?? null;
-}
-
-/** 構築して毎月使うパック（月額のあるもの） */
-export function buildPlans(plans: Plan[] = PLANS): Plan[] {
-  return plans.filter((p) => p.monthlyYen > 0);
-}
-
-/** 「お試し5万円・月額1.8万円から（税抜）」 */
-export function priceSummary(plans: Plan[] = PLANS): string {
-  const trial = trialPlan(plans);
-  const packs = buildPlans(plans);
-  const parts: string[] = [];
-  if (trial) parts.push(`お試し${compactYen(trial.initialYen)}`);
-  if (packs.length > 0) parts.push(`月額${compactYen(Math.min(...packs.map((p) => p.monthlyYen)))}から`);
-  return parts.length > 0 ? `${parts.join("・")}（税抜）` : "";
-}
+/** 営業資料（/kit）で使う宛名・リンクの組み立て（純関数）。料金は lib/plans、円と日付の書式は lib/format */
+import { SITE } from "@/site.config";
 
 /* ───────────── 宛名 ───────────── */
 
@@ -99,11 +58,4 @@ export function isLocalSiteUrl(base: string = SITE.url): boolean {
   } catch {
     return true;
   }
-}
-
-/* ───────────── 日付 ───────────── */
-
-/** いまの日付（日本時間）を「2026年9月23日」にする */
-export function jpToday(now: Date = new Date()): string {
-  return new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", year: "numeric", month: "long", day: "numeric" }).format(now);
 }

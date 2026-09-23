@@ -4,8 +4,7 @@
  */
 import { useId, type ReactNode } from "react";
 import { Button, Input, NumberInput, Select } from "@/components/ui";
-
-const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
+import { cx } from "@/lib/cx";
 
 export function NumField({
   label,

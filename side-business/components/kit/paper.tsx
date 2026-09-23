@@ -5,7 +5,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { buttonClass } from "@/components/ui";
-import { cx } from "./format";
+import { cx } from "@/lib/cx";
 import { PrintButton } from "./print-button";
 
 /**

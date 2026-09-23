@@ -8,12 +8,13 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Button, buttonClass } from "@/components/ui";
+import { cx } from "@/lib/cx";
+import { jpDate } from "@/lib/format";
 import { buildStatements, type Statement } from "@/lib/payroll/calc";
 import { pct, yen } from "@/lib/payroll/money";
 import { sampleData } from "@/lib/payroll/sample";
 import type { CompanySettings, MonthData } from "@/lib/payroll/types";
-import { jpDate, periodText, qtyText, unitPrice } from "./format";
-import { cx } from "./parts";
+import { periodText, qtyText, unitPrice } from "./format";
 import { loadMonthData, MONTH_KEY } from "./persist";
 
 type Loaded = { data: MonthData; fromStorage: boolean };

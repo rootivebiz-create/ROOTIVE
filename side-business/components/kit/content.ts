@@ -2,10 +2,10 @@
  * 営業資料（提案書・FAX・チラシ）で使い回す文面と数字。
  * 料金は site.config.ts、経過措置の割合と負担額は lib/payroll/tax.ts から組み立て、ここに数字を手で書かない。
  */
+import { compactYen, jpDate, jpMonth, rangeYen } from "@/lib/format";
 import { TRANSITIONAL_SOURCE, TRANSITIONAL_STEPS, nonDeductibleTax } from "@/lib/payroll/tax";
-import { jpDate, jpMonth } from "@/lib/tools/invoice-cost";
+import { buildPlans, buildWeeksText, trialPlan } from "@/lib/plans";
 import { SITE } from "@/site.config";
-import { buildPlans, compactYen, rangeYen, trialPlan } from "./format";
 
 export type Source = { label: string; url: string };
 
@@ -120,15 +120,7 @@ export type Step = { title: string; time?: string; body: string };
 
 export function flowSteps(): Step[] {
   const trial = trialPlan();
-  const weeks = buildPlans()
-    .map((p) => Number(/(\d+)/.exec(p.weeks)?.[1]))
-    .filter((n) => Number.isFinite(n));
-  const buildTime =
-    weeks.length > 0
-      ? Math.min(...weeks) === Math.max(...weeks)
-        ? `約${weeks[0]}週間`
-        : `約${Math.min(...weeks)}〜${Math.max(...weeks)}週間`
-      : undefined;
+  const buildTime = buildWeeksText(true);
   return [
     { title: "無料の相談・診断", time: "30分", body: "オンラインで今の締め方をうかがいます。先月分の明細で無料診断もできます" },
     ...(trial

@@ -2,7 +2,7 @@
  * FAX DM（A4 縦・白黒・1 枚）の「きっかけ」ごとの見出し・3 つの要点・QR の行き先。
  * ?hook=70（既定）| freelance | safety。数字は lib/payroll/tax.ts から組み立てる。
  */
-import { yenText } from "./format";
+import { yenText } from "@/lib/format";
 import { EXAMPLE_PAID, FREELANCE, SAFETY, SOURCES, burdenExample, type Source } from "./content";
 
 export type FaxHookId = "70" | "freelance" | "safety";

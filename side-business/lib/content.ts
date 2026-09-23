@@ -65,6 +65,9 @@ function toMeta(slug: string, data: Record<string, string>): ArticleMeta {
   };
 }
 
+/** 属性の値に入れる文字を逃がす（" で属性が閉じないように） */
+const attr = (v: string) => v.replace(/&(?!(?:[a-z]+|#\d+|#x[\da-f]+);)/gi, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+
 /** 見出し（h2）に id を振り、目次を作る */
 export function renderMarkdown(body: string): { html: string; headings: { id: string; text: string }[] } {
   const headings: { id: string; text: string }[] = [];
@@ -83,10 +86,10 @@ export function renderMarkdown(body: string): { html: string; headings: { id: st
       link({ href, title, tokens }) {
         const text = this.parser.parseInline(tokens);
         const external = /^https?:\/\//.test(href);
-        const t = title ? ` title="${title}"` : "";
+        const t = title ? ` title="${attr(title)}"` : "";
         return external
-          ? `<a href="${href}"${t} target="_blank" rel="noopener noreferrer">${text}</a>`
-          : `<a href="${href}"${t}>${text}</a>`;
+          ? `<a href="${attr(href)}"${t} target="_blank" rel="noopener noreferrer">${text}</a>`
+          : `<a href="${attr(href)}"${t}>${text}</a>`;
       },
     },
   });

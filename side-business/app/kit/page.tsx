@@ -2,9 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { FAX_HOOK_IDS, faxHook } from "@/components/kit/fax-hooks";
-import { cx, displayUrl } from "@/components/kit/format";
+import { displayUrl } from "@/components/kit/format";
 import { SetupWarning, setupIssues } from "@/components/kit/sender";
 import { Card, buttonClass } from "@/components/ui";
+import { cx } from "@/lib/cx";
 
 export const metadata: Metadata = {
   title: "営業資料（印刷用）",
@@ -123,7 +124,7 @@ export default function KitIndexPage() {
                 name="company"
                 maxLength={40}
                 placeholder="例：サンプル運送株式会社"
-                className="mt-1 block min-h-11 w-full rounded-lg border border-border bg-card px-3 text-base text-foreground outline-none focus:border-foreground"
+                className="mt-1 block min-h-11 w-full rounded-lg border border-border bg-card px-3 text-base text-foreground focus:border-foreground"
               />
             </label>
             <button type="submit" className={buttonClass("accent")}>

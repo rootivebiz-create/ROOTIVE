@@ -1,6 +1,7 @@
+import { compactYen } from "@/lib/format";
+import { trialPlan } from "@/lib/plans";
 import { PLANS } from "@/site.config";
-import { trialPlan } from "./pricing";
-import { Section, compactYen } from "./section";
+import { Section } from "./section";
 
 export type FaqItem = { q: string; a: string };
 

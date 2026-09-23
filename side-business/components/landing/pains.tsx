@@ -1,3 +1,4 @@
+import { NextStep } from "./primary-cta";
 import { Section } from "./section";
 
 const PAINS = [
@@ -23,9 +24,9 @@ export function Pains() {
           </li>
         ))}
       </ul>
-      <p className="mt-4 leading-relaxed">
-        ひとつでも当てはまるなら、今のやり方を変えずに、毎月の締めを仕組みにできるかもしれません。まずはデモで、どんな画面かをご覧ください。
-      </p>
+      <NextStep alt={{ href: "/demo", label: "先にデモの画面を見る（登録なし）" }}>
+        ひとつでも当てはまるなら、今のやり方のまま仕組みにできるかを、30分の相談でお答えします。
+      </NextStep>
     </Section>
   );
 }
