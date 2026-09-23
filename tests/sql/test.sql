@@ -2383,4 +2383,124 @@ set role authenticated;
 select public.test_logout();
 reset role;
 
-\echo '== すべてのアサーションが通りました（18〜34 節）'
+\echo '-- 35. ユーザーごとの見せる範囲・代表を譲る（0029）'
+
+reset role;
+-- 見せる・見せないの材料
+insert into public.ai_insights (company_id, month, model, kind, summary, findings, actions)
+values (:'company_a', '2026-09-01', 'test', 'monthly', 't35 の分析', '[]'::jsonb, '[]'::jsonb);
+insert into public.alerts (company_id, month, code, severity, title, fingerprint)
+values (:'company_a', '2026-09-01', 'margin_drop', 'high', '利益率が下がった（t35）', 't35-margin');
+insert into public.cash_snapshots (company_id, as_of, balance, memo) values (:'company_a', '2026-09-30', 7654321, 't35');
+select public.t_assert(
+  (select count(*) from public.driver_bank_accounts where company_id = :'company_a') >= 1, '振込口座の行がある（§34 で用意）');
+-- 形の正しくない上書きは入らない
+select public.t_expect_error(format($$update public.profiles set access_overrides = '{"management":"yes"}' where id = '%s'$$, :'viewer_a'), null, '値は allow / deny だけ');
+select public.t_expect_error(format($$update public.profiles set access_overrides = '{"payroll":"allow"}' where id = '%s'$$, :'viewer_a'), null, '知らないキーは入らない');
+set role authenticated;
+
+-- ---------- 代表だけが変えられる・自分のものは変えられない ----------
+select public.test_login(:'admin_a');
+select public.t_assert(public.t_rowcount(format($$update public.profiles set access_overrides = '{"management":"deny"}' where id = '%s'$$, :'viewer_a')) = 0, '管理者は他人の見せる範囲を変えられない');
+select public.t_expect_error($$update public.profiles set access_overrides = '{"cash":"allow"}' where id = auth.uid()$$, 'OWNER_ONLY', '自分の見せる範囲を広げられない');
+select public.test_login(:'owner_a');
+select public.t_expect_error($$update public.profiles set access_overrides = '{"cash":"deny"}' where id = auth.uid()$$, 'SELF_CHANGE', '代表も自分の見せる範囲は変えない');
+
+-- ---------- 閲覧者に経営の数字を見せない ----------
+select public.t_assert(public.t_rowcount(format($$update public.profiles set access_overrides = '{"management":"deny","export":"deny"}' where id = '%s'$$, :'viewer_a')) = 1,
+  '代表は閲覧者の見せる範囲を変えられる');
+select public.test_login(:'viewer_a');
+select public.t_assert(not public.can_see_management(), '「見せない」にした閲覧者は経営の数字の対象外');
+select public.t_assert(not public.can_export(), '「出力させない」にした閲覧者は出力できない');
+select public.t_assert((select count(*) from public.ai_insights where summary = 't35 の分析') = 0, '経営の数字を見せない閲覧者は AI の分析を読めない');
+select public.t_assert((select count(*) from public.alerts where fingerprint = 't35-margin') = 0, '経営のアラートも読めない');
+select public.t_assert((select count(*) from public.month_targets) = 0, '月次目標も読めない');
+select public.t_expect_error($$select * from public.cash_forecast('2026-09-01', '2026-10-31')$$, 'FORBIDDEN', '資金繰りも呼べない');
+select public.t_assert((select count(*) from public.work_entries) > 0, '稼働は今までどおり読める');
+
+-- ---------- 事務員に経営の数字・現金・振込口座を見せる ----------
+select public.test_login(:'owner_a');
+select public.t_assert(public.t_rowcount(format($$update public.profiles set access_overrides = '{"management":"allow","cash":"allow","bank_account":"allow"}' where id = '%s'$$, :'clerk_a')) = 1,
+  '事務員にも見せる範囲を広げられる');
+select public.test_login(:'clerk_a');
+select public.t_assert(public.can_see_management() and not public.is_manager(), '見せる設定にした事務員は経営の数字を見る（経営の設定はできないまま）');
+select public.t_assert((select count(*) from public.ai_insights where summary = 't35 の分析') = 1, '事務員が AI の分析を読める');
+select public.t_assert((select count(*) from public.alerts where fingerprint = 't35-margin') = 1, '事務員に経営のアラートも出る');
+select public.t_assert((select count(*) from public.cash_snapshots where memo = 't35') = 1, '事務員が現金残高を読める');
+select public.t_assert((select count(*) from public.driver_bank_accounts) >= 1, '事務員が振込口座を読める');
+select public.t_assert((select count(*) from public.audit_logs) = 0, '監査ログは今までどおり読めない（経営の設定）');
+select public.t_assert((select count(*) >= 0 from public.cash_forecast('2026-09-01', '2026-10-31')), '事務員が資金繰りを呼べる');
+
+-- ---------- 管理者から借入・振込口座を外す ----------
+select public.test_login(:'owner_a');
+select public.t_assert(public.t_rowcount(format($$update public.profiles set access_overrides = '{"loans":"deny","bank_account":"deny"}' where id = '%s'$$, :'admin_a')) = 1,
+  '管理者の見せる範囲を狭められる');
+select public.test_login(:'admin_a');
+select public.t_assert(not public.can_see_confidential('loans') and not public.can_see_confidential('bank_account') and public.can_see_confidential('cash'),
+  '外したものだけ見えなくなる');
+select public.t_assert((select count(*) from public.driver_bank_accounts) = 0, '振込口座を外した管理者は口座を読めない');
+select public.t_assert(public.can_see_management() and public.can_export(), '経営の数字と出力はロールのとおり');
+
+-- ---------- 代表とドライバーには効かない ----------
+select public.test_logout();
+reset role;
+update public.profiles set access_overrides = '{"management":"deny","cash":"deny"}' where id = :'owner_a';
+update public.profiles set access_overrides = '{"management":"allow","bank_account":"allow"}' where id = :'driver_a';
+set role authenticated;
+select public.test_login(:'owner_a');
+select public.t_assert(public.can_see_management() and public.can_see_confidential('cash') and public.can_export(), '代表は上書きがあっても常にすべて見える');
+select public.test_login(:'driver_a');
+select public.t_assert(not public.can_see_management() and not public.can_see_confidential('bank_account') and not public.can_export(),
+  'ドライバーは上書きがあっても会社の数字を見ない');
+select public.test_logout();
+reset role;
+update public.profiles set access_overrides = '{}' where id in (:'owner_a', :'driver_a');
+set role authenticated;
+
+-- ---------- 代表を譲る ----------
+select public.test_login(:'admin_a');
+select public.t_expect_error(format($$select public.transfer_ownership('%s', 'admin')$$, :'viewer_a'), 'OWNER_ONLY', '代表でない人は譲れない');
+select public.test_login(:'owner_a');
+select public.t_expect_error($$select public.transfer_ownership(auth.uid(), 'admin')$$, 'INVALID', '自分には譲れない');
+select public.t_expect_error(format($$select public.transfer_ownership('%s', 'admin')$$, :'driver_a'), 'INVALID', 'ドライバーには譲れない');
+select public.t_expect_error(format($$select public.transfer_ownership('%s', 'admin')$$, :'inactive_a'), 'INVALID', '無効の人には譲れない');
+select public.t_expect_error(format($$select public.transfer_ownership('%s', 'admin')$$, :'owner_b'), 'NOT_FOUND', 'ほかの会社の人には譲れない');
+select public.t_expect_error(format($$select public.transfer_ownership('%s', 'driver')$$, :'admin_a'), 'INVALID', '譲ったあとにドライバーにはなれない');
+select public.transfer_ownership(:'admin_a', 'admin');
+reset role;
+select public.t_assert(
+  (select role = 'owner' and access_overrides = '{}'::jsonb from public.profiles where id = :'admin_a')
+  and (select role = 'admin' from public.profiles where id = :'owner_a'),
+  '相手が代表になり、自分は管理者になる（相手の上書きは外れる）');
+select public.t_assert(
+  (select count(*) from public.profiles where company_id = :'company_a' and role = 'owner' and is_active) = 1,
+  '代表は 1 人のまま');
+select public.t_assert(
+  (select count(*) from public.audit_logs where table_name = 'profiles' and record_id in (:'admin_a', :'owner_a')) >= 2,
+  '入れ替えは監査ログに残る');
+set role authenticated;
+select public.test_login(:'owner_a');
+select public.t_assert(not public.is_owner() and public.is_manager(), '譲った人はもう代表ではない');
+select public.t_expect_error(format($$update public.profiles set role = 'owner' where id = '%s'$$, :'owner_a'), 'OWNER_ONLY', '譲った人は自分を代表に戻せない');
+-- 新しい代表から元に戻す
+select public.test_login(:'admin_a');
+select public.t_assert(public.is_owner(), '譲られた人が代表になっている');
+select public.transfer_ownership(:'owner_a', 'admin');
+reset role;
+select public.t_assert(
+  (select role = 'owner' from public.profiles where id = :'owner_a') and (select role = 'admin' from public.profiles where id = :'admin_a'),
+  '譲り返すと元に戻る');
+
+-- 後片付け
+set role authenticated;
+select public.test_logout();
+reset role;
+update public.profiles set access_overrides = '{}' where company_id = :'company_a';
+delete from public.ai_insights where summary = 't35 の分析';
+delete from public.alerts where fingerprint = 't35-margin';
+delete from public.cash_snapshots where memo = 't35';
+set role authenticated;
+select public.test_logout();
+reset role;
+
+\echo '== すべてのアサーションが通りました（18〜35 節）'

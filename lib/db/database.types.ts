@@ -2975,6 +2975,7 @@ export type Database = {
           notify_chat: Database["public"]["Enums"]["notify_chat_mode"]
           notify_line: boolean
           start_page: string
+          access_overrides: Json
         }
         Insert: {
           id: string
@@ -2991,6 +2992,7 @@ export type Database = {
           notify_chat?: Database["public"]["Enums"]["notify_chat_mode"]
           notify_line?: boolean
           start_page?: string
+          access_overrides?: Json
         }
         Update: {
           id?: string
@@ -3007,6 +3009,7 @@ export type Database = {
           notify_chat?: Database["public"]["Enums"]["notify_chat_mode"]
           notify_line?: boolean
           start_page?: string
+          access_overrides?: Json
         }
         Relationships: []
       }
@@ -4759,6 +4762,12 @@ export type Database = {
       }
     }
     Functions: {
+      access_override: {
+        Args: {
+          p_key: string
+        }
+        Returns: string
+      }
       apply_day_entries: {
         Args: {
           p_month: string
@@ -4843,6 +4852,10 @@ export type Database = {
           p_kind: Database["public"]["Enums"]["approval_kind"]
           p_amount?: number
         }
+        Returns: boolean
+      }
+      can_export: {
+        Args: Record<PropertyKey, never>
         Returns: boolean
       }
       can_see_confidential: {
@@ -5517,6 +5530,19 @@ export type Database = {
           sql: string
         }
         Returns: number
+      }
+      transfer_ownership: {
+        Args: {
+          p_to: string
+          p_my_role?: Database["public"]["Enums"]["user_role"]
+        }
+        Returns: undefined
+      }
+      valid_access_overrides: {
+        Args: {
+          p: Json
+        }
+        Returns: boolean
       }
       withdraw_approval: {
         Args: {
