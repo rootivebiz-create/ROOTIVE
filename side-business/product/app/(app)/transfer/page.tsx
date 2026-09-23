@@ -1,0 +1,342 @@
+import Link from "next/link";
+import { Card, Money, buttonClass } from "@/components/ui";
+import { yenText } from "@/lib/format";
+import { shortDate } from "@/lib/tools/torihiki-joken";
+import { Badge, EmptyState, Notice, PageHeader } from "~/components/page";
+import { daysBetween, jstDateTime } from "~/components/close/format";
+import { DeleteBatchButton, ExecutedOnForm } from "~/components/transfer/batch-controls";
+import { CreateTransferForm } from "~/components/transfer/create-form";
+import { getDb } from "~/db/client";
+import { requirePageUser, roleAtLeast } from "~/server/auth";
+import { loadTransferPlan, type BatchView, type BankFields, type ExcludedRow, type TransferRow } from "~/server/features/transfer";
+import { monthFromParam, monthLabelJa, monthParam } from "~/server/month";
+
+export const metadata = { title: "振込データ" };
+
+const ACCOUNT_TYPE = { ordinary: "普通", checking: "当座" } as const;
+
+function BankLine({ bank, holderHalf }: { bank: BankFields; holderHalf: string }) {
+  return (
+    <p className="mt-1 break-all text-xs text-muted-foreground">
+      {bank.bankNameKana || "（銀行名なし）"}（{bank.bankCode}）・{bank.branchNameKana || "（支店名なし）"}（{bank.branchCode}）・{ACCOUNT_TYPE[bank.accountType]}{" "}
+      <span className="num">{bank.accountNumber}</span>・{holderHalf}
+    </p>
+  );
+}
+
+function IncludedList({ rows }: { rows: TransferRow[] }) {
+  return (
+    <ul className="divide-y divide-border rounded-card border border-border bg-card">
+      {rows.map((r) => (
+        <li key={r.statementId} className="p-3">
+          <div className="flex items-baseline justify-between gap-3">
+            <p className="min-w-0 font-bold">
+              {r.driverName}
+              {r.driverCode && <span className="ml-2 text-xs font-normal text-muted-foreground">{r.driverCode}</span>}
+            </p>
+            <Money value={r.amount} className="font-bold" />
+          </div>
+          <BankLine bank={r.bank} holderHalf={r.holderHalf} />
+          {r.inBatches.length > 0 && (
+            <p className="mt-1 text-xs">
+              <Badge tone={r.inBatches.some((b) => b.executedOn) ? "green" : "yellow"}>
+                {r.inBatches.some((b) => b.executedOn) ? "振込済みの記録あり" : "振込データに入っています"}
+              </Badge>
+              <span className="ml-2 text-muted-foreground">{r.inBatches.map((b) => b.fileName).join("、")}</span>
+            </p>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function ExcludedList({ rows, m }: { rows: ExcludedRow[]; m: string }) {
+  return (
+    <ul className="divide-y divide-border rounded-card border border-warning/40 bg-card">
+      {rows.map((r) => (
+        <li key={r.statementId} className="p-3">
+          <div className="flex items-baseline justify-between gap-3">
+            <p className="min-w-0 font-bold">
+              {r.driverName}
+              {r.driverCode && <span className="ml-2 text-xs font-normal text-muted-foreground">{r.driverCode}</span>}
+            </p>
+            <Money value={r.amount} />
+          </div>
+          <p className="mt-1 text-sm">{r.message}</p>
+          {r.issues.length > 0 && (
+            <ul className="mt-1 list-disc pl-5 text-sm text-danger">
+              {r.issues.map((i) => (
+                <li key={i}>{i}</li>
+              ))}
+            </ul>
+          )}
+          <p className="mt-2">
+            {r.reason === "not_positive" ? (
+              <Link href={`/statements?m=${m}`} className="inline-flex min-h-11 items-center text-sm">
+                明細を確かめる →
+              </Link>
+            ) : (
+              <Link href="/settings/drivers" className="inline-flex min-h-11 items-center text-sm">
+                ドライバーの設定で口座を{r.reason === "no_bank" ? "入れる" : "直す"} →
+              </Link>
+            )}
+          </p>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function BatchCard({
+  b,
+  promisedPayDate,
+  canEdit,
+  zenginReady,
+  m,
+}: {
+  b: BatchView;
+  promisedPayDate: string;
+  canEdit: boolean;
+  zenginReady: boolean;
+  m: string;
+}) {
+  const lateTransfer = daysBetween(promisedPayDate, b.transferDate);
+  const lateExecuted = b.executedOn ? daysBetween(promisedPayDate, b.executedOn) : 0;
+  return (
+    <li>
+      <Card className="space-y-3">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="break-all font-bold">{b.fileName}</p>
+            <p className="text-xs text-muted-foreground">
+              {jstDateTime(b.createdAt)} に{b.createdByName ? `${b.createdByName}さんが` : ""}作成
+            </p>
+          </div>
+          {b.executedOn ? <Badge tone="green">振込済み（{shortDate(b.executedOn)}）</Badge> : <Badge>振り込んだ日は未記録</Badge>}
+        </div>
+        <dl className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-3">
+          <div>
+            <dt className="text-xs text-muted-foreground">振込指定日</dt>
+            <dd className="font-bold">{shortDate(b.transferDate)}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground">人数</dt>
+            <dd className="num font-bold">{b.count}人</dd>
+          </div>
+          <div className="col-span-2 sm:col-span-1">
+            <dt className="text-xs text-muted-foreground">合計</dt>
+            <dd>
+              <Money value={b.total} className="font-bold" />
+            </dd>
+          </div>
+        </dl>
+        {lateTransfer > 0 && (
+          <p className="text-sm text-danger">振込指定日が、約束した支払日（{shortDate(promisedPayDate)}）より {lateTransfer} 日あとです。</p>
+        )}
+        {lateExecuted > 0 && (
+          <p className="text-sm text-danger">
+            約束した支払日（{shortDate(promisedPayDate)}）より {lateExecuted} 日あとに振り込んだ記録です。見張り番の指摘も確かめてください。
+          </p>
+        )}
+        {b.changed && (
+          <p role="alert" className="rounded-lg border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
+            この振込データを作ったあとに明細が変わりました（いま {b.currentCount}人・{yenText(b.currentTotal)}）。
+            {b.executedOn ? "振り込んだ額と明細の額が違うおそれがあります。明細を確かめてください。" : "このデータは使わず、取り消して作り直してください。"}
+          </p>
+        )}
+        {canEdit && !b.changed && (
+          <div className="flex flex-wrap gap-2">
+            {zenginReady ? (
+              <a href={`/api/transfer/${b.id}?m=${m}`} className={buttonClass("primary")}>
+                全銀の振込データ
+              </a>
+            ) : (
+              <span className="text-sm text-muted-foreground">全銀の振込データは、振込依頼人を設定すると出せます。</span>
+            )}
+            <a href={`/api/transfer/${b.id}?format=csv&m=${m}`} className={buttonClass("secondary")}>
+              振込の一覧（CSV）
+            </a>
+          </div>
+        )}
+        {canEdit ? (
+          <ExecutedOnForm batchId={b.id} executedOn={b.executedOn} suggested={b.transferDate} />
+        ) : (
+          <p className="text-sm">実際に振り込んだ日：{b.executedOn ? shortDate(b.executedOn) : "未記録"}</p>
+        )}
+        {canEdit && !b.executedOn && <DeleteBatchButton batchId={b.id} fileName={b.fileName} />}
+      </Card>
+    </li>
+  );
+}
+
+/** 振込データ：明細の振込額から、銀行にそのまま出せるファイルを作る。作った記録と、実際に振り込んだ日も残す */
+export default async function TransferPage({ searchParams }: { searchParams: Promise<{ m?: string }> }) {
+  const user = await requirePageUser("viewer");
+  const month = monthFromParam((await searchParams).m);
+  const m = monthParam(month);
+  const db = await getDb();
+  const plan = await loadTransferPlan(db, user.tenantId, month);
+  const canEdit = roleAtLeast(user.role, "staff");
+  const zenginReady = plan.requester !== null;
+  const remaining = plan.included.filter((r) => r.inBatches.length === 0);
+
+  return (
+    <div className="space-y-8">
+      <PageHeader
+        title="振込データ"
+        month={month}
+        basePath="/transfer"
+        description="保存した明細の振込額から、銀行の「総合振込」にそのまま読み込めるファイル（全銀の形式）を作ります。振込手数料は差し引きません。"
+      />
+
+      {plan.feeBearerDriver && (
+        <p role="alert" className="rounded-lg border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
+          会社の設定で「振込手数料はドライバーの負担」になっています。この振込データは明細の振込額のまま作り、手数料は差し引きません。
+          手数料の扱いについて、見張り番の指摘を確かめてください。{" "}
+          <Link href={`/watch?m=${m}`} className="font-bold">
+            見張り番を開く →
+          </Link>
+        </p>
+      )}
+
+      {!canEdit && <Notice tone="info">振込データを作れるのは事務・オーナーの方です。ここでは作った記録と、振り込んだ日を見られます。</Notice>}
+
+      {canEdit && (
+        <>
+          {!plan.ready ? (
+            <EmptyState title={plan.savedStatements === 0 ? "まだ振込データを作れません" : "明細が最新ではありません"}>
+              <p>{plan.blockReason}</p>
+              {plan.closed ? (
+                <Link href={`/close?m=${m}`} className={buttonClass("secondary", "mt-3")}>
+                  締めの画面へ（締めを外せるのはオーナーです）
+                </Link>
+              ) : (
+                <Link href={`/statements?m=${m}`} className={buttonClass("primary", "mt-3")}>
+                  支払明細を{plan.savedStatements === 0 ? "作る" : "作り直す"}
+                </Link>
+              )}
+            </EmptyState>
+          ) : (
+            <section className="space-y-4" aria-labelledby="create-heading">
+              <h2 id="create-heading" className="text-lg font-bold">
+                {monthLabelJa(month)}分の振込データを作る
+              </h2>
+              {!plan.closed && (
+                <Notice tone="info">
+                  この月はまだ締めていません。振込データは作れますが、このあとで稼働や控除が変わると作り直しになります。先に締めておくと安心です。{" "}
+                  <Link href={`/close?m=${m}`}>締めの画面へ</Link>
+                </Notice>
+              )}
+              <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                <Card className="col-span-2 sm:col-span-1">
+                  <dt className="text-xs text-muted-foreground">振込額の合計</dt>
+                  <dd className="text-xl font-bold">
+                    <Money value={plan.total} />
+                  </dd>
+                </Card>
+                <Card>
+                  <dt className="text-xs text-muted-foreground">振込する人</dt>
+                  <dd className="num text-xl font-bold">{plan.included.length}人</dd>
+                </Card>
+                <Card>
+                  <dt className="text-xs text-muted-foreground">入らない人</dt>
+                  <dd className={`num text-xl font-bold ${plan.excluded.length ? "text-warning" : ""}`}>{plan.excluded.length}人</dd>
+                </Card>
+              </dl>
+
+              <Card>
+                <h3 className="font-bold">振込依頼人（会社の口座）</h3>
+                {plan.requester ? (
+                  <p className="mt-1 break-all text-sm text-muted-foreground">
+                    依頼人コード <span className="num">{plan.requester.code}</span>・{plan.requester.nameKana}・{plan.requester.bankNameKana || plan.requester.bankCode}（
+                    {plan.requester.bankCode}）{plan.requester.branchNameKana || ""}（{plan.requester.branchCode}）・{ACCOUNT_TYPE[plan.requester.accountType]}{" "}
+                    <span className="num">{plan.requester.accountNumber}</span>
+                  </p>
+                ) : (
+                  <div className="mt-2 space-y-2 text-sm">
+                    <p>全銀の振込データを作るには、会社の口座と、銀行から知らされる振込依頼人コードが必要です。足りないところ：</p>
+                    <ul className="list-disc pl-5 text-danger">
+                      {plan.requesterProblems.map((p) => (
+                        <li key={p}>{p}</li>
+                      ))}
+                    </ul>
+                    <p className="text-muted-foreground">設定が無くても、振込の一覧（CSV）は出せます。銀行の画面で手で入れるときに使ってください。</p>
+                    <Link href="/settings/company" className={buttonClass("secondary")}>
+                      会社の設定で入れる
+                    </Link>
+                  </div>
+                )}
+              </Card>
+
+              <Card>
+                <CreateTransferForm
+                  month={month}
+                  defaultDate={plan.defaultTransferDate}
+                  promisedPayDate={plan.promisedPayDate}
+                  earlierBatches={plan.batches.length}
+                  all={{ count: plan.included.length, total: plan.total }}
+                  remaining={{ count: remaining.length, total: remaining.reduce((a, r) => a + r.amount, 0) }}
+                  zenginReady={zenginReady}
+                />
+              </Card>
+
+              <div>
+                <h3 className="mb-2 font-bold">振込する人（{plan.included.length}人）</h3>
+                {plan.included.length ? (
+                  <IncludedList rows={plan.included} />
+                ) : (
+                  <EmptyState title="振込する人がいません">口座と振込額を確かめてください。</EmptyState>
+                )}
+              </div>
+
+              {plan.excluded.length > 0 && (
+                <div>
+                  <h3 className="mb-1 font-bold">振込データに入らない人（{plan.excluded.length}人）</h3>
+                  <p className="mb-2 text-sm text-muted-foreground">
+                    この人たちには振込データでは振り込みません。口座を直したら、「まだ振込データに入っていない人だけ」で追加のデータを作れます。
+                  </p>
+                  <ExcludedList rows={plan.excluded} m={m} />
+                </div>
+              )}
+            </section>
+          )}
+        </>
+      )}
+
+      <section aria-labelledby="history-heading" className="space-y-3">
+        <h2 id="history-heading" className="text-lg font-bold">
+          作った振込データ
+        </h2>
+        {plan.batches.length === 0 ? (
+          <EmptyState title="この月の振込データはまだありません">
+            {canEdit ? "上の「振込データを作る」から作ると、ここに記録が残ります。" : "事務・オーナーの方が作ると、ここに記録が出ます。"}
+          </EmptyState>
+        ) : (
+          <>
+            <p className="text-sm text-muted-foreground">
+              銀行で振り込んだら「実際に振り込んだ日」を入れてください。約束した支払日（{shortDate(plan.promisedPayDate)}）に間に合ったかを、見張り番が記録から確かめます。締めたあとでも入れられます。
+            </p>
+            <ul className="space-y-3">
+              {plan.batches.map((b) => (
+                <BatchCard key={b.id} b={b} promisedPayDate={plan.promisedPayDate} canEdit={canEdit} zenginReady={zenginReady} m={m} />
+              ))}
+            </ul>
+          </>
+        )}
+      </section>
+
+      {canEdit && (
+        <section className="space-y-2 text-sm text-muted-foreground">
+          <h2 className="text-base font-bold text-foreground">銀行に出すときに</h2>
+          <ul className="list-disc space-y-1 pl-5">
+            <li>全銀の振込データは、全銀協の形式（1 行 120 桁・Shift_JIS）です。インターネットバンキングの「総合振込」の「ファイルの取り込み（アップロード）」から読み込んでください。</li>
+            <li>銀行によって細かい決まりが少し違うことがあります。初めて使うときは、銀行の画面で人数と合計（この画面の数字）が同じか確かめてから振り込んでください。</li>
+            <li>口座名義は半角カナに直しています（小さい「ッ」「ョ」などは大きい文字になります）。</li>
+            <li>振込手数料は差し引いていません。明細の振込額のまま振り込みます。</li>
+          </ul>
+        </section>
+      )}
+    </div>
+  );
+}

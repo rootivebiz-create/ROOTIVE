@@ -370,6 +370,7 @@ export async function reopenMonth(
 export type AuditRow = {
   id: number;
   at: Date;
+  /** した人（利用者の名前・「ドライバー」。どちらでもなければ null＝自動） */
   userName: string | null;
   action: string;
   label: string;
@@ -391,7 +392,7 @@ export async function monthAuditLog(db: Db, tenantId: string, month: string, lim
   return rows.map((r) => ({
     id: r.id,
     at: r.createdAt,
-    userName: r.userId ? userName.get(r.userId) ?? null : null,
+    userName: r.userId ? userName.get(r.userId) ?? null : r.detail?.by === "driver" ? "ドライバー" : null,
     action: r.action,
     label: auditLabel(r.action),
     summary: auditSummary(r.action, r.detail ?? {}),
@@ -410,8 +411,10 @@ const ACTION_LABELS: Record<string, string> = {
   "statement.view": "ドライバーが明細を開いた",
   "statement.confirm": "ドライバーが明細を確認した",
   "statement.message": "明細について連絡があった",
+  "statement.question": "ドライバーから明細について連絡があった",
   "statement.reply": "明細の連絡に返事をした",
   "statement.pdf": "明細の PDF を出した",
+  "statement.annual_csv": "1 年分の支払の一覧を出した",
   "transfer.create": "振込データを作った",
   "transfer.delete": "振込データを取り消した",
   "transfer.executed": "振り込んだ日を記録した",
@@ -430,6 +433,14 @@ const ACTION_LABELS: Record<string, string> = {
   "parallel.save": "Excel の振込額を入れた",
   "reconcile.run": "元請の支払通知と突き合わせた",
   "reconcile.update": "突合の差の扱いを変えた",
+  "reconcile.item_status": "突合の差の扱いを変えた",
+  "reconcile.items_asked": "突合の差を元請に問い合わせた",
+  "reconcile.item_removed": "突合の差を一覧から外した",
+  "reconcile.columns": "支払通知の列の対応を覚えた",
+  "reconcile.driver_mapping": "支払通知のドライバー名を対応づけた",
+  "reconcile.line_mapping": "支払通知の行を案件に対応づけた",
+  "reconcile.notice_meta": "支払通知の入金日などを入れた",
+  "reconcile.notice_delete": "支払通知を消した",
   "notice.import": "元請の支払通知を取り込んだ",
   "export.accounting": "会計ソフト向けに出力した",
 };
