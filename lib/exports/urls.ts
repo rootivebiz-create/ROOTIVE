@@ -30,6 +30,8 @@ export const exportUrls = {
   invoicesCsv: (month: string) => `/api/export/invoices.csv?m=${encodeURIComponent(month)}`,
   /** 年次レポート CSV（月次推移）。year は西暦 4 桁 */
   reportCsv: (year: number) => `/api/export/report.csv?y=${encodeURIComponent(String(year))}`,
+  /** 期（決算の年）で出す年次レポート（0030） */
+  reportCsvFiscal: (endYear: number) => `/api/export/report.csv?fy=${encodeURIComponent(String(endYear))}`,
   /** ドライバー別の採算 CSV（その月。inactive で停止中も含める） */
   driversPlCsv: (month: string, includeInactive = false) => `/api/export/drivers-pl.csv?m=${encodeURIComponent(month)}${includeInactive ? "&inactive=1" : ""}`,
   /** バックアップ JSON（全テーブル） */
@@ -49,6 +51,7 @@ export const exportUrls = {
     `/api/export/drivers-pl.xlsx?m=${encodeURIComponent(month)}${includeInactive ? "&inactive=1" : ""}`,
   cashflowXlsx: (from: string, to: string) => `/api/export/cashflow.xlsx?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
   reportXlsx: (year: number) => `/api/export/report.xlsx?y=${encodeURIComponent(String(year))}`,
+  reportXlsxFiscal: (endYear: number) => `/api/export/report.xlsx?fy=${encodeURIComponent(String(endYear))}`,
   ratesXlsx: () => "/api/export/rates.xlsx",
   statementXlsx: (month: string, driverId: string) =>
     `/api/export/statement.xlsx?m=${encodeURIComponent(month)}&driver=${encodeURIComponent(driverId)}`,

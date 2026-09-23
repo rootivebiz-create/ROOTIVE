@@ -7,6 +7,7 @@
 import type { DriverMonthSummary, ExpenseKind, ExpenseSummaryRow, MonthPl, MonthStatus, ProjectSummary } from "@/lib/db/types";
 import { subMoney, sumMoney } from "@/lib/calc/money";
 import { dateToMonth } from "@/lib/month";
+import { fiscalPeriod, parsePeriodYear, periodEndYearOf, periodOptions, periodTitle, type FiscalSettings } from "@/lib/fiscal";
 
 /** 月の状態の表示 */
 export const MONTH_STATUS_LABELS: Record<MonthStatus, string> = { open: "未締め", closed: "締め済み" };
@@ -80,7 +81,8 @@ export interface YearDelta {
 }
 
 export interface YearComparison {
-  previousYear: number;
+  /** 比べる相手の呼び方（「2025年」「第2期」） */
+  previousLabel: string;
   bill: YearDelta;
   profit: YearDelta;
   expenseTotal: YearDelta;
@@ -141,6 +143,75 @@ export function yearRange(year: number): { from: string; to: string } {
 
 export function yearOfMonth(month: string): number {
   return Number(month.slice(0, 4));
+}
+
+// ---------------------------------------------------------------------------
+// 期（事業年度）と暦年（0030）
+// ---------------------------------------------------------------------------
+
+/** 期で見る（決算月で区切る）／暦年で見る（1〜12 月） */
+export type ReportView = "fiscal" | "calendar";
+
+/** レポートの対象の範囲 */
+export interface ReportRange {
+  view: ReportView;
+  /** 暦年、または期の決算の年 */
+  year: number;
+  /** 最初と最後の月（YYYY-MM） */
+  from: string;
+  to: string;
+  months: string[];
+  /** 「第3期」「2026年9月期」「2026年」 */
+  label: string;
+  /** 「第3期（2025年10月〜2026年9月）」「2026年」 */
+  title: string;
+  /** 比べる相手の呼び方（「前期」「前年」） */
+  prevName: "前期" | "前年";
+}
+
+export function calendarReportRange(year: number): ReportRange {
+  const months = monthsOfYear(year);
+  return { view: "calendar", year, from: months[0], to: months[11], months, label: `${year}年`, title: `${year}年`, prevName: "前年" };
+}
+
+export function fiscalReportRange(endYear: number, settings: FiscalSettings): ReportRange {
+  const p = fiscalPeriod(endYear, settings);
+  return { view: "fiscal", year: endYear, from: p.startMonth, to: p.endMonth, months: p.months, label: p.label, title: periodTitle(p), prevName: "前期" };
+}
+
+/** ひとつ前（前期・前年） */
+export function previousReportRange(r: ReportRange, settings: FiscalSettings): ReportRange {
+  return r.view === "fiscal" ? fiscalReportRange(r.year - 1, settings) : calendarReportRange(r.year - 1);
+}
+
+/**
+ * 表示する範囲：?fy=（期の決算の年）→ ?y=（暦年）→ 稼動月（?m=）の期 の順。
+ * 何も指定が無ければ期で見る（決算月が 12 月なら暦年と同じ月になる）
+ */
+export function resolveReportRange(params: { y?: string | string[]; fy?: string | string[] }, month: string, settings: FiscalSettings): ReportRange {
+  const fy = parsePeriodYear(params.fy);
+  if (fy != null) return fiscalReportRange(fy, settings);
+  const y = parseYear(params.y);
+  if (y != null) return calendarReportRange(y);
+  return fiscalReportRange(periodEndYearOf(month, settings.fiscalMonth), settings);
+}
+
+/** 範囲の選択肢（新しい順）。値は ?fy= / ?y= に入れる年 */
+export function reportRangeOptions(view: ReportView, dataMonths: (string | null | undefined)[], settings: FiscalSettings, extraMonths: string[]): { value: number; label: string }[] {
+  if (view === "calendar") {
+    const years = availableYears(dataMonths, extraMonths.map((m) => yearOfMonth(m)));
+    return years.map((y) => ({ value: y, label: `${y}年` }));
+  }
+  return periodOptions(dataMonths.map((m) => (m ? String(m).slice(0, 7) : m)), settings, extraMonths).map((p) => ({ value: p.endYear, label: periodTitle(p) }));
+}
+
+/** 範囲の月に並べる（データが無い月も 0 で入れる） */
+export function toReportRowsForMonths(rows: MonthPl[], months: string[]): ReportMonthRow[] {
+  const byMonth = new Map<string, MonthPl>();
+  for (const r of rows) {
+    if (r.month) byMonth.set(dateToMonth(String(r.month)), r);
+  }
+  return months.map((m) => toReportRow(byMonth.get(m), m));
 }
 
 /** URL の ?y= を西暦 4 桁として読む（不正なら null） */
@@ -211,11 +282,7 @@ export function toReportRow(row: MonthPl | null | undefined, month: string): Rep
 
 /** その年の 12 か月分（データが無い月は 0 埋め、昇順） */
 export function toReportRows(rows: MonthPl[], year: number): ReportMonthRow[] {
-  const byMonth = new Map<string, MonthPl>();
-  for (const r of rows) {
-    if (r.month) byMonth.set(dateToMonth(String(r.month)), r);
-  }
-  return monthsOfYear(year).map((m) => toReportRow(byMonth.get(m), m));
+  return toReportRowsForMonths(rows, monthsOfYear(year));
 }
 
 /** 稼働行・経費・目標のいずれかがある年か（1 件も無ければ Empty を出す） */
@@ -262,10 +329,10 @@ export function yearDelta(current: number, previous: number): YearDelta {
 }
 
 /** 前年比（前年のデータが無ければ null） */
-export function compareYears(current: ReportTotals, previous: ReportTotals | null, previousYear: number): YearComparison | null {
+export function compareYears(current: ReportTotals, previous: ReportTotals | null, previousLabel: string): YearComparison | null {
   if (!previous) return null;
   return {
-    previousYear,
+    previousLabel,
     bill: yearDelta(current.bill, previous.bill),
     profit: yearDelta(current.profit, previous.profit),
     expenseTotal: yearDelta(current.expenseTotal, previous.expenseTotal),

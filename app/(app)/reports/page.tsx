@@ -10,26 +10,26 @@ import { MonthLink } from "@/components/layout/month-link";
 import { PageHeader } from "@/components/ui/page-header";
 import { cn } from "@/lib/utils";
 import {
-  availableYears,
   compareYears,
   driverRanking,
   expenseKindTotals,
   expenseRanking,
   hasReportData,
+  previousReportRange,
   projectRanking,
-  resolveReportYear,
+  reportRangeOptions,
+  resolveReportRange,
   sumReport,
-  toReportRows,
-  yearOfMonth,
-  yearRange,
+  toReportRowsForMonths,
 } from "@/components/reports/helpers";
 import { ReportChart } from "@/components/reports/report-chart";
 import { KpiSection } from "@/components/reports/kpi-section";
 import { ReportMonthlyTable } from "@/components/reports/monthly-table";
 import { DriverRankingTable, ExpenseRankingTable, ProjectRankingTable } from "@/components/reports/rankings";
 import { ReportSummaryCards, YearComparisonCard } from "@/components/reports/summary-cards";
-import { YearSelector } from "@/components/reports/year-selector";
-import { toKpiTrendRows } from "@/lib/kpi/trend";
+import { RangeSelector } from "@/components/reports/range-selector";
+import { toKpiTrendRowsForMonths } from "@/lib/kpi/trend";
+import { fiscalSettingsOf } from "@/lib/fiscal";
 
 export const metadata = { title: "年次レポート" };
 
@@ -37,14 +37,15 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const { supabase, company } = await requireManagementPage();
   const sp = await searchParams;
   const month = monthFromParam(sp.m);
-  const year = resolveReportYear(sp.y, month);
-  const thisYear = yearOfMonth(currentMonthJST());
-  const { from, to } = yearRange(year);
-  const prevRange = yearRange(year - 1);
+  // 期（決算月で区切る）か暦年か（0030）。指定が無ければ、いま見ている月が入る期
+  const fiscal = fiscalSettingsOf(company);
+  const range = resolveReportRange({ y: sp.y, fy: sp.fy }, month, fiscal);
+  const prev = previousReportRange(range, fiscal);
+  const { from, to } = range;
 
   const [pl, prevPl, kpiRows, driversRes, projectsRes, expensesRes, monthsRes] = await Promise.all([
     loadMonthPlRange(supabase, company.id, from, to),
-    loadMonthPlRange(supabase, company.id, prevRange.from, prevRange.to),
+    loadMonthPlRange(supabase, company.id, prev.from, prev.to),
     loadMonthKpiRange(supabase, company.id, monthToDate(from), monthToDate(to)),
     supabase
       .from("v_driver_month_summary")
@@ -74,30 +75,37 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   if (expensesRes.error) throw expensesRes.error;
   if (monthsRes.error) throw monthsRes.error;
 
-  const rows = toReportRows(pl, year);
+  const rows = toReportRowsForMonths(pl, range.months);
   const totals = sumReport(rows);
-  const prevRows = toReportRows(prevPl, year - 1);
-  const comparison = compareYears(totals, hasReportData(prevRows) ? sumReport(prevRows) : null, year - 1);
+  const prevRows = toReportRowsForMonths(prevPl, prev.months);
+  const comparison = compareYears(totals, hasReportData(prevRows) ? sumReport(prevRows) : null, prev.label);
   const drivers = driverRanking(driversRes.data ?? []);
   const projects = projectRanking(projectsRes.data ?? []);
   const expenses = expenseRanking(expensesRes.data ?? []);
   const expenseTotals = expenseKindTotals(expenses);
-  const years = availableYears((monthsRes.data ?? []).map((r) => r.month), [thisYear, year]);
-  const kpiRowsByMonth = toKpiTrendRows(kpiRows, year);
+  const options = reportRangeOptions(range.view, (monthsRes.data ?? []).map((r) => r.month), fiscal, [currentMonthJST(), range.to]);
+  const kpiRowsByMonth = toKpiTrendRowsForMonths(kpiRows, range.months);
   const hasData = hasReportData(rows);
 
   return (
     <div className="space-y-4">
       <PageHeader
         title="年次レポート"
-        description={`${year}年の推移・前年比・ランキング（金額は税抜）`}
+        description={`${range.title}の推移・${range.prevName}比・ランキング（金額は税抜）`}
         actions={
           <>
-            <YearSelector year={year} years={years} />
+            <RangeSelector
+              view={range.view}
+              year={range.year}
+              options={options}
+              showViewToggle={fiscal.fiscalMonth !== 12}
+              // 暦年 2026 → 2026年に決算を迎える期、期 → その期が終わる年
+              toggleYears={{ fiscal: range.year, calendar: Number(range.to.slice(0, 4)) }}
+            />
             <MonthLink href="/drivers-pl" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
               ドライバー別の採算
             </MonthLink>
-            <a href={exportUrls.reportCsv(year)} download className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+            <a href={range.view === "fiscal" ? exportUrls.reportCsvFiscal(range.year) : exportUrls.reportCsv(range.year)} download className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
               <Download className="h-4 w-4" />
               CSV
             </a>
@@ -106,12 +114,15 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
       />
 
       {!hasData ? (
-        <Empty title={`${year}年のデータはありません`} description="稼働行・経費・目標のいずれも登録されていません。別の年を選ぶか、稼働入力・経費から登録してください。" />
+        <Empty
+          title={`${range.label}のデータはありません`}
+          description={`稼働行・経費・目標のいずれも登録されていません。別の${range.view === "fiscal" ? "期" : "年"}を選ぶか、稼働入力・経費から登録してください。`}
+        />
       ) : (
         <>
-          <ReportSummaryCards year={year} totals={totals} />
+          <ReportSummaryCards label={range.label} totals={totals} />
 
-          <KpiSection year={year} rows={kpiRowsByMonth} />
+          <KpiSection label={range.label} rows={kpiRowsByMonth} />
 
           <Card>
             <CardHeader>
@@ -133,13 +144,13 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
                 <ReportMonthlyTable rows={rows} totals={totals} />
               </CardContent>
             </Card>
-            <YearComparisonCard year={year} comparison={comparison} />
+            <YearComparisonCard label={range.label} prevName={range.prevName} prevLabel={prev.label} comparison={comparison} />
           </div>
 
           <Card>
             <CardHeader>
               <CardTitle>ドライバー別ランキング</CardTitle>
-              <CardDescription>{year}年の合計を会社利益の多い順に表示します。</CardDescription>
+              <CardDescription>{range.label}の合計を会社利益の多い順に表示します。</CardDescription>
             </CardHeader>
             <CardContent className="px-0 md:px-0">
               <DriverRankingTable rows={drivers} />
@@ -160,7 +171,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
             <CardHeader>
               <CardTitle>経費のカテゴリ別内訳</CardTitle>
               <CardDescription>
-                {year}年の経費（税抜）合計。固定費・変動費の区分はカテゴリの設定によります。
+                {range.label}の経費（税抜）合計。固定費・変動費の区分はカテゴリの設定によります。
               </CardDescription>
             </CardHeader>
             <CardContent className="px-0 md:px-0">

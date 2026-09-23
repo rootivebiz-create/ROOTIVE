@@ -18,12 +18,17 @@ export interface KpiTrendRow extends KpiValues {
 
 /** 12 か月ぶんに並べる（データが無い月は 0 埋め） */
 export function toKpiTrendRows(rows: MonthKpi[], year: number): KpiTrendRow[] {
+  return toKpiTrendRowsForMonths(rows, monthRange(`${year}-01`, `${year}-12`));
+}
+
+/** 指定した月（期の月など）に並べる（データが無い月は 0 埋め。0030） */
+export function toKpiTrendRowsForMonths(rows: MonthKpi[], months: string[]): KpiTrendRow[] {
   const byMonth = new Map<string, MonthKpi>();
   for (const r of rows) {
     const values = toKpiValues(r);
     if (values.month) byMonth.set(values.month, r);
   }
-  return monthRange(`${year}-01`, `${year}-12`).map((m) => {
+  return months.map((m) => {
     const values = toKpiValues(byMonth.get(m));
     return { ...values, month: m, label: `${Number(m.slice(5, 7))}月` };
   });

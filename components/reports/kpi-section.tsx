@@ -16,7 +16,7 @@ import { kpiTrendSummary, type KpiTrendRow } from "@/lib/kpi/trend";
 import { cn } from "@/lib/utils";
 import { KpiTrendChart } from "./kpi-chart";
 
-/** 年間平均の 1 枚（判定つき） */
+/** 期間の平均の 1 枚（判定つき） */
 function AverageCard({ label, value, tone, description }: { label: string; value: string; tone: keyof typeof KPI_TONE_LABELS; description: string }) {
   return (
     <div className="min-w-0 rounded-lg border p-3">
@@ -31,7 +31,8 @@ function AverageCard({ label, value, tone, description }: { label: string; value
 }
 
 export interface KpiSectionProps {
-  year: number;
+  /** 対象の呼び方（「第3期」「2026年」） */
+  label: string;
   rows: KpiTrendRow[];
 }
 
@@ -39,7 +40,7 @@ export interface KpiSectionProps {
  * 年次レポートの経営指標セクション（12 か月の推移）。
  * 数字は v_month_kpi の値をそのまま使い、判定は lib/kpi/metrics.ts の純関数で決める。
  */
-export function KpiSection({ year, rows }: KpiSectionProps) {
+export function KpiSection({ label, rows }: KpiSectionProps) {
   const summary = kpiTrendSummary(rows);
   const contributionJudge = judgeContributionRate(summary.monthCount > 0 ? summary.contributionRate : null);
   const marginJudge = judgeOperatingMargin(summary.monthCount > 0 ? summary.operatingMargin : null);
@@ -51,19 +52,19 @@ export function KpiSection({ year, rows }: KpiSectionProps) {
       <CardHeader>
         <CardTitle>経営指標の推移</CardTitle>
         <CardDescription>
-          {year}年の限界利益・損益分岐点・1 人当たりの数字です。折れ線の「損益分岐点比率」が 100%（赤い点線）を超えた月は赤字です。
+          {label}の限界利益・損益分岐点・1 人当たりの数字です。折れ線の「損益分岐点比率」が 100%（赤い点線）を超えた月は赤字です。
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <AverageCard
-            label="年間の限界利益率"
+            label="期間の限界利益率"
             value={summary.monthCount > 0 ? pct(summary.contributionRate) : "—"}
             tone={contributionJudge.tone}
             description={KPI_DESCRIPTIONS.contribution_rate}
           />
           <AverageCard
-            label="年間の営業利益率"
+            label="期間の営業利益率"
             value={summary.monthCount > 0 ? pct(summary.operatingMargin) : "—"}
             tone={marginJudge.tone}
             description="売上のうち、経費まで引いたあとに残る割合です（営業利益 ÷ 売上）。"
@@ -72,7 +73,7 @@ export function KpiSection({ year, rows }: KpiSectionProps) {
             label="いちばん苦しかった月"
             value={summary.worst ? `${formatMonthJa(summary.worst.month)}／${worstRatio == null ? "—" : pct(worstRatio)}` : "—"}
             tone={worstJudge.tone}
-            description={`損益分岐点比率がもっとも高かった月です。年間で赤字だった月は ${summary.belowBreakEvenCount} か月です。`}
+            description={`損益分岐点比率がもっとも高かった月です。この期間で赤字だった月は ${summary.belowBreakEvenCount} か月です。`}
           />
         </div>
 

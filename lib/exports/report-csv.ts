@@ -81,6 +81,6 @@ export function toReportCsv(rows: ReportMonthRow[]): string {
 }
 
 /** ファイル名：年次レポート_2026.csv */
-export function reportCsvFilename(year: number): string {
+export function reportCsvFilename(year: number | string): string {
   return `年次レポート_${year}.csv`;
 }

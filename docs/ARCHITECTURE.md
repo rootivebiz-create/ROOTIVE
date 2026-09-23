@@ -702,8 +702,8 @@ office_desk(month, today)  ── 1 往復（security invoker・admin 以上）�
 | 種類 | コマンド | 内容 |
 |---|---|---|
 | 単体（Vitest） | `npm test` | `lib/calc`（§2.6 の全ケース、誤差 0.01 円以内、端数処理 4 種、恒等式）、zod スキーマ、`lib/migrate` の変換と決定的 ID、`lib/voice` の解析、`lib/push` の宛先と文面。**プッシュの送信（`tests/push-send.test.ts`）は使い捨ての自己署名証明書で HTTPS のテストサーバーを立て、暗号化された本文と VAPID の署名が届くこと・410 なら購読を消すことまで確かめる**（openssl が無い環境では飛ばす） |
-| SQL 結合（psql） | `npm run test:sql` | ローカル PostgreSQL に `tests/sql/auth_stub.sql`（auth.uid() 等のスタブ）+ 全マイグレーションを適用し `tests/sql/test.sql` を実行。ビューの計算が §2.6 と一致、RLS（viewer / driver の拒否）、締めガード、招待制、復元・全削除、経費と営業利益（`v_month_pl`）、取引先と請求書（`build_invoice` / 合計の自動計算 / 状態）、ポータルの速報、代表と機密の隔離、通知の購読と設定、配車（必要人数・割り当て・休み希望・写しと確定・見通し）、法定帳票（運転者台帳・適性診断・保存期間・監査で足りないもの）、出力の機密判定と LINE 連携の復元とダッシュボードの 1 往復、事務（月締めのチェック・催促・最初に開く画面・office_desk）、事務員と明細の送付、ユーザーごとの見せる範囲と代表を譲る。35 節。**1 回目の適用直後にテーブル権限の抜けも確かめる** |
-| E2E（Playwright） | `npm run test:e2e` | Supabase 互換のテストサーバー（`supabase-lite`：PostgreSQL + GoTrue 相当 + PostgREST 相当の軽量実装）を自動起動し、iPhone 13 と Desktop Chrome の 2 プロジェクトで主要導線（招待ログイン → ダッシュボード → 稼働追加・複製・一括入力 → 支払明細・PDF → 設定 → 月締め・解除 → 経費と営業利益 → 取引先と請求書（PDF・入金） → 年次レポートと月次目標 → ナビとコマンドパレット・ポータルの速報 → 閲覧者／ドライバーの権限 → 移行 JSON の取り込み）をブラウザで確認。28 spec・154 シナリオ × 2 プロジェクト = **308 件**。スクリーンショットを `docs/screenshots/` に保存。詳細は [docs/E2E.md](E2E.md) |
+| SQL 結合（psql） | `npm run test:sql` | ローカル PostgreSQL に `tests/sql/auth_stub.sql`（auth.uid() 等のスタブ）+ 全マイグレーションを適用し `tests/sql/test.sql` を実行。ビューの計算が §2.6 と一致、RLS（viewer / driver の拒否）、締めガード、招待制、復元・全削除、経費と営業利益（`v_month_pl`）、取引先と請求書（`build_invoice` / 合計の自動計算 / 状態）、ポータルの速報、代表と機密の隔離、通知の購読と設定、配車（必要人数・割り当て・休み希望・写しと確定・見通し）、法定帳票（運転者台帳・適性診断・保存期間・監査で足りないもの）、出力の機密判定と LINE 連携の復元とダッシュボードの 1 往復、事務（月締めのチェック・催促・最初に開く画面・office_desk）、事務員と明細の送付、ユーザーごとの見せる範囲と代表を譲る、期（設立日の同期と復元）。36 節。**1 回目の適用直後にテーブル権限の抜けも確かめる** |
+| E2E（Playwright） | `npm run test:e2e` | Supabase 互換のテストサーバー（`supabase-lite`：PostgreSQL + GoTrue 相当 + PostgREST 相当の軽量実装）を自動起動し、iPhone 13 と Desktop Chrome の 2 プロジェクトで主要導線（招待ログイン → ダッシュボード → 稼働追加・複製・一括入力 → 支払明細・PDF → 設定 → 月締め・解除 → 経費と営業利益 → 取引先と請求書（PDF・入金） → 年次レポートと月次目標 → ナビとコマンドパレット・ポータルの速報 → 閲覧者／ドライバーの権限 → 移行 JSON の取り込み）をブラウザで確認。29 spec・157 シナリオ × 2 プロジェクト = **314 件**。スクリーンショットを `docs/screenshots/` に保存。詳細は [docs/E2E.md](E2E.md) |
 | 静的 | `npm run typecheck` / `npm run lint` / `npm run build` | 型・Lint・本番ビルド |
 | まとめ | `npm run check` | typecheck + lint + test + build:sql |
 
@@ -795,6 +795,26 @@ RPC `transfer_ownership(p_to, p_my_role)`（security definer）。
 画面は `/settings/users/[id]` の「代表を譲る…」。成功すると自分はもう代表ではないので、`/` から開き直してナビと権限を読み直す。
 一時的に任せるだけなら 0020 の「決裁の委任」を使う（権限そのものは動かさない）。
 
+## 4-15. 期（事業年度。0030）
+
+```
+決算月（companies.fiscal_month）── 期の区切り（9 月決算なら 10月〜翌9月）
+設立日（companies.established_on）── 第N期の番号（第1期は設立の月から最初の決算月まで）
+        │
+        └─ lib/fiscal.ts（純関数）
+              fiscalPeriodOfMonth(month) … その月が入る期（label：「第3期」／設立日が無ければ「2026年9月期」）
+              fiscalPeriod(決算の年)     … 期の月・範囲の表示
+              periodOptions()            … 選べる期（設立前はデータがあるときだけ）
+```
+
+- 期は「決算の年」（その期が終わる年）で識別する。URL は `?fy=2026`
+- 設立日は代表の台帳（`company_profile`・0019）にもある。台帳は代表だけが読めるので、期を数えるために companies にも持ち、
+  トリガー（`t20_sync_established`）で相互に写す（同じ値なら何もしないので行き来しない）。`import_backup` も設立日を戻す
+- 月の切り替え：`MonthSelector` のダイアログで期ごとの 12 か月を並べる（`v_month_list` の締め・件数・売上を表示。期の合計は `summarizePeriod`）
+- 年次レポート：`ReportRange`（`view`・`from`〜`to`・`months`・`label`・`prevName`）に一本化。`?fy=` が期、`?y=` が暦年、
+  無ければ稼動月の期。月次推移・前期比（前年比）・ランキング・経費・経営指標（`toKpiTrendRowsForMonths`）・出力が同じ範囲を読む
+- 予算（`/finance` の予実）と中期計画の配分（`spread_plan_year`）は暦年のまま（既知の制限）
+
 ## 10. 既知の制限
 
 1. **driver ロールが自分の稼働行の `bill_rate`（受注単価）を API 経由で読める**：`work_entries` の driver 用 SELECT ポリシーは行単位で列を制限できないため、supabase-js を直接叩けば自分の締め済み月の行の受注単価・会社側の値が取得できます。画面・PDF・ポータル RPC（`driver_portal_statement`）では出していません。厳密に隠す場合は列を分離したビューだけを driver に許可する変更が必要です。
@@ -805,6 +825,7 @@ RPC `transfer_ownership(p_to, p_my_role)`（security definer）。
 6. **PDF のフォント**：`public/fonts/NotoSansJP-*.ttf` を実行時にファイルとして読み込みます。`next.config.ts` の `outputFileTracingIncludes` で `/api/export/statement.pdf` に `public/fonts/**` を同梱する設定済みです。フォントが見つからないエラーが出た場合は、この設定と `public/fonts/` の中身を確認してください。
 7. **2 段階認証の UI なし**（Supabase 側で有効化できる構成のみ）。
 8. **出力を止めても画面の内容は読める**（0029）：「出力（ダウンロード）」を止めた人でも、画面に出ている数字は見られ、supabase-js を直接叩けば同じ行も読めます。止めているのは一覧のダウンロード（出力の口）と画面の出力ボタンだけです。見せたくない数字そのものは「経営の数字」「借入と納税」「現金」「振込口座」の見せる範囲で止めてください（こちらは RLS で止まります）。
+9. **予算と中期計画は暦年**（0030）：月の切り替えと年次レポートは期（事業年度）で見られますが、財務の予算・予実と中期計画の年間目標の配分（`spread_plan_year`）は 1〜12 月の暦年のままです。
 
 ---
 

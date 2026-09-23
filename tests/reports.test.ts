@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   MONTH_STATUS_LABELS,
   availableYears,
+  calendarReportRange,
   compareYears,
+  fiscalReportRange,
+  previousReportRange,
+  reportRangeOptions,
+  resolveReportRange,
+  toReportRowsForMonths,
   driverRanking,
   expenseKindTotals,
   expenseRanking,
@@ -262,9 +268,9 @@ describe("前年比", () => {
   it("前年データが無ければ null、あれば 4 指標を比較する", () => {
     const current = sumReport(toReportRows(YEAR_2026, 2026));
     const previous = sumReport(toReportRows([pl("2025-09", { bill: 1000000, profit: 300000, expense_total: 100000, operating_profit: 200000, entry_count: 1 })], 2025));
-    expect(compareYears(current, null, 2025)).toBeNull();
-    const cmp = compareYears(current, previous, 2025);
-    expect(cmp?.previousYear).toBe(2025);
+    expect(compareYears(current, null, "2025年")).toBeNull();
+    const cmp = compareYears(current, previous, "2025年");
+    expect(cmp?.previousLabel).toBe("2025年");
     expect(cmp?.bill.diff).toBe(2559573);
     expect(cmp?.bill.ratio).toBeCloseTo(2.559573, 10);
     expect(cmp?.profit.diff).toBe(582490.3);
@@ -394,5 +400,48 @@ describe("年次レポート CSV", () => {
     const lines = csv.slice(CSV_BOM.length).trimEnd().split("\r\n");
     expect(lines).toHaveLength(14);
     expect(lines[13]).toBe("合計,0,0,0,0,0,0,0,0,0,0,0,0,0,0,");
+  });
+});
+
+describe("期で見る・暦年で見る（0030）", () => {
+  const fiscal = { fiscalMonth: 9, establishedOn: "2024-04-15" };
+
+  it("指定が無ければ、いま見ている月が入る期", () => {
+    const r = resolveReportRange({}, "2026-09", fiscal);
+    expect(r.view).toBe("fiscal");
+    expect(r.label).toBe("第3期");
+    expect(r.title).toBe("第3期（2025年10月〜2026年9月）");
+    expect([r.from, r.to]).toEqual(["2025-10", "2026-09"]);
+    expect(r.prevName).toBe("前期");
+    expect(resolveReportRange({}, "2026-10", fiscal).label).toBe("第4期");
+  });
+
+  it("?fy= は期、?y= は暦年（?fy= が先）", () => {
+    expect(resolveReportRange({ fy: "2025" }, "2026-09", fiscal).label).toBe("第2期");
+    const cal = resolveReportRange({ y: "2026" }, "2026-09", fiscal);
+    expect([cal.view, cal.from, cal.to, cal.label, cal.prevName]).toEqual(["calendar", "2026-01", "2026-12", "2026年", "前年"]);
+    expect(resolveReportRange({ y: "2026", fy: "2025" }, "2026-09", fiscal).view).toBe("fiscal");
+  });
+
+  it("前期・前年", () => {
+    const p = previousReportRange(fiscalReportRange(2026, fiscal), fiscal);
+    expect([p.label, p.from, p.to]).toEqual(["第2期", "2024-10", "2025-09"]);
+    // 第1期は設立の月から（前期は設立前）
+    const first = fiscalReportRange(2024, fiscal);
+    expect([first.from, first.months.length]).toEqual(["2024-04", 6]);
+    expect(previousReportRange(first, fiscal).label).toBe("2023年9月期");
+    expect(previousReportRange(calendarReportRange(2026), fiscal).label).toBe("2025年");
+  });
+
+  it("期の月に並べる（データが無い月も入る）", () => {
+    const rows = toReportRowsForMonths([], fiscalReportRange(2026, fiscal).months);
+    expect(rows.map((r) => r.month)).toEqual(["2025-10", "2025-11", "2025-12", "2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09"]);
+  });
+
+  it("選択肢は、期なら「第N期（範囲）」、暦年なら「YYYY年」", () => {
+    const f = reportRangeOptions("fiscal", ["2025-11-01", "2026-09-01"], fiscal, ["2026-09"]);
+    expect(f.map((o) => o.label)).toEqual(["第3期（2025年10月〜2026年9月）"]);
+    const c = reportRangeOptions("calendar", ["2025-11-01", "2026-09-01"], fiscal, ["2026-09"]);
+    expect(c.map((o) => o.label)).toEqual(["2026年", "2025年"]);
   });
 });

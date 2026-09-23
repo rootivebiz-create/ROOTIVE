@@ -5,8 +5,8 @@ import { pct, yen } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { ReportTotals, YearComparison, YearDelta } from "./helpers";
 
-/** 年間サマリーのカード（金額は税抜。営業利益 ＝ 会社利益 − 経費） */
-export function ReportSummaryCards({ year, totals }: { year: number; totals: ReportTotals }) {
+/** 期間（期・暦年）のサマリーのカード（金額は税抜。営業利益 ＝ 会社利益 − 経費）。label は「第3期」「2026年」 */
+export function ReportSummaryCards({ label, totals }: { label: string; totals: ReportTotals }) {
   const cards: { key: string; label: string; node: React.ReactNode; note?: string }[] = [
     { key: "bill", label: "売上（税抜）", node: <Money value={totals.bill} />, note: `${totals.entryCount} 件の稼働行` },
     { key: "profit", label: "会社利益", node: <Money value={totals.profit} /> },
@@ -24,7 +24,7 @@ export function ReportSummaryCards({ year, totals }: { year: number; totals: Rep
         <Card key={c.key} className="min-w-0 p-3 md:p-4">
           <p className="text-xs text-muted-foreground md:text-sm">{c.label}</p>
           <p className="mt-1 text-lg font-semibold md:text-2xl">{c.node}</p>
-          <p className="mt-1 truncate text-[11px] text-muted-foreground md:text-xs">{c.note ?? `${year}年の合計`}</p>
+          <p className="mt-1 truncate text-[11px] text-muted-foreground md:text-xs">{c.note ?? `${label}の合計`}</p>
         </Card>
       ))}
     </div>
@@ -47,14 +47,14 @@ function DeltaRow({ label, delta, upIsGood }: { label: string; delta: YearDelta;
   );
 }
 
-/** 前年比（前年のデータが無ければ「前年データなし」） */
-export function YearComparisonCard({ year, comparison }: { year: number; comparison: YearComparison | null }) {
+/** 前年比・前期比（比べる相手のデータが無ければ「データなし」）。prevName は「前年」「前期」 */
+export function YearComparisonCard({ label, prevName, prevLabel, comparison }: { label: string; prevName: string; prevLabel: string; comparison: YearComparison | null }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>前年比</CardTitle>
+        <CardTitle>{prevName}比</CardTitle>
         <CardDescription>
-          {comparison ? `${comparison.previousYear}年の合計との比較（${year}年 − ${comparison.previousYear}年）` : `${year - 1}年のデータがありません`}
+          {comparison ? `${comparison.previousLabel}の合計との比較（${label} − ${comparison.previousLabel}）` : `${prevLabel}のデータがありません`}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -66,7 +66,7 @@ export function YearComparisonCard({ year, comparison }: { year: number; compari
             <DeltaRow label="営業利益" delta={comparison.operatingProfit} upIsGood />
           </div>
         ) : (
-          <p className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">前年データなし</p>
+          <p className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">{prevName}データなし</p>
         )}
       </CardContent>
     </Card>

@@ -3,13 +3,13 @@
  * 「月次推移」シート（report.csv と同じ内容・同じ並び）と「合計」シート（縦並びの年計）の 2 シート。
  */
 import type { NextRequest } from "next/server";
-import { currentMonthJST } from "@/lib/month";
 import { loadMonthPlRange } from "@/lib/db/queries";
-import { parseYear, toReportRows, yearOfMonth, yearRange } from "@/components/reports/helpers";
+import { toReportRowsForMonths } from "@/components/reports/helpers";
+import { reportRangeFilePart, reportRangeParam } from "../_lib/report-range";
 import { REPORT_CSV_HEADERS, reportToCsvRow, reportTotalCsvRow } from "@/lib/exports/report-csv";
 import { buildXlsx, sheetFromRows, type XlsxCell, type XlsxCellType, type XlsxSheet } from "@/lib/exports/xlsx";
 import { xlsxResponse } from "@/lib/exports/download";
-import { ExportError, handleExport, requireManagementExport } from "../_lib/guard";
+import { handleExport, requireManagementExport } from "../_lib/guard";
 import { recordExport } from "@/lib/exports/record";
 
 export const dynamic = "force-dynamic";
@@ -34,15 +34,6 @@ const TYPES: XlsxCellType[] = [
   "text", // 状態
 ];
 
-/** ?y=YYYY（未指定なら日本時間の今年）。不正は 400 */
-function yearParam(req: NextRequest): number {
-  const raw = req.nextUrl.searchParams.get("y");
-  if (raw == null || raw === "") return yearOfMonth(currentMonthJST());
-  const y = parseYear(raw);
-  if (y == null) throw new ExportError(400, "年は ?y=YYYY（西暦 4 桁）で指定してください。");
-  return y;
-}
-
 /** 合計シート：項目を縦に並べる（稼動月・状態の列は年計に意味が無いので出さない） */
 function totalSheet(total: (string | number | null | undefined)[]): XlsxSheet {
   const rows: XlsxCell[][] = [["項目", "年計"]];
@@ -55,13 +46,13 @@ function totalSheet(total: (string | number | null | undefined)[]): XlsxSheet {
 
 export const GET = handleExport(async (req: NextRequest) => {
   const { supabase, company, profile } = await requireManagementExport();
-  const year = yearParam(req);
-  const { from, to } = yearRange(year);
+  const range = reportRangeParam(req, company);
+  const { from, to } = range;
 
   const pl = await loadMonthPlRange(supabase, company.id, from, to);
-  const monthRows = toReportRows(pl, year);
+  const monthRows = toReportRowsForMonths(pl, range.months);
 
   const trend = sheetFromRows("月次推移", [[...REPORT_CSV_HEADERS], ...monthRows.map(reportToCsvRow)], { types: TYPES });
   await recordExport({ profileId: profile.id, kind: "report", label: "年次レポート Excel", req });
-  return xlsxResponse(`年次レポート_${year}.xlsx`, buildXlsx([trend, totalSheet(reportTotalCsvRow(monthRows))]));
+  return xlsxResponse(`年次レポート_${reportRangeFilePart(range)}.xlsx`, buildXlsx([trend, totalSheet(reportTotalCsvRow(monthRows))]));
 });
