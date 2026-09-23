@@ -38,8 +38,20 @@
 | `server/tokens.ts` | 明細リンクの署名 `signStatementLink`・`verifyStatementLink` |
 | `server/rate-limit.ts` | 回数の制限 `tooMany` |
 
+## 機能の置き場所（server/features）と、ほかの機能から使ってよい入口
+| 機能 | 場所 | 入口（例） |
+|---|---|---|
+| 取り込み（稼働） | `import/`（`service.ts`・`detect.ts`・`parse.ts`・`resolve.ts`・`work.ts`） | `createDraftFromFile`・`loadDraftView`・`applyBatch`・`undoBatch`。`import_batches.summary` は `DraftSummary`（v1、`types.ts`）。稼働の束（kind='work'）を作るときは必ずここを通す |
+| 支払明細・ドライバーのリンク | `statements.ts`・`statements/`・`portal.ts` | `listMonthStatements`・`getStatementDetail`・`statementStatus`（`statements/status.ts`）・`describeChanges`（`statements/diff.ts`）・`findStatementByToken` |
+| 見張り番 | `watch.ts`・`watch/`（`rules.ts` に純関数のルール） | `runWatch`・`ackWatchIssue`（`watch/acks.ts`） |
+| 振込・締め | `transfer.ts`・`close.ts` | `loadTransferPlan`・`createTransferBatch`・`closeMonth`・`reopenMonth`・`monthAuditLog` |
+| 元請との突合 | `reconcile.ts`・`reconcile/` | `importNotice`・`runReconcile`・`listMonth`・`loadReport` |
+| 利益・会計 | `profit.ts`・`profit/`・`accounting.ts`・`accounting/journal.ts` | `monthProfit`・`profitTrend`・`loadCeoSheet`・`buildAccountingFile` |
+| ホーム・最初の設定・並行運用 | `home.ts`・`onboarding.ts`・`parallel.ts` | `loadHomeStatus`・`createDrivers`・`saveParallelChecks`・`goLive` |
+| 設定 | `settings/` | 会社・ドライバー・元請・案件・単価・控除・利用者 |
+
 ## ドライバーの画面（ログインなし）
-- `/s/<署名つきの値>`。毎回 `verifyStatementLink` と明細の `link_nonce` を確かめる。Server Action も毎回確かめ直す（画面を信じない）
+- 明細 `/s/<署名つきの値>`・取引条件 `/t/<署名つきの値>`。署名は `signLink(用途, id, nonce, 期限)`（用途が違うと通らない）。毎回 `verifyLink` と行の `link_nonce` を確かめる。Server Action も毎回確かめ直す（画面を信じない）
 - `noindex`・キャッシュしない・リファラーを送らない。見られるのはその明細と、同じドライバーの明細だけ
 
 ## ダウンロード（`app/api/**/route.ts`）
