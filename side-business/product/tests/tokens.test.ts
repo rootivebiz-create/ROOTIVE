@@ -35,3 +35,14 @@ describe("ドライバーの明細リンク", () => {
     expect(verifyStatementLink("", now)).toEqual({ ok: false, reason: "format" });
   });
 });
+
+describe("用途の違う署名", () => {
+  it("明細のリンクは取引条件のリンクとして通らない", async () => {
+    const { signLink, verifyLink, signStatementLink } = await import("~/server/tokens");
+    const exp = Math.floor(Date.now() / 1000) + 3600;
+    const t = signStatementLink("abc", "n1", exp);
+    expect(verifyLink("statement", t).ok).toBe(true);
+    expect(verifyLink("terms", t)).toEqual({ ok: false, reason: "signature" });
+    expect(verifyLink("terms", signLink("terms", "abc", "n1", exp))).toMatchObject({ ok: true, id: "abc" });
+  });
+});
