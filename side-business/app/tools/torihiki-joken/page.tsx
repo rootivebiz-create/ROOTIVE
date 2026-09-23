@@ -129,7 +129,7 @@ export default function TorihikiJokenPage() {
         </p>
       </aside>
 
-      <div className="mt-6">
+      <div className="mt-6 print:mt-0">
         <TorihikiJokenTool />
       </div>
 

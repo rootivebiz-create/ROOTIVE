@@ -330,20 +330,20 @@ export function latestSafePayRule(
 export type RateUnitId = "piece" | "case" | "day" | "hour" | "month" | "km";
 
 export const RATE_UNITS: { id: RateUnitId; label: string; per: string }[] = [
-  { id: "piece", label: "個建て（1個）", per: "1個" },
-  { id: "case", label: "件（1件・1便）", per: "1件" },
-  { id: "day", label: "日当（1日）", per: "1日" },
-  { id: "hour", label: "時間（1時間）", per: "1時間" },
-  { id: "month", label: "月額（1か月）", per: "1か月" },
-  { id: "km", label: "距離（1km）", per: "1km" },
+  { id: "piece", label: "個建て", per: "1個" },
+  { id: "case", label: "件・便", per: "1件" },
+  { id: "day", label: "日当", per: "1日" },
+  { id: "hour", label: "時間", per: "1時間" },
+  { id: "month", label: "月額", per: "1か月" },
+  { id: "km", label: "距離", per: "1km" },
 ];
 
 export type DeductionKindId = "monthly" | "daily" | "percent";
 
 export const DEDUCTION_KINDS: { id: DeductionKindId; label: string }[] = [
-  { id: "monthly", label: "毎月の金額（円）" },
-  { id: "daily", label: "業務1日あたり（円）" },
-  { id: "percent", label: "報酬の割合（%）" },
+  { id: "monthly", label: "毎月・円" },
+  { id: "daily", label: "1日ごと・円" },
+  { id: "percent", label: "報酬の%" },
 ];
 
 export type Bearer = "company" | "driver";
@@ -562,11 +562,11 @@ export function buildTorihikiJoken(input: TorihikiInput): TorihikiDoc {
     const first = deadline.rows[0];
     payLines.push(
       deadline.ruleLabel.replace("・", "、"),
-      `締め期間は${closingPeriodText(input.closingDay)}です。締め期間の末日までに行った業務の報酬を、まとめて支払日に支払います。`,
+      `締め期間は${closingPeriodText(input.closingDay)}です。締め期間の末日までに行った業務の報酬は、話し合って決めたとおり、締め期間ごとにまとめて支払日に支払います。`,
       input.holidayRule === "before"
         ? "支払日が銀行の休業日にあたるときは、前の営業日に支払います。"
         : "支払日が銀行の休業日にあたるときは、次の営業日に支払います。",
-      `例：${jpDate(first.periodStart)}〜${jpDate(first.periodEnd)}の分は、${jpDate(first.payDate)}に支払います。`,
+      `例：${jpDate(first.periodStart)}〜${jpDate(first.periodEnd)}の分は、${jpDate(first.payDateActual)}に支払います。`,
     );
     if (deadline.status === "caution") {
       warnings.push("支払日は、締め期間の最初の日から数えると60日（2か月）を超えます。締め日から数えてよい条件にあてはまるか確かめてください。");

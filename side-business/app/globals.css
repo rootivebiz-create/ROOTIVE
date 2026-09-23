@@ -66,20 +66,23 @@
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 
-html {
-  -webkit-text-size-adjust: 100%;
-}
+/* 土台の指定は base の層に置く（Tailwind のクラスで上書きできるように） */
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-sans);
-  line-height: 1.7;
-  font-feature-settings: "palt" 1;
-}
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    line-height: 1.7;
+    font-feature-settings: "palt" 1;
+  }
 
-a {
-  color: var(--link);
+  a {
+    color: var(--link);
+  }
 }
 
 .num {

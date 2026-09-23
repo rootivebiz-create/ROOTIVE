@@ -367,7 +367,7 @@ export function TorihikiJokenTool() {
                   </div>
                   <RemoveButton label={`${d.label || "差し引くもの"}を消す`} onClick={() => setDeductions(deductions.filter((x) => x.id !== d.id))} />
                 </div>
-                <div className="mt-2 grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
+                <div className="mt-2 grid grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-2">
                   <Field label="決め方">
                     <Select
                       value={d.kind}
@@ -662,7 +662,7 @@ function DeadlineCard({ deadline, safeRuleLabel }: { deadline: DeadlineResult; s
             ＋
           </span>
         </summary>
-        <div className="px-3 pb-3">
+        <div className="px-4 pb-3">
           <TableWrap>
             <table className="mt-2 w-full min-w-[30rem] border-collapse text-sm">
               <thead>
