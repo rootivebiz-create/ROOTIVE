@@ -2,7 +2,7 @@
 
 /**
  * 元請のご担当者への「確認のお願い」を作る。差を選ぶと文面が変わる。
- * 文面はそのまま直せる。コピー・メールソフトで開く・選んだ差を「問い合わせ済み」にする、までをここで。
+ * 文面はそのまま直せる。コピー・メールソフトで開く・PDF（差の一覧の表つき）・選んだ差を「問い合わせ済み」にする、までをここで。
  */
 import { useActionState, useMemo, useState } from "react";
 import { Button, Card, Field, Input } from "@/components/ui";
@@ -10,7 +10,7 @@ import { markAskedAction } from "~/app/(app)/reconcile/actions";
 import { Badge } from "~/components/page";
 import { DiffAmount, FormMessage } from "~/components/reconcile/bits";
 import { KIND_LABEL, STATUS_LABEL, STATUS_TONE, type ItemStatus } from "~/server/features/reconcile/labels";
-import { buildLetter, mailtoHref, type LetterItem } from "~/server/features/reconcile/letter";
+import { buildLetter, defaultLetterSelection, mailtoHref, type LetterItem } from "~/server/features/reconcile/letter";
 
 export type ComposerItem = LetterItem & { status: ItemStatus };
 
@@ -21,7 +21,9 @@ export function LetterComposer({
   companyName,
   senderName,
   items,
+  period = null,
   canEdit,
+  canPdf = false,
 }: {
   noticeId: string;
   month: string;
@@ -29,10 +31,15 @@ export function LetterComposer({
   companyName: string;
   senderName: string;
   items: ComposerItem[];
+  /** 元請の締めの期間で比べたとき、その期間（本文に書く） */
+  period?: { from: string; to: string } | null;
+  /** 「問い合わせ済み」にできるか */
   canEdit: boolean;
+  /** PDF を出せるか（事務・社長） */
+  canPdf?: boolean;
 }) {
   // 最初は「未対応」で、受け取りが少ない可能性のある差を選んでおく
-  const [selected, setSelected] = useState<Set<string>>(() => new Set(items.filter((i) => i.status === "open" && i.diff < 0).map((i) => i.id)));
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(defaultLetterSelection(items).map((i) => i.id)));
   const [contact, setContact] = useState("ご担当者様");
   const [sender, setSender] = useState(senderName);
   const [to, setTo] = useState("");
@@ -43,8 +50,8 @@ export function LetterComposer({
 
   const chosen = useMemo(() => items.filter((i) => selected.has(i.id)), [items, selected]);
   const letter = useMemo(
-    () => buildLetter({ clientName, contactName: contact, companyName, senderName: sender, month, items: chosen, offerRecords }),
-    [clientName, contact, companyName, sender, month, chosen, offerRecords],
+    () => buildLetter({ clientName, contactName: contact, companyName, senderName: sender, month, items: chosen, offerRecords, period }),
+    [clientName, contact, companyName, sender, month, chosen, offerRecords, period],
   );
   const body = edited ?? letter.body;
 
@@ -143,6 +150,25 @@ export function LetterComposer({
             メールソフトで開く
           </a>
         </div>
+        {canPdf && (
+          // PDF：文面のあとに差の一覧の表と合計が付く。文面を直したときは、直した文面で作る（長いので POST で送る）
+          <form method={edited !== null ? "post" : "get"} action={`/api/reconcile/${noticeId}/letter`} className="mt-3 border-t border-border pt-3">
+            {chosen.map((i) => (
+              <input key={i.id} type="hidden" name="items" value={i.id} />
+            ))}
+            <input type="hidden" name="contact" value={contact} />
+            <input type="hidden" name="sender" value={sender} />
+            <input type="hidden" name="offer" value={offerRecords ? "1" : "0"} />
+            {edited !== null && <input type="hidden" name="body" value={edited} />}
+            <Button type="submit" variant="secondary" disabled={chosen.length === 0}>
+              PDF にする（差の一覧の表つき）
+            </Button>
+            <p className="mt-1 text-xs text-muted-foreground">
+              上の文面のあとに、選んだ {chosen.length}件 の「当社の記録・お支払通知・差」の表と合計を付けた PDF（A4）を作ります。
+              {edited !== null ? " 直した文面で作ります。" : ""}
+            </p>
+          </form>
+        )}
         <p className="mt-2 text-xs text-muted-foreground">しめ日ラボからはメールを送りません。コピーするか、お使いのメールソフトで送ってください。</p>
         {body.length > 1500 && (
           <p className="mt-1 text-xs text-warning">文面が長いため、メールソフトによっては途中までしか入らないことがあります。そのときは「コピー」を使って貼り付けてください。</p>
