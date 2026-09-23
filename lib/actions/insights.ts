@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { ActionError, runAction, type ActionResult } from "@/lib/actions/result";
 import { generateAnalysisAction } from "@/lib/actions/ai";
-import { MANAGEMENT_VIEW_ROLES, requireManagerAction } from "@/lib/auth/session";
+import { STAFF_ROLES, requireManagerAction } from "@/lib/auth/session";
+import { seesManagement } from "@/lib/auth/access";
 import type { InsightAction, InsightFindingDetail } from "@/lib/ai/findings";
 import { buildWeeklySummary, loadWeeklyInsights, saveWeeklyInsight } from "@/lib/ai/weekly";
 import { multicastLineMessage } from "@/lib/integrations/line";
@@ -94,7 +95,7 @@ export interface SendWeeklySummaryResult {
 
 /**
  * 保存済みの週次サマリーを LINE へ送る（admin 以上）。
- * 送り先は LINE 連携しているスタッフのうち、経営の数字を見てよい人（owner・admin・viewer。事務員は外す）。
+ * 送り先は LINE 連携しているスタッフのうち、経営の数字を見てよい人（事務員の既定と、代表が個別に外した人は外す）。
  * 数字は保存時ではなく送信時に集計し直す（あとから稼働を直しても正しい数字が届く）。
  */
 export async function sendWeeklySummaryAction(weekFrom?: string): Promise<ActionResult<SendWeeklySummaryResult>> {
@@ -105,12 +106,15 @@ export async function sendWeeklySummaryAction(weekFrom?: string): Promise<Action
 
     const { data: staff, error: staffError } = await supabase
       .from("profiles")
-      .select("line_user_id, is_active, role")
+      .select("line_user_id, is_active, role, access_overrides")
       .eq("company_id", company.id)
       .eq("is_active", true)
-      .in("role", MANAGEMENT_VIEW_ROLES);
+      .in("role", STAFF_ROLES);
     if (staffError) throw staffError;
-    const to = (staff ?? []).map((s) => (s.line_user_id ?? "").trim()).filter((v) => v.length > 0);
+    const to = (staff ?? [])
+      .filter(seesManagement)
+      .map((s) => (s.line_user_id ?? "").trim())
+      .filter((v) => v.length > 0);
     if (to.length === 0) {
       throw new ActionError("LINE 連携しているスタッフがいません。設定 → 外部連携 で連携してください。");
     }

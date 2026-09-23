@@ -43,7 +43,7 @@ function ExportLink({ item, label, size }: { item: ExportMenuItem; label: string
 export function ExportMenu({ items, label = "出力", size = "sm", className }: ExportMenuProps) {
   if (items.length === 0) return null;
   return (
-    <div className={cn("flex flex-wrap items-center gap-2", className)}>
+    <div className={cn("flex flex-wrap items-center gap-2", className)} data-export-menu>
       <span className="text-xs text-muted-foreground">{label}</span>
       {items.map((item) => (
         <ExportLink key={item.href} item={item} label={label} size={size} />

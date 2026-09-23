@@ -184,8 +184,9 @@ describe("ナビの定義", () => {
     expect(navItemsFor("staff", "owner").map((i) => i.href)).toEqual(MAIN_NAV.map((i) => i.href));
     for (const role of ["admin", "viewer", "driver"] as const) {
       expect(navItemsFor("staff", role).map((i) => i.href)).not.toContain("/executive");
-      // 閲覧者・ドライバーには「事務」も出さない
-      expect(navItemsFor("staff", role)).toHaveLength(MAIN_NAV.length - (role === "admin" ? 1 : 2));
+      // 閲覧者・ドライバーには「事務」も出さない。ドライバーには経営の数字の画面も出さない
+      const management = MAIN_NAV.filter((i) => i.management).length;
+      expect(navItemsFor("staff", role)).toHaveLength(MAIN_NAV.length - (role === "admin" ? 1 : 2) - (role === "driver" ? management : 0));
       expect(moreItemsFor(role).map((i) => i.href)).not.toContain("/executive");
     }
     expect(moreItemsFor("owner").map((i) => i.href)).toEqual(MORE_NAV.map((i) => i.href));
@@ -247,16 +248,27 @@ describe("ロールごとの出し分け（visibleForRole）", () => {
     expect(NAV_ADMIN_ROLES).toEqual(["owner", "admin", "clerk"]);
   });
 
-  it("事務員（clerk）は adminOnly を通すが、managerOnly・ownerOnly・noClerk は通さない", () => {
+  it("事務員（clerk）は adminOnly を通すが、managerOnly・ownerOnly・経営の数字（management）は既定では通さない", () => {
     expect(isVisibleForRole({ adminOnly: true }, "clerk")).toBe(true);
     expect(isVisibleForRole({ managerOnly: true }, "clerk")).toBe(false);
     expect(isVisibleForRole({ managerOnly: true }, "admin")).toBe(true);
     expect(isVisibleForRole({ managerOnly: true }, "viewer")).toBe(false);
     expect(isVisibleForRole({ ownerOnly: true }, "clerk")).toBe(false);
-    expect(isVisibleForRole({ noClerk: true }, "clerk")).toBe(false);
-    expect(isVisibleForRole({ noClerk: true }, "viewer")).toBe(true);
-    expect(isVisibleForRole({ noClerk: true }, "admin")).toBe(true);
+    expect(isVisibleForRole({ management: true }, "clerk")).toBe(false);
+    expect(isVisibleForRole({ management: true }, "viewer")).toBe(true);
+    expect(isVisibleForRole({ management: true }, "admin")).toBe(true);
     expect(NAV_MANAGER_ROLES).toEqual(["owner", "admin"]);
+  });
+
+  it("経営の数字は、代表がその人に付けた設定（0029）で出し分けが変わる", () => {
+    // 事務員に見せる設定
+    expect(isVisibleForRole({ management: true }, "clerk", true)).toBe(true);
+    // 閲覧者・管理者から外す設定
+    expect(isVisibleForRole({ management: true }, "viewer", false)).toBe(false);
+    expect(isVisibleForRole({ management: true }, "admin", false)).toBe(false);
+    // ほかの指定は今までどおり（management を見せても経営の設定は開かない）
+    expect(isVisibleForRole({ managerOnly: true }, "clerk", true)).toBe(false);
+    expect(isVisibleForRole({ adminOnly: true }, "viewer", true)).toBe(false);
   });
 
   it("事務員のナビに経営の画面（ホーム・資金繰り・案件・財務・レポート・AI）は出ず、事務は出る", () => {

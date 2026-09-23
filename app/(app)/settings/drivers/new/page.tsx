@@ -2,12 +2,11 @@ import { ADMIN_ROLES, requirePageRole } from "@/lib/auth/session";
 import { loadMasters } from "@/lib/db/queries";
 import { PageHeader } from "@/components/ui/page-header";
 import { DriverForm, type DriverFormProject } from "@/components/settings/drivers/driver-form";
-import { canSeeBankAccount } from "@/lib/schemas/drivers";
 
 export const metadata = { title: "ドライバーを追加" };
 
 export default async function NewDriverPage() {
-  const { supabase, company, profile } = await requirePageRole(ADMIN_ROLES);
+  const { supabase, company, access } = await requirePageRole(ADMIN_ROLES);
   const masters = await loadMasters(supabase, company.id, { activeOnly: true });
   const projects: DriverFormProject[] = masters.projects.map((p) => ({
     id: p.id,
@@ -30,7 +29,7 @@ export default async function NewDriverPage() {
           payout_day: Number(company.payout_day ?? 0),
         }}
         driver={null}
-        canSeeBank={canSeeBankAccount(company.confidential_scope, profile.role)}
+        canSeeBank={access.bank_account}
         bankAccount={null}
         overrides={[]}
         recurring={[]}

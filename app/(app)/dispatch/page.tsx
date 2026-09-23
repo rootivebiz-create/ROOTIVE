@@ -1,4 +1,4 @@
-import { canEdit, canSeeManagement, requireStaff } from "@/lib/auth/session";
+import { canEdit, requireStaff } from "@/lib/auth/session";
 import { DispatchView } from "@/components/dispatch/dispatch-view";
 import { loadDispatchWeek } from "@/lib/dispatch/queries";
 import { weekStart } from "@/lib/dispatch/board";
@@ -15,7 +15,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export default async function DispatchPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const sp = await searchParams;
-  const { supabase, company, profile } = await requireStaff();
+  const { supabase, company, profile, access } = await requireStaff();
 
   const today = todayJST();
   const fromParam = str(sp.from);
@@ -35,7 +35,7 @@ export default async function DispatchPage({ searchParams }: { searchParams: Pro
       weekStart={start}
       today={today}
       editable={canEdit(profile.role)}
-      showProfit={canSeeManagement(profile.role)}
+      showProfit={access.management}
       items={data.items}
       drivers={data.drivers}
       patterns={data.patterns}

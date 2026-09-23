@@ -3,18 +3,17 @@
  * 期間の既定は画面と同じ「今日から 90 日後まで」。残高は起点残高（cash_snapshots）から積み上げる。
  */
 import type { NextRequest } from "next/server";
-import { MANAGEMENT_VIEW_ROLES } from "@/lib/auth/session";
 import { loadCashForecast, loadCashSnapshots } from "@/lib/db/queries";
 import { buildCashTimeline, pickOpeningBalance, resolveRange, toCashflowCsvRows } from "@/components/cashflow/helpers";
 import { cashflowCsvFilename, toCashflowCsv } from "@/lib/exports/cashflow-csv";
 import { csvResponse } from "@/lib/exports/download";
-import { handleExport, requireExportRole } from "../_lib/guard";
+import { handleExport, requireManagementExport } from "../_lib/guard";
 import { recordExport } from "@/lib/exports/record";
 
 export const dynamic = "force-dynamic";
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company, profile } = await requireExportRole(MANAGEMENT_VIEW_ROLES);
+  const { supabase, company, profile } = await requireManagementExport();
   const sp = req.nextUrl.searchParams;
   const range = resolveRange(sp.get("from") ?? undefined, sp.get("to") ?? undefined);
 

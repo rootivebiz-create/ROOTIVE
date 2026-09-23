@@ -1,5 +1,5 @@
 import { Banknote, Download, FileSpreadsheet, Lock } from "lucide-react";
-import { canEdit, canSeeManagement, requireStaff } from "@/lib/auth/session";
+import { canEdit, requireStaff } from "@/lib/auth/session";
 import { isMonthClosed } from "@/lib/db/queries";
 import { monthFromParam, monthToDate, formatMonthJa } from "@/lib/month";
 import { exportUrls } from "@/lib/exports/urls";
@@ -15,10 +15,10 @@ import { loadStatementTargets } from "@/lib/statements/send";
 export const metadata = { title: "支払明細" };
 
 export default async function PayoutsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const { supabase, company, profile } = await requireStaff();
+  const { supabase, company, profile, access } = await requireStaff();
   const canTransfer = canEdit(profile.role);
   // 会社利益は経営の数字（事務員には出さない）
-  const showProfit = canSeeManagement(profile.role);
+  const showProfit = access.management;
   const sp = await searchParams;
   const month = monthFromParam(sp.m);
 

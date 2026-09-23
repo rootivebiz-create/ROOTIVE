@@ -4,7 +4,7 @@
  */
 import "server-only";
 import type { NextRequest } from "next/server";
-import { getSessionContext, type SessionContext } from "@/lib/auth/session";
+import { STAFF_ROLES, getSessionContext, type SessionContext } from "@/lib/auth/session";
 import type { Role } from "@/lib/db/types";
 import { translateError } from "@/lib/actions/result";
 import { isMonthKey } from "@/lib/month";
@@ -37,13 +37,25 @@ export function handleExport(fn: Handler): Handler {
   };
 }
 
-/** ログイン＋ロール確認（不足時は 401 / 403） */
-export async function requireExportRole(roles: Role[]): Promise<SessionContext> {
+/** 代表が出力を止めた人に返す文（0029） */
+export const EXPORT_STOPPED_MESSAGE = "あなたのアカウントでは出力（ダウンロード）が止められています。必要なときは代表に頼んでください。";
+
+/**
+ * ログイン＋ロール確認（不足時は 401 / 403）。
+ * - スタッフは、代表がその人の出力を止めていれば（access_overrides.export = deny。0029）ここで断る（ドライバー本人の明細には効かない）
+ * - management を付けた出力（経営の数字）は、経営の数字を見せない人を断る（ロールではなくその人の設定で決める）
+ */
+export async function requireExportRole(roles: Role[], opts: { management?: boolean } = {}): Promise<SessionContext> {
   const ctx = await getSessionContext();
   if (!ctx) throw new ExportError(401, "ログインが必要です。");
   if (!roles.includes(ctx.profile.role)) throw new ExportError(403, "この出力を行う権限がありません。");
+  if (ctx.profile.role !== "driver" && !ctx.access.export) throw new ExportError(403, EXPORT_STOPPED_MESSAGE);
+  if (opts.management && !ctx.access.management) throw new ExportError(403, "この出力を行う権限がありません。");
   return ctx;
 }
+
+/** 経営の数字の出力（レポート・資金繰り・案件別・ドライバー別の採算・支払の一覧）。経営の数字を見せる人だけ */
+export const requireManagementExport = () => requireExportRole(STAFF_ROLES, { management: true });
 
 /** ?m=YYYY-MM（allowAll なら "all" も可）。不正は 400 */
 export function monthParam(req: NextRequest, opts: { allowAll?: boolean } = {}): string {

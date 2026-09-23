@@ -2,6 +2,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { buildId } from "@/lib/env";
 import type { CommandItem } from "@/components/layout/command-palette";
 import { requireStaff } from "@/lib/auth/session";
+import { staffHome } from "@/lib/auth/access";
 import { loadMonthList, loadNavBadges } from "@/lib/db/queries";
 import { dateToMonth, formatMonthJa } from "@/lib/month";
 import { visibleForRole, type RoleVisibility } from "@/lib/nav/visibility";
@@ -34,7 +35,7 @@ const MAIN_PAGES: ({ href: string; label: string; keywords: string[] } & RoleVis
   { href: "/executive/plan", label: "中期計画", keywords: ["plan", "ちゅうきけいかく", "中期", "計画", "3 か年", "目標"], ownerOnly: true },
   { href: "/executive/rules", label: "決裁のルールと委任", keywords: ["rule", "delegation", "るーる", "ルール", "いにん", "委任", "代理", "しきい値"], ownerOnly: true },
   { href: "/executive/security", label: "ログインと持ち出しの記録", keywords: ["security", "login", "ろぐいん", "ログイン", "もちだし", "持ち出し", "出力", "きろく", "記録"], ownerOnly: true },
-  { href: "/dashboard", label: "ホーム", keywords: ["home", "dashboard", "ほーむ", "だっしゅぼーど", "売上", "利益"], noClerk: true },
+  { href: "/dashboard", label: "ホーム", keywords: ["home", "dashboard", "ほーむ", "だっしゅぼーど", "売上", "利益"], management: true },
   { href: "/office", label: "事務（今日やること・月締め）", keywords: ["office", "じむ", "事務", "やること", "承認", "催促", "月締め", "つきじめ", "締め", "手順"], adminOnly: true },
   { href: "/office#reports", label: "今日の報告を催促", keywords: ["さいそく", "催促", "報告", "点呼", "まだ", "未提出", "remind"], adminOnly: true },
   { href: "/entries", label: "稼働", keywords: ["entries", "work", "かどう", "稼働入力"] },
@@ -48,21 +49,21 @@ const MAIN_PAGES: ({ href: string; label: string; keywords: string[] } & RoleVis
   { href: "/invoices/notices", label: "支払通知の突合", keywords: ["notice", "しはらいつうち", "支払明細", "とつごう", "突合", "差額", "元請", "請求漏れ"] },
   { href: "/expenses", label: "経費", keywords: ["expense", "けいひ", "経費入力"] },
   { href: "/bank", label: "入金の消込", keywords: ["bank", "ぎんこう", "csv", "にゅうきん", "消込", "口座"] },
-  { href: "/cashflow", label: "資金繰り", keywords: ["cashflow", "しきんぐり", "入金", "残高", "資金"], noClerk: true },
-  { href: "/projects", label: "案件", keywords: ["project", "あんけん", "案件別"], noClerk: true },
-  { href: "/projects?tab=quote", label: "見積の採算シミュレーション", keywords: ["quote", "みつもり", "見積", "単価交渉", "採算", "赤字", "損益分岐"], noClerk: true },
-  { href: "/drivers-pl", label: "ドライバー別の採算", keywords: ["driver", "どらいばー", "採算", "利益", "シミュレーション", "単価"], noClerk: true },
-  { href: "/ai?tab=draft", label: "AI で文章を作る", keywords: ["draft", "ぶんしょう", "案内", "督促", "お知らせ", "作文"], noClerk: true },
-  { href: "/finance", label: "財務（予算・借入・税務）", keywords: ["finance", "ざいむ", "よさん", "予算", "予実", "かりいれ", "借入", "返済", "ぜいむ", "税務", "決算", "しんこく"], noClerk: true },
+  { href: "/cashflow", label: "資金繰り", keywords: ["cashflow", "しきんぐり", "入金", "残高", "資金"], management: true },
+  { href: "/projects", label: "案件", keywords: ["project", "あんけん", "案件別"], management: true },
+  { href: "/projects?tab=quote", label: "見積の採算シミュレーション", keywords: ["quote", "みつもり", "見積", "単価交渉", "採算", "赤字", "損益分岐"], management: true },
+  { href: "/drivers-pl", label: "ドライバー別の採算", keywords: ["driver", "どらいばー", "採算", "利益", "シミュレーション", "単価"], management: true },
+  { href: "/ai?tab=draft", label: "AI で文章を作る", keywords: ["draft", "ぶんしょう", "案内", "督促", "お知らせ", "作文"], management: true },
+  { href: "/finance", label: "財務（予算・借入・税務）", keywords: ["finance", "ざいむ", "よさん", "予算", "予実", "かりいれ", "借入", "返済", "ぜいむ", "税務", "決算", "しんこく"], management: true },
   { href: "/records", label: "書類の検索（電子帳簿保存法）", keywords: ["records", "しょるい", "書類", "けんさく", "検索", "領収書", "レシート", "電子帳簿", "保存", "索引"] },
   { href: "/exports", label: "出力（Excel・振込・月次パック）", keywords: ["export", "しゅつりょく", "excel", "えくせる", "csv", "振込", "ふりこみ", "全銀", "zip", "ぱっく", "pdf"] },
-  { href: "/reports", label: "レポート", keywords: ["report", "れぽーと", "年次", "分析"], noClerk: true },
+  { href: "/reports", label: "レポート", keywords: ["report", "れぽーと", "年次", "分析"], management: true },
   { href: "/alerts", label: "気になること", keywords: ["alert", "あらーと", "異常", "警告", "けんさ", "注意"] },
   { href: "/fleet", label: "車両と書類", keywords: ["fleet", "vehicle", "しゃりょう", "車検", "保険", "免許", "期限", "しょるい"] },
   { href: "/compliance", label: "法令対応（監査）", keywords: ["compliance", "audit", "ほうれい", "法令", "かんさ", "監査", "台帳", "運転者台帳", "てんこ", "保存"] },
   { href: "/hr", label: "採用と契約", keywords: ["hr", "さいよう", "応募", "面談", "けいやく", "契約"] },
-  { href: "/ai", label: "AI 相談", keywords: ["ai", "えーあい", "そうだん", "分析", "改善", "claude", "ちゃっと"], noClerk: true },
-  { href: "/ai?tab=weekly", label: "週次サマリー", keywords: ["weekly", "しゅうじ", "週次", "先週", "サマリー", "line"], noClerk: true },
+  { href: "/ai", label: "AI 相談", keywords: ["ai", "えーあい", "そうだん", "分析", "改善", "claude", "ちゃっと"], management: true },
+  { href: "/ai?tab=weekly", label: "週次サマリー", keywords: ["weekly", "しゅうじ", "週次", "先週", "サマリー", "line"], management: true },
   { href: "/chat", label: "チャット", keywords: ["chat", "ちゃっと", "社内", "連絡", "めっせーじ"] },
   { href: "/settings", label: "設定", keywords: ["settings", "せってい", "マスタ"] },
   { href: "/guide", label: "使い方ガイド", keywords: ["guide", "help", "つかいかた", "使い方", "へるぷ", "ヘルプ", "マニュアル", "説明"] },
@@ -71,14 +72,16 @@ const MAIN_PAGES: ({ href: string; label: string; keywords: string[] } & RoleVis
 export const dynamic = "force-dynamic";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const { supabase, profile, company } = await requireStaff();
+  const { supabase, profile, company, access } = await requireStaff();
   const role = profile.role;
+  // 経営の数字を見せるか（ロールの既定に、代表がその人に付けた設定を重ねたもの。0029）
+  const management = access.management;
 
   // 画面を 1 つ開くたびに走るのはこの 2 本だけにする（0021）。
   // ドライバー・案件・取引先の候補は ⌘K を開いたときに /api/command-items から読む。
   const [months, badgeCounts] = await Promise.all([loadMonthList(supabase, company.id), loadNavBadges(supabase)]);
 
-  const settingsItems = visibleForRole(SETTINGS_SUBNAV, role);
+  const settingsItems = visibleForRole(SETTINGS_SUBNAV, role, management);
   const subItems = settingsItems.map(({ href, label }) => ({ href, label }));
 
   const monthOptions = months.map((m) => ({
@@ -89,7 +92,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }));
 
   const commandItems: CommandItem[] = [
-    ...visibleForRole(MAIN_PAGES, role).map((p) => ({ id: `page:${p.href}`, group: "page" as const, label: p.label, href: p.href, keywords: p.keywords, hint: "画面" })),
+    ...visibleForRole(MAIN_PAGES, role, management)
+      // 出力を止めた人（0029）には出力センターを出さない
+      .filter((p) => access.export || !p.href.startsWith("/exports"))
+      .map((p) => ({ id: `page:${p.href}`, group: "page" as const, label: p.label, href: p.href, keywords: p.keywords, hint: "画面" })),
     // どの画面からでも声で入力を始められるようにする（編集できる人だけ）
     ...(role === "owner" || role === "admin" || role === "clerk"
       ? [
@@ -143,7 +149,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       subNav={{ parent: "/settings", items: subItems }}
       commandItems={commandItems}
       badges={badges}
-      startPage={role === "clerk" ? "office" : startPageOf(profile.start_page)}
+      startPage={role === "clerk" || !management ? "office" : startPageOf(profile.start_page)}
+      homeHref={staffHome(role, access, startPageOf(profile.start_page))}
+      management={management}
+      canExport={access.export}
     >
       {children}
     </AppShell>

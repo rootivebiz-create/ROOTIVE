@@ -54,8 +54,8 @@ export interface NavItem {
   ownerOnly?: boolean;
   /** 登録・編集ができる人（owner・admin・事務員）だけに出す（画面側も requirePageRole で閉じる） */
   adminOnly?: boolean;
-  /** 経営の数字を出す画面なので事務員には出さない（画面側も requireManagementPage で閉じる） */
-  noClerk?: boolean;
+  /** 経営の数字を出す画面。経営の数字を見せる人にだけ出す（事務員の既定・代表が個別に外した人には出さない。画面側も requireManagementPage で閉じる） */
+  management?: boolean;
 }
 
 /** 未読・未対応の件数（href をキーにした数。0 は出さない） */
@@ -64,7 +64,7 @@ export type NavBadges = Record<string, number>;
 /** PC のサイドナビ（24 項目。group ごとに見出しを付けて表示する。「代表」は owner、「事務」は登録・編集ができる人、経営の画面は事務員以外） */
 export const MAIN_NAV: NavItem[] = [
   { href: "/executive", label: "代表", icon: Crown, group: "代表", ownerOnly: true },
-  { href: "/dashboard", label: "ホーム", icon: Home, noClerk: true },
+  { href: "/dashboard", label: "ホーム", icon: Home, management: true },
   { href: "/office", label: "事務", icon: Inbox, adminOnly: true },
   { href: "/dispatch", label: "配車", icon: CalendarRange, group: "入力" },
   { href: "/entries", label: "稼働", icon: ClipboardList, group: "入力" },
@@ -74,17 +74,17 @@ export const MAIN_NAV: NavItem[] = [
   { href: "/invoices", label: "請求", icon: Receipt, group: "入力" },
   { href: "/expenses", label: "経費", icon: Coins, group: "入力" },
   { href: "/bank", label: "入金", icon: Banknote, group: "入力" },
-  { href: "/cashflow", label: "資金繰り", icon: Landmark, group: "経営", noClerk: true },
-  { href: "/projects", label: "案件", icon: Briefcase, group: "経営", noClerk: true },
-  { href: "/finance", label: "財務", icon: PiggyBank, group: "経営", noClerk: true },
-  { href: "/reports", label: "レポート", icon: BarChart3, group: "経営", noClerk: true },
+  { href: "/cashflow", label: "資金繰り", icon: Landmark, group: "経営", management: true },
+  { href: "/projects", label: "案件", icon: Briefcase, group: "経営", management: true },
+  { href: "/finance", label: "財務", icon: PiggyBank, group: "経営", management: true },
+  { href: "/reports", label: "レポート", icon: BarChart3, group: "経営", management: true },
   { href: "/alerts", label: "気になること", icon: TriangleAlert, group: "経営" },
   { href: "/fleet", label: "車両と書類", icon: Truck, group: "管理" },
   { href: "/compliance", label: "法令対応", icon: ShieldCheck, group: "管理" },
   { href: "/hr", label: "採用と契約", icon: UserPlus, group: "管理" },
   { href: "/records", label: "書類の検索", icon: FolderSearch, group: "管理" },
   { href: "/exports", label: "出力", icon: Download, group: "管理" },
-  { href: "/ai", label: "AI 相談", icon: Sparkles, group: "相談", noClerk: true },
+  { href: "/ai", label: "AI 相談", icon: Sparkles, group: "相談", management: true },
   { href: "/chat", label: "チャット", icon: MessagesSquare, group: "相談" },
   { href: "/settings", label: "設定", icon: Settings },
 ];
@@ -124,27 +124,29 @@ export type NavVariant = "staff" | "driver";
 
 /**
  * Server Component からは関数（アイコン）を渡せないため、種別の文字列で選ぶ。
- * role を渡すと ownerOnly の項目を出し分ける（省略したときは今までどおり全部返す）
+ * role を渡すと ownerOnly の項目を出し分ける（省略したときは今までどおり全部返す）。
+ * management はその人に経営の数字を見せるか（省略したときはロールの既定。0029）
  */
-export function navItemsFor(variant: NavVariant | undefined, role?: Role): NavItem[] {
-  return visibleForRole(variant === "driver" ? DRIVER_NAV : MAIN_NAV, role);
+export function navItemsFor(variant: NavVariant | undefined, role?: Role, management?: boolean): NavItem[] {
+  return visibleForRole(variant === "driver" ? DRIVER_NAV : MAIN_NAV, role, management);
 }
 
 /** スマホの下タブに出すリンク（ドライバーはメニュー無しで全項目） */
-export function bottomItemsFor(variant: NavVariant | undefined, role?: Role, startPage?: NavStartPage): NavItem[] {
-  if (variant === "driver") return visibleForRole(DRIVER_NAV, role);
-  // 事務員はホーム（経営の数字）を見ないので、いつも事務が先頭
-  const hrefs = bottomHrefsFor(role === "clerk" ? "office" : startPage);
+export function bottomItemsFor(variant: NavVariant | undefined, role?: Role, startPage?: NavStartPage, management?: boolean): NavItem[] {
+  if (variant === "driver") return visibleForRole(DRIVER_NAV, role, management);
+  // 事務員と、経営の数字を見せない設定の人はホーム（経営の数字）を見ないので、事務が使えるなら事務が先頭
+  const noHome = role === "clerk" || management === false;
+  const hrefs = bottomHrefsFor(noHome ? "office" : startPage);
   const items = hrefs.map((h) => MAIN_NAV.find((i) => i.href === h)).filter((i): i is NavItem => Boolean(i));
-  const visible = visibleForRole(items, role);
-  // 事務を使えないロール（閲覧者）には、いつもの 4 つを出す
-  return visible.length === hrefs.length ? visible : visibleForRole(BOTTOM_NAV, role);
+  const visible = visibleForRole(items, role, management);
+  // 事務を使えないロール（閲覧者）には、いつもの 4 つ（見られるものだけ）を出す
+  return visible.length === hrefs.length ? visible : visibleForRole(BOTTOM_NAV, role, management);
 }
 
 /** スマホの「メニュー」シートに出す項目（下タブに入らない残り。代表・事務はここに入る） */
-export function moreItemsFor(role?: Role, startPage?: NavStartPage): NavItem[] {
-  const bottom = new Set(bottomItemsFor("staff", role, startPage).map((i) => i.href));
-  return visibleForRole(MAIN_NAV.filter((i) => !bottom.has(i.href)), role);
+export function moreItemsFor(role?: Role, startPage?: NavStartPage, management?: boolean): NavItem[] {
+  const bottom = new Set(bottomItemsFor("staff", role, startPage, management).map((i) => i.href));
+  return visibleForRole(MAIN_NAV.filter((i) => !bottom.has(i.href)), role, management);
 }
 
 /* ------------------------------------------------------------------ *
@@ -266,17 +268,20 @@ export function BottomTabs({
   badges,
   role,
   startPage,
+  management,
 }: {
   variant?: NavVariant;
   sub?: { parent: string; items: { href: string; label: string }[] };
   badges?: NavBadges;
   role?: Role;
   startPage?: NavStartPage;
+  /** 経営の数字を見せるか（省略時はロールの既定） */
+  management?: boolean;
 }) {
   const isDriver = variant === "driver";
-  const all = navItemsFor(variant, role);
-  const items = bottomItemsFor(variant, role, startPage);
-  const more = isDriver ? [] : moreItemsFor(role, startPage);
+  const all = navItemsFor(variant, role, management);
+  const items = bottomItemsFor(variant, role, startPage, management);
+  const more = isDriver ? [] : moreItemsFor(role, startPage, management);
   const pathname = usePathname();
   const { href } = useMonth();
   const columns = items.length + (isDriver ? 0 : 1);
@@ -321,13 +326,16 @@ export function SideNav({
   sub,
   badges,
   role,
+  management,
 }: {
   variant?: NavVariant;
   sub?: { parent: string; items: { href: string; label: string }[] };
   badges?: NavBadges;
   role?: Role;
+  /** 経営の数字を見せるか（省略時はロールの既定） */
+  management?: boolean;
 }) {
-  const items = navItemsFor(variant, role);
+  const items = navItemsFor(variant, role, management);
   const pathname = usePathname();
   const { href } = useMonth();
   // 畳んだ見出しは端末ごとに覚える（既定はすべて開いたまま。使えない端末でも普通に動く）

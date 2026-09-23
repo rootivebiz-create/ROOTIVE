@@ -3,7 +3,6 @@ import { BANK_ACCOUNT_TYPE_LABELS } from "@/lib/db/types";
 import { formatMonthJa, monthFromParam, monthToDate } from "@/lib/month";
 import { resolvePayoutDate } from "@/lib/statement";
 import { missingBankFields, pickTransferDate, toTransferTarget, transferDateOptions, type TransferTarget } from "@/lib/exports/zengin";
-import { canSeeBankAccount } from "@/lib/schemas/drivers";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { PageHeader } from "@/components/ui/page-header";
 import { TransferView } from "@/components/transfer/transfer-view";
@@ -21,12 +20,12 @@ function dateParam(v: string | string[] | undefined): string | null {
 }
 
 export default async function TransferPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const { supabase, company, profile } = await requirePageRole(ADMIN_ROLES);
+  const { supabase, company, profile, access } = await requirePageRole(ADMIN_ROLES);
   const sp = await searchParams;
   const month = monthFromParam(sp.m);
 
   // 振込先口座は 0020 で driver_bank_accounts へ移した。見られない権限では画面ごと出さない
-  if (!canSeeBankAccount(company.confidential_scope, profile.role)) {
+  if (!access.bank_account) {
     return (
       <div>
         <PageHeader title="振込データ（全銀フォーマット）" description={`${formatMonthJa(month)} の税込支払額から総合振込データを作ります`} />

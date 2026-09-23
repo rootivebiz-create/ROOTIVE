@@ -3,17 +3,16 @@
  * スタッフ（owner/admin/viewer）。数字は v_month_pl / v_month_kpi などのビューの値をそのまま載せる
  */
 import type { NextRequest } from "next/server";
-import { MANAGEMENT_VIEW_ROLES } from "@/lib/auth/session";
 import { loadMonthReportData, monthReportPdfFilename, renderMonthReportPdf } from "@/lib/pdf/month-report";
 import { pdfResponse } from "@/lib/exports/download";
-import { handleExport, monthParam, requireExportRole } from "../_lib/guard";
+import { handleExport, monthParam, requireManagementExport } from "../_lib/guard";
 import { recordExport } from "@/lib/exports/record";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company, profile } = await requireExportRole(MANAGEMENT_VIEW_ROLES);
+  const { supabase, company, profile } = await requireManagementExport();
   const month = monthParam(req);
 
   const data = await loadMonthReportData(supabase, company, month);

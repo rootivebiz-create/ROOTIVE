@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { seesManagement } from "@/lib/auth/access";
 import { isManagementAlert } from "@/lib/alerts/helpers";
 import { createAdminClient, hasServiceRoleKey } from "@/lib/supabase/admin";
 import { multicastLineMessage } from "@/lib/integrations/line";
@@ -79,15 +80,16 @@ async function notifyHighAlerts(companyId: string, companyName: string, appUrl: 
 
   const { data: staff } = await admin
     .from("profiles")
-    .select("line_user_id, is_active, role")
+    .select("line_user_id, is_active, role, access_overrides")
     .eq("company_id", companyId)
     .eq("is_active", true)
     .neq("role", "driver");
   const linked = (staff ?? []).filter((s) => (s.line_user_id ?? "").trim().length > 0);
   if (linked.length === 0) return 0;
-  // 経営のアラート（利益の急減・資金不足・税務など）は事務員（0027）には送らない。画面の RLS と同じ線
+  // 経営のアラート（利益の急減・資金不足・税務など）は経営の数字を見ない人（事務員の既定・代表が個別に外した人）には送らない。
+  // 画面の RLS（alerts_select）と同じ線
   const idsFor = (management: boolean) =>
-    linked.filter((s) => !(management && s.role === "clerk")).map((s) => (s.line_user_id ?? "").trim());
+    linked.filter((s) => !management || seesManagement(s)).map((s) => (s.line_user_id ?? "").trim());
 
   let sent = 0;
   for (const alert of alerts) {

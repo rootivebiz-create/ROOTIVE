@@ -3,14 +3,13 @@
  * 「月次推移」シート（report.csv と同じ内容・同じ並び）と「合計」シート（縦並びの年計）の 2 シート。
  */
 import type { NextRequest } from "next/server";
-import { MANAGEMENT_VIEW_ROLES } from "@/lib/auth/session";
 import { currentMonthJST } from "@/lib/month";
 import { loadMonthPlRange } from "@/lib/db/queries";
 import { parseYear, toReportRows, yearOfMonth, yearRange } from "@/components/reports/helpers";
 import { REPORT_CSV_HEADERS, reportToCsvRow, reportTotalCsvRow } from "@/lib/exports/report-csv";
 import { buildXlsx, sheetFromRows, type XlsxCell, type XlsxCellType, type XlsxSheet } from "@/lib/exports/xlsx";
 import { xlsxResponse } from "@/lib/exports/download";
-import { ExportError, handleExport, requireExportRole } from "../_lib/guard";
+import { ExportError, handleExport, requireManagementExport } from "../_lib/guard";
 import { recordExport } from "@/lib/exports/record";
 
 export const dynamic = "force-dynamic";
@@ -55,7 +54,7 @@ function totalSheet(total: (string | number | null | undefined)[]): XlsxSheet {
 }
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company, profile } = await requireExportRole(MANAGEMENT_VIEW_ROLES);
+  const { supabase, company, profile } = await requireManagementExport();
   const year = yearParam(req);
   const { from, to } = yearRange(year);
 

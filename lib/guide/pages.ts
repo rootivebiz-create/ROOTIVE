@@ -2,7 +2,7 @@
  * 各ページの使い方ガイド（純データ）。
  *
  * - 画面の右上の「？」を押すと、いま開いている画面のガイドが出る（guideForPath）。/guide には全部が並ぶ
- * - 見られない画面のガイドは出さない（出し分けはナビと同じ RoleVisibility：ownerOnly / managerOnly / adminOnly / noClerk）
+ * - 見られない画面のガイドは出さない（出し分けはナビと同じ RoleVisibility：ownerOnly / managerOnly / adminOnly / management）
  * - サイドナビ・設定のサブナビ・ドライバーのナビに画面を足したら、ここにもガイドを足す（tests/guide.test.ts が抜けを見つける）
  */
 import type { PageGuide } from "./types";
@@ -16,7 +16,7 @@ const STAFF: PageGuide[] = [
     href: "/dashboard",
     slug: "dashboard",
     title: "ホーム（ダッシュボード）",
-    noClerk: true,
+    management: true,
     purpose: "今月の売上・会社利益・営業利益と、目標までの残り、気になることを 1 画面で見ます。数字はすべて税抜です。",
     steps: [
       "右上の月の切り替えで見たい稼動月を選びます（どの画面でも同じ月が引き継がれます）。",
@@ -243,7 +243,7 @@ const STAFF: PageGuide[] = [
     href: "/cashflow",
     slug: "cashflow",
     title: "資金繰り",
-    noClerk: true,
+    management: true,
     purpose: "これからの入金（請求書）と支払（ドライバー・経費・借入の返済）を日付順に並べ、残高が足りるかを見ます。",
     steps: [
       "「残高を登録」で今の口座残高を入れます（見通しの起点になります）。",
@@ -259,7 +259,7 @@ const STAFF: PageGuide[] = [
     href: "/projects",
     slug: "projects",
     title: "案件別",
-    noClerk: true,
+    management: true,
     purpose: "案件ごとの売上・利益・目標利益率との差を見て、続けるか・単価交渉するかを判断します。見積のシミュレーションもここです。",
     steps: [
       "案件ごとの利益と利益率を確かめます。目標を下回る案件には印が付きます。",
@@ -272,7 +272,7 @@ const STAFF: PageGuide[] = [
     href: "/drivers-pl",
     slug: "drivers-pl",
     title: "ドライバー別の採算",
-    noClerk: true,
+    management: true,
     purpose: "ドライバーごとに会社へ残る利益を見て、単価の見直しを試算します。",
     steps: ["月を選び、ドライバーごとの売上・支払・会社利益を確かめます。", "単価や率を変えたらどうなるかを、その場で試算できます（保存はしません）。"],
     tips: ["川島幹太（オーナー本人）は支払 0・率 0% が正常です。"],
@@ -282,7 +282,7 @@ const STAFF: PageGuide[] = [
     href: "/finance",
     slug: "finance",
     title: "財務",
-    noClerk: true,
+    management: true,
     purpose: "年間の予算と予実、借入金と返済予定、決算・税務の期限をまとめて管理します。",
     steps: [
       "「予算」で月ごとの売上・営業利益・経費・人数の目標を入れ、実績と比べます。",
@@ -296,7 +296,7 @@ const STAFF: PageGuide[] = [
     href: "/reports",
     slug: "reports",
     title: "年次レポート",
-    noClerk: true,
+    management: true,
     purpose: "1 年の売上・経費・営業利益と経営指標（損益分岐点・1 人当たり売上など）の推移を見ます。",
     steps: ["年を選び、月ごとの推移と合計を確かめます。", "CSV・Excel で書き出して、税理士や金融機関に渡せます。"],
     related: [{ href: "/exports", label: "出力（経営レポート PDF）" }],
@@ -368,7 +368,7 @@ const STAFF: PageGuide[] = [
     href: "/ai",
     slug: "ai",
     title: "AI 経営分析",
-    noClerk: true,
+    management: true,
     purpose: "月の数字を AI が読み、気になる点と打ち手をまとめます。相談・文章づくり・週次サマリーもここです。",
     steps: [
       "「月次の分析」でその月の分析を作ると、要約・気づき・打ち手が出ます。",

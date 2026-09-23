@@ -22,7 +22,17 @@ export function openHelp() {
  * ヘッダーの「？」。いま開いている画面の使い方を出す（見られない画面のガイドは出さない）。
  * 下の「使い方ガイド（全体）」から、毎日の流れ・月締めの流れ・よくある質問へ。
  */
-export function HelpButton({ role, hideOnMobile = false }: { role: Role; /** スマホではヘッダーに出さない（メニューから開く） */ hideOnMobile?: boolean }) {
+export function HelpButton({
+  role,
+  management,
+  hideOnMobile = false,
+}: {
+  role: Role;
+  /** 経営の数字を見せるか（見られない画面のガイドは出さない。省くとロールの既定） */
+  management?: boolean;
+  /** スマホではヘッダーに出さない（メニューから開く） */
+  hideOnMobile?: boolean;
+}) {
   const pathname = usePathname() ?? "/";
   const [open, setOpen] = useState(false);
 
@@ -31,7 +41,7 @@ export function HelpButton({ role, hideOnMobile = false }: { role: Role; /** ス
     window.addEventListener(OPEN_HELP_EVENT, onOpen);
     return () => window.removeEventListener(OPEN_HELP_EVENT, onOpen);
   }, []);
-  const guide = guideForPath(PAGE_GUIDES, pathname, role);
+  const guide = guideForPath(PAGE_GUIDES, pathname, role, management);
   const overall = role === "driver" ? "/driver/guide" : "/guide";
 
   return (

@@ -42,7 +42,7 @@ describe("すべての画面にガイドがある", () => {
       expect(g, item.href).toBeTruthy();
       expect(Boolean(g?.ownerOnly), `${item.href} ownerOnly`).toBe(Boolean(item.ownerOnly));
       expect(Boolean(g?.adminOnly), `${item.href} adminOnly`).toBe(Boolean(item.adminOnly));
-      expect(Boolean(g?.noClerk), `${item.href} noClerk`).toBe(Boolean(item.noClerk));
+      expect(Boolean(g?.management), `${item.href} management`).toBe(Boolean(item.management));
     }
     for (const item of DRIVER_NAV) expect(PAGE_GUIDES.find((x) => x.href === item.href && x.driver), item.href).toBeTruthy();
   });

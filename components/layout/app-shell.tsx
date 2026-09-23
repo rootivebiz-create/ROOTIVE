@@ -22,6 +22,8 @@ export function AppShell({
   showMonthSelector = true,
   homeHref,
   startPage,
+  management,
+  canExport = true,
   build,
   children,
 }: {
@@ -42,13 +44,17 @@ export function AppShell({
   homeHref?: string;
   /** 最初に開く画面（事務の人はスマホの下タブの先頭とロゴの行き先が事務になる。0026） */
   startPage?: NavStartPage;
+  /** この人に経営の数字を見せるか（ナビ・ガイドの出し分け。省くとロールの既定。0029） */
+  management?: boolean;
+  /** 出力（ダウンロード）してよいか。false なら出力のリンクとボタンを出さない（0029） */
+  canExport?: boolean;
   /** いま配られている版（新しい版が出たら帯で知らせる） */
   build: string;
   children: React.ReactNode;
 }) {
   const home = homeHref ?? (startPage === "office" ? "/office" : "/dashboard");
   return (
-    <div className="flex min-h-dvh flex-col">
+    <div className="flex min-h-dvh flex-col" data-export-off={canExport ? undefined : ""}>
       <Suspense fallback={null}>
         <RouteProgress />
       </Suspense>
@@ -78,7 +84,7 @@ export function AppShell({
             )}
             {/* スマホは幅が足りないので、スタッフは下の「メニュー」から開く（ドライバーはヘッダーに余裕がある） */}
             <Suspense fallback={null}>
-              <HelpButton role={role} hideOnMobile={navVariant !== "driver"} />
+              <HelpButton role={role} management={management} hideOnMobile={navVariant !== "driver"} />
             </Suspense>
             <UserMenu displayName={displayName} email={email} role={role} build={build} />
           </div>
@@ -86,14 +92,14 @@ export function AppShell({
       </header>
       <div className="flex flex-1">
         <Suspense fallback={<div className="hidden w-56 md:block" />}>
-          <SideNav variant={navVariant} sub={subNav} badges={badges} role={role} />
+          <SideNav variant={navVariant} sub={subNav} badges={badges} role={role} management={management} />
         </Suspense>
         <main className="min-w-0 flex-1 px-4 pb-24 pt-4 md:px-6 md:pb-8">
           <div className="mx-auto w-full max-w-6xl">{children}</div>
         </main>
       </div>
       <Suspense fallback={null}>
-        <BottomTabs variant={navVariant} sub={subNav} badges={badges} role={role} startPage={startPage} />
+        <BottomTabs variant={navVariant} sub={subNav} badges={badges} role={role} startPage={startPage} management={management} />
       </Suspense>
     </div>
   );

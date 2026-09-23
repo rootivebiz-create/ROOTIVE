@@ -4,14 +4,13 @@ import { PageHeader } from "@/components/ui/page-header";
 import { buttonVariants } from "@/components/ui/button";
 import { MonthLink } from "@/components/layout/month-link";
 import { DriversTable, type DriverListRow } from "@/components/settings/drivers/drivers-table";
-import { canSeeBankAccount } from "@/lib/schemas/drivers";
 
 export const metadata = { title: "ドライバー" };
 
 export default async function DriversSettingsPage() {
-  const { supabase, profile, company } = await requireStaff();
+  const { supabase, profile, company, access } = await requireStaff();
   // 振込先口座は 0020 で driver_bank_accounts へ移した。見てよい権限のときだけ読む
-  const canSeeBank = canSeeBankAccount(company.confidential_scope, profile.role);
+  const canSeeBank = access.bank_account;
   const [driversRes, overridesRes, recurringRes, bankRes] = await Promise.all([
     supabase.from("drivers").select("*").eq("company_id", company.id).order("sort_order").order("name"),
     supabase.from("driver_pay_overrides").select("driver_id").eq("company_id", company.id),

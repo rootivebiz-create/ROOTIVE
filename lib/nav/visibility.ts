@@ -9,7 +9,7 @@ import type { Role } from "@/lib/db/types";
  * Server Action・RLS でも必ず行うこと（CLAUDE.md §2 の二重の確認）。
  */
 
-/** 出し分けの指定（複数付いているときは ownerOnly → managerOnly → adminOnly の順に強い） */
+/** 出し分けの指定（management は常に効く。そのうえで ownerOnly → managerOnly → adminOnly の順に強い） */
 export interface RoleVisibility {
   /** 代表（owner）だけに出す */
   ownerOnly?: boolean;
@@ -17,8 +17,11 @@ export interface RoleVisibility {
   managerOnly?: boolean;
   /** 登録・編集ができるロール（owner・admin・事務員）だけに出す */
   adminOnly?: boolean;
-  /** 経営の数字を出す画面なので事務員には出さない（ホーム・資金繰り・財務・レポートなど） */
-  noClerk?: boolean;
+  /**
+   * 経営の数字を出す画面（ホーム・資金繰り・財務・レポートなど）。経営の数字を見せる人にだけ出す。
+   * 見せるかはロールの既定（事務員は見ない）と、代表がその人に付けた設定（0029）で決まる
+   */
+  management?: boolean;
 }
 
 /**
@@ -29,11 +32,16 @@ export interface RoleVisibility {
 export const NAV_ADMIN_ROLES: Role[] = ["owner", "admin", "clerk"];
 /** 経営の設定ができるロール（`MANAGER_ROLES` と同じ） */
 export const NAV_MANAGER_ROLES: Role[] = ["owner", "admin"];
+/** 経営の数字を見るロールの既定（`MANAGEMENT_VIEW_ROLES` と同じ。人ごとの設定は management 引数で渡す） */
+export const NAV_MANAGEMENT_ROLES: Role[] = ["owner", "admin", "viewer"];
 
-/** この項目をこのロールに出すか。role を省略したときは今までどおり全部出す */
-export function isVisibleForRole(item: RoleVisibility, role?: Role): boolean {
+/**
+ * この項目をこのロールに出すか。role を省略したときは今までどおり全部出す。
+ * management はその人に経営の数字を見せるか（`SessionContext.access.management`）。省略したときはロールの既定
+ */
+export function isVisibleForRole(item: RoleVisibility, role?: Role, management?: boolean): boolean {
   if (!role) return true;
-  if (item.noClerk && role === "clerk") return false;
+  if (item.management && !(management ?? NAV_MANAGEMENT_ROLES.includes(role))) return false;
   if (item.ownerOnly) return role === "owner";
   if (item.managerOnly) return NAV_MANAGER_ROLES.includes(role);
   if (item.adminOnly) return NAV_ADMIN_ROLES.includes(role);
@@ -41,6 +49,6 @@ export function isVisibleForRole(item: RoleVisibility, role?: Role): boolean {
 }
 
 /** ロールに出す項目だけを元の順のまま返す（元の配列は壊さない） */
-export function visibleForRole<T extends RoleVisibility>(items: readonly T[], role?: Role): T[] {
-  return items.filter((item) => isVisibleForRole(item, role));
+export function visibleForRole<T extends RoleVisibility>(items: readonly T[], role?: Role, management?: boolean): T[] {
+  return items.filter((item) => isVisibleForRole(item, role, management));
 }

@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { ArrowLeft, ChevronLeft, ChevronRight, Download, FileText, Printer } from "lucide-react";
-import { requireStaff, canEdit, canSeeManagement } from "@/lib/auth/session";
+import { requireStaff, canEdit } from "@/lib/auth/session";
 import { isMonthClosed } from "@/lib/db/queries";
 import { loadStatementData, statementToText } from "@/lib/statement";
 import { monthFromParam, monthToDate } from "@/lib/month";
@@ -24,7 +24,7 @@ export default async function StatementPage({
   params: Promise<{ driverId: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { supabase, profile, company } = await requireStaff();
+  const { supabase, profile, company, access } = await requireStaff();
   const { driverId } = await params;
   const sp = await searchParams;
   const month = monthFromParam(sp.m);
@@ -52,7 +52,7 @@ export default async function StatementPage({
   const closed = closedFlag || s.isClosed;
   const editable = canEdit(profile.role) && !closed;
   // 会社側の内訳（会社売上・会社利益）は経営の数字（事務員には出さない）
-  const showProfit = canSeeManagement(profile.role);
+  const showProfit = access.management;
 
   // 調整の recurring_id（固定控除の二重追加を防ぐためダイアログへ渡す）
   const recurringIdByAdjustment = new Map<string, string | null>();

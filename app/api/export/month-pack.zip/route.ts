@@ -35,7 +35,6 @@ import {
   type MonthPackEntry,
   type MonthPackError,
 } from "@/lib/exports/month-pack";
-import { canSeeBankAccount } from "@/lib/schemas/drivers";
 import { ExportError, fetchAllRows, handleExport, monthParam, requireExportRole } from "../_lib/guard";
 
 export const dynamic = "force-dynamic";
@@ -69,11 +68,11 @@ type TransferBankRow = {
 };
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company, profile } = await requireExportRole(MANAGER_ROLES);
+  const { supabase, company, profile, access } = await requireExportRole(MANAGER_ROLES);
   const month = monthParam(req);
   const parts = parseMonthPackParts(req.nextUrl.searchParams.get("parts"));
   if (isEmptyParts(parts)) throw new ExportError(400, "含める出力を 1 つ以上選んでください。");
-  if (parts.transfer && !canSeeBankAccount(company.confidential_scope, profile.role)) {
+  if (parts.transfer && !access.bank_account) {
     throw new ExportError(403, "振込先の口座を見る権限がありません。");
   }
 

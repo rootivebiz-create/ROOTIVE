@@ -1,5 +1,5 @@
 import { Download, FileJson, FileSpreadsheet } from "lucide-react";
-import { requireStaff, canEdit, canManage, canSeeManagement, isOwner } from "@/lib/auth/session";
+import { requireStaff, canEdit, canManage, isOwner } from "@/lib/auth/session";
 import { dateToMonth, formatMonthJa, monthFromParam } from "@/lib/month";
 import { exportUrls } from "@/lib/exports/urls";
 import { cn } from "@/lib/utils";
@@ -22,14 +22,14 @@ function DownloadLink({ href, children, primary = false }: { href: string; child
 }
 
 export default async function DataSettingsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const { supabase, profile, company } = await requireStaff();
+  const { supabase, profile, company, access } = await requireStaff();
   const sp = await searchParams;
   const month = monthFromParam(sp.m);
   const admin = canEdit(profile.role);
   const owner = isOwner(profile.role);
   // バックアップ（全テーブルの控え）と支払 CSV（会社利益を含む）は事務員には出さない（0027）
   const manager = canManage(profile.role);
-  const management = canSeeManagement(profile.role);
+  const management = access.management;
 
   const [closingsRes, driversRes] = await Promise.all([
     supabase.from("month_closings").select("month, closed_at, backup_path").eq("company_id", company.id).order("month", { ascending: false }),

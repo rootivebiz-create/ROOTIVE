@@ -2,8 +2,9 @@ import "server-only";
 import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createClient, type ServerSupabase } from "@/lib/supabase/server";
-import type { Company, Profile, Role } from "@/lib/db/types";
+import { toConfidentialScope, type Company, type Profile, type Role } from "@/lib/db/types";
 import { ActionError } from "@/lib/actions/result";
+import { effectiveAccess, staffHome, type Access } from "@/lib/auth/access";
 
 /** ログイン中のユーザー（profiles.id は auth.users.id と同じ） */
 export interface SessionUser {
@@ -16,6 +17,11 @@ export interface SessionContext {
   user: SessionUser;
   profile: Profile;
   company: Company;
+  /**
+   * この人が実際に見られる・できること（ロール → 会社の機密の見せ方 → その人だけの上書き。0029）。
+   * DB の can_see_management / can_see_confidential / can_export と同じ判定（`lib/auth/access.ts`）
+   */
+  access: Access;
 }
 
 /**
@@ -38,7 +44,8 @@ export const getSessionContext = cache(async (): Promise<SessionContext | null> 
   const profile = row?.profile;
   const company = row?.company;
   if (!profile || !profile.is_active || !company) return null;
-  return { supabase, user: { id: profile.id, email: profile.email }, profile, company };
+  const access = effectiveAccess(profile.role, profile.access_overrides, toConfidentialScope(company.confidential_scope));
+  return { supabase, user: { id: profile.id, email: profile.email }, profile, company, access };
 });
 
 /** スタッフの画面を使えるロール（DB の is_staff() と同じ） */
@@ -47,14 +54,18 @@ export const STAFF_ROLES: Role[] = ["owner", "admin", "clerk", "viewer"];
 export const ADMIN_ROLES: Role[] = ["owner", "admin", "clerk"];
 /** 経営の設定ができるロール（外部連携・監査ログ・目標・バックアップ。DB の is_manager() と同じ） */
 export const MANAGER_ROLES: Role[] = ["owner", "admin"];
-/** 経営の数字を見てよいロール（ホーム・資金繰り・財務・レポート・AI。DB の can_see_management() と同じ。事務員だけが外れる） */
+/**
+ * 経営の数字を見てよいロールの既定（ホーム・資金繰り・財務・レポート・AI。事務員だけが外れる）。
+ * 実際に見せるかは人ごとの設定で変わる（0029）ので、画面や操作の判定は `ctx.access.management` を使う
+ */
 export const MANAGEMENT_VIEW_ROLES: Role[] = ["owner", "admin", "viewer"];
 
-/** ロールごとの「ここに行けない」ときの行き先（事務員はホームを見ないので事務へ） */
-export function homeFor(role: Role): string {
-  if (role === "driver") return "/driver";
-  if (role === "clerk") return "/office";
-  return "/dashboard";
+/**
+ * 「ここに行けない」ときの行き先（事務員は事務、経営の数字を見ない人はホームへ行かない）。
+ * access を省くとロールの既定で決める
+ */
+export function homeFor(role: Role, access?: Pick<Access, "management">): string {
+  return staffHome(role, access ?? { management: MANAGEMENT_VIEW_ROLES.includes(role) });
 }
 
 /** 画面用：スタッフ（owner/admin/clerk/viewer）以外はリダイレクト */
@@ -69,12 +80,19 @@ export async function requireStaff(): Promise<SessionContext> {
 export async function requirePageRole(roles: Role[]): Promise<SessionContext> {
   const ctx = await getSessionContext();
   if (!ctx) redirect("/login");
-  if (!roles.includes(ctx.profile.role)) redirect(homeFor(ctx.profile.role));
+  if (!roles.includes(ctx.profile.role)) redirect(homeFor(ctx.profile.role, ctx.access));
   return ctx;
 }
 
-/** 画面用：経営の数字を出す画面（ホーム・資金繰り・財務・レポート・案件別採算・ドライバー別採算・AI）。事務員は事務へ */
-export const requireManagementPage = () => requirePageRole(MANAGEMENT_VIEW_ROLES);
+/**
+ * 画面用：経営の数字を出す画面（ホーム・資金繰り・財務・レポート・案件別採算・ドライバー別採算・AI）。
+ * ロールではなく「この人に経営の数字を見せるか」（0029 の個別の設定を含む）で決める。見せない人は事務・稼働へ
+ */
+export async function requireManagementPage(): Promise<SessionContext> {
+  const ctx = await requireStaff();
+  if (!ctx.access.management) redirect(homeFor(ctx.profile.role, ctx.access));
+  return ctx;
+}
 
 /** 画面用：ドライバー本人 */
 export async function requireDriver(): Promise<SessionContext & { driverId: string }> {
@@ -97,8 +115,12 @@ export const requireOwnerAction = () => requireActionRole(["owner"]);
 export const requireStaffAction = () => requireActionRole(STAFF_ROLES);
 /** 経営の設定（外部連携・目標・バックアップなど）。事務員は通さない */
 export const requireManagerAction = () => requireActionRole(MANAGER_ROLES);
-/** 経営の数字を扱う操作（AI の分析・相談など）。事務員は通さない */
-export const requireManagementAction = () => requireActionRole(MANAGEMENT_VIEW_ROLES);
+/** 経営の数字を扱う操作（AI の分析・相談など）。経営の数字を見せない人（事務員の既定・個別に外した人）は通さない */
+export async function requireManagementAction(): Promise<SessionContext> {
+  const ctx = await requireActionRole(STAFF_ROLES);
+  if (!ctx.access.management) throw new ActionError("この操作を行う権限がありません。");
+  return ctx;
+}
 
 /** 登録・編集ができる（owner・admin・事務員） */
 export function canEdit(role: Role): boolean {
@@ -107,10 +129,6 @@ export function canEdit(role: Role): boolean {
 /** 経営の設定ができる（owner・admin） */
 export function canManage(role: Role): boolean {
   return MANAGER_ROLES.includes(role);
-}
-/** 経営の数字を見てよい（owner・admin・閲覧者。事務員は見ない） */
-export function canSeeManagement(role: Role): boolean {
-  return MANAGEMENT_VIEW_ROLES.includes(role);
 }
 export function isOwner(role: Role): boolean {
   return role === "owner";

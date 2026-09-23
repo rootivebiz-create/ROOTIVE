@@ -6,9 +6,9 @@ import {
   STAFF_ROLES,
   canEdit,
   canManage,
-  canSeeManagement,
   homeFor,
 } from "@/lib/auth/session";
+import { roleAccess } from "@/lib/auth/access";
 import { MANAGEMENT_ALERT_CODES, ALERT_CODES, isManagementAlert } from "@/lib/alerts/helpers";
 import { ROLE_LABELS } from "@/lib/db/types";
 
@@ -25,13 +25,15 @@ describe("ロールの線引き", () => {
     expect(STAFF_ROLES).not.toContain("driver");
   });
 
-  it("canEdit / canManage / canSeeManagement", () => {
-    expect([canEdit("clerk"), canManage("clerk"), canSeeManagement("clerk")]).toEqual([true, false, false]);
-    expect([canEdit("admin"), canManage("admin"), canSeeManagement("admin")]).toEqual([true, true, true]);
-    expect([canEdit("owner"), canManage("owner"), canSeeManagement("owner")]).toEqual([true, true, true]);
+  it("canEdit / canManage / 経営の数字（ロールの既定）", () => {
+    const m = (r: Parameters<typeof roleAccess>[0]) => roleAccess(r).management;
+    expect([canEdit("clerk"), canManage("clerk"), m("clerk")]).toEqual([true, false, false]);
+    expect([canEdit("admin"), canManage("admin"), m("admin")]).toEqual([true, true, true]);
+    expect([canEdit("owner"), canManage("owner"), m("owner")]).toEqual([true, true, true]);
     // 閲覧者は経営の数字を見られるが、編集はできない
-    expect([canEdit("viewer"), canManage("viewer"), canSeeManagement("viewer")]).toEqual([false, false, true]);
-    expect([canEdit("driver"), canManage("driver"), canSeeManagement("driver")]).toEqual([false, false, false]);
+    expect([canEdit("viewer"), canManage("viewer"), m("viewer")]).toEqual([false, false, true]);
+    expect([canEdit("driver"), canManage("driver"), m("driver")]).toEqual([false, false, false]);
+    for (const r of ["owner", "admin", "clerk", "viewer", "driver"] as const) expect(m(r)).toBe(MANAGEMENT_VIEW_ROLES.includes(r));
   });
 
   it("入れない画面から戻す先：事務員は事務、ドライバーはポータル、ほかはホーム", () => {
@@ -39,6 +41,12 @@ describe("ロールの線引き", () => {
     expect(homeFor("driver")).toBe("/driver");
     expect(homeFor("viewer")).toBe("/dashboard");
     expect(homeFor("owner")).toBe("/dashboard");
+  });
+
+  it("経営の数字を見せない設定の人（0029）はホームへ戻さない（行ったり来たりしない）", () => {
+    expect(homeFor("admin", { management: false })).toBe("/office");
+    expect(homeFor("viewer", { management: false })).toBe("/entries");
+    expect(homeFor("clerk", { management: true })).toBe("/office");
   });
 
   it("表示名は日本語", () => {

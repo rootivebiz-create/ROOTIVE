@@ -3,13 +3,12 @@
  * 内容・並び・期間の既定は cashflow.csv と同じ（金額は税込、残高はその日の終わり）。
  */
 import type { NextRequest } from "next/server";
-import { MANAGEMENT_VIEW_ROLES } from "@/lib/auth/session";
 import { loadCashForecast, loadCashSnapshots } from "@/lib/db/queries";
 import { buildCashTimeline, pickOpeningBalance, resolveRange, toCashflowCsvRows } from "@/components/cashflow/helpers";
 import { cashflowCsvRows } from "@/lib/exports/cashflow-csv";
 import { buildXlsx, sheetFromRows, type XlsxCellType } from "@/lib/exports/xlsx";
 import { xlsxResponse } from "@/lib/exports/download";
-import { handleExport, requireExportRole } from "../_lib/guard";
+import { handleExport, requireManagementExport } from "../_lib/guard";
 import { recordExport } from "@/lib/exports/record";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +17,7 @@ export const dynamic = "force-dynamic";
 const TYPES: XlsxCellType[] = ["date", "text", "text", "text", "money", "money", "money", "text", "text"];
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company, profile } = await requireExportRole(MANAGEMENT_VIEW_ROLES);
+  const { supabase, company, profile } = await requireManagementExport();
   const sp = req.nextUrl.searchParams;
   const range = resolveRange(sp.get("from") ?? undefined, sp.get("to") ?? undefined);
 

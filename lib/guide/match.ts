@@ -17,16 +17,19 @@ function matches(path: string, href: string): boolean {
   return path === href || path.startsWith(`${href}/`);
 }
 
-/** 見られる画面のガイドだけ（ドライバーはポータルのガイドだけ） */
-export function guidesForRole(guides: readonly PageGuide[], role?: Role): PageGuide[] {
+/**
+ * 見られる画面のガイドだけ（ドライバーはポータルのガイドだけ）。
+ * management はその人に経営の数字を見せるか（省くとロールの既定。代表が個別に変えた人は渡す。0029）
+ */
+export function guidesForRole(guides: readonly PageGuide[], role?: Role, management?: boolean): PageGuide[] {
   if (role === "driver") return guides.filter((g) => g.driver);
-  return guides.filter((g) => !g.driver && isVisibleForRole(g, role));
+  return guides.filter((g) => !g.driver && isVisibleForRole(g, role, management));
 }
 
-export function guideForPath(guides: readonly PageGuide[], path: string, role?: Role): PageGuide | null {
+export function guideForPath(guides: readonly PageGuide[], path: string, role?: Role, management?: boolean): PageGuide | null {
   const p = normalizePath(path);
   let best: PageGuide | null = null;
-  for (const g of guidesForRole(guides, role)) {
+  for (const g of guidesForRole(guides, role, management)) {
     if (!matches(p, g.href)) continue;
     if (!best || g.href.length > best.href.length) best = g;
   }

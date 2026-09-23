@@ -5,14 +5,14 @@ import { uuidSchema } from "@/lib/schemas/common";
 import { PageHeader } from "@/components/ui/page-header";
 import { Badge } from "@/components/ui/badge";
 import { DriverForm, type DriverFormProject } from "@/components/settings/drivers/driver-form";
-import { canSeeBankAccount, type DriverBankFormInput } from "@/lib/schemas/drivers";
+import { type DriverBankFormInput } from "@/lib/schemas/drivers";
 
 export const metadata = { title: "ドライバーの編集" };
 
 export default async function DriverDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!uuidSchema.safeParse(id).success) notFound();
-  const { supabase, profile, company } = await requireStaff();
+  const { supabase, profile, company, access } = await requireStaff();
 
   const [driverRes, masters, recurringRes, entriesRes, monthsRes] = await Promise.all([
     supabase.from("drivers").select("*").eq("id", id).eq("company_id", company.id).maybeSingle(),
@@ -29,7 +29,7 @@ export default async function DriverDetailPage({ params }: { params: Promise<{ i
   const driver = driverRes.data;
 
   // 振込先口座（0020 で driver_bank_accounts に分離）。見てよい権限のときだけ読む
-  const canSeeBank = canSeeBankAccount(company.confidential_scope, profile.role);
+  const canSeeBank = access.bank_account;
   let bankAccount: DriverBankFormInput | null = null;
   if (canSeeBank) {
     const bankRes = await supabase

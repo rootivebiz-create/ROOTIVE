@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient, hasServiceRoleKey } from "@/lib/supabase/admin";
-import { MANAGEMENT_VIEW_ROLES } from "@/lib/auth/session";
+import { STAFF_ROLES } from "@/lib/auth/session";
+import { seesManagement } from "@/lib/auth/access";
 import { multicastLineMessage } from "@/lib/integrations/line";
 import { logIntegration } from "@/lib/integrations/logs";
 import { buildWeeklySummary, saveWeeklyInsight } from "@/lib/ai/weekly";
@@ -69,17 +70,21 @@ export async function GET(request: NextRequest) {
 
 /**
  * LINE 連携しているスタッフ（有効な人だけ）へ送る。未連携・未設定なら 0 人。
- * 経営の数字なので、見てよい人（owner・admin・viewer）だけ。事務員（0027）とドライバーには送らない
+ * 経営の数字なので、見てよい人だけ（事務員の既定・代表が個別に外した人（0029）・ドライバーには送らない）。
+ * サービスロールなので RLS が効かない。判定は画面と同じ seesManagement で行う
  */
 async function notifyStaff(companyId: string, text: string): Promise<number> {
   const admin = createAdminClient();
   const { data: staff } = await admin
     .from("profiles")
-    .select("line_user_id, is_active, role")
+    .select("line_user_id, is_active, role, access_overrides")
     .eq("company_id", companyId)
     .eq("is_active", true)
-    .in("role", MANAGEMENT_VIEW_ROLES);
-  const to = (staff ?? []).map((s) => (s.line_user_id ?? "").trim()).filter((v) => v.length > 0);
+    .in("role", STAFF_ROLES);
+  const to = (staff ?? [])
+    .filter(seesManagement)
+    .map((s) => (s.line_user_id ?? "").trim())
+    .filter((v) => v.length > 0);
   if (to.length === 0) return 0;
   const result = await multicastLineMessage(companyId, to, text);
   return result.sent;

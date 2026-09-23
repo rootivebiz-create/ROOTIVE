@@ -5,7 +5,7 @@ import type { PostgrestError } from "@supabase/supabase-js";
 import { requireAdminAction } from "@/lib/auth/session";
 import { ActionError, ensureNoError, runAction, unwrap, type ActionResult } from "@/lib/actions/result";
 import { uuidSchema } from "@/lib/schemas/common";
-import { canSeeBankAccount, driverInputSchema, reorderInputSchema, type DriverFormInput, type ReorderInput } from "@/lib/schemas/drivers";
+import { driverInputSchema, reorderInputSchema, type DriverFormInput, type ReorderInput } from "@/lib/schemas/drivers";
 import type { ServerSupabase } from "@/lib/supabase/server";
 
 /** ドライバー設定の変更が影響する画面 */
@@ -30,12 +30,12 @@ async function hasRows(query: PromiseLike<{ count: number | null; data: unknown[
 /** ドライバーの新規登録・更新（個別単価・固定控除を含む） */
 export async function saveDriverAction(input: DriverFormInput): Promise<ActionResult<{ id: string }>> {
   return runAction(async () => {
-    const { supabase, company, profile, user } = await requireAdminAction();
+    const { supabase, company, user, access } = await requireAdminAction();
     const parsed = driverInputSchema.parse(input);
 
     // 振込先口座（0020 で driver_bank_accounts に分離）。見られない権限からは書かせない
     // （UI でも欄を出さない。DB 側も RLS で拒否する＝三重）
-    if (parsed.bank_account && !canSeeBankAccount(company.confidential_scope, profile.role)) {
+    if (parsed.bank_account && !access.bank_account) {
       throw new ActionError("振込先の口座を編集する権限がありません。");
     }
 

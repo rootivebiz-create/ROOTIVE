@@ -3,9 +3,10 @@
  * 「月末にボタン 1 つでその月の一式が手に入る」入口。分類ごとにカードを並べ、その場でダウンロードできる。
  * URL は lib/exports/urls.ts の exportUrls だけを使う。振込データとバックアップは閲覧者には出さない。
  * 事務員（0027）には経営の数字の出力（経営レポート・採算・資金繰り・月次パック・バックアップ）を出さない（出力の口も同じ条件で拒否する）。
+ * 代表がその人の出力を止めていれば（0029）、この画面ごと出さない。
  */
 import { BarChart3, Building2, ClipboardList, Database, FileSpreadsheet, FileText, Receipt, Wallet } from "lucide-react";
-import { canEdit, canManage, canSeeManagement, requireStaff } from "@/lib/auth/session";
+import { canEdit, canManage, requireStaff } from "@/lib/auth/session";
 import { loadMonthSummary } from "@/lib/db/queries";
 import { exportUrls } from "@/lib/exports/urls";
 import { addMonths, daysInMonth, formatMonthJa, monthFromParam, monthToDate } from "@/lib/month";
@@ -19,13 +20,24 @@ import { MonthPackCard } from "@/components/exports/month-pack-card";
 export const metadata = { title: "出力" };
 
 export default async function ExportsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const { supabase, profile, company } = await requireStaff();
+  const { supabase, profile, company, access } = await requireStaff();
   const sp = await searchParams;
   const month = monthFromParam(sp.m);
   const monthLabel = formatMonthJa(month);
+  // 代表がこの人の出力を止めている（0029）。出力の口も 403 で断る
+  if (!access.export) {
+    return (
+      <div className="space-y-4">
+        <PageHeader title="出力" description="CSV・Excel・PDF・ZIP のダウンロードです。" />
+        <Alert variant="warning">
+          <AlertDescription>あなたのアカウントでは出力（ダウンロード）が止められています。必要なときは代表に頼んでください。</AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
   const admin = canEdit(profile.role);
   const manager = canManage(profile.role);
-  const management = canSeeManagement(profile.role);
+  const management = access.management;
   const year = Number(month.slice(0, 4));
 
   const [summary, invoicesRes] = await Promise.all([

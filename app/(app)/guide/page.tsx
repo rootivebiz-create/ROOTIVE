@@ -15,10 +15,10 @@ export const metadata = { title: "使い方ガイド" };
  * ロールで見られない画面のガイドは出さない（ナビと同じ出し分け）。
  */
 export default async function GuidePage() {
-  const { profile } = await requireStaff();
+  const { profile, access } = await requireStaff();
   const role = profile.role;
   const sections = sectionsForRole(STAFF_OVERVIEW, role);
-  const guides = guidesForRole(PAGE_GUIDES, role).filter((g) => g.href !== "/guide");
+  const guides = guidesForRole(PAGE_GUIDES, role, access.management).filter((g) => g.href !== "/guide");
   const faq = faqForRole(STAFF_FAQ, role);
 
   return (

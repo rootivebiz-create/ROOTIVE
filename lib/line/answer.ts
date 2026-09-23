@@ -2,8 +2,8 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/db/database.types";
 import type { Company, Role } from "@/lib/db/types";
-import { canSeeConfidential, toConfidentialScope } from "@/lib/db/types";
-import { canSeeManagement } from "@/lib/auth/session";
+import { toConfidentialScope } from "@/lib/db/types";
+import { effectiveAccess } from "@/lib/auth/access";
 import { isManagementAlert } from "@/lib/alerts/helpers";
 import { currentMonthJST, monthToDate } from "@/lib/month";
 import { forecastMonth } from "@/lib/calc";
@@ -89,9 +89,11 @@ export async function answerLineQuestion(input: {
   if (!company) return null;
 
   const scope = toConfidentialScope((company as Company).confidential_scope);
-  // 事務員（0027）は経営の数字（着地・資金繰り・経営のアラート）を見ない。画面の RLS と同じ線をここで引く
-  const management = canSeeManagement(role);
-  const canSeeCash = management && canSeeConfidential(role, scope, "cash");
+  // 事務員（0027）と、代表が個別に外した人（0029）は経営の数字（着地・資金繰り・経営のアラート）を見ない。
+  // サービスロールなので RLS が効かない。画面と同じ判定（effectiveAccess）をここで行う
+  const access = effectiveAccess(role, profile.access_overrides, scope);
+  const management = access.management;
+  const canSeeCash = management && access.cash;
   const isOwner = role === "owner";
 
   switch (intent) {

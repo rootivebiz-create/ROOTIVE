@@ -1,4 +1,4 @@
-import { canEdit, canSeeManagement, requireStaff } from "@/lib/auth/session";
+import { canEdit, requireStaff } from "@/lib/auth/session";
 import { isMonthClosed, loadMasters, loadRateDiffs } from "@/lib/db/queries";
 import { monthFromParam, monthToDate } from "@/lib/month";
 import { EntriesView } from "@/components/entries/entries-view";
@@ -13,7 +13,7 @@ function str(v: string | string[] | undefined): string {
 export default async function EntriesPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const sp = await searchParams;
   const month = monthFromParam(sp.m);
-  const { supabase, profile, company } = await requireStaff();
+  const { supabase, profile, company, access } = await requireStaff();
 
   const [entriesRes, closed] = await Promise.all([
     supabase
@@ -46,7 +46,7 @@ export default async function EntriesPage({ searchParams }: { searchParams: Prom
       initialDriver={str(sp.driver)}
       initialQuery={str(sp.q)}
       initialVoice={str(sp.voice) === "1"}
-      showProfit={canSeeManagement(profile.role)}
+      showProfit={access.management}
     />
   );
 }

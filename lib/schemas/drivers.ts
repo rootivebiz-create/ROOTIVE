@@ -3,7 +3,7 @@ import { memoSchema, moneySchema, nameSchema, percentToRateSchema, roundingModeS
 import { optionalDateSchema } from "./expenses";
 import { parseNumberInput } from "@/lib/calc/parse";
 import { TAX_MODES, type RoundingMode, type TaxMode } from "@/lib/calc/types";
-import { BANK_ACCOUNT_TYPES, canSeeConfidential, toConfidentialScope, type BankAccountType, type Role } from "@/lib/db/types";
+import { BANK_ACCOUNT_TYPES, type BankAccountType } from "@/lib/db/types";
 
 /**
  * ドライバー設定フォームの入力（クライアント → Server Action）。
@@ -240,15 +240,6 @@ export function isBankAccountFilled(v: {
   account_holder_kana?: string | null;
 }): boolean {
   return Boolean(v.bank_code && v.branch_code && v.account_number && v.account_holder_kana);
-}
-
-/**
- * ドライバーの振込先口座を見てよいか（`companies.confidential_scope.bank_account`）。
- * DB の `can_see_confidential('bank_account')`（0020）と同じ判定を画面側でも行う（§2 の二重チェック）。
- * 代表は常に見られる。既定は「管理者以上」で、閲覧者・ドライバーは見られない。
- */
-export function canSeeBankAccount(confidentialScope: unknown, role: Role): boolean {
-  return canSeeConfidential(role, toConfidentialScope(confidentialScope), "bank_account");
 }
 
 export const driverInputSchema = z.object({

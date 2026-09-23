@@ -112,6 +112,17 @@ input[type="number"]::-webkit-outer-spin-button {
   margin: 0;
 }
 
+/*
+ * 代表が出力を止めた人（0029。AppShell が data-export-off を付ける）：
+ * 出力のリンク（/api/export/…）・出力のボタン群・出力センターへのリンクを出さない。
+ * 見た目だけの話で、実際の拒否は出力の口（app/api/export/_lib/guard.ts）が 403 で行う
+ */
+[data-export-off] a[href^="/api/export/"],
+[data-export-off] a[href^="/exports"],
+[data-export-off] [data-export-menu] {
+  display: none !important;
+}
+
 @media print {
   .no-print {
     display: none !important;

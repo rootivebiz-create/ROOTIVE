@@ -20,7 +20,6 @@ import {
   type TransferTarget,
   type ZenginInput,
 } from "@/lib/exports/zengin";
-import { canSeeBankAccount } from "@/lib/schemas/drivers";
 import { ExportError, fetchAllRows, handleExport, monthParam, requireExportRole } from "../_lib/guard";
 import { recordExport } from "@/lib/exports/record";
 
@@ -31,9 +30,9 @@ const DRIVER_COLUMNS = "id, name, payout_month_offset, payout_day";
 const BANK_COLUMNS = "driver_id, bank_code, bank_name, branch_code, branch_name, account_type, account_number, account_holder_kana";
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company, profile } = await requireExportRole(ADMIN_ROLES);
+  const { supabase, company, profile, access } = await requireExportRole(ADMIN_ROLES);
   const month = monthParam(req);
-  if (!canSeeBankAccount(company.confidential_scope, profile.role)) {
+  if (!access.bank_account) {
     throw new ExportError(403, "振込先の口座を見る権限がありません。");
   }
 
