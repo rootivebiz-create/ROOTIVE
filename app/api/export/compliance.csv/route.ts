@@ -87,6 +87,13 @@ export const GET = handleExport(async (req: NextRequest) => {
     csv = aptitudesToCsv(rows);
   }
 
-  await recordExport({ profileId: profile.id, kind: "other", label: `${COMPLIANCE_CSV_LABELS[kind]} CSV`, rows: rowCount, req });
+  // 台帳は生年月日・住所・免許証番号、ほかも氏名と健康の記録を含むので機密として記録する（0025）
+  await recordExport({
+    profileId: profile.id,
+    kind: kind === "roster" ? "roster" : "compliance",
+    label: `${COMPLIANCE_CSV_LABELS[kind]} CSV`,
+    rows: rowCount,
+    req,
+  });
   return csvResponse(safeFilePart(complianceCsvFilename(kind, today)), csv);
 });

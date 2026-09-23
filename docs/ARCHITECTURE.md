@@ -535,6 +535,47 @@ drivers（台帳の項目）             driver_instructions  指導・監督
 
 ---
 
+## 4-11. 使ってみて気づいた直し（0025）
+
+### 個人情報を含む出力は「機密」の種別で記録する
+
+`export_logs` の `is_sensitive` は `record_export` の中のリストで決まり、
+代表の「出力の急増」アラートも**機密の出力しか数えない**。
+0024 の運転者台帳は `kind='other'` のままだったため、生年月日・住所・免許証番号を含むのに
+支払明細 PDF より緩い扱いになっていた。`roster` / `compliance` を足して直した。
+
+> **出力を足すときは種別も足す。** 個人情報が入るなら `record_export` のリストへ。
+> ここに入れ忘れると、記録は残るが「急増」には出ない。
+
+### 会社設定はオーナーだけ
+
+`companies` の UPDATE は RLS で `is_owner()` を求める。入口を `requireAdminAction` にすると
+管理者には**編集できる見た目だけ出て、保存すると必ず失敗する**。
+会社設定を触る Server Action は `requireOwnerAction`、画面も `isOwner` で閉じる（§2 の二重チェックを両側でそろえる）。
+
+### ダッシュボードは 1 往復にまとめる
+
+カード 6 つぶん（書類・応募者・契約・日報の状況・アラートの件数と上位 3 件）は RPC **`dashboard_cards(month)`**。
+
+```
+以前： 6 往復（v_document_list / v_applicant_list / v_contract_list / v_day_status / v_alert_summary / alerts）
+いま： dashboard_cards() 1 往復 → 返ってきた行を今までと同じ純関数へ
+```
+
+**RPC は行を返すだけで、件数・期限・採用の判定はしない**（`toFleetDocument` / `hrCounts` / `countExpiry` はそのまま）。
+SQL 側に判断を移すと純関数と食い違い、どちらが正か分からなくなるため。
+
+### サイドナビの見出しを畳める
+
+23 項目は一度に見るには多い。見出し（入力・経営・管理・相談）を畳めるようにした。
+
+- 既定はすべて開いたまま（今までと同じ見た目）
+- 畳んだ見出しは端末ごとに覚える（`localStorage`。読めない端末では全部開く）
+- **いま開いている画面が入っている見出しは、畳んでいても開く**（自分の居場所を見失わないため）
+- 判定は純関数（`groupNavItems` / `isGroupOpen` / `toggleNavGroup`）
+
+---
+
 ## 5. 認証フロー
 
 ```
@@ -632,8 +673,8 @@ drivers（台帳の項目）             driver_instructions  指導・監督
 | 種類 | コマンド | 内容 |
 |---|---|---|
 | 単体（Vitest） | `npm test` | `lib/calc`（§2.6 の全ケース、誤差 0.01 円以内、端数処理 4 種、恒等式）、zod スキーマ、`lib/migrate` の変換と決定的 ID、`lib/voice` の解析、`lib/push` の宛先と文面。**プッシュの送信（`tests/push-send.test.ts`）は使い捨ての自己署名証明書で HTTPS のテストサーバーを立て、暗号化された本文と VAPID の署名が届くこと・410 なら購読を消すことまで確かめる**（openssl が無い環境では飛ばす） |
-| SQL 結合（psql） | `npm run test:sql` | ローカル PostgreSQL に `tests/sql/auth_stub.sql`（auth.uid() 等のスタブ）+ 全マイグレーションを適用し `tests/sql/test.sql` を実行。ビューの計算が §2.6 と一致、RLS（viewer / driver の拒否）、締めガード、招待制、復元・全削除、経費と営業利益（`v_month_pl`）、取引先と請求書（`build_invoice` / 合計の自動計算 / 状態）、ポータルの速報、代表と機密の隔離、通知の購読と設定、配車（必要人数・割り当て・休み希望・写しと確定・見通し）、法定帳票（運転者台帳・適性診断・保存期間・監査で足りないもの）。31 節。**1 回目の適用直後にテーブル権限の抜けも確かめる** |
-| E2E（Playwright） | `npm run test:e2e` | Supabase 互換のテストサーバー（`supabase-lite`：PostgreSQL + GoTrue 相当 + PostgREST 相当の軽量実装）を自動起動し、iPhone 13 と Desktop Chrome の 2 プロジェクトで主要導線（招待ログイン → ダッシュボード → 稼働追加・複製・一括入力 → 支払明細・PDF → 設定 → 月締め・解除 → 経費と営業利益 → 取引先と請求書（PDF・入金） → 年次レポートと月次目標 → ナビとコマンドパレット・ポータルの速報 → 閲覧者／ドライバーの権限 → 移行 JSON の取り込み）をブラウザで確認。13 spec・61 シナリオ × 2 プロジェクト = **122 件**。スクリーンショットを `docs/screenshots/` に保存。詳細は [docs/E2E.md](E2E.md) |
+| SQL 結合（psql） | `npm run test:sql` | ローカル PostgreSQL に `tests/sql/auth_stub.sql`（auth.uid() 等のスタブ）+ 全マイグレーションを適用し `tests/sql/test.sql` を実行。ビューの計算が §2.6 と一致、RLS（viewer / driver の拒否）、締めガード、招待制、復元・全削除、経費と営業利益（`v_month_pl`）、取引先と請求書（`build_invoice` / 合計の自動計算 / 状態）、ポータルの速報、代表と機密の隔離、通知の購読と設定、配車（必要人数・割り当て・休み希望・写しと確定・見通し）、法定帳票（運転者台帳・適性診断・保存期間・監査で足りないもの）、出力の機密判定と LINE 連携の復元とダッシュボードの 1 往復。32 節。**1 回目の適用直後にテーブル権限の抜けも確かめる** |
+| E2E（Playwright） | `npm run test:e2e` | Supabase 互換のテストサーバー（`supabase-lite`：PostgreSQL + GoTrue 相当 + PostgREST 相当の軽量実装）を自動起動し、iPhone 13 と Desktop Chrome の 2 プロジェクトで主要導線（招待ログイン → ダッシュボード → 稼働追加・複製・一括入力 → 支払明細・PDF → 設定 → 月締め・解除 → 経費と営業利益 → 取引先と請求書（PDF・入金） → 年次レポートと月次目標 → ナビとコマンドパレット・ポータルの速報 → 閲覧者／ドライバーの権限 → 移行 JSON の取り込み）をブラウザで確認。25 spec・137 シナリオ × 2 プロジェクト = **274 件**。スクリーンショットを `docs/screenshots/` に保存。詳細は [docs/E2E.md](E2E.md) |
 | 静的 | `npm run typecheck` / `npm run lint` / `npm run build` | 型・Lint・本番ビルド |
 | まとめ | `npm run check` | typecheck + lint + test + build:sql |
 

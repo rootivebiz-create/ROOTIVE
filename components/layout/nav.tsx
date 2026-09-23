@@ -21,6 +21,7 @@ import {
   FolderSearch,
   ClipboardCheck,
   CalendarRange,
+  ChevronDown,
   ShieldCheck,
   Truck,
   UserPlus,
@@ -123,6 +124,60 @@ export function bottomItemsFor(variant: NavVariant | undefined, role?: Role): Na
 /** スマホの「メニュー」シートに出す項目（下タブに入らない残り。代表はここに入る） */
 export function moreItemsFor(role?: Role): NavItem[] {
   return visibleForRole(MORE_NAV, role);
+}
+
+/* ------------------------------------------------------------------ *
+ * サイドナビのまとまり（見出しごとに畳める）
+ * ------------------------------------------------------------------ */
+
+export interface NavGroup {
+  /** 見出し（「入力」など）。見出しの無い項目（ホーム・設定）は undefined */
+  group?: string;
+  items: NavItem[];
+}
+
+/** 項目を見出しごとにまとめる（並びは変えない。純関数） */
+export function groupNavItems(items: readonly NavItem[]): NavGroup[] {
+  const out: NavGroup[] = [];
+  for (const item of items) {
+    const last = out[out.length - 1];
+    if (last && last.group === item.group) last.items.push(item);
+    else out.push({ group: item.group, items: [item] });
+  }
+  return out;
+}
+
+/**
+ * その見出しを開いて見せるか（純関数）。
+ * - 見出しが無いまとまり（ホーム・設定）は常に開く
+ * - 畳んでいても、**いま開いている画面が入っていれば開く**（自分の居場所を見失わないため）
+ */
+export function isGroupOpen(g: NavGroup, collapsed: readonly string[], activeHref?: string): boolean {
+  if (!g.group) return true;
+  if (!collapsed.includes(g.group)) return true;
+  return activeHref != null && g.items.some((i) => i.href === activeHref);
+}
+
+/** 畳む・開くを切り替える（純関数。並びは見出しの名前順で安定させる） */
+export function toggleNavGroup(collapsed: readonly string[], group: string): string[] {
+  const set = new Set(collapsed);
+  if (set.has(group)) set.delete(group);
+  else set.add(group);
+  return [...set].sort();
+}
+
+/** 端末に覚えておくときのキー（会社ではなく端末ごと） */
+export const NAV_COLLAPSED_KEY = "rootive.nav.collapsed";
+
+/** localStorage から読む（使えない端末・壊れた値では「全部開く」に倒す） */
+export function readCollapsedGroups(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : [];
+  } catch {
+    return [];
+  }
 }
 
 /** 未読・未対応の件数バッジ（99 を超えたら 99+） */
@@ -252,41 +307,84 @@ export function SideNav({
   const items = navItemsFor(variant, role);
   const pathname = usePathname();
   const { href } = useMonth();
+  // 畳んだ見出しは端末ごとに覚える（既定はすべて開いたまま。使えない端末でも普通に動く）
+  const [collapsed, setCollapsed] = useState<string[]>([]);
+  useEffect(() => {
+    try {
+      setCollapsed(readCollapsedGroups(window.localStorage.getItem(NAV_COLLAPSED_KEY)));
+    } catch {
+      /* 使えない端末（プライベートモードなど）では全部開いたままでよい */
+    }
+  }, []);
+  const toggle = (group: string) => {
+    const next = toggleNavGroup(collapsed, group);
+    setCollapsed(next);
+    try {
+      window.localStorage.setItem(NAV_COLLAPSED_KEY, JSON.stringify(next));
+    } catch {
+      /* 覚えられなくても畳めること自体は成立させる */
+    }
+  };
+
+  const activeItem = items.find((i) => isActive(pathname, i.href, items));
+  const groups = groupNavItems(items);
+
   return (
     <nav className="hidden w-56 shrink-0 flex-col gap-0.5 border-r bg-card p-3 md:flex no-print" aria-label="メインナビゲーション">
-      {items.map((item, index) => {
-        const active = isActive(pathname, item.href, items);
-        const newGroup = item.group && item.group !== items[index - 1]?.group;
+      {groups.map((g) => {
+        const open = isGroupOpen(g, collapsed, activeItem?.href);
         return (
-          <div key={item.href} className={cn(newGroup && "pt-2")}>
-            {newGroup && <p className="px-3 pb-1 text-[11px] font-semibold text-muted-foreground">{item.group}</p>}
-            <Link
-              href={href(item.href)}
-              className={cn(
-                "relative isolate flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors active:bg-muted",
-                active ? "bg-accent text-accent-foreground" : "hover:bg-muted",
-              )}
-              aria-current={active ? "page" : undefined}
-            >
-              <NavPendingHighlight className="bg-accent" />
-              <NavPendingIcon icon={item.icon} className="h-4 w-4 shrink-0" />
-              <span className="truncate">{item.label}</span>
-              <NavBadge count={badges?.[item.href]} className="ml-auto" />
-            </Link>
-            {sub && sub.parent === item.href && active && (
-              <ul className="ml-6 mt-1 flex flex-col gap-0.5 border-l pl-2">
-                {sub.items.map((s) => (
-                  <li key={s.href}>
-                    <Link
-                      href={href(s.href)}
-                      className={cn("block rounded px-2 py-1 text-sm", isActive(pathname, s.href) ? "font-semibold text-primary" : "text-muted-foreground hover:text-foreground")}
-                    >
-                      {s.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
+          <div key={g.group ?? g.items[0].href} className={cn(g.group && "pt-2")}>
+            {g.group && (
+              <button
+                type="button"
+                onClick={() => toggle(g.group as string)}
+                aria-expanded={open}
+                className="flex w-full items-center gap-1 rounded px-3 pb-1 text-left text-[11px] font-semibold text-muted-foreground hover:text-foreground"
+              >
+                <ChevronDown className={cn("h-3 w-3 shrink-0 transition-transform", !open && "-rotate-90")} aria-hidden />
+                <span className="truncate">{g.group}</span>
+                {!open && <span className="ml-auto tabular-nums">{g.items.length}</span>}
+              </button>
             )}
+            {open &&
+              g.items.map((item) => {
+                const active = isActive(pathname, item.href, items);
+                return (
+                  <div key={item.href}>
+                    <Link
+                      href={href(item.href)}
+                      className={cn(
+                        "relative isolate flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors active:bg-muted",
+                        active ? "bg-accent text-accent-foreground" : "hover:bg-muted",
+                      )}
+                      aria-current={active ? "page" : undefined}
+                    >
+                      <NavPendingHighlight className="bg-accent" />
+                      <NavPendingIcon icon={item.icon} className="h-4 w-4 shrink-0" />
+                      <span className="truncate">{item.label}</span>
+                      <NavBadge count={badges?.[item.href]} className="ml-auto" />
+                    </Link>
+                    {sub && sub.parent === item.href && active && (
+                      <ul className="ml-6 mt-1 flex flex-col gap-0.5 border-l pl-2">
+                        {sub.items.map((s) => (
+                          <li key={s.href}>
+                            <Link
+                              href={href(s.href)}
+                              className={cn(
+                                "block rounded px-2 py-1 text-sm",
+                                isActive(pathname, s.href) ? "font-semibold text-primary" : "text-muted-foreground hover:text-foreground",
+                              )}
+                            >
+                              {s.label}
+                            </Link>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                );
+              })}
           </div>
         );
       })}

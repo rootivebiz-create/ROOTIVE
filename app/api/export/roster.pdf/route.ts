@@ -23,6 +23,6 @@ export const GET = handleExport(async (req: NextRequest) => {
   const drivers = await loadRosterForPdf(supabase, company.id, { includeRetired });
   const pdf = await renderRosterPdf({ companyName: company.name, today, drivers });
 
-  await recordExport({ profileId: profile.id, kind: "other", label: "運転者台帳 PDF", rows: drivers.length, req });
+  await recordExport({ profileId: profile.id, kind: "roster", label: "運転者台帳 PDF", rows: drivers.length, req });
   return pdfResponse(safeFilePart(`運転者台帳_${today}.pdf`), pdf);
 });

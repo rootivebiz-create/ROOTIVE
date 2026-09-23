@@ -520,6 +520,8 @@ export const EXPORT_KIND_LABELS: Record<string, string> = {
   rates: "単価表 CSV",
   records: "書類の索引簿",
   "month-pack": "月次パック ZIP",
+  roster: "運転者台帳",
+  compliance: "法定帳票（指導・事故・診断）",
   report: "月次レポート PDF",
   other: "その他",
 };

@@ -351,6 +351,36 @@ export async function loadAlerts(
   return data ?? [];
 }
 
+/**
+ * ダッシュボードのカードが使う行を 1 往復で読む（0025 の RPC `dashboard_cards`）。
+ *
+ * 件数・期限・採用の判定は今までどおりアプリの純関数（`toFleetDocument` / `hrCounts` ほか）が行い、
+ * ここは行を運ぶだけ。**SQL 側に判断を移さない**（純関数と食い違うため）。
+ * 以前は 6 往復（書類・応募者・契約・日報の状況・アラートの件数・アラート）だった。
+ */
+export interface DashboardCards {
+  documents: DocumentListRow[];
+  applicants: ApplicantRow[];
+  contracts: ContractRow[];
+  dayStatus: DayStatusRow | null;
+  alertSummary: AlertSummaryRow | null;
+  alerts: Alert[];
+}
+
+export async function loadDashboardCards(supabase: ServerSupabase, month: string): Promise<DashboardCards> {
+  const { data, error } = await supabase.rpc("dashboard_cards", { p_month: monthToDate(month) });
+  if (error) throw error;
+  const o = (data ?? {}) as Record<string, unknown>;
+  return {
+    documents: (o.documents ?? []) as DocumentListRow[],
+    applicants: (o.applicants ?? []) as ApplicantRow[],
+    contracts: (o.contracts ?? []) as ContractRow[],
+    dayStatus: (o.day_status ?? null) as DayStatusRow | null,
+    alertSummary: (o.alert_summary ?? null) as AlertSummaryRow | null,
+    alerts: (o.alerts ?? []) as Alert[],
+  };
+}
+
 /** 未対応アラートの件数（会社 × 月） */
 export async function loadAlertSummary(supabase: ServerSupabase, companyId: string, month: string): Promise<AlertSummaryRow | null> {
   const { data, error } = await supabase.from("v_alert_summary").select("*").eq("company_id", companyId).eq("month", monthToDate(month)).maybeSingle();

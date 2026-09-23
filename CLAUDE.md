@@ -25,7 +25,7 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
 - `lib/month.ts` 稼動月ユーティリティ、`lib/format.ts` 表示書式（円・%・数量）
 - `components/ui/*` UI 部品（shadcn/ui 相当）、`components/layout/*` シェル・ナビ・月セレクタ
 - `app/(app)/*` スタッフ画面（ホーム・稼働・支払・請求・経費・資金繰り・案件・レポート・ドライバー別の採算・設定）、`app/driver/*` ドライバーポータル、`app/(auth)/*` ログイン・招待、`app/api/export/*` 出力
-- `supabase/migrations/*.sql` スキーマ（0001 テーブル、0002 認証・RLS、0003 ビュー、0004 RPC、0005 ポータル・初期データ、0006 Storage・権限、0007 ドライバー別単価（bill_rate 上書き・rate_diffs・apply_master_rates）、0008 消費税・ロゴと認印・ドライバーごとの支払日、0009 経費と営業利益・取引先と請求書・月次目標、0010 資金繰り・案件別採算、0011 AI チャット・社内チャット・異常検知・外部連携、0012 運行管理と法令対応（点呼・業務記録・日別の稼働・車両・書類）、0013 取り込みと採用・契約、0014 法人の経営管理（振込先口座・決算と税務カレンダー・借入金・経営指標・契約書の保管）、0015 バックアップと復元を全テーブルへ拡張、0016 異常の検知を毎日自動で回す、0017 会社を明示して集計する RPC、0018 労務（拘束時間・休息）と元請の支払通知との突合、0019 代表（決裁・意思決定ログ・会社の台帳・中期計画・ログインの記録）、0020 代表の守り（機密の隔離・決裁のルールと委任・持ち出しの記録・計画の配分・振込口座の分離）、0021 表示を速くする（me / nav_badges）、0022 通知（端末への通知の購読・受け取り方の設定）、0023 配車・シフト（必要人数・割り当て・休み希望・定休日）、0024 法定帳票（運転者台帳・適性診断・保存期間・監査で足りないもの））
+- `supabase/migrations/*.sql` スキーマ（0001 テーブル、0002 認証・RLS、0003 ビュー、0004 RPC、0005 ポータル・初期データ、0006 Storage・権限、0007 ドライバー別単価（bill_rate 上書き・rate_diffs・apply_master_rates）、0008 消費税・ロゴと認印・ドライバーごとの支払日、0009 経費と営業利益・取引先と請求書・月次目標、0010 資金繰り・案件別採算、0011 AI チャット・社内チャット・異常検知・外部連携、0012 運行管理と法令対応（点呼・業務記録・日別の稼働・車両・書類）、0013 取り込みと採用・契約、0014 法人の経営管理（振込先口座・決算と税務カレンダー・借入金・経営指標・契約書の保管）、0015 バックアップと復元を全テーブルへ拡張、0016 異常の検知を毎日自動で回す、0017 会社を明示して集計する RPC、0018 労務（拘束時間・休息）と元請の支払通知との突合、0019 代表（決裁・意思決定ログ・会社の台帳・中期計画・ログインの記録）、0020 代表の守り（機密の隔離・決裁のルールと委任・持ち出しの記録・計画の配分・振込口座の分離）、0021 表示を速くする（me / nav_badges）、0022 通知（端末への通知の購読・受け取り方の設定）、0023 配車・シフト（必要人数・割り当て・休み希望・定休日）、0024 法定帳票（運転者台帳・適性診断・保存期間・監査で足りないもの）、0025 使ってみて気づいた直し（台帳の出力を機密に・LINE 連携の復元・ダッシュボードの 1 往復））
 - `tests/` Vitest（`*.test.ts`）、`tests/sql/`（psql）、`tests/e2e/`（Playwright ＋ `supabase-lite` テストサーバー）
 
 ## 必ず守る規約
@@ -85,7 +85,7 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
 - **持ち出しの記録（0020）**：`export_logs` に CSV・振込データ・バックアップ・明細 PDF の出力を残す（閲覧は代表のみ、書き込みは `record_export` のサービスロール専用、1 年で消える）。**記録に失敗しても出力自体は止めない**
 - **中期計画 → 月次目標（0020）**：`spread_plan_year(plan_id, year, 'even' | 'actual')` が年間目標を 12 か月へ配分する（端数は 12 月。手で入れてある月は上書きしない）。承認した申請からは `decision_from_approval` で意思決定ログの下書きを作る（同じ申請から二度は作らない）
 - 異常の検知は 29 ルール（0011 の 11 ＋ 0012 の 5 ＋ 0014 の 4 ＋ 0018 の 4 ＋ 0019 の 1（決裁の滞留）＋ 0020 の 1（出力の急増）＋ 0023 の 3（配車））。code は 30 種類
-- バックアップは **version 9**。代表のテーブル（0019）・決裁のルール・委任・振込口座（0020）・配車（0023）・適性診断（0024）まで入る。**外部連携のトークン・社内チャット・AI の履歴・監査ログ・アラート・ログインの記録・持ち出しの記録は含めない**。version 6 以前の `drivers` に入っていた口座も復元できる
+- バックアップは **version 9**。代表のテーブル（0019）・決裁のルール・委任・振込口座（0020）・配車（0023）・適性診断（0024）まで入る。0025 で LINE の連携（`drivers.line_user_id`）も戻すようにした。**外部連携のトークン・社内チャット・AI の履歴・監査ログ・アラート・ログインの記録・持ち出しの記録は含めない**。version 6 以前の `drivers` に入っていた口座も復元できる
 - **表示の速さ（0021）**：画面を 1 つ開くたびの Supabase への往復を減らす。
   - `getSessionContext()` は RPC **`me()`** の 1 往復だけ（以前は `getUser()` → `profiles` → `companies` の 3 連続）。
     `me()` は security invoker で、**行が返ること自体が正しいセッションの証明**（PostgREST が JWT を検証する）
@@ -134,6 +134,20 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
   - 出力は `/api/export/compliance.csv`（`kind=roster|instruction|incident|aptitude`）・`/api/export/roster.pdf`（1 人 1 ページ）・
     `/api/export/audit-pack.zip`（一式 ＋ README）。名前は `v_driver_instruction_list` / `v_incident_list` / `v_aptitude_list` から引く
   - バックアップは **version 9**（適性診断まで。台帳の項目は `drivers` の行に入る）。0023 で戻していなかった `weekly_off` もここで戻すようにした
+- **使ってみて気づいた直し（0025）**
+  - **持ち出しの記録は種別で決まる**：`record_export` の `sensitive` のリストに入っている種別だけが機密として数えられ、
+    「出力の急増」のアラートもそれしか見ない。**個人情報を含む出力を足したら、必ずこのリストにも足す**
+    （0024 の運転者台帳は `kind='other'` のままで、生年月日・住所・免許証番号が入っているのに機密ではなかった）。
+    いまのリスト：`transfer` / `backup` / `statements` / `statement` / `drivers` / `month-pack` / `records` / `roster` / `compliance`
+  - **会社設定（`companies`）の更新は RLS でオーナーのみ**。`requireAdminAction` で入口だけ通しても DB が 0 行で返すため、
+    管理者には「保存できるのに必ず失敗する」画面になる。会社設定を触る Server Action は `requireOwnerAction`、画面も `isOwner` で閉じる
+  - **ダッシュボードのカードは RPC `dashboard_cards(month)` の 1 往復**（書類・応募者・契約・日報の状況・アラートの件数と上位 3 件）。
+    **返すのは行だけで、件数や期限の判定は今までどおりアプリの純関数**（`toFleetDocument` / `hrCounts` ほか）。SQL 側に判断を移さない
+  - **サイドナビの見出しは畳める**（`groupNavItems` / `isGroupOpen` / `toggleNavGroup` は純関数）。
+    既定はすべて開いたまま。畳んだ見出しは端末ごとに覚える（`localStorage`。読めなくても全部開くだけ）。
+    **いま開いている画面が入っている見出しは、畳んでいても開く**
+  - 日付まわり（`isDateString` / `emptyToNull` / `optionalDateSchema` / `optionalIdSchema`）は **`lib/schemas/common.ts` が正**。
+    expenses / hr / finance は再輸出するだけ（請求書だけはメッセージを 2 種類に分けているため `dateSchema` を自前で組み立てる）
 - **新しいテーブルには必ず権限を出す**：0020 の末尾にある `grant ... on all tables in schema public to authenticated` は**そのあとの番号で作ったテーブルには届かない**。`security invoker` の RPC は RLS の手前で `permission denied` になる。テーブルを足したマイグレーションの末尾で grant を出し直すこと（`tests/sql/run.sh` が 1 回目の適用直後に抜けを検出する）
 - ロール：owner（すべて ＋ `/executive` の決裁・意思決定・会社の台帳・中期計画・守り）／admin（登録・編集・月締め・出力・代表への申請）／viewer（閲覧・CSV・チャット・AI 相談。借入・納税・現金・振込口座は既定で見えない）／driver（自分の締め済み月の明細、今日の報告（点呼・稼働）、自分の予定と休みの申請、自分の書類・車両・契約）
 

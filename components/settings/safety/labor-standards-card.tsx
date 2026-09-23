@@ -172,6 +172,8 @@ export function LaborStandardsCard({ initial, editable }: LaborStandardsCardProp
             </div>
           )}
 
+          {!editable && <p className="text-xs text-muted-foreground">基準を変えられるのはオーナーだけです。</p>}
+
           <p className="text-xs text-muted-foreground">
             改善基準告示は一般貨物自動車運送事業の運転者が対象です。軽貨物の業務委託には直接は適用されませんが、事故を防ぐ目安として使っています。
           </p>

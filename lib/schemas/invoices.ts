@@ -1,21 +1,21 @@
 import { z } from "zod";
-import { memoSchema, monthSchema, moneySchema, qtySchema, unitSchema, uuidSchema } from "./common";
+import { DATE_RE, emptyToNull, isDateString, memoSchema, monthSchema, moneySchema, qtySchema, unitSchema, uuidSchema } from "./common";
 import type { Unit } from "@/lib/calc/types";
 import type { InvoiceStatus } from "@/lib/db/types";
 
-/** 日付 "YYYY-MM-DD"（存在する日付かどうかも確認する） */
+/**
+ * 日付 "YYYY-MM-DD"（存在する日付かどうかも確認する）。
+ * 請求書だけは「形が違う」と「存在しない日付」でメッセージを分けているので、
+ * 共通の optionalDateSchema ではなくここで組み立てる（判定そのものは common の isDateString）。
+ */
 export const dateSchema = z
   .string()
   .trim()
-  .regex(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, "日付は YYYY-MM-DD 形式で入力してください")
-  .refine((s) => {
-    const [y, m, d] = s.split("-").map(Number);
-    const dt = new Date(Date.UTC(y, m - 1, d));
-    return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
-  }, "存在しない日付です");
+  .regex(DATE_RE, "日付は YYYY-MM-DD 形式で入力してください")
+  .refine(isDateString, "存在しない日付です");
 
 /** 空欄・null は「未設定」（null） */
-export const optionalDateSchema = z.preprocess((v) => (v == null || (typeof v === "string" && v.trim() === "") ? null : v), dateSchema.nullable());
+export const optionalDateSchema = z.preprocess(emptyToNull, dateSchema.nullable());
 
 /** 請求書の作成・作り直し（RPC build_invoice） */
 export interface BuildInvoiceInput {

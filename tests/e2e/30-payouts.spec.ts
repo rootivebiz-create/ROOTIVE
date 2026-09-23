@@ -3,7 +3,7 @@
  * 前提：§8.6 の初期データ（resetToSeed）。テストは順番に依存するため serial
  */
 import { test, expect } from "@playwright/test";
-import { E2E, adminSql, driverIdByName, listRow, loginViaMagicLink, readState, requireState, resetToSeed, saveScreenshot, toast, yen } from "./helpers";
+import { E2E, adminSql, clickToUrl, driverIdByName, listRow, loginViaMagicLink, readState, requireState, resetToSeed, saveScreenshot, toast, yen } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -51,8 +51,7 @@ test.describe("支払明細", () => {
     await expect(listRow(page, "相曽慧")).toContainText(yen(436307)); // 税込（消費税 39,664）
     await expect(listRow(page, /合計/)).toContainText(yen(1907083));
 
-    await page.getByRole("link", { name: /相曽慧/ }).first().click();
-    await expect(page).toHaveURL(new RegExp(`/payouts/${driverId}/statement`));
+    await clickToUrl(page, page.getByRole("link", { name: /相曽慧/ }).first(), new RegExp(`/payouts/${driverId}/statement`));
     await expect(page.getByRole("heading", { name: "相曽慧 様 2026年9月 支払明細" })).toBeVisible();
 
     // 稼働明細：三郷Amazon 21日 × ¥21,780 ＝ ¥457,380、ロイヤリティ 10%、管理費 14,999（標準と異なる）

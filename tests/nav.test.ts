@@ -9,8 +9,12 @@ import {
   MORE_NAV,
   badgeText,
   bottomItemsFor,
+  groupNavItems,
+  isGroupOpen,
   moreItemsFor,
   navItemsFor,
+  readCollapsedGroups,
+  toggleNavGroup,
   notificationRows,
 } from "@/components/layout/nav";
 import { NAV_ADMIN_ROLES, isVisibleForRole, visibleForRole } from "@/lib/nav/visibility";
@@ -249,5 +253,48 @@ describe("ヘッダーのベルの行（notificationRows）", () => {
     expect(notificationRows({ "/executive": 2 }, "admin")).toEqual([]);
     expect(notificationRows({ "/executive": 2 })).toEqual([]);
     expect(notificationRows({ "/alerts": 1, "/chat": 1, "/executive": 1 }, "owner").map((r) => r.href)).toEqual(["/alerts", "/chat", "/executive/approvals"]);
+  });
+});
+
+describe("サイドナビのまとまり（畳める見出し）", () => {
+  const groups = groupNavItems(MAIN_NAV);
+
+  it("見出しごとにまとまり、並びは変わらない", () => {
+    expect(groups.map((g) => g.group)).toEqual(["代表", undefined, "入力", "経営", "管理", "相談", undefined]);
+    expect(groups.flatMap((g) => g.items.map((i) => i.href))).toEqual(MAIN_NAV.map((i) => i.href));
+  });
+
+  it("見出しの無いまとまり（ホーム・設定）は畳めない（常に開く）", () => {
+    const home = groups.find((g) => g.items.some((i) => i.href === "/dashboard"))!;
+    expect(home.group).toBeUndefined();
+    expect(isGroupOpen(home, ["入力", "経営"], "/entries")).toBe(true);
+  });
+
+  it("畳んだ見出しは閉じるが、いま開いている画面が入っていれば開く", () => {
+    const input = groups.find((g) => g.group === "入力")!;
+    expect(isGroupOpen(input, [], "/dashboard")).toBe(true);
+    expect(isGroupOpen(input, ["入力"], "/dashboard")).toBe(false);
+    // 「稼働」を開いているときは、入力を畳んでいても開く（居場所を見失わないため）
+    expect(isGroupOpen(input, ["入力"], "/entries")).toBe(true);
+    expect(isGroupOpen(input, ["入力"], undefined)).toBe(false);
+  });
+
+  it("切り替えは足し引きで、並びは安定する", () => {
+    expect(toggleNavGroup([], "管理")).toEqual(["管理"]);
+    expect(toggleNavGroup(["管理"], "管理")).toEqual([]);
+    expect(toggleNavGroup(["管理"], "入力")).toEqual(["入力", "管理"]);
+    // 元の配列は変えない
+    const before = ["管理"];
+    toggleNavGroup(before, "入力");
+    expect(before).toEqual(["管理"]);
+  });
+
+  it("覚えた値が読めないときは「全部開く」に倒す", () => {
+    expect(readCollapsedGroups(null)).toEqual([]);
+    expect(readCollapsedGroups("")).toEqual([]);
+    expect(readCollapsedGroups("こわれた")).toEqual([]);
+    expect(readCollapsedGroups('{"入力":true}')).toEqual([]);
+    expect(readCollapsedGroups('["入力","管理"]')).toEqual(["入力", "管理"]);
+    expect(readCollapsedGroups('["入力",3,null]')).toEqual(["入力"]);
   });
 });

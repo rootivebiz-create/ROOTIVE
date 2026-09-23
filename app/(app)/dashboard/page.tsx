@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { Lock } from "lucide-react";
 import { requireStaff, canEdit } from "@/lib/auth/session";
 import { loadDashboardData } from "@/lib/db/queries-dashboard";
-import { loadAlerts, loadAlertSummary, loadDayStatus, loadDocuments, loadExpenseSummary, loadMonthKpi, loadMonthPl } from "@/lib/db/queries";
+import { loadDashboardCards, loadExpenseSummary, loadMonthKpi, loadMonthPl } from "@/lib/db/queries";
 import { isAiInsightsEnabled } from "@/lib/ai/config";
 import { normalizeActions, normalizeInsightFindings } from "@/lib/ai/findings";
 import { formatMonthJa, monthFromParam, monthToDate, prevMonth } from "@/lib/month";
@@ -31,7 +31,6 @@ import { ExpiryCard } from "@/components/fleet/expiry-card";
 import { todayJST, toFleetDocument } from "@/lib/fleet/helpers";
 import { HrCard } from "@/components/hr/hr-card";
 import { hrCounts, toApplicantView, toContractView } from "@/lib/hr/helpers";
-import { loadApplicants, loadContracts } from "@/lib/db/queries";
 
 export const metadata = { title: "ダッシュボード" };
 /** AI 月次分析（Server Action）は応答に数十秒かかることがある */
@@ -42,21 +41,19 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const sp = await searchParams;
   const month = monthFromParam(sp.m);
   const prev = prevMonth(month);
-  const [data, pl, prevPlRes, expenseRows, openAlerts, alertSummary, dayStatus, documentRows, applicants, contracts, kpiRow, prevKpiRow, dispatchOutlook] = await Promise.all([
+  // カード 6 つぶん（書類・応募者・契約・日報の状況・アラートの件数と上位 3 件）は
+  // RPC `dashboard_cards` の 1 往復にまとめる（判定は下の純関数のまま。0025）
+  const [data, pl, prevPlRes, expenseRows, cards, kpiRow, prevKpiRow, dispatchOutlook] = await Promise.all([
     loadDashboardData(supabase, company.id, month),
     loadMonthPl(supabase, company.id, month),
     supabase.from("v_month_pl").select("*").eq("company_id", company.id).eq("month", monthToDate(prev)).maybeSingle(),
     loadExpenseSummary(supabase, company.id, month),
-    loadAlerts(supabase, company.id, { status: "open", month, limit: 3 }),
-    loadAlertSummary(supabase, company.id, month),
-    loadDayStatus(supabase, company.id, month),
-    loadDocuments(supabase, company.id),
-    loadApplicants(supabase, company.id, { stage: "all" }),
-    loadContracts(supabase, company.id),
+    loadDashboardCards(supabase, month),
     loadMonthKpi(supabase, company.id, monthToDate(month)),
     loadMonthKpi(supabase, company.id, monthToDate(prev)),
     loadDispatchOutlook(supabase, company.id),
   ]);
+  const { documents: documentRows, applicants, contracts, dayStatus, alertSummary, alerts: openAlerts } = cards;
   if (prevPlRes.error) throw prevPlRes.error;
   const aiEnabled = isAiInsightsEnabled();
   const breakdown = expenseBreakdown(expenseRows);

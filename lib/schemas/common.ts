@@ -75,3 +75,30 @@ export function fdBool(form: FormData, key: string): boolean {
   const v = form.get(key);
   return v === "on" || v === "true" || v === "1";
 }
+
+/* ------------------------------------------------------------------ *
+ * 日付と任意の ID（0025：expenses / hr / finance に同じものが 3 つあったのでここへまとめた）
+ * ------------------------------------------------------------------ */
+
+/** "YYYY-MM-DD" の形（存在する日付かどうかは isDateString が見る） */
+export const DATE_RE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+
+/** 形が正しく、実在する日付か（2 月 30 日・うるう年でない 2 月 29 日は false） */
+export function isDateString(s: unknown): s is string {
+  if (typeof s !== "string" || !DATE_RE.test(s)) return false;
+  const [y, m, d] = s.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+
+/** 空欄・空白だけ・null は null（未設定）にそろえる */
+export const emptyToNull = (v: unknown) => (v == null || (typeof v === "string" && v.trim() === "") ? null : v);
+
+/** 任意の日付（空欄は null） */
+export const optionalDateSchema = z.preprocess(
+  emptyToNull,
+  z.string().refine(isDateString, "日付は YYYY-MM-DD 形式で入力してください").nullable(),
+);
+
+/** 任意の ID（空欄・null は null＝指定なし／新規） */
+export const optionalIdSchema = z.preprocess(emptyToNull, uuidSchema.nullable());

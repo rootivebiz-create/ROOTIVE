@@ -3,7 +3,7 @@
  * 前提：§8.6 の初期データ（resetToSeed で毎回揃える）
  */
 import { test, expect } from "@playwright/test";
-import { E2E, kpiCard, loginViaMagicLink, readState, resetToSeed, saveScreenshot, yen } from "./helpers";
+import { E2E, clickToUrl, kpiCard, loginViaMagicLink, readState, resetToSeed, saveScreenshot, yen } from "./helpers";
 
 const SEED_DRIVERS_WITH_ENTRIES = ["相曽慧", "金島幸太", "沼田基", "今井皇輝", "石田泰典", "黒岩亜夢莉", "藤田裕介", "川島幹太"];
 
@@ -55,8 +55,7 @@ test.describe("ダッシュボード", () => {
     await saveScreenshot(page, `dashboard-${testInfo.project.name}.png`);
 
     // 行タップで支払明細へ
-    await rows.filter({ hasText: "相曽慧" }).click();
-    await expect(page).toHaveURL(/\/payouts\/[0-9a-f-]{36}\/statement\?m=2026-09/);
+    await clickToUrl(page, rows.filter({ hasText: "相曽慧" }), /\/payouts\/[0-9a-f-]{36}\/statement\?m=2026-09/);
     await expect(page.getByRole("heading", { name: "相曽慧 様 2026年9月 支払明細" })).toBeVisible();
   });
 

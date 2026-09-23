@@ -13,16 +13,14 @@ import type { ApplicantStage, ContractStatus } from "@/lib/db/types";
  */
 
 /** 空欄（"" / 空白のみ / null / undefined）は null にする */
-const emptyToNull = (v: unknown) => (v == null || (typeof v === "string" && v.trim() === "") ? null : v);
+// 空欄の扱い・任意の日付・任意の ID は common.ts が正（0025 でまとめた）
+import { optionalDateSchema, optionalIdSchema } from "./common";
+export { optionalDateSchema, optionalIdSchema };
 
 /** 必須の日付 "YYYY-MM-DD" */
 export const dateSchema = z.string().trim().refine(isDateString, "日付は YYYY-MM-DD 形式で入力してください");
 
-/** 任意の日付（空欄は null） */
-export const optionalDateSchema = z.preprocess(emptyToNull, z.string().refine(isDateString, "日付は YYYY-MM-DD 形式で入力してください").nullable());
 
-/** 任意の ID（空欄・null は null＝新規） */
-export const optionalIdSchema = z.preprocess(emptyToNull, uuidSchema.nullable());
 
 /** 採用の段階（DB の enum applicant_stage と同じ並び） */
 export const APPLICANT_STAGE_VALUES = [

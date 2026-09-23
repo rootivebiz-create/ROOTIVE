@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { memoSchema, monthSchema, signedMoneySchema, uuidSchema } from "./common";
+import { memoSchema, monthSchema, signedMoneySchema } from "./common";
 import { MONTH_RE } from "@/lib/month";
 import { TAX_MODES, type TaxMode } from "@/lib/calc/types";
 import { EXPENSE_KINDS, type ExpenseKind } from "@/lib/db/types";
@@ -16,30 +16,10 @@ export const EXPENSE_TAX_MODE_LABELS: Record<TaxMode, string> = {
   exempt: "対象外",
 };
 
-const DATE_RE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
-
-/** "YYYY-MM-DD" として実在する日付か */
-export function isDateString(s: unknown): s is string {
-  if (typeof s !== "string" || !DATE_RE.test(s)) return false;
-  const [y, m, d] = s.split("-").map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d));
-  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
-}
-
-/** 空欄（"" / 空白のみ / null / undefined）は null にする */
-const emptyToNull = (v: unknown) => (v == null || (typeof v === "string" && v.trim() === "") ? null : v);
-
-/** 任意の ID（空欄は null＝指定なし） */
-export const optionalIdSchema = z.preprocess(emptyToNull, uuidSchema.nullable());
-
-/** 任意の日付（空欄は null） */
-export const optionalDateSchema = z.preprocess(
-  emptyToNull,
-  z
-    .string()
-    .refine(isDateString, "日付は YYYY-MM-DD 形式で入力してください")
-    .nullable(),
-);
+// 日付・任意の ID・空欄の扱いは common.ts が正（0025 で 3 か所の重複をまとめた）。
+// ここから読んでいる箇所が多いので、名前はそのまま再輸出する
+import { DATE_RE, emptyToNull, isDateString, optionalDateSchema, optionalIdSchema } from "./common";
+export { DATE_RE, emptyToNull, isDateString, optionalDateSchema, optionalIdSchema };
 
 /** 任意の稼動月（空欄は null＝制限なし） */
 export const optionalMonthSchema = z.preprocess(emptyToNull, z.string().regex(MONTH_RE, "月は YYYY-MM 形式で指定してください").nullable());

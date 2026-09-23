@@ -14,10 +14,10 @@ import {
   type ContractRow,
   type ContractStatus,
 } from "@/lib/db/types";
+import { isDateString } from "@/lib/schemas/common";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** フォロー漏れとみなす日数（最後のやりとりからこの日数以上動いていない） */
 export const STALE_DAYS = 10;
@@ -32,13 +32,8 @@ export function todayJST(now: Date = new Date()): string {
 }
 
 /** "YYYY-MM-DD" として実在する日付か */
-export function isDateString(value: unknown): value is string {
-  if (typeof value !== "string" || !DATE_RE.test(value)) return false;
-  const [y, m, d] = value.split("-").map(Number);
-  if (m < 1 || m > 12 || d < 1) return false;
-  const dt = new Date(Date.UTC(y, m - 1, d));
-  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
-}
+// 日付の判定は lib/schemas/common.ts が正（0025 でまとめた）。ここから読んでいる箇所があるので再輸出する
+export { isDateString };
 
 /** from → to の日数（同じ日は 0、to が後なら正）。どちらかが不正なら null */
 export function daysBetween(from: string | null | undefined, to: string | null | undefined): number | null {

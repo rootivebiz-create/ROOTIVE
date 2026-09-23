@@ -38,8 +38,9 @@ export default async function SafetySettingsPage() {
         today={today}
         editable={canEdit(profile.role)}
       />
-      {/* 労務の基準（/daily?tab=labor の判定に使う。時間で入力して分で保存する） */}
-      <LaborStandardsCard initial={laborSettingsToForm(company)} editable={canEdit(profile.role)} />
+      {/* 労務の基準（/daily?tab=labor の判定に使う。時間で入力して分で保存する）。
+          保存期間と同じく会社設定なので、DB（RLS）に合わせてオーナーだけが変えられる（0025） */}
+      <LaborStandardsCard initial={laborSettingsToForm(company)} editable={isOwner(profile.role)} />
       {/* 法定帳票の保存期間（0024）。会社設定なのでオーナーだけが変えられる */}
       <RetentionCard initial={retentionSettingsToForm(company)} editable={isOwner(profile.role)} />
     </div>

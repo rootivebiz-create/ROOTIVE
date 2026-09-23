@@ -272,6 +272,24 @@ export function listRow(page: Page, text: string | RegExp): Locator {
     .filter({ visible: true });
 }
 
+/**
+ * リンクを押して、URL がそのページに変わるまで待つ。
+ *
+ * App Router の画面遷移は RSC の取得を挟むため、直前のテストで PDF や ZIP を作った直後などに
+ * 10 秒（expect の既定）を超えることがある。待つ時間を延ばし、半分過ぎても変わらなければ一度だけ押し直す
+ * （押した操作そのものが取りこぼされた場合の保険。リンクが壊れていれば結局失敗する）。
+ */
+export async function clickToUrl(page: Page, link: Locator, url: RegExp, timeout = 30_000): Promise<void> {
+  await link.click();
+  try {
+    await page.waitForURL(url, { timeout: timeout / 2 });
+    return;
+  } catch {
+    await link.click();
+  }
+  await page.waitForURL(url, { timeout: timeout / 2 });
+}
+
 /** ダッシュボードの KPI カード（ラベルの p 要素を持つ最も内側の Card） */
 export function kpiCard(page: Page, label: string): Locator {
   return page

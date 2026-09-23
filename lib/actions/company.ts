@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdminAction, requireOwnerAction } from "@/lib/auth/session";
+import { requireOwnerAction } from "@/lib/auth/session";
 import { ensureNoError, runAction, type ActionResult } from "@/lib/actions/result";
 import {
   companyInputSchema,
@@ -67,12 +67,13 @@ export async function updateCompanyAction(input: CompanyFormInput): Promise<Acti
  */
 export async function updateLaborSettingsAction(input: LaborSettingsFormInput): Promise<ActionResult<null>> {
   return runAction(async () => {
-    const { supabase, company } = await requireAdminAction();
+    // companies の更新は DB（RLS）がオーナーのみに限っている。入口もそろえる（0025）
+    const { supabase, company } = await requireOwnerAction();
     const parsed = laborSettingsSchema.parse(input);
 
     const res = await supabase.from("companies").update(laborSettingsToColumns(parsed)).eq("id", company.id).select("id");
     ensureNoError(res);
-    if ((res.data ?? []).length === 0) throw new Error("労務の基準を更新できませんでした（権限を確認してください）。");
+    if ((res.data ?? []).length === 0) throw new Error("労務の基準を更新できませんでした（会社設定はオーナーのみ変更できます）。");
 
     revalidatePath("/settings/safety");
     revalidatePath("/daily");
@@ -86,7 +87,7 @@ export async function updateLaborSettingsAction(input: LaborSettingsFormInput): 
  */
 export async function updateRetentionSettingsAction(input: RetentionSettingsFormInput): Promise<ActionResult<null>> {
   return runAction(async () => {
-    const { supabase, company } = await requireAdminAction();
+    const { supabase, company } = await requireOwnerAction();
     const parsed = retentionSettingsSchema.parse(input);
 
     const res = await supabase.from("companies").update(parsed).eq("id", company.id).select("id");

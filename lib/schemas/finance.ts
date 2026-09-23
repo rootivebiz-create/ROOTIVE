@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { memoSchema, moneySchema, monthSchema, nameSchema, percentToRateSchema, uuidSchema } from "./common";
-import { isDateString } from "./expenses";
+// 日付・任意の ID は common.ts が正（0025 でまとめた）
+import { isDateString, optionalDateSchema, optionalIdSchema } from "./common";
 import { normalizeNumericString, parseNumberInput } from "@/lib/calc/parse";
 import { FINANCE_MAX_YEAR, FINANCE_MIN_YEAR } from "@/lib/finance/date";
 import type { LoanStatus, TaxTaskStatus } from "@/lib/db/types";
@@ -23,13 +24,10 @@ const emptyToZero = (v: unknown) => (v == null || (typeof v === "string" && norm
 export const dateSchema = z.string().trim().refine(isDateString, "日付は YYYY-MM-DD 形式で入力してください");
 
 /** 任意の日付（空欄は null） */
-export const optionalDateSchema = z.preprocess(
-  (v) => (v == null || (typeof v === "string" && v.trim() === "") ? null : v),
-  z.string().refine(isDateString, "日付は YYYY-MM-DD 形式で入力してください").nullable(),
-);
+export { optionalDateSchema };
 
 /** 任意の ID（空欄・null は null＝新規） */
-export const optionalIdSchema = z.preprocess((v) => (v == null || (typeof v === "string" && v.trim() === "") ? null : v), uuidSchema.nullable());
+export { optionalIdSchema };
 
 /** 目標・予算の金額（空欄は 0） */
 export const targetMoneySchema = z.preprocess(emptyToZero, moneySchema);

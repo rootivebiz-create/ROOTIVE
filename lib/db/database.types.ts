@@ -4806,6 +4806,12 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: string
       }
+      dashboard_cards: {
+        Args: {
+          p_month: string
+        }
+        Returns: Json
+      }
       decide_approval: {
         Args: {
           p_id: string

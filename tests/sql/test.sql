@@ -1980,4 +1980,64 @@ select public.t_assert((select count(*) = 0 from public.aptitude_tests), '他社
 select public.test_logout();
 reset role;
 
-\echo '== すべてのアサーションが通りました（18〜31 節）'
+-- =============================================================================
+-- 32. 使ってみて気づいた直し（0025）
+--   台帳の出力を機密に・LINE の連携の復元・ダッシュボードの 1 往復
+-- =============================================================================
+\echo '-- 32. 使ってみて気づいた直し（0025）'
+
+set role authenticated;
+select public.test_login(:'admin_a');
+
+-- ---------- 台帳の出力は機密として記録する ----------
+reset role;
+select public.record_export((select id from public.profiles where company_id = :'company_a' and role = 'admin' limit 1), 'roster', '運転者台帳 PDF', null, 8);
+select public.record_export((select id from public.profiles where company_id = :'company_a' and role = 'admin' limit 1), 'compliance', '指導・監督の記録 CSV', null, 3);
+select public.record_export((select id from public.profiles where company_id = :'company_a' and role = 'admin' limit 1), 'entries', '稼働 CSV', null, 10);
+-- 前の節でも出力を記録しているので、種別ごとにまとめて確かめる
+select public.t_assert(
+  (select bool_and(is_sensitive) from public.export_logs where company_id = :'company_a' and kind = 'roster'),
+  '運転者台帳の出力は機密として記録される');
+select public.t_assert(
+  (select bool_and(is_sensitive) from public.export_logs where company_id = :'company_a' and kind = 'compliance'),
+  '法定帳票の出力は機密として記録される');
+select public.t_assert(
+  (select bool_and(not is_sensitive) from public.export_logs where company_id = :'company_a' and kind = 'entries'),
+  '稼働 CSV は機密ではない（今までどおり）');
+
+-- ---------- 復元で LINE の連携が戻る ----------
+set role authenticated;
+select public.test_login(:'admin_a');
+update public.drivers set line_user_id = 'U0123456789abcdef', line_linked_at = now() where id = public.t30_driver('相曽慧');
+create temporary table t32_backup as select public.export_backup() as data;
+update public.drivers set line_user_id = '', line_linked_at = null where id = public.t30_driver('相曽慧');
+select public.test_login(:'owner_a');
+select public.import_backup((select data from t32_backup));
+select public.t_assert(
+  (select line_user_id = 'U0123456789abcdef' and line_linked_at is not null from public.drivers where id = public.t30_driver('相曽慧')),
+  '復元すると LINE の連携が戻る');
+update public.drivers set line_user_id = '', line_linked_at = null where id = public.t30_driver('相曽慧');
+
+-- ---------- ダッシュボードのカードを 1 往復で読む ----------
+select public.test_login(:'admin_a');
+select public.t_assert(
+  (select public.dashboard_cards('2026-09-01') ? 'documents'
+      and public.dashboard_cards('2026-09-01') ? 'applicants'
+      and public.dashboard_cards('2026-09-01') ? 'contracts'
+      and public.dashboard_cards('2026-09-01') ? 'day_status'
+      and public.dashboard_cards('2026-09-01') ? 'alert_summary'
+      and public.dashboard_cards('2026-09-01') ? 'alerts'),
+  'ダッシュボードのカードが 1 回で 6 つぶん返る');
+select public.t_assert(
+  jsonb_typeof(public.dashboard_cards('2026-09-01')->'documents') = 'array',
+  '行が無くても配列で返る（null にしない）');
+-- 他社の行は混ざらない（security invoker なので RLS が効く）
+select public.test_login(:'owner_b');
+select public.t_assert(
+  jsonb_array_length(public.dashboard_cards('2026-09-01')->'contracts') = 0,
+  '他社のダッシュボードの行は返らない');
+
+select public.test_logout();
+reset role;
+
+\echo '== すべてのアサーションが通りました（18〜32 節）'
