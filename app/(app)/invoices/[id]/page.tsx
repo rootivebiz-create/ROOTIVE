@@ -13,6 +13,8 @@ import { InvoiceItemsEditor } from "@/components/invoices/invoice-items-editor";
 import { InvoiceMetaForm } from "@/components/invoices/invoice-meta-form";
 import { InvoiceStatusActions } from "@/components/invoices/invoice-status-actions";
 import { InvoiceStatusBadge } from "@/components/invoices/status-badge";
+import { InvoiceMailCard, type InvoiceSendRow } from "@/components/invoices/invoice-mail";
+import { isMailEnabled } from "@/lib/mail/send";
 import { cn } from "@/lib/utils";
 
 export const metadata = { title: "請求書" };
@@ -36,6 +38,22 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
   if (!invoice) notFound();
 
   const editable = canEdit(profile.role);
+  // メールで送った記録（0028。新しい順に 10 件）
+  const sendsRes = await supabase
+    .from("invoice_sends")
+    .select("id, to_email, status, error, sent_at, sent_by_name")
+    .eq("company_id", company.id)
+    .eq("invoice_id", invoice.id)
+    .order("sent_at", { ascending: false })
+    .limit(10);
+  const sends: InvoiceSendRow[] = (sendsRes.data ?? []).map((r) => ({
+    id: r.id,
+    toEmail: r.to_email,
+    status: r.status === "failed" ? "failed" : "sent",
+    error: r.error ?? "",
+    sentAt: r.sent_at,
+    sentByName: r.sent_by_name ?? "",
+  }));
 
   return (
     <div className="space-y-4">
@@ -87,6 +105,8 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
           </p>
         </CardContent>
       </Card>
+
+      <InvoiceMailCard invoice={invoice} companyName={company.name} sends={sends} editable={editable} mailEnabled={isMailEnabled()} />
 
       {editable && <InvoiceStatusActions invoice={invoice} />}
 

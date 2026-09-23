@@ -24,6 +24,8 @@ export interface BoardTabProps {
   editable: boolean;
   recentQty: Record<string, number>;
   today: string;
+  /** 予定の粗利を出すか（事務員には出さない） */
+  showProfit?: boolean;
 }
 
 /**
@@ -40,7 +42,7 @@ function makeSuggestQty(recentQty: Record<string, number>) {
   };
 }
 
-export function BoardTab({ board, items, drivers, weekStart, editable, recentQty, today }: BoardTabProps) {
+export function BoardTab({ board, items, drivers, weekStart, editable, recentQty, today, showProfit = true }: BoardTabProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [cell, setCell] = useState<{ item: DispatchItem; day: BoardItemDay } | null>(null);
@@ -123,7 +125,12 @@ export function BoardTab({ board, items, drivers, weekStart, editable, recentQty
           必要 {board.totals.need} / 割り当て {board.totals.assigned}
         </span>
         <span className="ml-auto text-sm text-muted-foreground">
-          予定の売上 <Money value={board.totals.planBill} /> ／ 粗利 <Money value={board.totals.planMargin} />
+          予定の売上 <Money value={board.totals.planBill} />
+          {showProfit && (
+            <>
+              {" "}／ 粗利 <Money value={board.totals.planMargin} />
+            </>
+          )}
         </span>
       </div>
 

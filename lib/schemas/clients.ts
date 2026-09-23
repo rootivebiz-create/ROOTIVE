@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { memoSchema, nameSchema, uuidSchema } from "./common";
 import { parseNumberInput } from "@/lib/calc/parse";
+import { emailListError, normalizeEmailList } from "@/lib/mail/address";
 
 /** 入金予定日：稼動月からのずれ（0=当月／1=翌月／2=翌々月／3=3 か月後） */
 export const PAYMENT_MONTH_OFFSETS = [0, 1, 2, 3] as const;
@@ -33,6 +34,8 @@ export interface ClientFormInput {
   honorific: string;
   address: string;
   tel: string;
+  /** 請求書を送るメールアドレス（任意。カンマ区切りで 5 件まで。0028） */
+  email?: string;
   /** 適格請求書登録番号（任意。T ＋ 13 桁） */
   invoice_reg_no: string;
   /** 入金予定日：月（"0"〜"3"） */
@@ -64,6 +67,16 @@ export const clientInputSchema = z.object({
     .transform((s) => (s === "" ? DEFAULT_HONORIFIC : s)),
   address: z.string().trim().max(200, "200 文字以内で入力してください"),
   tel: z.string().trim().max(50, "50 文字以内で入力してください"),
+  email: z
+    .string()
+    .trim()
+    .max(300, "300 文字以内で入力してください")
+    .default("")
+    .superRefine((s, ctx) => {
+      const err = emailListError(s);
+      if (err) ctx.addIssue({ code: "custom", message: err });
+    })
+    .transform(normalizeEmailList),
   invoice_reg_no: z
     .string()
     .trim()

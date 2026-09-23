@@ -83,7 +83,7 @@ export function NotificationSettings({ notifyChat, notifyLine, lineLinked, pushC
             </label>
             {!lineLinked && (
               <p className="text-xs text-muted-foreground">
-                まだ LINE 公式アカウントと連携していません。設定 → 外部連携 から合言葉で連携すると届くようになります。
+                まだ LINE 公式アカウントと連携していません。下の「LINE で受け取る」で合言葉を出して連携すると届くようになります。
               </p>
             )}
           </div>

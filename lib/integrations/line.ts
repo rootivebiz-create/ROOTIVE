@@ -10,7 +10,8 @@ import { INTEGRATION_TIMEOUT_MS, LINE_MAX_TEXT, LINE_MULTICAST_CHUNK } from "./t
 
 export { lineSignature, verifyLineSignature } from "./line-signature";
 
-const LINE_API = "https://api.line.me";
+/** Messaging API の入口。E2E ではテストサーバーのモックへ向ける（本番では設定しない） */
+const LINE_API = (process.env.LINE_API_BASE || "https://api.line.me").replace(/\/+$/, "");
 
 export interface LineSecrets {
   channelAccessToken: string;

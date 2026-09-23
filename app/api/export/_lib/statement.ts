@@ -14,7 +14,7 @@ export interface StatementExport {
 }
 
 export async function loadStatementForExport(req: NextRequest): Promise<StatementExport> {
-  const ctx = await requireExportRole(["owner", "admin", "viewer", "driver"]);
+  const ctx = await requireExportRole(["owner", "admin", "clerk", "viewer", "driver"]);
   const month = monthParam(req);
   const driverId = driverParam(req);
   const isDriver = ctx.profile.role === "driver";

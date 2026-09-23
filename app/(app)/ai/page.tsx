@@ -1,4 +1,4 @@
-import { canEdit, requireStaff } from "@/lib/auth/session";
+import { canEdit, requireManagementPage } from "@/lib/auth/session";
 import { loadAiConversations } from "@/lib/db/queries";
 import { isAiInsightsEnabled } from "@/lib/ai/config";
 import { normalizeActions, normalizeInsightFindings } from "@/lib/ai/findings";
@@ -25,7 +25,7 @@ function tabFromParam(param: string | string[] | undefined): AiTab {
  * 稼動月は ?m=YYYY-MM。この月のデータパック（v_* ビューと RPC の結果）を Claude に渡す。
  */
 export default async function AiPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const { supabase, user, profile, company } = await requireStaff();
+  const { supabase, user, profile, company } = await requireManagementPage();
   const sp = await searchParams;
   const month = monthFromParam(sp.m);
   const aiEnabled = isAiInsightsEnabled();

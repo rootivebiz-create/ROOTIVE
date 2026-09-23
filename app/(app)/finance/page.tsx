@@ -1,4 +1,4 @@
-import { canEdit, isOwner, requireStaff } from "@/lib/auth/session";
+import { canEdit, isOwner, requireManagementPage } from "@/lib/auth/session";
 import { loadLoanPayments, loadLoans, loadMonthKpiRange, loadTaxTasks } from "@/lib/db/queries";
 import { PageHeader } from "@/components/ui/page-header";
 import { uuidSchema } from "@/lib/schemas/common";
@@ -42,7 +42,7 @@ function loanIdFromParam(param: string | string[] | undefined): string | null {
 export default async function FinancePage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const sp = await searchParams;
   const tab = financeTabFromParam(sp.tab);
-  const { supabase, profile, company } = await requireStaff();
+  const { supabase, profile, company } = await requireManagementPage();
 
   const today = todayJST();
   const thisYear = yearOfDate(today);
@@ -63,7 +63,7 @@ export default async function FinancePage({ searchParams }: { searchParams: Prom
   );
 }
 
-type Supabase = Awaited<ReturnType<typeof requireStaff>>["supabase"];
+type Supabase = Awaited<ReturnType<typeof requireManagementPage>>["supabase"];
 
 /** 予算タブ：その年と前年の 12 か月を読む（前年は「前年実績 ＋ ◯%」に使う） */
 async function BudgetTab({ supabase, companyId, year, thisYear, canEdit: editable }: { supabase: Supabase; companyId: string; year: number; thisYear: number; canEdit: boolean }) {

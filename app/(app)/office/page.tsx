@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requirePageRole } from "@/lib/auth/session";
+import { ADMIN_ROLES, requirePageRole } from "@/lib/auth/session";
 import { addDays, todayJST } from "@/lib/daily/helpers";
 import { isMonthKey } from "@/lib/month";
 import { buildClosingSteps, buildInbox, closingProgress, todayReporters } from "@/lib/office/desk";
@@ -22,7 +22,7 @@ export const metadata = { title: "事務" };
  * 月締めの対象月は ?m（省くと「締めていない一番古い過去の月、無ければ今月」を DB が選ぶ）。
  */
 export default async function OfficePage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const { supabase, profile } = await requirePageRole(["owner", "admin"]);
+  const { supabase, profile } = await requirePageRole(ADMIN_ROLES);
   const sp = await searchParams;
   const raw = Array.isArray(sp.m) ? sp.m[0] : sp.m;
   const today = todayJST();
@@ -65,7 +65,13 @@ export default async function OfficePage({ searchParams }: { searchParams: Promi
         tomorrow={desk.tomorrow?.onDate ?? (today ? addDays(today, 1) : null)}
       />
       <ReportersCard reporters={reporters} />
-      <ClosingCard month={desk.month} steps={steps} progress={progress} closedAt={desk.closing.closedAt} />
+      <ClosingCard
+        month={desk.month}
+        steps={steps}
+        progress={progress}
+        closedAt={desk.closing.closedAt}
+        statements={{ targets: desk.closing.statementTargets, sent: desk.closing.statementSent, lineReady: desk.closing.statementLineReady }}
+      />
       <QuickActions />
     </div>
   );

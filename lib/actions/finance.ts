@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdminAction } from "@/lib/auth/session";
+import { requireManagerAction } from "@/lib/auth/session";
 import { ActionError, ensureNoError, runAction, unwrap, type ActionResult } from "@/lib/actions/result";
 import {
   deleteLoanSchema,
@@ -57,7 +57,7 @@ function revalidateTax(): void {
 /** 12 か月ぶんの目標をまとめて保存（admin+）。締め済み月の目標も編集できる */
 export async function saveYearTargetsAction(input: SaveYearTargetsInput): Promise<ActionResult<{ count: number }>> {
   return runAction(async () => {
-    const { supabase, company } = await requireAdminAction();
+    const { supabase, company } = await requireManagerAction();
     const v = saveYearTargetsSchema.parse(input);
     const rows = v.rows.map((r) => ({
       company_id: company.id,
@@ -81,7 +81,7 @@ export async function saveYearTargetsAction(input: SaveYearTargetsInput): Promis
 /** 借入の登録・更新（admin+）。保存後に返済予定を作り直す */
 export async function saveLoanAction(input: LoanFormInput): Promise<ActionResult<{ id: string; payments: number }>> {
   return runAction(async () => {
-    const { supabase, company, user } = await requireAdminAction();
+    const { supabase, company, user } = await requireManagerAction();
     const v = loanInputSchema.parse(input);
 
     const row = {
@@ -116,7 +116,7 @@ export async function saveLoanAction(input: LoanFormInput): Promise<ActionResult
 /** 返済予定の作り直し（admin+）。返済済みの回はそのまま残る */
 export async function regenerateLoanScheduleAction(loanId: string): Promise<ActionResult<{ payments: number }>> {
   return runAction(async () => {
-    const { supabase } = await requireAdminAction();
+    const { supabase } = await requireManagerAction();
     const id = uuidSchema.parse(loanId);
     const res = await supabase.rpc("generate_loan_schedule", { p_loan_id: id });
     ensureNoError(res);
@@ -128,7 +128,7 @@ export async function regenerateLoanScheduleAction(loanId: string): Promise<Acti
 /** 借入の削除（admin+）。返済済みの回があるときは削除できない */
 export async function deleteLoanAction(loanId: string): Promise<ActionResult<{ id: string }>> {
   return runAction(async () => {
-    const { supabase, company } = await requireAdminAction();
+    const { supabase, company } = await requireManagerAction();
     const v = deleteLoanSchema.parse({ id: loanId });
 
     const payments = await supabase.from("loan_payments").select("id, paid_on").eq("company_id", company.id).eq("loan_id", v.id).limit(1000);
@@ -149,7 +149,7 @@ export async function deleteLoanAction(loanId: string): Promise<ActionResult<{ i
 /** 返済予定の 1 回を「返済済み」にする／戻す（admin+）。paidOn が null なら未返済に戻す */
 export async function setLoanPaymentPaidAction(paymentId: string, paidOn: string | null): Promise<ActionResult<{ id: string }>> {
   return runAction(async () => {
-    const { supabase, company } = await requireAdminAction();
+    const { supabase, company } = await requireManagerAction();
     const v = setLoanPaymentPaidSchema.parse({ id: paymentId, paid_on: paidOn });
     const row = unwrap<{ id: string }>(
       await supabase.from("loan_payments").update({ paid_on: v.paid_on }).eq("id", v.id).eq("company_id", company.id).select("id").maybeSingle(),
@@ -167,7 +167,7 @@ export async function setLoanPaymentPaidAction(paymentId: string, paidOn: string
 /** 期限の登録・更新（admin+）。自分で足したものは is_generated = false */
 export async function saveTaxTaskAction(input: TaxTaskFormInput): Promise<ActionResult<{ id: string }>> {
   return runAction(async () => {
-    const { supabase, company, user } = await requireAdminAction();
+    const { supabase, company, user } = await requireManagerAction();
     const v = taxTaskInputSchema.parse(input);
     const today = todayJST();
 
@@ -202,7 +202,7 @@ export async function saveTaxTaskAction(input: TaxTaskFormInput): Promise<Action
 /** 期限の状態を変える（admin+）。対応済みにすると done_on に今日が入る */
 export async function setTaxTaskStatusAction(taskId: string, status: TaxTaskStatus): Promise<ActionResult<{ id: string }>> {
   return runAction(async () => {
-    const { supabase, company } = await requireAdminAction();
+    const { supabase, company } = await requireManagerAction();
     const v = setTaxTaskStatusSchema.parse({ id: taskId, status });
     const row = unwrap<{ id: string }>(
       await supabase
@@ -222,7 +222,7 @@ export async function setTaxTaskStatusAction(taskId: string, status: TaxTaskStat
 /** 期限の削除（admin+） */
 export async function deleteTaxTaskAction(taskId: string): Promise<ActionResult<{ id: string }>> {
   return runAction(async () => {
-    const { supabase, company } = await requireAdminAction();
+    const { supabase, company } = await requireManagerAction();
     const v = deleteTaxTaskSchema.parse({ id: taskId });
     const row = unwrap<{ id: string }>(
       await supabase.from("tax_tasks").delete().eq("id", v.id).eq("company_id", company.id).select("id").maybeSingle(),
@@ -236,7 +236,7 @@ export async function deleteTaxTaskAction(taskId: string): Promise<ActionResult<
 /** その年の期限をまとめて作る（admin+）。会社設定の決算月から組み立てる（二重に作らない） */
 export async function ensureTaxTasksAction(year: number | string): Promise<ActionResult<{ created: number }>> {
   return runAction(async () => {
-    const { supabase } = await requireAdminAction();
+    const { supabase } = await requireManagerAction();
     const v = ensureTaxTasksSchema.parse({ year });
     const res = await supabase.rpc("ensure_tax_tasks", { p_year: v.year });
     ensureNoError(res);

@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { requirePageRole } from "@/lib/auth/session";
+import { MANAGER_ROLES, requirePageRole } from "@/lib/auth/session";
 import { isMonthKey } from "@/lib/month";
 import { AUDIT_PAGE_SIZE, parseAuditQuery, type AuditQuery } from "@/lib/schemas/data";
 import { cn } from "@/lib/utils";
@@ -25,7 +25,7 @@ function auditHref(q: AuditQuery, month: string | undefined, page: number): stri
 }
 
 export default async function AuditLogPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const { supabase, company } = await requirePageRole(["owner", "admin"]);
+  const { supabase, company } = await requirePageRole(MANAGER_ROLES);
   const sp = await searchParams;
   const rawMonth = Array.isArray(sp.m) ? sp.m[0] : sp.m;
   const month = isMonthKey(rawMonth) ? rawMonth : undefined;

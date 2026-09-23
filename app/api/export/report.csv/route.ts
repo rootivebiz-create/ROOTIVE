@@ -2,7 +2,7 @@
  * GET /api/export/report.csv?y=YYYY — 年次レポート CSV（月次推移）。スタッフ（owner/admin/viewer）
  */
 import type { NextRequest } from "next/server";
-import { STAFF_ROLES } from "@/lib/auth/session";
+import { MANAGEMENT_VIEW_ROLES } from "@/lib/auth/session";
 import { currentMonthJST } from "@/lib/month";
 import { loadMonthPlRange } from "@/lib/db/queries";
 import { parseYear, toReportRows, yearOfMonth, yearRange } from "@/components/reports/helpers";
@@ -23,7 +23,7 @@ function yearParam(req: NextRequest): number {
 }
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company, profile } = await requireExportRole(STAFF_ROLES);
+  const { supabase, company, profile } = await requireExportRole(MANAGEMENT_VIEW_ROLES);
   const year = yearParam(req);
   const { from, to } = yearRange(year);
 

@@ -20,11 +20,12 @@ export interface DriverOption {
   isActive: boolean;
 }
 
-const ROLES: Role[] = ["admin", "viewer", "driver", "owner"];
+const ROLES: Role[] = ["admin", "clerk", "viewer", "driver", "owner"];
 
 const ROLE_HINTS: Record<Role, string> = {
   owner: "すべての操作（ユーザー管理・会社設定・締め解除を含む）",
-  admin: "稼働・マスタ・管理費・調整の登録と月締め、CSV 出力",
+  admin: "稼働・マスタ・管理費・調整の登録と月締め、CSV 出力、経営の数字の閲覧",
+  clerk: "事務の仕事（稼働・日報・配車・請求・支払・月締め）。経営の数字・振込口座・借入・監査ログは見えない",
   viewer: "閲覧と CSV 出力のみ",
   driver: "自分の締め済み月の支払明細のみ（ドライバーポータル）",
 };

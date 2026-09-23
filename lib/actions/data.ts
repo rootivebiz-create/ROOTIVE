@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdminAction, requireOwnerAction } from "@/lib/auth/session";
+import { requireOwnerAction, requireManagerAction } from "@/lib/auth/session";
 import { ActionError, runAction, unwrap, type ActionResult } from "@/lib/actions/result";
 import { importJsonTextSchema, resetCompanyDataSchema, seedInitialDataSchema } from "@/lib/schemas/data";
 import { buildPreview, type MigratePreview } from "@/lib/migrate";
@@ -61,7 +61,7 @@ export async function importBackupAction(jsonText: string): Promise<ActionResult
 /** サンプル初期データの投入（admin+、ドライバーが 0 件のときのみ。§8.6） */
 export async function seedInitialDataAction(withEntries: boolean): Promise<ActionResult<DataCounts>> {
   return runAction(async () => {
-    const { supabase } = await requireAdminAction();
+    const { supabase } = await requireManagerAction();
     const parsed = seedInitialDataSchema.parse({ withEntries });
     const counts = toCounts(unwrap(await supabase.rpc("seed_initial_data", { p_with_entries: parsed.withEntries })));
     revalidateAll();

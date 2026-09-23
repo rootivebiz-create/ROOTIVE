@@ -47,6 +47,8 @@ export interface DriverMonthDialogProps {
   recurring: RecurringOption[];
   /** 消費税の計算条件（明細データの taxMode / taxRate / taxRounding）。省略時は消費税を計算しない */
   tax?: TaxInput | null;
+  /** 会社利益（参考）を出す（経営の数字。事務員には出さない） */
+  showProfit?: boolean;
 }
 
 type Kind = "deduct" | "add";
@@ -82,6 +84,7 @@ function toRows(adjs: DialogAdjustment[]): AdjRow[] {
 
 /** 「管理費・調整を編集」ダイアログ（admin+・未締め月のみ表示すること） */
 export function DriverMonthDialog(props: DriverMonthDialogProps) {
+  const showProfit = props.showProfit ?? true;
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -317,12 +320,14 @@ export function DriverMonthDialog(props: DriverMonthDialogProps) {
                     <Money value={preview.payoutIncl} className="text-lg" />
                   </dd>
                 </div>
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <dt>会社利益（参考・税抜）</dt>
-                  <dd>
-                    <Money value={preview.driverProfit} />
-                  </dd>
-                </div>
+                {showProfit && (
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <dt>会社利益（参考・税抜）</dt>
+                    <dd>
+                      <Money value={preview.driverProfit} />
+                    </dd>
+                  </div>
+                )}
               </dl>
             </section>
           </div>

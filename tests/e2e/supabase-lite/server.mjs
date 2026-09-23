@@ -1460,6 +1460,47 @@ async function downloadObject(ctx, { bucket, objectPath }, method) {
 }
 
 // ---------------------------------------------------------------------------
+// 外部サービスのモック /__mock（本番では使わない。アプリは LINE_API_BASE / RESEND_API_BASE でここへ向く）
+//   - LINE Messaging API の push … 送った宛先と本文を記録する（宛先が "Ufail" で始まるときは 400 を返す）
+//   - Resend のメール送信 … 送った宛先・件名・添付の数を記録する（宛先に "fail" を含むときは 422 を返す）
+// ---------------------------------------------------------------------------
+const outbox = { line: [], mail: [] };
+
+function handleMock(req, url, bodyBuf) {
+  const sub = url.pathname.slice("/__mock/".length);
+  let body = {};
+  try {
+    body = bodyBuf && bodyBuf.length > 0 ? JSON.parse(bodyBuf.toString("utf8")) : {};
+  } catch {
+    body = {};
+  }
+  if (sub === "line/v2/bot/message/push" && req.method === "POST") {
+    const to = String(body.to ?? "");
+    if (to.startsWith("Ufail")) return { status: 400, body: { message: "The request body has 1 error(s)" } };
+    outbox.line.push({ to, text: String(body.messages?.[0]?.text ?? ""), at: new Date().toISOString() });
+    return { status: 200, body: {} };
+  }
+  if (sub === "line/v2/bot/info" && req.method === "GET") {
+    return { status: 200, body: { displayName: "E2E ボット", basicId: "@e2e" } };
+  }
+  if (sub === "resend/emails" && req.method === "POST") {
+    const to = Array.isArray(body.to) ? body.to.map(String) : [String(body.to ?? "")];
+    if (to.some((t) => t.includes("fail"))) return { status: 422, body: { name: "validation_error", message: "Invalid `to` field." } };
+    const id = `e2e-${outbox.mail.length + 1}`;
+    outbox.mail.push({
+      id,
+      from: String(body.from ?? ""),
+      to,
+      subject: String(body.subject ?? ""),
+      attachments: Array.isArray(body.attachments) ? body.attachments.map((a) => ({ filename: String(a.filename ?? ""), size: String(a.content ?? "").length })) : [],
+      at: new Date().toISOString(),
+    });
+    return { status: 200, body: { id } };
+  }
+  return { status: 404, body: { message: `Not found: ${req.method} ${url.pathname}` } };
+}
+
+// ---------------------------------------------------------------------------
 // テスト補助 /__test
 // ---------------------------------------------------------------------------
 function handleTest(req, url) {
@@ -1470,6 +1511,16 @@ function handleTest(req, url) {
     const entry = authState.lastOtpByEmail.get(email);
     if (!entry) return { status: 404, body: { error: "not_found", message: `OTP が発行されていません: ${email}` } };
     return { status: 200, body: entry };
+  }
+  // モックに届いたもの（/__test/outbox?kind=line|mail）と片付け（POST /__test/outbox/clear）
+  if (sub === "outbox") {
+    const kind = url.searchParams.get("kind") === "mail" ? "mail" : "line";
+    return { status: 200, body: outbox[kind] };
+  }
+  if (sub === "outbox/clear" && req.method === "POST") {
+    outbox.line.length = 0;
+    outbox.mail.length = 0;
+    return { status: 200, body: { ok: true } };
   }
   if (sub === "reset-auth" && req.method === "POST") {
     authState.refreshTokens.clear();
@@ -1499,6 +1550,7 @@ async function route(req, url, bodyBuf) {
     return { status: 200, body: { name: "supabase-lite", version: "0.1.0", db: dbNameOf(DB_URL), storage: STORAGE_DIR, site_url: SITE_URL } };
   }
   if (p.startsWith("/__test/")) return handleTest(req, url);
+  if (p.startsWith("/__mock/")) return handleMock(req, url, bodyBuf);
   if (p.startsWith("/rest/v1/") || p === "/rest/v1") {
     const ctx = await restContext(req);
     return handleRest(req, url, bodyBuf, ctx);

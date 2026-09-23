@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdminAction } from "@/lib/auth/session";
+import { requireManagerAction } from "@/lib/auth/session";
 import { ensureNoError, runAction, unwrap, type ActionResult } from "@/lib/actions/result";
 import { deleteCashSnapshotSchema, saveCashSnapshotSchema, type SaveCashSnapshotInput } from "@/lib/schemas/cash";
 
@@ -17,7 +17,7 @@ function revalidateCash(): void {
  */
 export async function saveCashSnapshotAction(input: SaveCashSnapshotInput): Promise<ActionResult<{ as_of: string }>> {
   return runAction(async () => {
-    const { supabase, company, user } = await requireAdminAction();
+    const { supabase, company, user } = await requireManagerAction();
     const v = saveCashSnapshotSchema.parse(input);
     ensureNoError(
       await supabase.from("cash_snapshots").upsert(
@@ -39,7 +39,7 @@ export async function saveCashSnapshotAction(input: SaveCashSnapshotInput): Prom
 /** 現金残高の削除（admin+） */
 export async function deleteCashSnapshotAction(id: string): Promise<ActionResult<{ id: string }>> {
   return runAction(async () => {
-    const { supabase, company } = await requireAdminAction();
+    const { supabase, company } = await requireManagerAction();
     const v = deleteCashSnapshotSchema.parse({ id });
     const row = unwrap<{ id: string }>(
       await supabase.from("cash_snapshots").delete().eq("id", v.id).eq("company_id", company.id).select("id").maybeSingle(),

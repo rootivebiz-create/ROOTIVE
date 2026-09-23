@@ -1,5 +1,5 @@
 import { Download } from "lucide-react";
-import { requireStaff } from "@/lib/auth/session";
+import { requireManagementPage } from "@/lib/auth/session";
 import { loadMonthKpiRange, loadMonthPlRange } from "@/lib/db/queries";
 import { exportUrls } from "@/lib/exports/urls";
 import { currentMonthJST, monthFromParam, monthToDate } from "@/lib/month";
@@ -34,7 +34,7 @@ import { toKpiTrendRows } from "@/lib/kpi/trend";
 export const metadata = { title: "年次レポート" };
 
 export default async function ReportsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const { supabase, company } = await requireStaff();
+  const { supabase, company } = await requireManagementPage();
   const sp = await searchParams;
   const month = monthFromParam(sp.m);
   const year = resolveReportYear(sp.y, month);

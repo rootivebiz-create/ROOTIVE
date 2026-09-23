@@ -18,7 +18,7 @@ import {
   toggleNavGroup,
   notificationRows,
 } from "@/components/layout/nav";
-import { NAV_ADMIN_ROLES, isVisibleForRole, visibleForRole } from "@/lib/nav/visibility";
+import { NAV_ADMIN_ROLES, NAV_MANAGER_ROLES, isVisibleForRole, visibleForRole } from "@/lib/nav/visibility";
 
 const item = (id: string, label: string, extra: Partial<CommandItem> = {}): CommandItem => ({ id, group: "page", label, ...extra });
 
@@ -244,7 +244,32 @@ describe("ロールごとの出し分け（visibleForRole）", () => {
     expect(isVisibleForRole({ adminOnly: true }, "viewer")).toBe(false);
     expect(isVisibleForRole({ adminOnly: true }, "admin")).toBe(true);
     expect(isVisibleForRole({ adminOnly: true }, "owner")).toBe(true);
-    expect(NAV_ADMIN_ROLES).toEqual(["owner", "admin"]);
+    expect(NAV_ADMIN_ROLES).toEqual(["owner", "admin", "clerk"]);
+  });
+
+  it("事務員（clerk）は adminOnly を通すが、managerOnly・ownerOnly・noClerk は通さない", () => {
+    expect(isVisibleForRole({ adminOnly: true }, "clerk")).toBe(true);
+    expect(isVisibleForRole({ managerOnly: true }, "clerk")).toBe(false);
+    expect(isVisibleForRole({ managerOnly: true }, "admin")).toBe(true);
+    expect(isVisibleForRole({ managerOnly: true }, "viewer")).toBe(false);
+    expect(isVisibleForRole({ ownerOnly: true }, "clerk")).toBe(false);
+    expect(isVisibleForRole({ noClerk: true }, "clerk")).toBe(false);
+    expect(isVisibleForRole({ noClerk: true }, "viewer")).toBe(true);
+    expect(isVisibleForRole({ noClerk: true }, "admin")).toBe(true);
+    expect(NAV_MANAGER_ROLES).toEqual(["owner", "admin"]);
+  });
+
+  it("事務員のナビに経営の画面（ホーム・資金繰り・案件・財務・レポート・AI）は出ず、事務は出る", () => {
+    const hrefs = navItemsFor("staff", "clerk").map((i) => i.href);
+    for (const h of ["/dashboard", "/cashflow", "/projects", "/finance", "/reports", "/ai", "/executive"]) expect(hrefs).not.toContain(h);
+    for (const h of ["/office", "/entries", "/daily", "/dispatch", "/payouts", "/invoices", "/expenses"]) expect(hrefs).toContain(h);
+  });
+
+  it("事務員の下タブは先頭が事務で、ホームは入らない", () => {
+    const tabs = bottomItemsFor("staff", "clerk", "dashboard").map((i) => i.href);
+    expect(tabs[0]).toBe("/office");
+    expect(tabs).not.toContain("/dashboard");
+    expect(moreItemsFor("clerk", "dashboard").map((i) => i.href)).not.toContain("/dashboard");
   });
 
   it("ownerOnly と adminOnly が両方付いていたら owner だけ", () => {
@@ -288,6 +313,7 @@ describe("ヘッダーのベルの行（notificationRows）", () => {
     expect(notificationRows({ "/office": 3 }, "owner").map((r) => r.href)).toEqual(["/office"]);
     expect(notificationRows({ "/office": 3 }, "viewer")).toEqual([]);
     expect(notificationRows({ "/office": 0 }, "admin")).toEqual([]);
+    expect(notificationRows({ "/office": 2 }, "clerk")).toEqual([{ href: "/office", label: "事務の承認待ち", count: 2 }]);
   });
 });
 

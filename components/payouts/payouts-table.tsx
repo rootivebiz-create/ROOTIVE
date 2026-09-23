@@ -34,7 +34,10 @@ function statementPath(driverId: string) {
 }
 
 /** 支払明細一覧：PC は表、スマホはカード。行タップで明細へ */
-export function PayoutsTable({ rows }: { rows: PayoutRow[] }) {
+/**
+ * @param showProfit 会社利益の列を出す（経営の数字。事務員には出さない）
+ */
+export function PayoutsTable({ rows, showProfit = true }: { rows: PayoutRow[]; showProfit?: boolean }) {
   const router = useRouter();
   const { href } = useMonth();
 
@@ -112,12 +115,14 @@ export function PayoutsTable({ rows }: { rows: PayoutRow[] }) {
                       <Money value={r.tax} />
                     </dd>
                   </div>
-                  <div className="flex justify-between">
-                    <dt className="text-muted-foreground">会社利益</dt>
-                    <dd>
-                      <Money value={r.driverProfit} className="font-medium" />
-                    </dd>
-                  </div>
+                  {showProfit && (
+                    <div className="flex justify-between">
+                      <dt className="text-muted-foreground">会社利益</dt>
+                      <dd>
+                        <Money value={r.driverProfit} className="font-medium" />
+                      </dd>
+                    </div>
+                  )}
                 </dl>
               </Card>
             </MonthLink>
@@ -166,12 +171,14 @@ export function PayoutsTable({ rows }: { rows: PayoutRow[] }) {
                   <Money value={total.tax} />
                 </dd>
               </div>
-              <div className="flex justify-between">
-                <dt className="text-muted-foreground">会社利益</dt>
-                <dd>
-                  <Money value={total.driverProfit} className="font-medium" />
-                </dd>
-              </div>
+              {showProfit && (
+                <div className="flex justify-between">
+                  <dt className="text-muted-foreground">会社利益</dt>
+                  <dd>
+                    <Money value={total.driverProfit} className="font-medium" />
+                  </dd>
+                </div>
+              )}
             </dl>
           </Card>
         </li>
@@ -191,7 +198,9 @@ export function PayoutsTable({ rows }: { rows: PayoutRow[] }) {
               <TableHead className="text-right">支払額</TableHead>
               <TableHead className="text-right">消費税</TableHead>
               <TableHead className="text-right">税込支払額</TableHead>
-              <TableHead className="text-right">会社利益</TableHead>
+              {showProfit && (
+                <TableHead className="text-right">会社利益</TableHead>
+              )}
               <TableHead className="w-8" />
             </TableRow>
           </TableHeader>
@@ -235,9 +244,11 @@ export function PayoutsTable({ rows }: { rows: PayoutRow[] }) {
                 <TableCell className="text-right">
                   <Money value={r.payoutIncl} className="font-semibold" />
                 </TableCell>
-                <TableCell className={cn("text-right")}>
-                  <Money value={r.driverProfit} />
-                </TableCell>
+                {showProfit && (
+                  <TableCell className={cn("text-right")}>
+                    <Money value={r.driverProfit} />
+                  </TableCell>
+                )}
                 <TableCell>
                   <ChevronRight className="h-4 w-4 text-muted-foreground" />
                 </TableCell>
@@ -269,9 +280,11 @@ export function PayoutsTable({ rows }: { rows: PayoutRow[] }) {
               <TableCell className="text-right">
                 <Money value={total.payoutIncl} className="font-semibold" />
               </TableCell>
-              <TableCell className="text-right">
-                <Money value={total.driverProfit} />
-              </TableCell>
+              {showProfit && (
+                <TableCell className="text-right">
+                  <Money value={total.driverProfit} />
+                </TableCell>
+              )}
               <TableCell />
             </TableRow>
           </TableFooter>

@@ -2,7 +2,7 @@
  * GET /api/export/projects.csv?m=YYYY-MM|all — 案件別採算 CSV。スタッフ（owner/admin/viewer）
  */
 import type { NextRequest } from "next/server";
-import { STAFF_ROLES } from "@/lib/auth/session";
+import { MANAGEMENT_VIEW_ROLES } from "@/lib/auth/session";
 import { monthToDate } from "@/lib/month";
 import { monthFileLabel } from "@/lib/exports/csv";
 import { toProjectsCsv } from "@/lib/exports/projects-csv";
@@ -14,7 +14,7 @@ import { recordExport } from "@/lib/exports/record";
 export const dynamic = "force-dynamic";
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company, profile } = await requireExportRole(STAFF_ROLES);
+  const { supabase, company, profile } = await requireExportRole(MANAGEMENT_VIEW_ROLES);
   const month = monthParam(req, { allowAll: true });
 
   const rows = await fetchAllRows((from, to) => {

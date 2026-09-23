@@ -1,4 +1,4 @@
-import { canEdit, requireStaff } from "@/lib/auth/session";
+import { canEdit, requireManagementPage } from "@/lib/auth/session";
 import { loadCashForecast, loadCashSnapshots } from "@/lib/db/queries";
 import { CashflowView } from "@/components/cashflow/cashflow-view";
 import { pickOpeningBalance, resolveRange, todayJST, toSnapshotRow } from "@/components/cashflow/helpers";
@@ -12,7 +12,7 @@ export const metadata = { title: "資金繰り" };
  */
 export default async function CashflowPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const sp = await searchParams;
-  const { supabase, profile, company } = await requireStaff();
+  const { supabase, profile, company } = await requireManagementPage();
   const today = todayJST();
   const range = resolveRange(sp.from, sp.to);
 

@@ -9,12 +9,16 @@ import type { Role } from "@/lib/db/types";
  * Server Action・RLS でも必ず行うこと（CLAUDE.md §2 の二重の確認）。
  */
 
-/** 出し分けの指定（両方付いているときは ownerOnly が優先） */
+/** 出し分けの指定（複数付いているときは ownerOnly → managerOnly → adminOnly の順に強い） */
 export interface RoleVisibility {
   /** 代表（owner）だけに出す */
   ownerOnly?: boolean;
-  /** 登録・編集ができるロール（owner・admin）だけに出す */
+  /** 経営の設定ができるロール（owner・admin）だけに出す（外部連携・監査ログなど） */
+  managerOnly?: boolean;
+  /** 登録・編集ができるロール（owner・admin・事務員）だけに出す */
   adminOnly?: boolean;
+  /** 経営の数字を出す画面なので事務員には出さない（ホーム・資金繰り・財務・レポートなど） */
+  noClerk?: boolean;
 }
 
 /**
@@ -22,12 +26,16 @@ export interface RoleVisibility {
  * あちらは `server-only` のためクライアント（ナビ）から読めないので、ここに持つ。
  * （以前は `role !== "viewer"` で判定していて driver も通っていた）
  */
-export const NAV_ADMIN_ROLES: Role[] = ["owner", "admin"];
+export const NAV_ADMIN_ROLES: Role[] = ["owner", "admin", "clerk"];
+/** 経営の設定ができるロール（`MANAGER_ROLES` と同じ） */
+export const NAV_MANAGER_ROLES: Role[] = ["owner", "admin"];
 
 /** この項目をこのロールに出すか。role を省略したときは今までどおり全部出す */
 export function isVisibleForRole(item: RoleVisibility, role?: Role): boolean {
   if (!role) return true;
+  if (item.noClerk && role === "clerk") return false;
   if (item.ownerOnly) return role === "owner";
+  if (item.managerOnly) return NAV_MANAGER_ROLES.includes(role);
   if (item.adminOnly) return NAV_ADMIN_ROLES.includes(role);
   return true;
 }

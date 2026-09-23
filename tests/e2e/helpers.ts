@@ -17,7 +17,7 @@ import { yen } from "../../lib/format";
 /** 画面と同じ書式の金額文字列（"¥2,559,573"）。アサーションで使う */
 export { yen };
 
-export type E2ERole = "owner" | "admin" | "viewer";
+export type E2ERole = "owner" | "admin" | "clerk" | "viewer";
 
 export interface E2EUser {
   email: string;
@@ -42,6 +42,7 @@ export const E2E = {
     owner: { email: "owner@example.com", token: fixedToken(1), displayName: "オーナー", role: "owner" },
     admin: { email: "admin@example.com", token: fixedToken(2), displayName: "管理者", role: "admin" },
     viewer: { email: "viewer@example.com", token: fixedToken(3), displayName: "閲覧者", role: "viewer" },
+    clerk: { email: "clerk@example.com", token: fixedToken(4), displayName: "事務員", role: "clerk" },
   } satisfies Record<E2ERole, E2EUser>,
   get liteUrl() {
     return `http://127.0.0.1:${this.litePort}`;

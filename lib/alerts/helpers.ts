@@ -166,6 +166,16 @@ export const ALERT_CODE_INFO: Record<string, AlertCodeInfo> = {
 /** 表示・CSV の並び順に使う code の一覧 */
 export const ALERT_CODES: string[] = Object.keys(ALERT_CODE_INFO);
 
+/**
+ * 経営のためのアラート（事務員には見せない。0028）。DB の is_management_alert と同じ一覧で、
+ * 画面は RLS が絞るので、ここを使うのは RLS が効かないサービスロールの経路（LINE の返事など）だけ
+ */
+export const MANAGEMENT_ALERT_CODES: readonly string[] = ["margin_drop", "driver_loss", "target_miss", "cash_short", "tax_due", "tax_overdue", "approval_pending", "export_burst"];
+
+export function isManagementAlert(code: string | null | undefined): boolean {
+  return MANAGEMENT_ALERT_CODES.includes(code ?? "");
+}
+
 /** 未知の code でも表示できるようにする（DB 側で種類が増えても画面が壊れない） */
 export const UNKNOWN_ALERT_CODE_INFO: AlertCodeInfo = {
   label: "その他",

@@ -4,30 +4,33 @@ import { revalidatePath } from "next/cache";
 import { requireActionRole, requireAdminAction, requireOwnerAction } from "@/lib/auth/session";
 import { ActionError, ensureNoError, runAction, translateError, unwrap, type ActionResult } from "@/lib/actions/result";
 import { loadIntegrations } from "@/lib/db/queries";
+import { createAdminClient, hasServiceRoleKey } from "@/lib/supabase/admin";
+import { sendStatements } from "@/lib/statements/send";
+import { sendStatementsMessage, type SendStatementsResult } from "@/lib/statements/delivery";
 import type { ServerSupabase } from "@/lib/supabase/server";
 import type { Json } from "@/lib/db/database.types";
 import type { IntegrationKind, Role } from "@/lib/db/types";
-import { appUrl } from "@/lib/env";
-import { formatMonthJa, monthToDate } from "@/lib/month";
-import { resolvePayoutDate } from "@/lib/statement";
+import { formatMonthJa } from "@/lib/month";
 import {
   driveSettingsSchema,
   lineLinkCodeSchema,
   lineSettingsSchema,
   notifyStatementsSchema,
+  sendStatementsSchema,
   unlinkLineSchema,
   type DriveSettingsFormInput,
   type LineSettingsFormInput,
+  type SendStatementsInput,
 } from "@/lib/schemas/integrations";
 import { findIntegration, parseDriveConfig, parseLineConfig, type DriveConfig, type LineConfig } from "@/lib/integrations/types";
 import { clearSecrets, loadSecrets, mergeSecrets, saveSecrets } from "@/lib/integrations/secrets";
 import { logIntegration } from "@/lib/integrations/logs";
-import { getLineBotInfo, pushLineMessage, pushLineMessages } from "@/lib/integrations/line";
+import { getLineBotInfo, pushLineMessage } from "@/lib/integrations/line";
 import { testDrive, uploadToDrive } from "@/lib/integrations/drive";
-import { statementReadyMessage, testMessage } from "@/lib/integrations/messages";
+import { testMessage } from "@/lib/integrations/messages";
 
 /** ログインしていれば誰でも（ドライバーを含む） */
-const ANY_ROLES: Role[] = ["owner", "admin", "viewer", "driver"];
+const ANY_ROLES: Role[] = ["owner", "admin", "clerk", "viewer", "driver"];
 
 function revalidateIntegrations() {
   revalidatePath("/settings/integrations");
@@ -50,6 +53,15 @@ async function upsertIntegration(
 
 async function currentLineConfig(supabase: ServerSupabase, companyId: string): Promise<LineConfig> {
   return parseLineConfig(findIntegration(await loadIntegrations(supabase, companyId), "line")?.config);
+}
+
+/**
+ * 月締めのときなど、事務員（外部連携の設定を読めない。0028）の操作からも設定を見られるように、
+ * サービスロールがあればそちらで読む（会社は必ずセッションの会社で絞る）
+ */
+async function integrationForAction(supabase: ServerSupabase, companyId: string, kind: IntegrationKind) {
+  const client = hasServiceRoleKey() ? createAdminClient() : supabase;
+  return findIntegration(await loadIntegrations(client, companyId), kind);
 }
 
 async function currentDriveConfig(supabase: ServerSupabase, companyId: string): Promise<DriveConfig> {
@@ -199,65 +211,40 @@ export async function notifyStatementsAction(month: string): Promise<ActionResul
     const { supabase, company } = await requireAdminAction();
     const { month: m } = notifyStatementsSchema.parse({ month });
 
-    const integration = findIntegration(await loadIntegrations(supabase, company.id), "line");
+    const integration = await integrationForAction(supabase, company.id, "line");
     if (!integration?.is_enabled) throw new ActionError("LINE 連携が未設定です。設定 → 外部連携 で登録してください。");
     const config = parseLineConfig(integration.config);
     if (!config.notifyStatement) throw new ActionError("支払明細の通知がオフになっています。設定 → 外部連携 で有効にしてください。");
 
-    const summaries = unwrap(
-      await supabase
-        .from("v_driver_month_summary")
-        .select("driver_id, driver_name, payout_incl, is_closed")
-        .eq("company_id", company.id)
-        .eq("month", monthToDate(m)),
-      "この月の集計が見つかりません。",
-    );
-    const closed = summaries.filter((s) => s.is_closed === true);
-    if (closed.length === 0) throw new ActionError(`${formatMonthJa(m)} はまだ締めていないため通知できません。`);
-
-    const drivers = unwrap(await supabase.from("drivers").select("*").eq("company_id", company.id), "ドライバーを読み込めませんでした。");
-    const byId = new Map(drivers.map((d) => [d.id, d]));
-    const url = `${appUrl()}/driver/statements/${m}`;
-
-    const items: { to: string; text: string; label: string }[] = [];
-    let skipped = 0;
-    for (const row of closed) {
-      const driver = row.driver_id ? byId.get(row.driver_id) : undefined;
-      const to = (driver?.line_user_id ?? "").trim();
-      if (!driver || !to) {
-        skipped += 1;
-        continue;
-      }
-      const { date } = resolvePayoutDate(m, company, { payout_month_offset: driver.payout_month_offset, payout_day: driver.payout_day });
-      items.push({
-        to,
-        label: driver.name,
-        text: statementReadyMessage({
-          companyName: company.name,
-          driverName: driver.name,
-          monthLabel: formatMonthJa(m),
-          payoutIncl: Number(row.payout_incl ?? 0),
-          payoutDate: date,
-          url,
-        }),
-      });
+    // 送った記録を残す（0028）。送信済みの人には送らない（締め直したときに二重に届かない）
+    const r = await sendStatements(supabase, company, m, { lineOnly: true });
+    if (r.sent === 0 && r.failed === 0 && r.alreadySent === 0) {
+      throw new ActionError("LINE と連携しているドライバーがいません。ドライバーに合言葉での連携をお願いしてください。");
     }
-    if (items.length === 0) throw new ActionError("LINE と連携しているドライバーがいません。ドライバーに合言葉での連携をお願いしてください。");
-
-    const results = await pushLineMessages(company.id, items);
-    const sent = results.filter((r) => r.ok).length;
-    const failed = results.length - sent;
-    await logIntegration(
-      company.id,
-      "line",
-      "notify_statement",
-      failed > 0 ? "error" : "ok",
-      `${formatMonthJa(m)} の支払明細を ${sent} 件送信しました（失敗 ${failed} 件・未連携 ${skipped} 件）`,
-      { month: m, sent, failed, skipped, errors: results.filter((r) => !r.ok).map((r) => ({ name: r.label, error: r.error })) },
-    );
     revalidateIntegrations();
-    return { sent, failed, skipped };
+    revalidatePath("/office");
+    revalidatePath("/payouts");
+    return { sent: r.sent, failed: r.failed, skipped: r.noContact + r.alreadySent };
   });
+}
+
+/**
+ * 締めた月の支払明細を送る（admin 以上。事務員を含む。0028）。
+ * LINE と連携している人へは LINE で、アプリの通知を受け取る人へは通知で送り、届いた人を記録する。
+ * 月締めの自動送信（notifyStatementsAction）と違い、「支払明細の通知」の設定がオフでも送れる（人が押して送るため）
+ */
+export async function sendStatementsAction(input: SendStatementsInput): Promise<ActionResult<SendStatementsResult>> {
+  const res = await runAction(async () => {
+    const { supabase, company } = await requireAdminAction();
+    const parsed = sendStatementsSchema.parse(input);
+    const r = await sendStatements(supabase, company, parsed.month, { driverIds: parsed.driverIds, resend: parsed.resend });
+    if (r.sent === 0 && r.failed > 0) throw new ActionError(`支払明細を送れませんでした（${r.failed} 人）。LINE 連携の設定を確かめてください。`);
+    revalidatePath("/office");
+    revalidatePath("/payouts", "layout");
+    revalidateIntegrations();
+    return r;
+  });
+  return res.ok ? { ...res, message: sendStatementsMessage(res.data) } : res;
 }
 
 // =============================================================================
@@ -357,7 +344,7 @@ export async function autoBackupToDriveAction(month: string): Promise<ActionResu
   return runAction(async () => {
     const { supabase, company } = await requireAdminAction();
     const { month: m } = notifyStatementsSchema.parse({ month });
-    const integration = findIntegration(await loadIntegrations(supabase, company.id), "google_drive");
+    const integration = await integrationForAction(supabase, company.id, "google_drive");
     if (!integration?.is_enabled) return { saved: false, fileName: "" };
     if (!parseDriveConfig(integration.config).autoBackup) return { saved: false, fileName: "" };
     try {

@@ -1,5 +1,5 @@
 import { Download, FileSpreadsheet, Receipt } from "lucide-react";
-import { requireStaff } from "@/lib/auth/session";
+import { requireManagementPage } from "@/lib/auth/session";
 import { monthFromParam, monthToDate, formatMonthJa } from "@/lib/month";
 import { loadMasters, loadProjectPl, loadProjectPlRange } from "@/lib/db/queries";
 import { sumMoney } from "@/lib/calc";
@@ -88,7 +88,7 @@ function aggregateAll(rows: ProjectSummary[]): ProjectRow[] {
 }
 
 export default async function ProjectsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const { supabase, company } = await requireStaff();
+  const { supabase, company } = await requireManagementPage();
   const sp = await searchParams;
   const month = monthFromParam(sp.m);
   const tab = projectTabFromParam(sp.tab);

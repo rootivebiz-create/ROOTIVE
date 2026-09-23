@@ -1,4 +1,4 @@
-import { canEdit, requireStaff } from "@/lib/auth/session";
+import { canEdit, canSeeManagement, requireStaff } from "@/lib/auth/session";
 import { isMonthClosed, loadMasters, loadRateDiffs } from "@/lib/db/queries";
 import { monthFromParam, monthToDate } from "@/lib/month";
 import { EntriesView } from "@/components/entries/entries-view";
@@ -46,6 +46,7 @@ export default async function EntriesPage({ searchParams }: { searchParams: Prom
       initialDriver={str(sp.driver)}
       initialQuery={str(sp.q)}
       initialVoice={str(sp.voice) === "1"}
+      showProfit={canSeeManagement(profile.role)}
     />
   );
 }

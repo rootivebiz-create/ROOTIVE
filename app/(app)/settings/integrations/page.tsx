@@ -1,5 +1,5 @@
 import { headers } from "next/headers";
-import { isOwner, requirePageRole } from "@/lib/auth/session";
+import { MANAGER_ROLES, isOwner, requirePageRole } from "@/lib/auth/session";
 import { loadIntegrationLogs, loadIntegrations } from "@/lib/db/queries";
 import { hasServiceRoleKey } from "@/lib/supabase/admin";
 import { loadSecrets, maskSecrets } from "@/lib/integrations/secrets";
@@ -40,7 +40,7 @@ async function baseUrl(): Promise<string> {
 }
 
 export default async function IntegrationsSettingsPage() {
-  const { supabase, company, profile } = await requirePageRole(["owner", "admin"]);
+  const { supabase, company, profile } = await requirePageRole(MANAGER_ROLES);
   const canEdit = isOwner(profile.role);
   const secretsAvailable = hasServiceRoleKey();
 

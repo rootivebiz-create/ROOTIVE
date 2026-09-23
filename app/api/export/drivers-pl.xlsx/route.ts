@@ -3,7 +3,7 @@
  * 内容・並びは drivers-pl.csv と同じ（最終行は合計。Excel では太字にする）。
  */
 import type { NextRequest } from "next/server";
-import { STAFF_ROLES } from "@/lib/auth/session";
+import { MANAGEMENT_VIEW_ROLES } from "@/lib/auth/session";
 import { monthToDate } from "@/lib/month";
 import { buildDriverPlRows, visibleDriverPlRows } from "@/components/drivers-pl/helpers";
 import { toDriversPlCsvRows } from "@/lib/exports/drivers-pl-csv";
@@ -33,7 +33,7 @@ const TYPES: XlsxCellType[] = [
 ];
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company, profile } = await requireExportRole(STAFF_ROLES);
+  const { supabase, company, profile } = await requireExportRole(MANAGEMENT_VIEW_ROLES);
   const month = monthParam(req);
   const includeInactive = req.nextUrl.searchParams.get("inactive") === "1";
 

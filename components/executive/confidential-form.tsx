@@ -10,10 +10,10 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { updateConfidentialScopeAction, type ConfidentialScopeFormInput } from "@/lib/actions/executive";
 import { CONFIDENTIAL_KEYS, confidentialScopeSchema } from "@/lib/schemas/executive";
-import { CONFIDENTIAL_KEY_LABELS, CONFIDENTIAL_LEVEL_LABELS, type ConfidentialLevel, type ConfidentialScope } from "@/lib/db/types";
+import { CONFIDENTIAL_KEY_LABELS, CONFIDENTIAL_LEVEL_LABELS, CONFIDENTIAL_LEVELS, type ConfidentialLevel, type ConfidentialScope } from "@/lib/db/types";
 import { toFieldErrors, type FieldErrors } from "./field-error";
 
-const LEVELS: ConfidentialLevel[] = ["owner", "admin", "staff"];
+const LEVELS: ConfidentialLevel[] = CONFIDENTIAL_LEVELS;
 
 /** それぞれの機密が何に効くか（画面の出し分けではなく、DB の RLS ごと変わる） */
 const HINTS: Record<string, string> = {
@@ -62,7 +62,7 @@ export function ConfidentialForm({ scope }: { scope: ConfidentialScope }) {
           機密の見せ方
         </CardTitle>
         <CardDescription>
-          借入・現金・ドライバーの振込口座を、誰まで見せるかを決めます。代表はいつでも見られます。ここを変えると画面だけでなく、データそのものが見えなくなります（RLS）。
+          借入・現金・ドライバーの振込口座を、誰まで見せるかを決めます。代表はいつでも見られます。ここを変えると画面だけでなく、データそのものが見えなくなります（RLS）。事務員に振込データを作ってもらうときは、振込口座を「事務員まで」にします（閲覧者には見えないまま）。
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">

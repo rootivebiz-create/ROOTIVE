@@ -208,6 +208,14 @@ describe("helpText", () => {
     expect(owner).toContain("資金繰り");
     expect(owner).toContain("決裁");
   });
+
+  it("事務員には着地（今月どう？）を案内しない", () => {
+    const clerk = helpText({ canSeeCash: false, isOwner: false, canSeeManagement: false });
+    expect(clerk).not.toContain("今月どう");
+    expect(clerk).toContain("支払は");
+    expect(clerk).toContain("稼働は");
+    expect(helpText({ canSeeCash: false, isOwner: false })).toContain("今月どう");
+  });
 });
 
 describe("断りの文面", () => {

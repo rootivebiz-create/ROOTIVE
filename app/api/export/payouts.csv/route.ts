@@ -2,7 +2,7 @@
  * GET /api/export/payouts.csv?m=YYYY-MM|all — 支払一覧 CSV（§8.1）。スタッフ（owner/admin/viewer）
  */
 import type { NextRequest } from "next/server";
-import { STAFF_ROLES } from "@/lib/auth/session";
+import { MANAGEMENT_VIEW_ROLES } from "@/lib/auth/session";
 import { monthToDate } from "@/lib/month";
 import { payoutsToCsv, monthFileLabel } from "@/lib/exports/csv";
 import { csvResponse } from "@/lib/exports/download";
@@ -12,7 +12,7 @@ import { recordExport } from "@/lib/exports/record";
 export const dynamic = "force-dynamic";
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company, profile } = await requireExportRole(STAFF_ROLES);
+  const { supabase, company, profile } = await requireExportRole(MANAGEMENT_VIEW_ROLES);
   const month = monthParam(req, { allowAll: true });
 
   const rows = await fetchAllRows((from, to) => {

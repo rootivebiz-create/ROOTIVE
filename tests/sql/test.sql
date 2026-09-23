@@ -2074,7 +2074,11 @@ select public.t_assert(
   '外したチェックは消える');
 select public.t_expect_error($$select public.set_close_check('2027-03-01', 'Bad Key!', true)$$, 'INVALID', '手順の名前は英小文字と _ だけ');
 select public.t_assert(public.is_month_closed(:'company_a', '2026-09-01'), '（前提）2026 年 9 月は締め済み');
-select public.t_expect_error($$select public.set_close_check('2026-09-01', 'statements_sent', true)$$, 'MONTH_CLOSED', '締めた月のチェックは変えられない');
+-- 0028：支払明細の送付・振込は締めてから行うので、締めた月でも付けられる
+select public.t_assert(
+  (public.set_close_check('2026-09-01', 'statements_sent', true))->>'key' = 'statements_sent',
+  '締めた月でも締めたあとの手順は付けられる');
+select public.set_close_check('2026-09-01', 'statements_sent', false);
 select public.test_login(:'viewer_a');
 select public.t_expect_error($$select public.set_close_check('2027-03-01', 'transfer_done', true)$$, 'FORBIDDEN', '閲覧者はチェックを付けられない');
 select public.t_assert(
@@ -2184,4 +2188,199 @@ set role authenticated;
 select public.test_logout();
 reset role;
 
-\echo '== すべてのアサーションが通りました（18〜33 節）'
+-- =============================================================================
+-- 34. 事務員・支払明細の送付・請求書のメール送付（0027・0028）
+-- =============================================================================
+\echo '-- 34. 事務員・支払明細の送付・請求書のメール送付（0027・0028）'
+\set clerk_a '00000000-0000-0000-0000-0000000000a6'
+
+reset role;
+insert into public.invitations (company_id, email, role) values (:'company_a', 'clerk@a.test', 'clerk');
+insert into auth.users (id, email) values (:'clerk_a', 'clerk@a.test');
+select public.t_assert((select role = 'clerk' from public.profiles where id = :'clerk_a'), '招待で事務員を作れる');
+
+-- 見せる・見せないの材料（superuser で用意する）
+insert into public.ai_insights (company_id, month, model, kind, summary, findings, actions)
+values (:'company_a', '2026-09-01', 'test', 'monthly', '事務員に見せない分析', '[]'::jsonb, '[]'::jsonb);
+insert into public.alerts (company_id, month, code, severity, title, fingerprint)
+values (:'company_a', '2026-09-01', 'margin_drop', 'high', '利益率が下がった（テスト）', 't34-margin'),
+       (:'company_a', '2026-09-01', 'qty_zero', 'medium', '数量 0 の行（テスト）', 't34-qty');
+insert into public.integrations (company_id, kind, is_enabled, config) values (:'company_a', 'bank', false, '{}'::jsonb)
+  on conflict do nothing;
+insert into public.cash_snapshots (company_id, as_of, balance, memo) values (:'company_a', '2026-09-30', 1234567, '事務員テスト');
+insert into public.driver_bank_accounts (driver_id, company_id, bank_code, bank_name, branch_code, branch_name, account_type, account_number, account_holder_kana)
+values (public.t30_driver('石田泰典'), :'company_a', '0001', 'テスト銀行', '001', '本店', 'ordinary', '1234567', 'ｲｼﾀﾞ')
+  on conflict (driver_id) do nothing;
+set role authenticated;
+
+-- ---------- ロールの判定 ----------
+select public.test_login(:'clerk_a');
+select public.t_assert(public.is_admin() and public.is_staff() and public.is_clerk(), '事務員は登録・編集ができるスタッフ');
+select public.t_assert(not public.is_manager() and not public.can_see_management(), '事務員は経営の設定・経営の数字の対象外');
+select public.test_login(:'viewer_a');
+select public.t_assert(public.can_see_management() and not public.is_admin(), '閲覧者は経営の数字は見るが編集はしない');
+
+-- ---------- 事務員ができること ----------
+select public.test_login(:'clerk_a');
+select public.t_assert(
+  public.submit_day_entries('2026-12-21', array[public.t30_item('三郷Amazon')]::uuid[], array[1]::numeric[], public.t30_driver('相曽慧')) = 1,
+  '事務員は稼働報告を代わりに出せる');
+select public.t_assert(
+  public.approve_day_entries(array(select id from public.work_day_entries where work_date = '2026-12-21'), true, '') = 1,
+  '事務員は稼働報告を承認できる');
+select public.t_assert((public.office_desk(null, (now() at time zone 'Asia/Tokyo')::date)) ? 'closing', '事務員は事務の画面を読める');
+select public.t_assert(public.set_start_page('office') = 'office', '事務員は最初に開く画面を事務にできる');
+
+-- ---------- 事務員に見せないもの ----------
+select public.t_assert((select count(*) from public.audit_logs) = 0, '事務員は監査ログを読めない');
+select public.t_assert((select count(*) from public.integrations) = 0, '事務員は外部連携の設定を読めない');
+select public.t_assert((select count(*) from public.ai_insights) = 0, '事務員は AI の分析を読めない');
+select public.t_assert((select count(*) from public.month_targets) = 0, '事務員は月次目標を読めない');
+select public.t_assert(
+  (select count(*) filter (where code = 'margin_drop') = 0 and count(*) filter (where code = 'qty_zero') >= 1
+     from public.alerts where fingerprint in ('t34-margin', 't34-qty')),
+  '事務員には経営のアラートを出さず、稼働のアラートは出す');
+update public.alerts set status = 'ignored' where fingerprint = 't34-margin';
+select public.t_assert((select count(*) from public.cash_snapshots) = 0, '事務員は現金残高を読めない（既定）');
+select public.t_assert((select count(*) from public.driver_bank_accounts) = 0, '事務員は振込口座を読めない（既定）');
+select public.t_expect_error($$select * from public.cash_forecast('2026-09-01', '2026-10-31')$$, 'FORBIDDEN', '事務員は資金繰りを呼べない');
+select public.t_expect_error(format($$insert into public.month_targets (company_id, month, bill_target) values ('%s', '2027-04-01', 1)$$, :'company_a'), null, '事務員は月次目標を書けない');
+
+-- 締め時バックアップ（全テーブルの控え）は読めない。保存は今までどおりできる（事務員が締めても本人の権限で残せる）
+reset role;
+insert into storage.objects (bucket_id, name) values ('backups', :'company_a' || '/2026-08_t34.json');
+set role authenticated;
+select public.test_login(:'clerk_a');
+select public.t_assert((select count(*) from storage.objects where bucket_id = 'backups') = 0, '事務員は締め時バックアップを読めない');
+select public.test_login(:'admin_a');
+select public.t_assert((select count(*) from storage.objects where bucket_id = 'backups' and name like '%t34.json') = 1, '管理者は締め時バックアップを読める');
+select public.test_login(:'clerk_a');
+insert into storage.objects (bucket_id, name) values ('backups', :'company_a' || '/2026-08_t34b.json');
+reset role;
+select public.t_assert((select count(*) from storage.objects where bucket_id = 'backups' and name like '%t34%') = 2, '事務員も締め時バックアップを保存できる');
+delete from storage.objects where bucket_id = 'backups' and name like '%t34%';
+set role authenticated;
+select public.test_login(:'clerk_a');
+
+reset role;
+select public.t_assert((select status = 'open' from public.alerts where fingerprint = 't34-margin'), '事務員は経営のアラートの状態を変えられない');
+set role authenticated;
+
+-- 閲覧者・管理者からは今までどおり見える
+select public.test_login(:'viewer_a');
+select public.t_assert((select count(*) from public.ai_insights where summary = '事務員に見せない分析') = 1, '閲覧者は AI の分析を読める');
+select public.t_assert((select count(*) from public.alerts where fingerprint = 't34-margin') = 1, '閲覧者は経営のアラートを読める');
+select public.test_login(:'admin_a');
+select public.t_assert((select count(*) from public.audit_logs) > 0, '管理者は監査ログを読める');
+select public.t_assert((select count(*) from public.driver_bank_accounts) >= 1, '管理者は振込口座を読める（既定）');
+
+-- ---------- 機密の段階 'clerk'（管理者と事務員まで） ----------
+select public.test_login(:'owner_a');
+update public.companies set confidential_scope = confidential_scope || '{"bank_account": "clerk"}'::jsonb where id = :'company_a';
+select public.test_login(:'clerk_a');
+select public.t_assert((select count(*) from public.driver_bank_accounts) >= 1, '段階を「事務員まで」にすると事務員は振込口座を読める');
+select public.test_login(:'viewer_a');
+select public.t_assert((select count(*) from public.driver_bank_accounts) = 0, '段階が「事務員まで」でも閲覧者は読めない');
+select public.test_login(:'owner_a');
+update public.companies set confidential_scope = confidential_scope || '{"bank_account": "admin"}'::jsonb where id = :'company_a';
+
+-- ---------- 支払明細の送付の記録 ----------
+select public.test_login(:'clerk_a');
+select public.t_expect_error(
+  $$select public.record_statement_deliveries('2026-12-01', array[public.t30_driver('相曽慧')], 'line')$$,
+  'MONTH_NOT_CLOSED', '締めていない月の明細は送れない');
+select public.t_assert(
+  public.record_statement_deliveries('2026-09-01', array[public.t30_driver('相曽慧'), public.t30_driver('金島幸太')], 'line') = 2,
+  '締めた月の明細を送った記録が残る');
+select public.t_assert(
+  public.record_statement_deliveries('2026-09-01', array[public.t30_driver('相曽慧')], 'push') = 1,
+  '送り直すと上書きする');
+select public.t_assert(
+  (select count(*) = 2 and bool_and(sent_by_name <> '') from public.statement_deliveries where month = '2026-09-01'),
+  '1 人 1 件で、送った人の名前が残る');
+select public.t_assert(
+  (select payout_incl is not null and channel = 'push' from public.statement_deliveries where month = '2026-09-01' and driver_id = public.t30_driver('相曽慧')),
+  '送った時点の税込支払額が残る');
+select public.t_assert(
+  (select (d->'closing'->>'statement_sent')::int >= 2 and (d->'closing'->>'statement_targets')::int >= 2
+     from (select public.office_desk('2026-09-01', (now() at time zone 'Asia/Tokyo')::date) as d) x),
+  '事務の画面に送った人数が出る');
+-- LINE で送れる人（まだ）：会社の LINE 連携が無ければ 0。連携していても、送った人は数えない
+reset role;
+select coalesce((select is_enabled from public.integrations where company_id = :'company_a' and kind = 'line'), false) as t34_line_was \gset
+insert into public.integrations (company_id, kind, is_enabled) values (:'company_a', 'line', false)
+  on conflict (company_id, kind) do update set is_enabled = false;
+set role authenticated;
+select public.test_login(:'clerk_a');
+select public.t_assert(not public.company_line_enabled(), 'LINE 連携が無い会社は false（事務員でも判定できる）');
+select public.t_assert(
+  (select (public.office_desk('2026-09-01', (now() at time zone 'Asia/Tokyo')::date)->'closing'->>'statement_line_ready')::int = 0),
+  'LINE 連携が無ければ LINE で送れる人は 0');
+reset role;
+insert into public.integrations (company_id, kind, is_enabled) values (:'company_a', 'line', true)
+  on conflict (company_id, kind) do update set is_enabled = true;
+update public.drivers set line_user_id = 'Ut34' where id in (public.t30_driver('相曽慧'), public.t30_driver('沼田基'));
+set role authenticated;
+select public.test_login(:'clerk_a');
+select public.t_assert(public.company_line_enabled(), '連携している会社は true');
+select public.t_assert(
+  (select (public.office_desk('2026-09-01', (now() at time zone 'Asia/Tokyo')::date)->'closing'->>'statement_line_ready')::int = 1),
+  'LINE で送れる人は、まだ送っていない人だけ（相曽慧は送信済み・沼田基はまだ）');
+-- 締めのあとの手順（直近に締めた月・締めて 45 日以内）
+select public.t_assert(
+  (select d->'after_close'->>'month' = '2026-09-01' and (d->'after_close'->>'statement_sent')::int = 2
+          and jsonb_typeof(d->'after_close'->'checks') = 'array'
+     from (select public.office_desk(null, (now() at time zone 'Asia/Tokyo')::date) as d) x),
+  '直近に締めた月の送付の状況が「締めのあと」として返る');
+select public.set_close_check('2026-09-01', 'transfer_done', true);
+select public.t_assert(
+  (select (public.office_desk(null, (now() at time zone 'Asia/Tokyo')::date)->'after_close'->'checks') ? 'transfer_done'),
+  '付けたチェックも返る');
+select public.set_close_check('2026-09-01', 'transfer_done', false);
+reset role;
+update public.integrations set is_enabled = :'t34_line_was'::boolean where company_id = :'company_a' and kind = 'line';
+update public.drivers set line_user_id = '' where line_user_id = 'Ut34';
+set role authenticated;
+select public.test_login(:'viewer_a');
+select public.t_expect_error($$select public.record_statement_deliveries('2026-09-01', array[public.t30_driver('相曽慧')], 'line')$$, 'FORBIDDEN', '閲覧者は送れない');
+
+-- ---------- 請求書のメール送付の記録 ----------
+select public.test_login(:'clerk_a');
+select public.t_assert(
+  public.record_invoice_send((select id from public.invoices where company_id = :'company_a' limit 1), 'keiri@example.com', '2026年9月分 請求書') is not null,
+  '請求書を送った記録が残る');
+select public.t_assert(
+  (select sent_by_name <> '' and status = 'sent' from public.invoice_sends order by sent_at desc limit 1),
+  '送った人の名前が残る');
+select public.t_expect_error(
+  $$select public.record_invoice_send('00000000-0000-0000-0000-00000000dead', 'x@example.com', 's')$$,
+  'NOT_FOUND', '自社の請求書でなければ記録しない');
+select public.t_expect_error(
+  $$select public.record_invoice_send((select id from public.invoices limit 1), 'x@example.com', 's', 'queued')$$,
+  'INVALID', '状態は sent か failed だけ');
+
+-- ---------- 復元で取引先のメールアドレスが戻る ----------
+select public.test_login(:'admin_a');
+update public.clients set email = 'keiri@example.com' where company_id = :'company_a';
+create temporary table t34_backup as select public.export_backup() as data;
+update public.clients set email = '' where company_id = :'company_a';
+select public.test_login(:'owner_a');
+select public.import_backup((select data from t34_backup));
+select public.t_assert(
+  (select bool_and(email = 'keiri@example.com') from public.clients where company_id = :'company_a'),
+  '復元すると取引先のメールアドレスが戻る');
+
+-- 後片付け
+reset role;
+delete from public.statement_deliveries where company_id = :'company_a';
+delete from public.invoice_sends where company_id = :'company_a';
+delete from public.alerts where fingerprint in ('t34-margin', 't34-qty');
+delete from public.ai_insights where summary = '事務員に見せない分析';
+delete from public.cash_snapshots where memo = '事務員テスト';
+delete from public.work_day_entries where company_id = :'company_a' and work_date = '2026-12-21';
+set role authenticated;
+
+select public.test_logout();
+reset role;
+
+\echo '== すべてのアサーションが通りました（18〜34 節）'

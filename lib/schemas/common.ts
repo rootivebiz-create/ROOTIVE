@@ -60,7 +60,7 @@ export const rateSchema = z.number().min(0).max(1);
 
 export const roundingModeSchema = z.enum(ROUNDING_MODES);
 export const unitSchema = z.enum(["day", "piece"]);
-export const roleSchema = z.enum(["owner", "admin", "viewer", "driver"]);
+export const roleSchema = z.enum(["owner", "admin", "clerk", "viewer", "driver"]);
 
 export const nameSchema = z.string().trim().min(1, "名前を入力してください").max(100, "100 文字以内で入力してください");
 export const memoSchema = z.string().trim().max(2000, "2000 文字以内で入力してください").default("");

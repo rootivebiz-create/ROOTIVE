@@ -11,8 +11,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { formatDateTimeJa } from "@/lib/format";
 import { issueLineCodeAction, unlinkLineAction } from "@/lib/actions/integrations";
 
-/** ドライバー本人の LINE 連携（合言葉の発行・解除） */
-export function LineLinkCard({ linked, linkedAt }: { linked: boolean; linkedAt: string | null }) {
+/** 本人の LINE 連携（合言葉の発行・解除）。ドライバーのアカウント画面とスタッフの通知の設定で共用 */
+export function LineLinkCard({
+  linked,
+  linkedAt,
+  description = "支払明細ができたときのお知らせを LINE で受け取れます。",
+}: {
+  linked: boolean;
+  linkedAt: string | null;
+  description?: string;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [code, setCode] = useState("");
@@ -46,7 +54,7 @@ export function LineLinkCard({ linked, linkedAt }: { linked: boolean; linkedAt: 
           <CardTitle>LINE で受け取る</CardTitle>
           {linked && <Badge variant="success">連携済み</Badge>}
         </div>
-        <CardDescription>支払明細ができたときのお知らせを LINE で受け取れます。</CardDescription>
+        <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         {linked ? (

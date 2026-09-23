@@ -159,8 +159,11 @@ export function entriesText(e: EntryNumbers): string {
 }
 
 /** できることの案内（ロールによって出す項目を変える） */
-export function helpText(opts: { canSeeCash: boolean; isOwner: boolean }): string {
-  const lines = ["LINE でそのまま聞けます。", "", "・「今月どう？」… 売上と営業利益の着地", "・「支払は？」… ドライバーへの支払と振込予定日", "・「稼働は？」… 入力漏れ・承認待ち", "・「気になることある？」… 未対応のお知らせ"];
+export function helpText(opts: { canSeeCash: boolean; isOwner: boolean; canSeeManagement?: boolean }): string {
+  const lines = ["LINE でそのまま聞けます。", ""];
+  // 事務員（0027）には経営の数字（着地）を案内しない
+  if (opts.canSeeManagement !== false) lines.push("・「今月どう？」… 売上と営業利益の着地");
+  lines.push("・「支払は？」… ドライバーへの支払と振込予定日", "・「稼働は？」… 入力漏れ・承認待ち", "・「気になることある？」… 未対応のお知らせ");
   if (opts.canSeeCash) lines.push("・「資金繰りは？」… 残高と、いつ足りなくなるか");
   if (opts.isOwner) lines.push("・「決裁は？」… 決裁待ちの件数と中身");
   return lines.join("\n");

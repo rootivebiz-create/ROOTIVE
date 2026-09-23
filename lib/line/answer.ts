@@ -3,6 +3,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/db/database.types";
 import type { Company, Role } from "@/lib/db/types";
 import { canSeeConfidential, toConfidentialScope } from "@/lib/db/types";
+import { canSeeManagement } from "@/lib/auth/session";
+import { isManagementAlert } from "@/lib/alerts/helpers";
 import { currentMonthJST, monthToDate } from "@/lib/month";
 import { forecastMonth } from "@/lib/calc";
 import { calcRunway } from "@/lib/executive/runway";
@@ -87,13 +89,16 @@ export async function answerLineQuestion(input: {
   if (!company) return null;
 
   const scope = toConfidentialScope((company as Company).confidential_scope);
-  const canSeeCash = canSeeConfidential(role, scope, "cash");
+  // 事務員（0027）は経営の数字（着地・資金繰り・経営のアラート）を見ない。画面の RLS と同じ線をここで引く
+  const management = canSeeManagement(role);
+  const canSeeCash = management && canSeeConfidential(role, scope, "cash");
   const isOwner = role === "owner";
 
   switch (intent) {
     case "help":
-      return helpText({ canSeeCash, isOwner });
+      return helpText({ canSeeCash, isOwner, canSeeManagement: management });
     case "summary":
+      if (!management) return notAllowedText("売上と営業利益の着地");
       return await summaryAnswer(admin, companyId, now);
     case "cash":
       if (!canSeeCash) return notAllowedText("資金繰り");
@@ -102,7 +107,7 @@ export async function answerLineQuestion(input: {
       if (!isOwner) return notAllowedText("決裁");
       return await approvalsAnswer(admin, companyId, now);
     case "alerts":
-      return await alertsAnswer(admin, companyId);
+      return await alertsAnswer(admin, companyId, management);
     case "payout":
       return await payoutAnswer(admin, companyId, company as Company, now);
     case "entries":
@@ -191,12 +196,18 @@ async function approvalsAnswer(admin: Admin, companyId: string, now: Date): Prom
 }
 
 /** 気になること */
-async function alertsAnswer(admin: Admin, companyId: string): Promise<string> {
-  const [{ count }, { data }] = await Promise.all([
-    admin.from("alerts").select("id", { count: "exact", head: true }).eq("company_id", companyId).eq("status", "open"),
-    admin.from("alerts").select("title, severity").eq("company_id", companyId).eq("status", "open").order("severity").order("detected_at", { ascending: false }).limit(3),
-  ]);
-  return alertsText((data ?? []).map((a) => ({ title: a.title ?? "", severity: a.severity ?? "low" })), count ?? 0);
+async function alertsAnswer(admin: Admin, companyId: string, management: boolean): Promise<string> {
+  if (management) {
+    const [{ count }, { data }] = await Promise.all([
+      admin.from("alerts").select("id", { count: "exact", head: true }).eq("company_id", companyId).eq("status", "open"),
+      admin.from("alerts").select("title, severity").eq("company_id", companyId).eq("status", "open").order("severity").order("detected_at", { ascending: false }).limit(3),
+    ]);
+    return alertsText((data ?? []).map((a) => ({ title: a.title ?? "", severity: a.severity ?? "low" })), count ?? 0);
+  }
+  // 事務員：経営のアラートを除いてから数える（未対応は多くても数十件なので全件読んで絞る）
+  const { data } = await admin.from("alerts").select("code, title, severity").eq("company_id", companyId).eq("status", "open").order("severity").order("detected_at", { ascending: false });
+  const rows = (data ?? []).filter((a) => !isManagementAlert(a.code));
+  return alertsText(rows.slice(0, 3).map((a) => ({ title: a.title ?? "", severity: a.severity ?? "low" })), rows.length);
 }
 
 /** ドライバーへの支払 */

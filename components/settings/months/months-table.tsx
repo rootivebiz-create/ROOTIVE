@@ -49,7 +49,23 @@ function StatusBadge({ row }: { row: MonthRow }) {
   return <Badge variant="outline">未締め</Badge>;
 }
 
-export function MonthsTable({ rows, currentMonth, canClose, canReopen }: { rows: MonthRow[]; currentMonth: string; canClose: boolean; canReopen: boolean }) {
+export function MonthsTable({
+  rows,
+  currentMonth,
+  canClose,
+  canReopen,
+  showProfit = true,
+  canDownloadBackup = canClose,
+}: {
+  rows: MonthRow[];
+  currentMonth: string;
+  canClose: boolean;
+  canReopen: boolean;
+  /** 会社利益を出すか（事務員には出さない） */
+  showProfit?: boolean;
+  /** 締め時バックアップを落とせるか（全テーブルの控えなので経営の設定ができる人だけ。省くと canClose と同じ） */
+  canDownloadBackup?: boolean;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [closeTarget, setCloseTarget] = useState<MonthRow | null>(null);
@@ -97,7 +113,7 @@ export function MonthsTable({ rows, currentMonth, canClose, canReopen }: { rows:
 
   const actions = (row: MonthRow) => (
     <div className="flex flex-wrap items-center gap-2">
-      {row.backupPath && canClose && (
+      {row.backupPath && canDownloadBackup && (
         <a href={exportUrls.monthBackup(row.month)} className={cn(buttonVariants({ variant: "outline", size: "sm" }))} aria-label={`${formatMonthJa(row.month)} の締め時バックアップをダウンロード`}>
           <Download /> バックアップ
         </a>
@@ -149,10 +165,14 @@ export function MonthsTable({ rows, currentMonth, canClose, canReopen }: { rows:
                   <dd className="text-right">
                     <Money value={r.bill} />
                   </dd>
-                  <dt className="text-muted-foreground">利益</dt>
-                  <dd className="text-right">
-                    <Money value={r.profit} /> <Pct value={r.profitRate} className="text-xs text-muted-foreground" />
-                  </dd>
+                  {showProfit && (
+                    <>
+                      <dt className="text-muted-foreground">利益</dt>
+                      <dd className="text-right">
+                        <Money value={r.profit} /> <Pct value={r.profitRate} className="text-xs text-muted-foreground" />
+                      </dd>
+                    </>
+                  )}
                   <dt className="text-muted-foreground">支払</dt>
                   <dd className="text-right">
                     <Money value={r.payout} />
@@ -183,7 +203,7 @@ export function MonthsTable({ rows, currentMonth, canClose, canReopen }: { rows:
                   <TableHead>稼動月</TableHead>
                   <TableHead className="text-right">件数</TableHead>
                   <TableHead className="text-right">売上</TableHead>
-                  <TableHead className="text-right">利益</TableHead>
+                  {showProfit && <TableHead className="text-right">利益</TableHead>}
                   <TableHead className="text-right">支払</TableHead>
                   <TableHead>状態</TableHead>
                   <TableHead>締め日時</TableHead>
@@ -201,10 +221,12 @@ export function MonthsTable({ rows, currentMonth, canClose, canReopen }: { rows:
                     <TableCell className="text-right">
                       <Money value={r.bill} />
                     </TableCell>
-                    <TableCell className="text-right whitespace-nowrap">
-                      <Money value={r.profit} />
-                      <Pct value={r.profitRate} className="ml-1 text-xs text-muted-foreground" />
-                    </TableCell>
+                    {showProfit && (
+                      <TableCell className="text-right whitespace-nowrap">
+                        <Money value={r.profit} />
+                        <Pct value={r.profitRate} className="ml-1 text-xs text-muted-foreground" />
+                      </TableCell>
+                    )}
                     <TableCell className="text-right">
                       <Money value={r.payout} />
                     </TableCell>
@@ -241,10 +263,14 @@ export function MonthsTable({ rows, currentMonth, canClose, canReopen }: { rows:
               <dd className="text-right">
                 <Money value={closeTarget.bill} />
               </dd>
-              <dt className="text-muted-foreground">会社利益</dt>
-              <dd className="text-right">
-                <Money value={closeTarget.profit} />
-              </dd>
+              {showProfit && (
+                <>
+                  <dt className="text-muted-foreground">会社利益</dt>
+                  <dd className="text-right">
+                    <Money value={closeTarget.profit} />
+                  </dd>
+                </>
+              )}
               <dt className="text-muted-foreground">支払合計</dt>
               <dd className="text-right">
                 <Money value={closeTarget.payout} />

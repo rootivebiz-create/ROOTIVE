@@ -1,5 +1,5 @@
 import { Banknote, Download, FileSpreadsheet, Lock } from "lucide-react";
-import { requireStaff } from "@/lib/auth/session";
+import { canEdit, canSeeManagement, requireStaff } from "@/lib/auth/session";
 import { isMonthClosed } from "@/lib/db/queries";
 import { monthFromParam, monthToDate, formatMonthJa } from "@/lib/month";
 import { exportUrls } from "@/lib/exports/urls";
@@ -9,12 +9,16 @@ import { buttonVariants } from "@/components/ui/button";
 import { PayoutsTable, type PayoutRow } from "@/components/payouts/payouts-table";
 import { cn } from "@/lib/utils";
 import { MonthLink } from "@/components/layout/month-link";
+import { StatementSendCard } from "@/components/payouts/statement-send-card";
+import { loadStatementTargets } from "@/lib/statements/send";
 
 export const metadata = { title: "支払明細" };
 
 export default async function PayoutsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const { supabase, company, profile } = await requireStaff();
-  const canTransfer = profile.role === "owner" || profile.role === "admin";
+  const canTransfer = canEdit(profile.role);
+  // 会社利益は経営の数字（事務員には出さない）
+  const showProfit = canSeeManagement(profile.role);
   const sp = await searchParams;
   const month = monthFromParam(sp.m);
 
@@ -34,6 +38,8 @@ export default async function PayoutsPage({ searchParams }: { searchParams: Prom
   const listed = new Set((rowsRes.data ?? []).map((r) => r.driver_id));
   // 稼働も管理費・調整も無い稼働中ドライバー（締め済み月では登録できないので出さない）
   const missingDrivers = closed ? [] : (activeRes.data ?? []).filter((d) => !listed.has(d.id));
+  // 支払明細の送付（締めた月だけ。金額が固まってから送る）
+  const statements = closed && rowsRes.data && rowsRes.data.length > 0 ? await loadStatementTargets(supabase, company.id, month) : null;
 
   const rows: PayoutRow[] = (rowsRes.data ?? [])
     .filter((r) => r.driver_id)
@@ -56,7 +62,7 @@ export default async function PayoutsPage({ searchParams }: { searchParams: Prom
     <div>
       <PageHeader
         title="支払明細"
-        description={`${formatMonthJa(month)} のドライバー別の支払額と会社利益`}
+        description={showProfit ? `${formatMonthJa(month)} のドライバー別の支払額と会社利益` : `${formatMonthJa(month)} のドライバー別の支払額`}
         actions={
           <>
             {closed && (
@@ -71,14 +77,19 @@ export default async function PayoutsPage({ searchParams }: { searchParams: Prom
                 振込データ
               </MonthLink>
             )}
-            <a href={exportUrls.payoutsCsv(month)} download className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
-              <Download className="h-4 w-4" />
-              支払一覧 CSV
-            </a>
-            <a href={exportUrls.payoutsXlsx(month)} download className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
-              <FileSpreadsheet className="h-4 w-4" />
-              支払一覧 Excel
-            </a>
+            {/* 支払一覧は会社利益の列を含むので、経営の数字を見られる人だけ */}
+            {showProfit && (
+              <>
+                <a href={exportUrls.payoutsCsv(month)} download className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+                  <Download className="h-4 w-4" />
+                  支払一覧 CSV
+                </a>
+                <a href={exportUrls.payoutsXlsx(month)} download className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+                  <FileSpreadsheet className="h-4 w-4" />
+                  支払一覧 Excel
+                </a>
+              </>
+            )}
             <a href={exportUrls.yayoiCsv(month)} download className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
               <Download className="h-4 w-4" />
               弥生 CSV
@@ -92,10 +103,14 @@ export default async function PayoutsPage({ searchParams }: { searchParams: Prom
           </>
         }
       />
-      <PayoutsTable rows={rows} />
+      <PayoutsTable rows={rows} showProfit={showProfit} />
       <p className="mt-3 text-xs text-muted-foreground">
         行をタップすると支払明細を表示します。支払額は税抜。実際の振込額は税込支払額です。稼働も管理費・調整の登録もないドライバーは表示されません。
+        {!closed && rows.length > 0 && " 明細をドライバーへ送れるのは、月を締めてからです。"}
       </p>
+      {statements && statements.targets.length > 0 && (
+        <StatementSendCard month={month} targets={statements.targets} lineEnabled={statements.lineEnabled} editable={canTransfer} />
+      )}
       {missingDrivers.length > 0 && (
         <details className="mt-3 rounded-lg border p-3 text-sm">
           <summary className="cursor-pointer font-medium">この月に稼働のない稼働中ドライバー（{missingDrivers.length} 名）の管理費・調整を登録する</summary>

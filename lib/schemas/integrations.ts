@@ -63,3 +63,11 @@ export const unlinkLineSchema = z.object({
 export const notifyStatementsSchema = z.object({
   month: monthSchema,
 });
+
+/** 支払明細を送る（0028）。driverIds を省くと全員、resend で送信済みの人にも送り直す */
+export const sendStatementsSchema = z.object({
+  month: monthSchema,
+  driverIds: z.array(uuidSchema).max(500).nullish(),
+  resend: z.boolean().default(false),
+});
+export type SendStatementsInput = z.input<typeof sendStatementsSchema>;

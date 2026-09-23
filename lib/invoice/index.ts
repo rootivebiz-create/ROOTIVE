@@ -30,6 +30,8 @@ export interface InvoiceClientData {
   honorific: string;
   address: string;
   tel: string;
+  /** 請求書を送るメールアドレス（カンマ区切り。空 = 未登録） */
+  email: string;
   invoiceRegNo: string;
   paymentMonthOffset: number;
   paymentDay: number;
@@ -111,6 +113,7 @@ export function buildInvoiceData(input: { company: Company; client: Client; invo
       honorific: client.honorific ?? "",
       address: client.address ?? "",
       tel: client.tel ?? "",
+      email: client.email ?? "",
       invoiceRegNo: client.invoice_reg_no ?? "",
       paymentMonthOffset: client.payment_month_offset,
       paymentDay: client.payment_day,

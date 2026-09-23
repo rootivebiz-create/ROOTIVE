@@ -32,6 +32,8 @@ export interface EntriesViewProps {
   diffs: RateDiff[];
   /** 編集可能（owner/admin かつ未締め） */
   editable: boolean;
+  /** 単価差額利益・行の利益を出す（経営の数字。事務員には出さない） */
+  showProfit?: boolean;
   closed: boolean;
   /** 編集可能なときだけ渡す（ダイアログの選択肢） */
   masters: Masters | null;
@@ -65,7 +67,7 @@ function RowBadges({ row }: { row: EntryRow }) {
   );
 }
 
-export function EntriesView({ month, rows, diffs, editable, closed, masters, allMasters, initialDriver = "", initialQuery = "", initialVoice = false }: EntriesViewProps) {
+export function EntriesView({ month, rows, diffs, editable, showProfit = true, closed, masters, allMasters, initialDriver = "", initialQuery = "", initialVoice = false }: EntriesViewProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [driverFilter, setDriverFilter] = useState(initialDriver);
@@ -241,9 +243,13 @@ export function EntriesView({ month, rows, diffs, editable, closed, masters, all
                   <TableHead className="text-right">支払単価</TableHead>
                   <TableHead className="text-right">会社売上</TableHead>
                   <TableHead className="text-right">ドライバー売上</TableHead>
-                  <TableHead className="text-right">単価差額利益</TableHead>
+                  {showProfit && (
+                    <TableHead className="text-right">単価差額利益</TableHead>
+                  )}
                   <TableHead className="text-right">ロイヤリティ</TableHead>
-                  <TableHead className="text-right">行の利益</TableHead>
+                  {showProfit && (
+                    <TableHead className="text-right">行の利益</TableHead>
+                  )}
                   <TableHead>備考</TableHead>
                   {editable && <TableHead className="w-24" />}
                 </TableRow>
@@ -279,18 +285,22 @@ export function EntriesView({ month, rows, diffs, editable, closed, masters, all
                       <TableCell className="text-right">
                         <Money value={row.pay} />
                       </TableCell>
-                      <TableCell className="text-right">
-                        <Money value={row.margin} className={cn(loss && "text-destructive")} />
-                      </TableCell>
+                      {showProfit && (
+                        <TableCell className="text-right">
+                          <Money value={row.margin} className={cn(loss && "text-destructive")} />
+                        </TableCell>
+                      )}
                       <TableCell className="text-right">
                         <Money value={row.royalty} />
                         <span className="ml-1 text-xs text-muted-foreground">
                           （<Pct value={row.royaltyRate} />）
                         </span>
                       </TableCell>
-                      <TableCell className="text-right font-medium">
-                        <Money value={row.entryProfit} />
-                      </TableCell>
+                      {showProfit && (
+                        <TableCell className="text-right font-medium">
+                          <Money value={row.entryProfit} />
+                        </TableCell>
+                      )}
                       <TableCell className="max-w-[12rem] truncate text-muted-foreground" title={row.memo}>
                         {row.memo}
                       </TableCell>
@@ -322,15 +332,19 @@ export function EntriesView({ month, rows, diffs, editable, closed, masters, all
                   <TableCell className="text-right">
                     <Money value={totals.pay} />
                   </TableCell>
-                  <TableCell className="text-right">
-                    <Money value={totals.margin} />
-                  </TableCell>
+                  {showProfit && (
+                    <TableCell className="text-right">
+                      <Money value={totals.margin} />
+                    </TableCell>
+                  )}
                   <TableCell className="text-right">
                     <Money value={totals.royalty} />
                   </TableCell>
-                  <TableCell className="text-right">
-                    <Money value={totals.entryProfit} />
-                  </TableCell>
+                  {showProfit && (
+                    <TableCell className="text-right">
+                      <Money value={totals.entryProfit} />
+                    </TableCell>
+                  )}
                   <TableCell colSpan={editable ? 2 : 1} />
                 </TableRow>
               </TableFooter>
@@ -366,20 +380,28 @@ export function EntriesView({ month, rows, diffs, editable, closed, masters, all
                     <dd className="text-right">
                       <Money value={row.pay} />
                     </dd>
-                    <dt className="text-muted-foreground">単価差額利益</dt>
-                    <dd className="text-right">
-                      <Money value={row.margin} className={cn(loss && "text-destructive")} />
-                    </dd>
+                    {showProfit && (
+                      <>
+                        <dt className="text-muted-foreground">単価差額利益</dt>
+                        <dd className="text-right">
+                          <Money value={row.margin} className={cn(loss && "text-destructive")} />
+                        </dd>
+                      </>
+                    )}
                     <dt className="text-muted-foreground">
                       ロイヤリティ（<Pct value={row.royaltyRate} />）
                     </dt>
                     <dd className="text-right">
                       <Money value={row.royalty} />
                     </dd>
-                    <dt className="font-medium">行の利益</dt>
-                    <dd className="text-right font-medium">
-                      <Money value={row.entryProfit} />
-                    </dd>
+                    {showProfit && (
+                      <>
+                        <dt className="font-medium">行の利益</dt>
+                        <dd className="text-right font-medium">
+                          <Money value={row.entryProfit} />
+                        </dd>
+                      </>
+                    )}
                   </dl>
                   {row.memo && <p className="mt-1 break-words text-xs text-muted-foreground">備考：{row.memo}</p>}
                   {editable && (
@@ -406,18 +428,26 @@ export function EntriesView({ month, rows, diffs, editable, closed, masters, all
                 <dd className="text-right">
                   <Money value={totals.pay} />
                 </dd>
-                <dt className="text-muted-foreground">単価差額利益</dt>
-                <dd className="text-right">
-                  <Money value={totals.margin} />
-                </dd>
+                {showProfit && (
+                  <>
+                    <dt className="text-muted-foreground">単価差額利益</dt>
+                    <dd className="text-right">
+                      <Money value={totals.margin} />
+                    </dd>
+                  </>
+                )}
                 <dt className="text-muted-foreground">ロイヤリティ</dt>
                 <dd className="text-right">
                   <Money value={totals.royalty} />
                 </dd>
-                <dt className="font-medium">行の利益</dt>
-                <dd className="text-right font-medium">
-                  <Money value={totals.entryProfit} />
-                </dd>
+                {showProfit && (
+                  <>
+                    <dt className="font-medium">行の利益</dt>
+                    <dd className="text-right font-medium">
+                      <Money value={totals.entryProfit} />
+                    </dd>
+                  </>
+                )}
               </dl>
             </Card>
           </div>
@@ -434,6 +464,7 @@ export function EntriesView({ month, rows, diffs, editable, closed, masters, all
           masters={masters}
           allMasters={allMasters}
           entry={dialog.entry}
+          showProfit={showProfit}
         />
       )}
 

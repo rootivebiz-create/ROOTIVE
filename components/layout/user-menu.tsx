@@ -4,7 +4,7 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useTheme } from "next-themes";
 import Link from "next/link";
 import { useRef } from "react";
-import { LogOut, Moon, Sun, UserCircle, Monitor } from "lucide-react";
+import { BookOpen, LogOut, Moon, Sun, UserCircle, Monitor } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { ROLE_LABELS, type Role } from "@/lib/db/types";
 import { clearOutbox } from "@/lib/offline/queue";
@@ -73,6 +73,11 @@ export function UserMenu({ displayName, email, role, build }: { displayName: str
               </Link>
             </DropdownMenu.Item>
           )}
+          <DropdownMenu.Item asChild>
+            <Link href={role === "driver" ? "/driver/guide" : "/guide"} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm outline-none hover:bg-muted">
+              <BookOpen className="h-4 w-4" /> 使い方ガイド
+            </Link>
+          </DropdownMenu.Item>
           {role === "driver" && (
             <DropdownMenu.Item asChild>
               <Link href="/driver/account" className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm outline-none hover:bg-muted">

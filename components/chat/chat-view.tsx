@@ -42,7 +42,7 @@ export function ChatView({
   const readRef = useRef("");
   const scrolledRef = useRef("");
   const lastId = messages.length > 0 ? messages[messages.length - 1].id : "";
-  const canManage = role === "owner" || role === "admin";
+  const canManage = role === "owner" || role === "admin" || role === "clerk";
 
   // 開いたとき・新しい発言が増えたときに既読にする（同じ状態では 1 回だけ）
   useEffect(() => {

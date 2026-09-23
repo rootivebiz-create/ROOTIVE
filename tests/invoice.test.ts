@@ -74,6 +74,7 @@ const client: Client = {
   sort_order: 1,
   created_at: "",
   updated_at: "",
+  email: "",
 };
 
 // 小計 483,525／消費税 48,352（切り捨て）／合計 531,877

@@ -172,6 +172,7 @@ export type RateDiff = Database["public"]["Functions"]["rate_diffs"]["Returns"][
 export const ROLE_LABELS: Record<Role, string> = {
   owner: "オーナー",
   admin: "管理者",
+  clerk: "事務員",
   viewer: "閲覧者",
   driver: "ドライバー",
 };
@@ -527,10 +528,12 @@ export const EXPORT_KIND_LABELS: Record<string, string> = {
 };
 
 /** 機密の見せ方（companies.confidential_scope の値） */
-export type ConfidentialLevel = "owner" | "admin" | "staff";
+export type ConfidentialLevel = "owner" | "admin" | "clerk" | "staff";
+export const CONFIDENTIAL_LEVELS: ConfidentialLevel[] = ["owner", "admin", "clerk", "staff"];
 export const CONFIDENTIAL_LEVEL_LABELS: Record<ConfidentialLevel, string> = {
   owner: "代表のみ",
   admin: "管理者まで",
+  clerk: "事務員まで",
   staff: "閲覧者まで",
 };
 export const CONFIDENTIAL_KEY_LABELS: Record<string, string> = {
@@ -543,7 +546,7 @@ export const DEFAULT_CONFIDENTIAL_SCOPE: ConfidentialScope = { loans: "admin", c
 
 /** companies.confidential_scope（jsonb）を型のある形に直す */
 export function toConfidentialScope(value: unknown): ConfidentialScope {
-  const levels: ConfidentialLevel[] = ["owner", "admin", "staff"];
+  const levels: ConfidentialLevel[] = CONFIDENTIAL_LEVELS;
   const pick = (key: keyof ConfidentialScope): ConfidentialLevel => {
     const raw = value && typeof value === "object" ? (value as Record<string, unknown>)[key] : undefined;
     return typeof raw === "string" && (levels as string[]).includes(raw) ? (raw as ConfidentialLevel) : DEFAULT_CONFIDENTIAL_SCOPE[key];
@@ -557,6 +560,8 @@ export function canSeeConfidential(role: Role, scope: ConfidentialScope, key: ke
   if (role === "driver") return false;
   const level = scope[key];
   if (level === "staff") return true;
+  // 事務員まで（0028）＝ 管理者と事務員
+  if (level === "clerk") return role === "admin" || role === "clerk";
   if (level === "admin") return role === "admin";
   return false;
 }

@@ -52,17 +52,19 @@ export interface NavItem {
   group?: string;
   /** 代表（owner）だけに出す（画面側は requirePageRole(["owner"]) でも閉じる） */
   ownerOnly?: boolean;
-  /** 登録・編集ができる人（owner・admin）だけに出す（画面側も requirePageRole で閉じる） */
+  /** 登録・編集ができる人（owner・admin・事務員）だけに出す（画面側も requirePageRole で閉じる） */
   adminOnly?: boolean;
+  /** 経営の数字を出す画面なので事務員には出さない（画面側も requireManagementPage で閉じる） */
+  noClerk?: boolean;
 }
 
 /** 未読・未対応の件数（href をキーにした数。0 は出さない） */
 export type NavBadges = Record<string, number>;
 
-/** PC のサイドナビ（24 項目。group ごとに見出しを付けて表示する。「代表」は owner、「事務」は owner・admin だけ） */
+/** PC のサイドナビ（24 項目。group ごとに見出しを付けて表示する。「代表」は owner、「事務」は登録・編集ができる人、経営の画面は事務員以外） */
 export const MAIN_NAV: NavItem[] = [
   { href: "/executive", label: "代表", icon: Crown, group: "代表", ownerOnly: true },
-  { href: "/dashboard", label: "ホーム", icon: Home },
+  { href: "/dashboard", label: "ホーム", icon: Home, noClerk: true },
   { href: "/office", label: "事務", icon: Inbox, adminOnly: true },
   { href: "/dispatch", label: "配車", icon: CalendarRange, group: "入力" },
   { href: "/entries", label: "稼働", icon: ClipboardList, group: "入力" },
@@ -72,17 +74,17 @@ export const MAIN_NAV: NavItem[] = [
   { href: "/invoices", label: "請求", icon: Receipt, group: "入力" },
   { href: "/expenses", label: "経費", icon: Coins, group: "入力" },
   { href: "/bank", label: "入金", icon: Banknote, group: "入力" },
-  { href: "/cashflow", label: "資金繰り", icon: Landmark, group: "経営" },
-  { href: "/projects", label: "案件", icon: Briefcase, group: "経営" },
-  { href: "/finance", label: "財務", icon: PiggyBank, group: "経営" },
-  { href: "/reports", label: "レポート", icon: BarChart3, group: "経営" },
+  { href: "/cashflow", label: "資金繰り", icon: Landmark, group: "経営", noClerk: true },
+  { href: "/projects", label: "案件", icon: Briefcase, group: "経営", noClerk: true },
+  { href: "/finance", label: "財務", icon: PiggyBank, group: "経営", noClerk: true },
+  { href: "/reports", label: "レポート", icon: BarChart3, group: "経営", noClerk: true },
   { href: "/alerts", label: "気になること", icon: TriangleAlert, group: "経営" },
   { href: "/fleet", label: "車両と書類", icon: Truck, group: "管理" },
   { href: "/compliance", label: "法令対応", icon: ShieldCheck, group: "管理" },
   { href: "/hr", label: "採用と契約", icon: UserPlus, group: "管理" },
   { href: "/records", label: "書類の検索", icon: FolderSearch, group: "管理" },
   { href: "/exports", label: "出力", icon: Download, group: "管理" },
-  { href: "/ai", label: "AI 相談", icon: Sparkles, group: "相談" },
+  { href: "/ai", label: "AI 相談", icon: Sparkles, group: "相談", noClerk: true },
   { href: "/chat", label: "チャット", icon: MessagesSquare, group: "相談" },
   { href: "/settings", label: "設定", icon: Settings },
 ];
@@ -131,7 +133,8 @@ export function navItemsFor(variant: NavVariant | undefined, role?: Role): NavIt
 /** スマホの下タブに出すリンク（ドライバーはメニュー無しで全項目） */
 export function bottomItemsFor(variant: NavVariant | undefined, role?: Role, startPage?: NavStartPage): NavItem[] {
   if (variant === "driver") return visibleForRole(DRIVER_NAV, role);
-  const hrefs = bottomHrefsFor(startPage);
+  // 事務員はホーム（経営の数字）を見ないので、いつも事務が先頭
+  const hrefs = bottomHrefsFor(role === "clerk" ? "office" : startPage);
   const items = hrefs.map((h) => MAIN_NAV.find((i) => i.href === h)).filter((i): i is NavItem => Boolean(i));
   const visible = visibleForRole(items, role);
   // 事務を使えないロール（閲覧者）には、いつもの 4 つを出す
@@ -430,8 +433,8 @@ export function notificationRows(badges: NavBadges | undefined, role?: Role): No
     { href: "/chat", label: "未読のチャット", count: badges?.["/chat"] ?? 0 },
   ];
   if (role === "owner") rows.push({ href: "/executive/approvals", label: "決裁待ち", count: badges?.["/executive"] ?? 0 });
-  // 0026：事務の承認待ち（稼働報告 ＋ 休み希望）。登録・編集ができる人だけ
-  if (role === "owner" || role === "admin") rows.push({ href: "/office", label: "事務の承認待ち", count: badges?.["/office"] ?? 0 });
+  // 0026：事務の承認待ち（稼働報告 ＋ 休み希望）。登録・編集ができる人だけ（事務員を含む）
+  if (role === "owner" || role === "admin" || role === "clerk") rows.push({ href: "/office", label: "事務の承認待ち", count: badges?.["/office"] ?? 0 });
   return rows.filter((r) => r.count > 0);
 }
 

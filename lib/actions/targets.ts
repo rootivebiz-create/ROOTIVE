@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdminAction } from "@/lib/auth/session";
+import { requireManagerAction } from "@/lib/auth/session";
 import { ensureNoError, runAction, type ActionResult } from "@/lib/actions/result";
 import { deleteMonthTargetSchema, saveMonthTargetSchema, type SaveMonthTargetInput } from "@/lib/schemas/targets";
 import { monthToDate } from "@/lib/month";
@@ -15,7 +15,7 @@ function revalidateTargets() {
 /** 月次目標（売上・営業利益）の保存（admin+）。締め済み月でも目標は編集できる */
 export async function saveMonthTargetAction(input: SaveMonthTargetInput): Promise<ActionResult<null>> {
   return runAction(async () => {
-    const { supabase, company } = await requireAdminAction();
+    const { supabase, company } = await requireManagerAction();
     const data = saveMonthTargetSchema.parse(input);
     ensureNoError(
       await supabase.from("month_targets").upsert(
@@ -37,7 +37,7 @@ export async function saveMonthTargetAction(input: SaveMonthTargetInput): Promis
 /** 月次目標の削除（admin+） */
 export async function deleteMonthTargetAction(month: string): Promise<ActionResult<null>> {
   return runAction(async () => {
-    const { supabase, company } = await requireAdminAction();
+    const { supabase, company } = await requireManagerAction();
     const data = deleteMonthTargetSchema.parse({ month });
     ensureNoError(await supabase.from("month_targets").delete().eq("company_id", company.id).eq("month", monthToDate(data.month)));
     revalidateTargets();

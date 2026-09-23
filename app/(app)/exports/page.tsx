@@ -2,9 +2,10 @@
  * 出力センター（/exports）
  * 「月末にボタン 1 つでその月の一式が手に入る」入口。分類ごとにカードを並べ、その場でダウンロードできる。
  * URL は lib/exports/urls.ts の exportUrls だけを使う。振込データとバックアップは閲覧者には出さない。
+ * 事務員（0027）には経営の数字の出力（経営レポート・採算・資金繰り・月次パック・バックアップ）を出さない（出力の口も同じ条件で拒否する）。
  */
 import { BarChart3, Building2, ClipboardList, Database, FileSpreadsheet, FileText, Receipt, Wallet } from "lucide-react";
-import { canEdit, requireStaff } from "@/lib/auth/session";
+import { canEdit, canManage, canSeeManagement, requireStaff } from "@/lib/auth/session";
 import { loadMonthSummary } from "@/lib/db/queries";
 import { exportUrls } from "@/lib/exports/urls";
 import { addMonths, daysInMonth, formatMonthJa, monthFromParam, monthToDate } from "@/lib/month";
@@ -23,6 +24,8 @@ export default async function ExportsPage({ searchParams }: { searchParams: Prom
   const month = monthFromParam(sp.m);
   const monthLabel = formatMonthJa(month);
   const admin = canEdit(profile.role);
+  const manager = canManage(profile.role);
+  const management = canSeeManagement(profile.role);
   const year = Number(month.slice(0, 4));
 
   const [summary, invoicesRes] = await Promise.all([
@@ -59,24 +62,30 @@ export default async function ExportsPage({ searchParams }: { searchParams: Prom
 
       {!admin ? (
         <p className="text-xs text-muted-foreground">閲覧者は CSV・Excel・PDF を出力できます（月次パック・振込データ・バックアップは管理者以上）。</p>
+      ) : !management ? (
+        <p className="text-xs text-muted-foreground">事務員は事務に使う出力（支払明細・振込データ・請求・会計・記録）を出せます。経営の数字（経営レポート・採算・資金繰り）と月次パック・バックアップは管理者以上です。</p>
       ) : null}
 
       <div className="grid gap-4 md:grid-cols-2">
-        {admin ? <MonthPackCard month={month} monthLabel={monthLabel} canTransfer={admin} /> : null}
+        {manager ? <MonthPackCard month={month} monthLabel={monthLabel} canTransfer={admin} /> : null}
 
-        <ExportCard title="経営レポート" description="その月の数字を 1 つの PDF にまとめます。会議や金融機関への説明にそのまま使えます。" icon={FileText}>
-          <ExportRow label={`${monthLabel} 経営レポート（PDF）`} description="損益サマリー・経営指標・目標の進捗・12 か月の推移・ドライバー別と案件別の採算・気になることを A4 にまとめます。">
-            <DownloadLink href={exportUrls.monthReportPdf(month)} primary>
-              PDF
-            </DownloadLink>
-          </ExportRow>
-        </ExportCard>
+        {management ? (
+          <ExportCard title="経営レポート" description="その月の数字を 1 つの PDF にまとめます。会議や金融機関への説明にそのまま使えます。" icon={FileText}>
+            <ExportRow label={`${monthLabel} 経営レポート（PDF）`} description="損益サマリー・経営指標・目標の進捗・12 か月の推移・ドライバー別と案件別の採算・気になることを A4 にまとめます。">
+              <DownloadLink href={exportUrls.monthReportPdf(month)} primary>
+                PDF
+              </DownloadLink>
+            </ExportRow>
+          </ExportCard>
+        ) : null}
 
         <ExportCard title="支払" description="ドライバーへの支払に使う出力です。金額は税込のお支払額を含みます。" icon={Wallet}>
-          <ExportRow label="支払一覧" description="ドライバーごとの支払額・消費税・会社利益の一覧。支払額の確認に使います。">
-            <DownloadLink href={exportUrls.payoutsCsv(month)}>CSV</DownloadLink>
-            <DownloadLink href={exportUrls.payoutsXlsx(month)}>Excel</DownloadLink>
-          </ExportRow>
+          {management ? (
+            <ExportRow label="支払一覧" description="ドライバーごとの支払額・消費税・会社利益の一覧。支払額の確認に使います。">
+              <DownloadLink href={exportUrls.payoutsCsv(month)}>CSV</DownloadLink>
+              <DownloadLink href={exportUrls.payoutsXlsx(month)}>Excel</DownloadLink>
+            </ExportRow>
+          ) : null}
           <ExportRow label="支払明細 PDF（全員分）" description="ドライバーごとの支払明細をまとめた ZIP。印刷して本人に渡せます。">
             <DownloadLink href={exportUrls.statementsZip(month)}>ZIP</DownloadLink>
           </ExportRow>
@@ -112,23 +121,27 @@ export default async function ExportsPage({ searchParams }: { searchParams: Prom
           </ExportRow>
         </ExportCard>
 
-        <ExportCard title="分析" description="推移・採算・資金繰りを表計算で見たいときの出力です。" icon={BarChart3}>
-          <ExportRow label={`年次レポート（${year}年）`} description="月ごとの売上・経費・営業利益の推移。年間の振り返りに使います。">
-            <DownloadLink href={exportUrls.reportCsv(year)}>CSV</DownloadLink>
-            <DownloadLink href={exportUrls.reportXlsx(year)}>Excel</DownloadLink>
-          </ExportRow>
-          <ExportRow label="案件別採算" description="案件ごとの売上・利益・目標との差。続けるかやめるかの判断に使います。">
-            <DownloadLink href={exportUrls.projectsCsv(month)}>CSV</DownloadLink>
-            <DownloadLink href={exportUrls.projectsXlsx(month)}>Excel</DownloadLink>
-          </ExportRow>
-          <ExportRow label="ドライバー別採算" description="ドライバーごとの売上・支払・会社利益。単価の見直しに使います。">
-            <DownloadLink href={exportUrls.driversPlCsv(month)}>CSV</DownloadLink>
-            <DownloadLink href={exportUrls.driversPlXlsx(month)}>Excel</DownloadLink>
-          </ExportRow>
-          <ExportRow label="資金繰り（3 か月先まで）" description="入金予定と支払予定を日付順に並べた表。残高が足りるかの確認に使います。">
-            <DownloadLink href={exportUrls.cashflowCsv(cashFrom, cashToDate)}>CSV</DownloadLink>
-            <DownloadLink href={exportUrls.cashflowXlsx(cashFrom, cashToDate)}>Excel</DownloadLink>
-          </ExportRow>
+        <ExportCard title="分析" description={management ? "推移・採算・資金繰りを表計算で見たいときの出力です。" : "単価の確認に使う出力です。"} icon={BarChart3}>
+          {management ? (
+            <>
+              <ExportRow label={`年次レポート（${year}年）`} description="月ごとの売上・経費・営業利益の推移。年間の振り返りに使います。">
+                <DownloadLink href={exportUrls.reportCsv(year)}>CSV</DownloadLink>
+                <DownloadLink href={exportUrls.reportXlsx(year)}>Excel</DownloadLink>
+              </ExportRow>
+              <ExportRow label="案件別採算" description="案件ごとの売上・利益・目標との差。続けるかやめるかの判断に使います。">
+                <DownloadLink href={exportUrls.projectsCsv(month)}>CSV</DownloadLink>
+                <DownloadLink href={exportUrls.projectsXlsx(month)}>Excel</DownloadLink>
+              </ExportRow>
+              <ExportRow label="ドライバー別採算" description="ドライバーごとの売上・支払・会社利益。単価の見直しに使います。">
+                <DownloadLink href={exportUrls.driversPlCsv(month)}>CSV</DownloadLink>
+                <DownloadLink href={exportUrls.driversPlXlsx(month)}>Excel</DownloadLink>
+              </ExportRow>
+              <ExportRow label="資金繰り（3 か月先まで）" description="入金予定と支払予定を日付順に並べた表。残高が足りるかの確認に使います。">
+                <DownloadLink href={exportUrls.cashflowCsv(cashFrom, cashToDate)}>CSV</DownloadLink>
+                <DownloadLink href={exportUrls.cashflowXlsx(cashFrom, cashToDate)}>Excel</DownloadLink>
+              </ExportRow>
+            </>
+          ) : null}
           <ExportRow label="単価表" description="ドライバー × 案件内容の実効単価と、その単価がどこから来たか。">
             <DownloadLink href={exportUrls.ratesCsv()}>CSV</DownloadLink>
             <DownloadLink href={exportUrls.ratesXlsx()}>Excel</DownloadLink>
@@ -187,7 +200,7 @@ export default async function ExportsPage({ searchParams }: { searchParams: Prom
           </ExportRow>
         </ExportCard>
 
-        {admin ? (
+        {manager ? (
           <ExportCard title="バックアップ" description="データそのものの控えです。パソコンや外付けディスクに保存してください。" icon={Database}>
             <ExportRow label="全データ JSON" description="今この瞬間の全テーブルの控え。復元（取り込み）はオーナーのみ行えます。">
               <DownloadLink href={exportUrls.backupJson()}>JSON</DownloadLink>

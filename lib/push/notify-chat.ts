@@ -16,7 +16,7 @@ import { chatLineText, chatPushPayload, shouldNotifyChat, shouldNotifyLine, type
  */
 
 /** チャットを使えるロール（ドライバーは対象外） */
-const STAFF_ROLES = new Set(["owner", "admin", "viewer"]);
+const STAFF_ROLES = new Set(["owner", "admin", "clerk", "viewer"]);
 
 export interface NotifyChatResult {
   push: { sent: number; removed: number; failed: number };

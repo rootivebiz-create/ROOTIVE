@@ -17,6 +17,8 @@ export interface DispatchViewProps {
   weekStart: string;
   today: string;
   editable: boolean;
+  /** 予定の粗利を出すか（事務員には出さない） */
+  showProfit?: boolean;
   items: DispatchItem[];
   drivers: DispatchDriver[];
   patterns: DemandPattern[];
@@ -103,6 +105,7 @@ export function DispatchView(props: DispatchViewProps) {
             editable={editable}
             recentQty={props.recentQty}
             today={today}
+            showProfit={props.showProfit ?? true}
           />
         </TabsContent>
         <TabsContent value="demand">

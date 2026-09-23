@@ -10,7 +10,7 @@ import { InvitationsTable, type InvitationRow, type InvitationStatus } from "@/c
 
 export const metadata = { title: "ユーザー管理" };
 
-const ROLE_ORDER = { owner: 0, admin: 1, viewer: 2, driver: 3 } as const;
+const ROLE_ORDER = { owner: 0, admin: 1, clerk: 2, viewer: 3, driver: 4 } as const;
 
 export default async function UsersSettingsPage() {
   const { supabase, company, user } = await requirePageRole(["owner"]);

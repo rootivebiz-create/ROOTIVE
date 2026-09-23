@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient, hasServiceRoleKey } from "@/lib/supabase/admin";
+import { MANAGEMENT_VIEW_ROLES } from "@/lib/auth/session";
 import { multicastLineMessage } from "@/lib/integrations/line";
 import { logIntegration } from "@/lib/integrations/logs";
 import { buildWeeklySummary, saveWeeklyInsight } from "@/lib/ai/weekly";
@@ -66,10 +67,18 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ ok: true, at: new Date().toISOString(), week: { from: range.from, to: range.to, label: range.label }, results });
 }
 
-/** LINE 連携しているスタッフ（有効な人だけ）へ送る。未連携・未設定なら 0 人 */
+/**
+ * LINE 連携しているスタッフ（有効な人だけ）へ送る。未連携・未設定なら 0 人。
+ * 経営の数字なので、見てよい人（owner・admin・viewer）だけ。事務員（0027）とドライバーには送らない
+ */
 async function notifyStaff(companyId: string, text: string): Promise<number> {
   const admin = createAdminClient();
-  const { data: staff } = await admin.from("profiles").select("line_user_id, is_active").eq("company_id", companyId).eq("is_active", true);
+  const { data: staff } = await admin
+    .from("profiles")
+    .select("line_user_id, is_active, role")
+    .eq("company_id", companyId)
+    .eq("is_active", true)
+    .in("role", MANAGEMENT_VIEW_ROLES);
   const to = (staff ?? []).map((s) => (s.line_user_id ?? "").trim()).filter((v) => v.length > 0);
   if (to.length === 0) return 0;
   const result = await multicastLineMessage(companyId, to, text);

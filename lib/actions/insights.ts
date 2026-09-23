@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { ActionError, runAction, type ActionResult } from "@/lib/actions/result";
 import { generateAnalysisAction } from "@/lib/actions/ai";
-import { requireAdminAction } from "@/lib/auth/session";
+import { MANAGEMENT_VIEW_ROLES, requireManagerAction } from "@/lib/auth/session";
 import type { InsightAction, InsightFindingDetail } from "@/lib/ai/findings";
 import { buildWeeklySummary, loadWeeklyInsights, saveWeeklyInsight } from "@/lib/ai/weekly";
 import { multicastLineMessage } from "@/lib/integrations/line";
@@ -65,7 +65,7 @@ export interface WeeklySummaryActionResult {
  */
 export async function generateWeeklySummaryAction(weekFrom?: string): Promise<ActionResult<WeeklySummaryActionResult>> {
   return runAction(async () => {
-    const { supabase, user, company } = await requireAdminAction();
+    const { supabase, user, company } = await requireManagerAction();
     const input = weekFromSchema.parse(weekFrom);
     const range = input ? weekRangeFrom(input) : weekRange(new Date());
 
@@ -94,20 +94,21 @@ export interface SendWeeklySummaryResult {
 
 /**
  * 保存済みの週次サマリーを LINE へ送る（admin 以上）。
- * 送り先は LINE 連携しているスタッフ（profiles.line_user_id が入っている有効な人）。
+ * 送り先は LINE 連携しているスタッフのうち、経営の数字を見てよい人（owner・admin・viewer。事務員は外す）。
  * 数字は保存時ではなく送信時に集計し直す（あとから稼働を直しても正しい数字が届く）。
  */
 export async function sendWeeklySummaryAction(weekFrom?: string): Promise<ActionResult<SendWeeklySummaryResult>> {
   return runAction(async () => {
-    const { supabase, company } = await requireAdminAction();
+    const { supabase, company } = await requireManagerAction();
     const input = weekFromSchema.parse(weekFrom);
     const range = input ? weekRangeFrom(input) : weekRange(new Date());
 
     const { data: staff, error: staffError } = await supabase
       .from("profiles")
-      .select("line_user_id, is_active")
+      .select("line_user_id, is_active, role")
       .eq("company_id", company.id)
-      .eq("is_active", true);
+      .eq("is_active", true)
+      .in("role", MANAGEMENT_VIEW_ROLES);
     if (staffError) throw staffError;
     const to = (staff ?? []).map((s) => (s.line_user_id ?? "").trim()).filter((v) => v.length > 0);
     if (to.length === 0) {

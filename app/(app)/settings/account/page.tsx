@@ -1,4 +1,4 @@
-import { requireStaff } from "@/lib/auth/session";
+import { canEdit, requireStaff } from "@/lib/auth/session";
 import { Alert } from "@/components/ui/alert";
 import { PageHeader } from "@/components/ui/page-header";
 import { AccountForms } from "@/components/settings/account/account-forms";
@@ -14,7 +14,7 @@ export default async function AccountSettingsPage({ searchParams }: { searchPara
 
   return (
     <div>
-      <PageHeader title="アカウント" description="表示名・パスワード・最初に開く画面を変えられます。" />
+      <PageHeader title="アカウント" description={profile.role === "clerk" ? "表示名・パスワードを変えられます。" : "表示名・パスワード・最初に開く画面を変えられます。"} />
       {reset && (
         <Alert variant="warning" className="mb-4">
           新しいパスワードを設定してください。
@@ -22,7 +22,8 @@ export default async function AccountSettingsPage({ searchParams }: { searchPara
       )}
       <div className="space-y-6">
         <AccountForms displayName={profile.display_name} email={profile.email} role={profile.role} focusPassword={reset} />
-        <StartPageCard initial={startPageOf(profile.start_page)} canUseOffice={profile.role === "owner" || profile.role === "admin"} />
+        {/* 事務員（0027）はいつも事務が開くので選ばせない */}
+        {profile.role !== "clerk" && <StartPageCard initial={startPageOf(profile.start_page)} canUseOffice={canEdit(profile.role)} />}
       </div>
     </div>
   );

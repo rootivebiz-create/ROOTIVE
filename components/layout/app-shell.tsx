@@ -6,6 +6,7 @@ import { MonthSelector, type MonthOption } from "./month-selector";
 import { UserMenu } from "./user-menu";
 import { RouteProgress } from "./route-progress";
 import { UpdateBanner } from "./update-banner";
+import { HelpButton } from "@/components/guide/help-button";
 import type { Role } from "@/lib/db/types";
 
 export function AppShell({
@@ -75,6 +76,10 @@ export function AppShell({
                 <CommandPalette items={commandItems} />
               </Suspense>
             )}
+            {/* スマホは幅が足りないので、スタッフは下の「メニュー」から開く（ドライバーはヘッダーに余裕がある） */}
+            <Suspense fallback={null}>
+              <HelpButton role={role} hideOnMobile={navVariant !== "driver"} />
+            </Suspense>
             <UserMenu displayName={displayName} email={email} role={role} build={build} />
           </div>
         </div>

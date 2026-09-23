@@ -593,13 +593,14 @@ office_desk(month, today)  ── 1 往復（security invoker・admin 以上）�
 |---|---|---|
 | 今日やること | 稼働報告の承認待ち・今日の報告がまだ・休み希望・明日の人不足／未確定・期日を過ぎた未入金・重要な気になること・締めていない過去の月・消し込めていない入金 | 承認／差戻し（`approveDayEntriesAction`）・休みの返事（`decideDayOffAction`）・催促・明日の確定（`confirmDispatchAction`）・自動消込（`autoMatchBankAction`） |
 | 今日の報告 | 報告が要る人ごとの 済み／まだ／催促済み／連絡手段なし | まとめて催促（`remindReportsAction`）・代わりに入力（/daily） |
-| 月締めの手順 | 承認 → 稼働 → 点呼と報告 → 単価 → 毎月の経費 → 支払通知 → 請求書 → 支払明細の送付 → 振込 → 締める | 経費の計上（`applyRecurringExpensesAction`）・手作業のチェック（`setCloseCheckAction`）・締める（`closeMonthAction`） |
+| 月締めの手順 | 承認 → 稼働 → 点呼と報告 → 単価 → 毎月の経費 → 支払通知 → 請求書 → **締める → 支払明細の送付 → 振込**（0028 で順番を直した） | 経費の計上（`applyRecurringExpensesAction`）・締める（`closeMonthAction`）・明細を LINE で送る（`sendStatementsAction`）・手作業のチェック（`setCloseCheckAction`） |
 
 - **todo は「締めても良いが、ほぼやり直しになる」、warn は「確かめたほうが良い」**。締めるボタンは todo が残っていても押せる（確認のダイアログに残りを並べる）
 - 今月・先の月は「月が終わってから締めます」（skip）
 - 今日の報告が要る人：配車が 1 件でもあれば配車に入っている人、無ければ定休日でない全員。承認済みの休みは外す
 - 催促は `report_reminders` の一意制約（会社 × ドライバー × 日）で **1 人 1 日 1 回**。RPC は今回初めて記録した人だけを返し、その人にだけ送る
-- 手作業の手順（`month_close_checks`）は締めた月には付け外しできない（0002 の `guard_month_closed` をそのまま付けた）
+- 手作業の手順（`month_close_checks`）は、0026 では締めた月に付け外しできなかった（`guard_month_closed` を付けていた）。
+  明細の送付と振込は**締めてから**行うので、この番人は矛盾していた。0028 で外し、手順も「締める → 送付 → 振込」の順に直した
 - 最初に開く画面（`profiles.start_page`）：`/` とログイン後の既定の行き先（`next` を省いたとき）が振り分ける。事務の人は下タブの先頭とロゴも事務
 
 ---
@@ -708,13 +709,57 @@ office_desk(month, today)  ── 1 往復（security invoker・admin 以上）�
 
 supabase-js の使い方は、E2E 用の互換サーバーが対応する範囲（埋め込みリソースを使わない、単純なフィルタ、`rpc`、限られた auth / storage API）に限定しています（[CLAUDE.md](../CLAUDE.md) 参照）。
 
+## 4-13. 事務員・支払明細の送付・請求書のメール（0027・0028）
+
+### 事務員（clerk）
+
+`user_role` に `clerk` を足した（enum の値は同じトランザクションで使えないので 0027 に分けた）。線は 3 本：
+
+| 判定 | 入るロール | 使うところ |
+|---|---|---|
+| `is_admin()` / `ADMIN_ROLES` / `canEdit` | owner・admin・clerk | 登録・編集・月締め・出力の多く（今までの「管理者以上」） |
+| `is_manager()` / `MANAGER_ROLES` / `canManage` | owner・admin | 監査ログ・外部連携・AI の分析・月次目標・バックアップ・チャットのルーム以外の経営の設定 |
+| `can_see_management()` / `MANAGEMENT_VIEW_ROLES` / `canSeeManagement` | owner・admin・viewer | ホーム・資金繰り・案件別・採算・財務・レポート・AI と、画面の会社利益の列 |
+
+- ナビの `RoleVisibility` に `managerOnly` と `noClerk` を足した（`lib/nav/visibility.ts`）
+- 行ごとの売上・支払は請求と支払の仕事に要るので、事務員にも見える。会社利益は**画面で出さないだけ**（既知の制限）
+- 経営のアラート 8 種類（利益の急減・ドライバーの赤字・目標未達・資金不足・税務・決裁の滞留・出力の急増）は `is_management_alert(code)` で RLS から外す
+- `cash_forecast` は 0017 まで `is_staff` だけを見ていたため、借入を見られない閲覧者にも返済の行が返っていた。0028 で `can_see_management()` を必須にし、返済の行は `can_see_confidential('loans')` の人にだけ返す
+- 締め時バックアップ（Storage）の読み取りは `is_manager()`。事務員が締めたときのバックアップは本人の権限で書き出すので、事務員に見えないもの（月次目標・振込口座・借入・納税・現金）は入らない
+
+### 支払明細の送付
+
+```
+sendStatementsAction / notifyStatementsAction（月締めの自動送信）
+        │
+        └─ lib/statements/send.ts  sendStatements()
+              ├─ 本人の権限：v_driver_month_summary（締めた月か・税込額）・statement_deliveries・drivers
+              ├─ サービスロール（会社で絞る）：integrations.is_enabled・profiles・push_subscriptions
+              ├─ planStatementSend()（純関数）… 送信済みは飛ばす／金額が変わった人は送る／連絡手段が無い人は数える
+              ├─ LINE（pushLineMessages）＋ 端末への通知（sendPush）
+              └─ record_statement_deliveries(month, 届いた人, 'line' | 'push')
+```
+
+- 事務の「月締めの手順」は `office_desk` の `statement_targets` / `statement_sent` / `statement_line_ready`（LINE が届くのにまだ送っていない人）で判定する。全員に送った記録があれば自動で済み
+- `office_desk` の `after_close` に、直近に締めた月（45 日以内）の送付と振込の状況を返し、残っていれば「今日やること」に出す
+
+### 請求書のメール
+
+- `clients.email`（カンマ区切り 5 件まで）。`sendInvoiceMailAction`：下書きなら発行 → `renderInvoicePdf` → Resend（`lib/mail/send.ts`）→ `record_invoice_send`（失敗も残す）
+- `RESEND_API_KEY` と `MAIL_FROM` がそろったときだけ画面に出す。キーはサーバーだけで読む
+
+### 使い方ガイド
+
+- `lib/guide/pages.ts`（各ページ）・`overview.ts`（全体の流れ・よくある質問）。`guideForPath(guides, path, role)` がいちばん長く当たる画面を選び、見られない画面のガイドは返さない
+- 右上の「？」（`components/guide/help-button.tsx`）。スマホのスタッフはヘッダーの幅が足りないので、メニューの「この画面の使い方」から同じダイアログを開く（`openHelp()`）
+
 ---
 
 ## 10. 既知の制限
 
 1. **driver ロールが自分の稼働行の `bill_rate`（受注単価）を API 経由で読める**：`work_entries` の driver 用 SELECT ポリシーは行単位で列を制限できないため、supabase-js を直接叩けば自分の締め済み月の行の受注単価・会社側の値が取得できます。画面・PDF・ポータル RPC（`driver_portal_statement`）では出していません。厳密に隠す場合は列を分離したビューだけを driver に許可する変更が必要です。
 2. **複数会社の UI は未対応**：データ構造（`company_id` + RLS）は多社対応ですが、ユーザーは 1 社にのみ所属し、会社の切替 UI はありません。
-3. **通知機能なし**：LINE / メールでの月締め通知・明細送付は手動（テキストコピー・PDF 送付）。
+3. **事務員（clerk）に会社利益を DB では隠していない**：事務員は請求（受注単価）と支払（支払単価）を扱うので稼働行の売上・支払は読め、`bill − pay` で利益は出せます。画面では会社利益・行の利益を出していませんが、API を直接叩けば集計ビューも読めます。経営の数字を厳密に隠すなら、事務員に売上か支払のどちらかを任せない運用にしてください。
 4. **メール送信は Supabase 標準では 1 時間 2 通**：本番でマジックリンクを常用するにはカスタム SMTP が必要（[docs/SETUP.md](SETUP.md) 手順 12）。招待リンク＋パスワード運用なら不要。
 5. **Supabase 無料プランの休止**：7 日間 API アクセスが無いとプロジェクトが一時停止します（ダッシュボードの「Restore project」で再開可）。`vercel.json` の `crons` が毎日（UTC 21:00 = 日本時間 6:00）`/api/cron/keepalive`（service_role で `companies` を 1 件数えるだけ）を呼び出して防止します。**`CRON_SECRET` は必須**で、未設定だと Route Handler が 503 を返して定期アクセスは無効になります（設定済みなら Vercel が付与する `Authorization: Bearer <CRON_SECRET>` を照合）。`scripts/deploy-vercel.sh` と GitHub Actions は未指定時に自動生成します。念のため月 1 回の手動バックアップを推奨。
 6. **PDF のフォント**：`public/fonts/NotoSansJP-*.ttf` を実行時にファイルとして読み込みます。`next.config.ts` の `outputFileTracingIncludes` で `/api/export/statement.pdf` に `public/fonts/**` を同梱する設定済みです。フォントが見つからないエラーが出た場合は、この設定と `public/fonts/` の中身を確認してください。
@@ -745,6 +790,8 @@ supabase-js の使い方は、E2E 用の互換サーバーが対応する範囲�
 | `SUPABASE_SERVICE_ROLE_KEY` | service_role（secret）キー | **サーバー専用** |
 | `NEXT_PUBLIC_APP_URL` | 本番 URL（招待リンク・メールのリダイレクト先）。未設定時は `VERCEL_PROJECT_PRODUCTION_URL` → `VERCEL_URL` → localhost | ブラウザにも渡る |
 | `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` | 任意。AI 月次分析 | サーバー専用 |
+| `RESEND_API_KEY` / `MAIL_FROM` | 任意。請求書のメール送付（両方そろったときだけ画面に出る）。`MAIL_FROM` は Resend で認証したドメインの差出人 | サーバー専用 |
+| `LINE_API_BASE` / `RESEND_API_BASE` | E2E 専用。テストサーバーのモックへ向ける（本番では設定しない） | サーバー専用 |
 | `CRON_SECRET` | **必須**（本番）。Vercel Cron → `/api/cron/keepalive` と `/api/cron/daily`（毎朝の異常検知と LINE 通知）の Bearer 検証。未設定だと 503 を返し定期アクセスは無効。32 文字以上のランダム文字列（deploy スクリプト／GitHub Actions が自動生成） | サーバー専用 |
 
 ---

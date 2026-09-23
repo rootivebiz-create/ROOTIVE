@@ -3,7 +3,7 @@
  * 内容・並びは projects.csv と同じ（案件利益 ＝ 稼働の利益 − 直課経費）。
  */
 import type { NextRequest } from "next/server";
-import { STAFF_ROLES } from "@/lib/auth/session";
+import { MANAGEMENT_VIEW_ROLES } from "@/lib/auth/session";
 import { monthToDate } from "@/lib/month";
 import { monthFileLabel } from "@/lib/exports/csv";
 import { projectsCsvRows } from "@/lib/exports/projects-csv";
@@ -36,7 +36,7 @@ const TYPES: XlsxCellType[] = [
 ];
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company, profile } = await requireExportRole(STAFF_ROLES);
+  const { supabase, company, profile } = await requireExportRole(MANAGEMENT_VIEW_ROLES);
   const month = monthParam(req, { allowAll: true });
 
   const rows = await fetchAllRows((from, to) => {

@@ -198,9 +198,11 @@ export const spreadPlanYearSchema = z.object({
 // ---------- 機密の見せ方 ----------
 
 export const CONFIDENTIAL_KEYS = Object.keys(CONFIDENTIAL_KEY_LABELS) as ("loans" | "cash" | "bank_account")[];
+// 段階：代表のみ → 管理者まで → 事務員まで（0028）→ 閲覧者まで
+const confidentialLevelSchema = z.enum(["owner", "admin", "clerk", "staff"]);
 export const confidentialScopeSchema = z.object({
-  loans: z.enum(["owner", "admin", "staff"]),
-  cash: z.enum(["owner", "admin", "staff"]),
-  bank_account: z.enum(["owner", "admin", "staff"]),
+  loans: confidentialLevelSchema,
+  cash: confidentialLevelSchema,
+  bank_account: confidentialLevelSchema,
 });
 export type ConfidentialScopeInput = z.infer<typeof confidentialScopeSchema>;

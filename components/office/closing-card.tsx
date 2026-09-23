@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { CheckCircle2, ChevronLeft, ChevronRight, Circle, CircleAlert, CircleMinus, Lock, Receipt } from "lucide-react";
+import { CheckCircle2, ChevronLeft, ChevronRight, Circle, CircleAlert, CircleMinus, Lock, Receipt, Send } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { applyRecurringExpensesAction } from "@/lib/actions/expenses";
 import { closeMonthAction } from "@/lib/actions/months";
 import { setCloseCheckAction } from "@/lib/actions/office";
+import { sendStatementsAction } from "@/lib/actions/integrations";
 import { formatDateTimeJa } from "@/lib/format";
 import { formatMonthJa, nextMonth, prevMonth } from "@/lib/month";
 import { STEP_STATUS_LABELS, type ClosingProgress, type ClosingStep, type StepStatus } from "@/lib/office/desk";
@@ -32,35 +33,58 @@ export interface ClosingCardProps {
   steps: ClosingStep[];
   progress: ClosingProgress;
   closedAt: string | null;
+  /** 支払明細の送付の人数（送る前の確認に出す） */
+  statements: { targets: number; sent: number; lineReady: number };
 }
 
 /**
  * 月締めの手順。上から順に進めれば締められる。
- * アプリが判定できる手順は自動で「済み」になり、判定できない手順（支払明細の送付・振込）は手でチェックする。
+ * 締める前の手順 → 締める → 締めたあとの手順（支払明細の送付・振込）の順に並ぶ。
+ * アプリが判定できる手順は自動で「済み」になり、判定できない手順は手でチェックする。
+ * 支払明細は LINE で送ると自動で済みになる（送った記録が残る）。
  */
-export function ClosingCard({ month, steps, progress, closedAt }: ClosingCardProps) {
+export function ClosingCard({ month, steps, progress, closedAt, statements }: ClosingCardProps) {
   const { pending, run } = useRun();
   const [closeOpen, setCloseOpen] = useState(false);
+  const [sendOpen, setSendOpen] = useState(false);
   const [note, setNote] = useState("");
   const closed = progress.closed;
-  const remaining = steps.filter((s) => s.key !== "close" && s.status === "todo");
+  const remaining = steps.filter((s) => s.key !== "close" && !s.afterClose && s.status === "todo");
+  const afterRemaining = steps.filter((s) => s.afterClose && s.status === "todo");
   const ratio = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
 
+  const checkbox = (s: ClosingStep) => (
+    <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs font-medium">
+      <Checkbox
+        checked={s.status === "done"}
+        disabled={pending}
+        onCheckedChange={(v) => run(() => setCloseCheckAction({ month, key: s.key, done: v === true }), v === true ? "チェックしました" : "チェックを外しました")}
+        aria-label={s.title}
+      />
+      済み
+    </label>
+  );
+
   const actionFor = (s: ClosingStep) => {
-    if (closed) return null;
-    if (s.action === "check") {
+    // 締めたあとの手順は、締めたあとも操作できる
+    if (s.afterClose) {
+      if (s.status === "skip") return null;
+      // 送った記録で自動的に済みになったものは、チェックを外せないので出さない
+      const autoDone = s.status === "done" && !s.doneBy;
       return (
-        <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs font-medium">
-          <Checkbox
-            checked={s.status === "done"}
-            disabled={pending}
-            onCheckedChange={(v) => run(() => setCloseCheckAction({ month, key: s.key, done: v === true }), v === true ? "チェックしました" : "チェックを外しました")}
-            aria-label={s.title}
-          />
-          済み
-        </label>
+        <>
+          {s.action === "send_statements" && (
+            <Button size="sm" onClick={() => setSendOpen(true)} disabled={pending}>
+              <Send />
+              LINE で送る
+            </Button>
+          )}
+          {!autoDone && checkbox(s)}
+        </>
       );
     }
+    if (closed) return null;
+    if (s.action === "check") return checkbox(s);
     if (s.action === "apply_recurring" && s.status === "todo") {
       return (
         <Button size="sm" onClick={() => run(() => applyRecurringExpensesAction(month), "計上しました")} disabled={pending} aria-busy={pending}>
@@ -101,8 +125,8 @@ export function ClosingCard({ month, steps, progress, closedAt }: ClosingCardPro
         </div>
         <CardDescription>
           {closed
-            ? `締め済みです${closedAt ? `（${formatDateTimeJa(closedAt)}）` : ""}。稼働・管理費・調整は固定されています。`
-            : "上から順に進めると締められます。自動で分かるものは「済み」になり、分からないものは手でチェックします。"}
+            ? `締め済みです${closedAt ? `（${formatDateTimeJa(closedAt)}）` : ""}。稼働・管理費・調整は固定されています。${afterRemaining.length > 0 ? "あとは支払明細の送付と振込です。" : ""}`
+            : "上から順に進めると締められます。締めてから支払明細を送り、振り込みます。自動で分かるものは「済み」になり、分からないものは手でチェックします。"}
         </CardDescription>
         <div>
           <div className="flex items-center justify-between text-xs text-muted-foreground">
@@ -120,8 +144,15 @@ export function ClosingCard({ month, steps, progress, closedAt }: ClosingCardPro
         <ol className="-mx-2 divide-y">
           {steps.map((s, i) => {
             const { icon: Icon, className } = STATUS_ICON[s.status];
+            const firstAfter = s.afterClose && !steps[i - 1]?.afterClose;
             return (
-              <li key={s.key} className="flex flex-col gap-2 px-2 py-2.5 sm:flex-row sm:items-center" data-step={s.key} data-status={s.status}>
+              <li
+                key={s.key}
+                className={cn("flex flex-col gap-2 px-2 py-2.5 sm:flex-row sm:items-center", firstAfter && "border-t-2 border-dashed")}
+                data-step={s.key}
+                data-status={s.status}
+              >
+                {firstAfter && <span className="sr-only">ここから締めたあとの手順</span>}
                 <div className="flex min-w-0 flex-1 items-start gap-2">
                   <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", className)} aria-hidden />
                   <div className="min-w-0">
@@ -149,11 +180,48 @@ export function ClosingCard({ month, steps, progress, closedAt }: ClosingCardPro
         </ol>
       </CardContent>
 
+      <Dialog open={sendOpen} onOpenChange={setSendOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{formatMonthJa(month)}の支払明細を送りますか？</DialogTitle>
+            <DialogDescription>
+              LINE と連携している人へ、お支払額（税込）・振込予定日・明細を開くリンクを送ります。アプリの通知を受け取る人には通知も届きます。送信済みの人には送りません。
+            </DialogDescription>
+          </DialogHeader>
+          <dl className="grid grid-cols-2 gap-x-3 gap-y-1 rounded-md bg-muted p-3 text-sm">
+            <dt className="text-muted-foreground">この月に稼働した人</dt>
+            <dd className="num text-right">{statements.targets} 人</dd>
+            <dt className="text-muted-foreground">送信済み</dt>
+            <dd className="num text-right">{statements.sent} 人</dd>
+            <dt className="text-muted-foreground">LINE で送れる人（まだ）</dt>
+            <dd className="num text-right">{statements.lineReady} 人</dd>
+          </dl>
+          <p className="text-xs text-muted-foreground">
+            1 人ずつ選んで送る・送り直すときは
+            <Link href={`/payouts?m=${month}#statements`} className="mx-1 underline underline-offset-2">
+              支払の画面
+            </Link>
+            から。LINE が届かない人には明細の PDF を渡して、チェックを付けてください。
+          </p>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setSendOpen(false)} disabled={pending}>
+              やめる
+            </Button>
+            <Button onClick={() => run(() => sendStatementsAction({ month }), "送りました", () => setSendOpen(false))} disabled={pending} aria-busy={pending}>
+              <Send />
+              送る
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={closeOpen} onOpenChange={setCloseOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{formatMonthJa(month)}を締めますか？</DialogTitle>
-            <DialogDescription>締めると、その月の稼働・管理費・調整・経費は変えられなくなります。集計とバックアップを保存します（解除できるのはオーナーだけです）。</DialogDescription>
+            <DialogDescription>
+              締めると、その月の稼働・管理費・調整・経費は変えられなくなります。集計とバックアップを保存します（解除できるのはオーナーだけです）。締めたら支払明細を送り、振り込みます。
+            </DialogDescription>
           </DialogHeader>
           {remaining.length > 0 && (
             <div className="rounded-md border border-warning/50 bg-warning/10 p-2 text-sm">

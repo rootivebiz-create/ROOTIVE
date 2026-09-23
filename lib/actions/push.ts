@@ -14,7 +14,7 @@ import { canSendPush } from "@/lib/push/config";
  */
 
 /** ログインしていれば誰でも（ドライバーを含む） */
-const ANY_ROLE = ["owner", "admin", "viewer", "driver"] as const;
+const ANY_ROLE = ["owner", "admin", "clerk", "viewer", "driver"] as const;
 
 function revalidateNotifications(): void {
   revalidatePath("/settings/notifications");

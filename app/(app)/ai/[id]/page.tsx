@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
-import { canEdit, requireStaff } from "@/lib/auth/session";
+import { canEdit, requireManagementPage } from "@/lib/auth/session";
 import { loadAiMessages } from "@/lib/db/queries";
 import { isAiInsightsEnabled } from "@/lib/ai/config";
 import { dateToMonth, monthFromParam } from "@/lib/month";
@@ -27,7 +27,7 @@ export default async function AiConversationPage({
   const sp = await searchParams;
   if (!UUID_RE.test(id)) notFound();
 
-  const { supabase, user, profile } = await requireStaff();
+  const { supabase, user, profile } = await requireManagementPage();
   const { data: conversation, error } = await supabase.from("ai_conversations").select("*").eq("id", id).maybeSingle();
   if (error) throw error;
   if (!conversation) notFound();

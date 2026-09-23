@@ -2,6 +2,7 @@ import { z } from "zod";
 import { DATE_RE, emptyToNull, isDateString, memoSchema, monthSchema, moneySchema, qtySchema, unitSchema, uuidSchema } from "./common";
 import type { Unit } from "@/lib/calc/types";
 import type { InvoiceStatus } from "@/lib/db/types";
+import { emailListError, normalizeEmailList } from "@/lib/mail/address";
 
 /**
  * 日付 "YYYY-MM-DD"（存在する日付かどうかも確認する）。
@@ -91,3 +92,21 @@ export const invoiceStatusInputSchema = z.object({
 });
 
 export type InvoiceStatusInputParsed = z.output<typeof invoiceStatusInputSchema>;
+
+/** 請求書をメールで送る（0028）。宛先はカンマ区切りで 5 件まで。remember で取引先の送り先として覚える */
+export const sendInvoiceMailSchema = z.object({
+  id: uuidSchema,
+  to: z
+    .string()
+    .trim()
+    .min(1, "宛先のメールアドレスを入力してください")
+    .max(300, "300 文字以内で入力してください")
+    .superRefine((s, ctx) => {
+      const err = emailListError(s);
+      if (err) ctx.addIssue({ code: "custom", message: err });
+    })
+    .transform(normalizeEmailList),
+  message: z.string().trim().max(1000, "1000 文字以内で入力してください").default(""),
+  remember: z.boolean().default(false),
+});
+export type SendInvoiceMailInput = z.input<typeof sendInvoiceMailSchema>;

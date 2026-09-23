@@ -23,6 +23,7 @@
 #   NEXT_PUBLIC_APP_URL            任意。未指定なら Vercel の本番 URL を自動で使う
 #   ANTHROPIC_API_KEY              任意。AI 月次分析を使う場合
 #   ANTHROPIC_MODEL                任意。AI のモデル名を変える場合
+#   RESEND_API_KEY / MAIL_FROM     任意。請求書をメールで送る場合（両方そろったときだけ画面に出る）
 #   CRON_SECRET                    任意。定期アクセス（/api/cron/keepalive）の認証。未設定なら自動生成
 #   NEXT_PUBLIC_VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY
 #                                  任意。端末へのプッシュ通知の鍵。未設定なら自動生成（一度作ったら作り直さない）
@@ -238,6 +239,9 @@ require_env SUPABASE_SERVICE_ROLE_KEY
 [ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ] && set_env SUPABASE_SERVICE_ROLE_KEY "$SUPABASE_SERVICE_ROLE_KEY" 1
 [ -n "${ANTHROPIC_API_KEY:-}" ] && set_env ANTHROPIC_API_KEY "$ANTHROPIC_API_KEY" 1
 [ -n "${ANTHROPIC_MODEL:-}" ] && set_env ANTHROPIC_MODEL "$ANTHROPIC_MODEL"
+# 請求書のメール送付（0028）。鍵はサーバーだけで読む
+[ -n "${RESEND_API_KEY:-}" ] && set_env RESEND_API_KEY "$RESEND_API_KEY" 1
+[ -n "${MAIL_FROM:-}" ] && set_env MAIL_FROM "$MAIL_FROM"
 # Vercel Cron（/api/cron/keepalive：Supabase の一時停止防止）の認証用。未設定なら生成する（Vercel が Bearer に自動付与）
 if [ -n "${CRON_SECRET:-}" ]; then
   set_env CRON_SECRET "$CRON_SECRET" 1

@@ -1,4 +1,4 @@
-import { canEdit, requirePageRole } from "@/lib/auth/session";
+import { ADMIN_ROLES, canEdit, requirePageRole } from "@/lib/auth/session";
 import { loadAptitudeTests, loadDriverInstructions, loadIncidents, loadMasters, loadSafetyManagers, loadVehicles } from "@/lib/db/queries";
 import { todayJST } from "@/lib/fleet/helpers";
 import { SafetyView } from "@/components/fleet/safety-view";
@@ -14,7 +14,7 @@ export const metadata = { title: "安全管理" };
  * 貨物軽自動車安全管理者の選任・指導監督の記録・事故の記録と、労務の基準。稼動月には依存しない。
  */
 export default async function SafetySettingsPage() {
-  const { supabase, profile, company } = await requirePageRole(["owner", "admin"]);
+  const { supabase, profile, company } = await requirePageRole(ADMIN_ROLES);
   const today = todayJST();
 
   const [managers, instructions, aptitudes, incidents, masters, vehicles] = await Promise.all([

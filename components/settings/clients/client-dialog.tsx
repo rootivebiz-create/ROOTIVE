@@ -29,6 +29,7 @@ interface FormState {
   honorific: string;
   address: string;
   tel: string;
+  email: string;
   invoice_reg_no: string;
   payment_month_offset: string;
   payment_day: string;
@@ -44,6 +45,7 @@ function emptyForm(): FormState {
     honorific: DEFAULT_HONORIFIC,
     address: "",
     tel: "",
+    email: "",
     invoice_reg_no: "",
     payment_month_offset: "1",
     payment_day: "0",
@@ -59,6 +61,7 @@ function toForm(c: Client | null): FormState {
     honorific: c.honorific ?? DEFAULT_HONORIFIC,
     address: c.address ?? "",
     tel: c.tel ?? "",
+    email: c.email ?? "",
     invoice_reg_no: c.invoice_reg_no ?? "",
     payment_month_offset: String(c.payment_month_offset ?? 1),
     payment_day: String(c.payment_day ?? 0),
@@ -98,6 +101,7 @@ export function ClientDialog({ open, onOpenChange, client }: ClientDialogProps) 
       honorific: f.honorific,
       address: f.address,
       tel: f.tel,
+      email: f.email,
       invoice_reg_no: f.invoice_reg_no,
       payment_month_offset: f.payment_month_offset,
       payment_day: f.payment_day,
@@ -180,6 +184,24 @@ export function ClientDialog({ open, onOpenChange, client }: ClientDialogProps) 
               <Input id="client-reg" value={f.invoice_reg_no} onChange={(e) => set({ invoice_reg_no: e.target.value })} disabled={pending} maxLength={30} autoComplete="off" placeholder="T1234567890123" />
               <FieldError messages={errors.invoice_reg_no} />
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="client-email">請求書の送り先メール</Label>
+            <Input
+              id="client-email"
+              type="email"
+              inputMode="email"
+              multiple
+              value={f.email}
+              onChange={(e) => set({ email: e.target.value })}
+              disabled={pending}
+              maxLength={300}
+              autoComplete="off"
+              placeholder="keiri@example.co.jp"
+            />
+            <p className="text-xs text-muted-foreground">請求書をメールで送るときの宛先です。複数あるときはカンマで区切ります（5 件まで）。</p>
+            <FieldError messages={errors.email} />
           </div>
 
           <fieldset className="space-y-1.5 rounded-md border p-3">

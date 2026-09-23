@@ -1,4 +1,4 @@
-import { requireStaff } from "@/lib/auth/session";
+import { requireManagementPage } from "@/lib/auth/session";
 import { isMonthClosed } from "@/lib/db/queries";
 import { addMonths, formatMonthJa, monthFromParam, monthRange, monthToDate } from "@/lib/month";
 import { PageHeader } from "@/components/ui/page-header";
@@ -11,7 +11,7 @@ export const metadata = { title: "ドライバー別の採算" };
 const TREND_MONTHS = 12;
 
 export default async function DriversPlPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const { supabase, company } = await requireStaff();
+  const { supabase, company } = await requireManagementPage();
   const sp = await searchParams;
   const month = monthFromParam(sp.m);
   const from = addMonths(month, -(TREND_MONTHS - 1));

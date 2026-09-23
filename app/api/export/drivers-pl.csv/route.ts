@@ -3,7 +3,7 @@
  * 既定は稼働中のドライバーのみ。?inactive=1 で停止中も含める（画面の「停止中も表示」と同じ）。
  */
 import type { NextRequest } from "next/server";
-import { STAFF_ROLES } from "@/lib/auth/session";
+import { MANAGEMENT_VIEW_ROLES } from "@/lib/auth/session";
 import { monthToDate } from "@/lib/month";
 import { buildDriverPlRows, visibleDriverPlRows } from "@/components/drivers-pl/helpers";
 import { driversPlCsvFilename, toDriversPlCsv } from "@/lib/exports/drivers-pl-csv";
@@ -14,7 +14,7 @@ import { recordExport } from "@/lib/exports/record";
 export const dynamic = "force-dynamic";
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company, profile } = await requireExportRole(STAFF_ROLES);
+  const { supabase, company, profile } = await requireExportRole(MANAGEMENT_VIEW_ROLES);
   const month = monthParam(req);
   const includeInactive = req.nextUrl.searchParams.get("inactive") === "1";
 

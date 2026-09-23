@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { ArrowLeft, ChevronLeft, ChevronRight, Download, FileText, Printer } from "lucide-react";
-import { requireStaff, canEdit } from "@/lib/auth/session";
+import { requireStaff, canEdit, canSeeManagement } from "@/lib/auth/session";
 import { isMonthClosed } from "@/lib/db/queries";
 import { loadStatementData, statementToText } from "@/lib/statement";
 import { monthFromParam, monthToDate } from "@/lib/month";
@@ -51,6 +51,8 @@ export default async function StatementPage({
 
   const closed = closedFlag || s.isClosed;
   const editable = canEdit(profile.role) && !closed;
+  // 会社側の内訳（会社売上・会社利益）は経営の数字（事務員には出さない）
+  const showProfit = canSeeManagement(profile.role);
 
   // 調整の recurring_id（固定控除の二重追加を防ぐためダイアログへ渡す）
   const recurringIdByAdjustment = new Map<string, string | null>();
@@ -103,6 +105,7 @@ export default async function StatementPage({
                 entries={entriesForCalc}
                 recurring={recurring}
                 tax={{ mode: s.taxMode, rate: s.taxRate, rounding: s.taxRounding }}
+                showProfit={showProfit}
               />
             )}
             <CopyStatementButton text={text} />
@@ -125,9 +128,9 @@ export default async function StatementPage({
         </a>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
+      <div className={showProfit ? "grid gap-4 lg:grid-cols-[3fr_2fr]" : "grid gap-4"}>
         <StatementCard s={s} editable={editable} />
-        <CompanyBreakdownCard s={s} />
+        {showProfit && <CompanyBreakdownCard s={s} />}
       </div>
 
       {(prev || next) && (

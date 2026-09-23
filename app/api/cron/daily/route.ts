@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { isManagementAlert } from "@/lib/alerts/helpers";
 import { createAdminClient, hasServiceRoleKey } from "@/lib/supabase/admin";
 import { multicastLineMessage } from "@/lib/integrations/line";
 import { alertMessage } from "@/lib/integrations/messages";
@@ -67,7 +68,7 @@ async function notifyHighAlerts(companyId: string, companyName: string, appUrl: 
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const { data: alerts } = await admin
     .from("alerts")
-    .select("id, title, detail, href, severity, status, detected_at")
+    .select("id, code, title, detail, href, severity, status, detected_at")
     .eq("company_id", companyId)
     .eq("status", "open")
     .eq("severity", "high")
@@ -78,11 +79,15 @@ async function notifyHighAlerts(companyId: string, companyName: string, appUrl: 
 
   const { data: staff } = await admin
     .from("profiles")
-    .select("line_user_id, is_active")
+    .select("line_user_id, is_active, role")
     .eq("company_id", companyId)
-    .eq("is_active", true);
-  const to = (staff ?? []).map((s) => (s.line_user_id ?? "").trim()).filter((v) => v.length > 0);
-  if (to.length === 0) return 0;
+    .eq("is_active", true)
+    .neq("role", "driver");
+  const linked = (staff ?? []).filter((s) => (s.line_user_id ?? "").trim().length > 0);
+  if (linked.length === 0) return 0;
+  // 経営のアラート（利益の急減・資金不足・税務など）は事務員（0027）には送らない。画面の RLS と同じ線
+  const idsFor = (management: boolean) =>
+    linked.filter((s) => !(management && s.role === "clerk")).map((s) => (s.line_user_id ?? "").trim());
 
   let sent = 0;
   for (const alert of alerts) {
@@ -92,6 +97,8 @@ async function notifyHighAlerts(companyId: string, companyName: string, appUrl: 
       detail: alert.detail,
       url: appUrl && alert.href ? `${appUrl}${alert.href}` : null,
     });
+    const to = idsFor(isManagementAlert(alert.code));
+    if (to.length === 0) continue;
     try {
       const result = await multicastLineMessage(companyId, to, text);
       sent += result.sent;

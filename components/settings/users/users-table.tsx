@@ -32,7 +32,7 @@ export interface UserRow {
   createdAt: string;
 }
 
-const ROLES: Role[] = ["owner", "admin", "viewer", "driver"];
+const ROLES: Role[] = ["owner", "admin", "clerk", "viewer", "driver"];
 
 function RoleBadge({ role }: { role: Role }) {
   const variant = role === "owner" ? "default" : role === "admin" ? "success" : role === "driver" ? "outline" : "secondary";

@@ -108,7 +108,7 @@ export default async function globalSetup(_config: FullConfig): Promise<void> {
   const keys = (await (await fetch(`${liteUrl}/__test/keys`)).json()) as { anon: string; service_role: string };
 
   // 4. 会社と招待
-  log("会社とオーナー／管理者／閲覧者の招待を投入します");
+  log("会社とオーナー／管理者／閲覧者／事務員の招待を投入します");
   const u = E2E.users;
   const companyId = adminSql(
     `with c as (
@@ -120,7 +120,8 @@ export default async function globalSetup(_config: FullConfig): Promise<void> {
          from c, (values
            ('${u.owner.email}', 'owner', '${u.owner.displayName}', '${u.owner.token}'),
            ('${u.admin.email}', 'admin', '${u.admin.displayName}', '${u.admin.token}'),
-           ('${u.viewer.email}', 'viewer', '${u.viewer.displayName}', '${u.viewer.token}')
+           ('${u.viewer.email}', 'viewer', '${u.viewer.displayName}', '${u.viewer.token}'),
+           ('${u.clerk.email}', 'clerk', '${u.clerk.displayName}', '${u.clerk.token}')
          ) as v(email, role, display_name, token)
        returning 1
      )
@@ -139,6 +140,11 @@ export default async function globalSetup(_config: FullConfig): Promise<void> {
     NEXT_PUBLIC_SUPABASE_ANON_KEY: keys.anon,
     SUPABASE_SERVICE_ROLE_KEY: keys.service_role,
     NEXT_PUBLIC_APP_URL: appUrl,
+    // 外部サービス（LINE・メール）はテストサーバーのモックへ向ける（/__test/outbox で届いたものを確かめる）
+    LINE_API_BASE: `${liteUrl}/__mock/line`,
+    RESEND_API_BASE: `${liteUrl}/__mock/resend`,
+    RESEND_API_KEY: "re_e2e_dummy",
+    MAIL_FROM: "ROOTIVE <billing@e2e.test>",
     NEXT_TELEMETRY_DISABLED: "1",
     PORT: String(E2E.appPort),
   };

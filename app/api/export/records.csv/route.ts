@@ -3,6 +3,7 @@
  * クエリ：from / to（取引年月日）、min / max（取引金額）、q（取引先・件名）、kinds（カンマ区切り）、missing=1
  */
 import type { NextRequest } from "next/server";
+import { STAFF_ROLES } from "@/lib/auth/session";
 import { handleExport, requireExportRole } from "../_lib/guard";
 import { recordExport } from "@/lib/exports/record";
 import { csvResponse } from "@/lib/exports/download";
@@ -27,7 +28,7 @@ function kindsParam(raw: string | null): RecordKind[] {
 }
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company, profile } = await requireExportRole(["owner", "admin", "viewer"]);
+  const { supabase, company, profile } = await requireExportRole(STAFF_ROLES);
   const sp = req.nextUrl.searchParams;
   const from = sp.get("from");
   const to = sp.get("to");

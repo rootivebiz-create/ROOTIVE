@@ -1,4 +1,4 @@
-import { canEdit, requireStaff } from "@/lib/auth/session";
+import { canEdit, canSeeManagement, requireStaff } from "@/lib/auth/session";
 import { DispatchView } from "@/components/dispatch/dispatch-view";
 import { loadDispatchWeek } from "@/lib/dispatch/queries";
 import { weekStart } from "@/lib/dispatch/board";
@@ -35,6 +35,7 @@ export default async function DispatchPage({ searchParams }: { searchParams: Pro
       weekStart={start}
       today={today}
       editable={canEdit(profile.role)}
+      showProfit={canSeeManagement(profile.role)}
       items={data.items}
       drivers={data.drivers}
       patterns={data.patterns}

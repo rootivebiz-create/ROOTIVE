@@ -1,6 +1,7 @@
 import { requireStaff } from "@/lib/auth/session";
 import { PageHeader } from "@/components/ui/page-header";
 import { NotificationSettings } from "@/components/settings/notifications/notification-settings";
+import { LineLinkCard } from "@/components/driver/line-link-card";
 import { isPushConfigured, vapidPublicKey } from "@/lib/push/config";
 import type { NotifyChatMode } from "@/lib/push/targets";
 
@@ -27,6 +28,14 @@ export default async function NotificationSettingsPage() {
         vapidPublicKey={vapidPublicKey}
         devices={(data ?? []).map((d) => ({ id: d.id, label: d.label ?? "", createdAt: d.created_at ?? "" }))}
       />
+      {/* 自分の LINE 連携（外部連携の設定を開けない事務員・閲覧者もここで連携できる） */}
+      <div className="mt-4">
+        <LineLinkCard
+          linked={Boolean((profile.line_user_id ?? "").trim())}
+          linkedAt={profile.line_linked_at ?? null}
+          description="自分あてのチャット・承認待ちのお知らせを LINE で受け取れます。公式アカウントに「今月どう？」「支払は？」と送ると数字で答えます。"
+        />
+      </div>
     </div>
   );
 }

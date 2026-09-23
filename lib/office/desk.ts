@@ -4,7 +4,7 @@
  * RPC `office_desk(month, today)` が返す行と事実を、画面の 3 つのまとまりにする。
  *   - 今日やること（buildInbox）      … 急ぐ順に並べた「やること」の一覧
  *   - 今日の報告（todayReporters）    … 今日報告が要る人・まだの人・催促できる人
- *   - 月締めの手順（buildClosingSteps）… 締めるまでの手順と、それぞれ終わっているか
+ *   - 月締めの手順（buildClosingSteps）… 締めるまでの手順と、締めたあとの手順（支払明細の送付・振込）
  *
  * 判定はすべてここに置く（SQL は行と数を返すだけ。0025 の dashboard_cards と同じ考え方）。
  * 基準日は引数で受け取り、`new Date()` は使わない（同じ入力なら必ず同じ結果）。
@@ -93,7 +93,24 @@ export interface ClosingFacts {
   clients: { clientId: string; clientName: string; bill: number }[];
   unassignedBill: number;
   invoices: { id: string; clientId: string; status: "draft" | "issued" | "paid"; total: number }[];
+  /** 支払明細を送る相手（その月に数量 > 0 の稼働がある人）の数（0028） */
+  statementTargets: number;
+  /** そのうち明細を送った記録（statement_deliveries）がある人の数 */
+  statementSent: number;
+  /** そのうち LINE が届くのに、まだ送っていない人の数 */
+  statementLineReady: number;
   checks: { key: string; doneAt: string; doneByName: string }[];
+}
+
+/** 締めたあとの手順が残っているかもしれない直近の月（締めて 45 日以内。0028） */
+export interface DeskAfterClose {
+  /** "YYYY-MM" */
+  month: string;
+  closedAt: string | null;
+  statementTargets: number;
+  statementSent: number;
+  /** 手で付けたチェックの名前（month_close_checks.key） */
+  checks: string[];
 }
 
 export interface OfficeDesk {
@@ -116,6 +133,7 @@ export interface OfficeDesk {
   alertsOpen: number;
   /** 締めていない過去の月（"YYYY-MM"、古い順） */
   openPastMonths: string[];
+  afterClose: DeskAfterClose | null;
   closing: ClosingFacts;
 }
 
@@ -139,6 +157,7 @@ export function parseOfficeDesk(raw: unknown): OfficeDesk {
   const o = obj(raw);
   const c = obj(o.closing);
   const t = o.tomorrow == null ? null : obj(o.tomorrow);
+  const ac = o.after_close == null ? null : obj(o.after_close);
   return {
     today: dateOnly(o.today),
     month: monthOnly(o.month),
@@ -209,6 +228,16 @@ export function parseOfficeDesk(raw: unknown): OfficeDesk {
     }),
     alertsOpen: num(o.alerts_open),
     openPastMonths: arr(o.open_past_months).map(monthOnly).filter(Boolean),
+    afterClose:
+      ac && monthOnly(ac.month)
+        ? {
+            month: monthOnly(ac.month),
+            closedAt: strOrNull(ac.closed_at),
+            statementTargets: num(ac.statement_targets),
+            statementSent: num(ac.statement_sent),
+            checks: arr(ac.checks).map(str),
+          }
+        : null,
     closing: {
       status: str(c.status) === "closed" ? "closed" : "open",
       closedAt: strOrNull(c.closed_at),
@@ -232,6 +261,9 @@ export function parseOfficeDesk(raw: unknown): OfficeDesk {
         const s = str(x.status);
         return { id: str(x.id), clientId: str(x.client_id), status: s === "paid" ? "paid" : s === "issued" ? "issued" : "draft", total: num(x.total) };
       }),
+      statementTargets: num(c.statement_targets),
+      statementSent: num(c.statement_sent),
+      statementLineReady: num(c.statement_line_ready),
       checks: arr(c.checks).map((r) => {
         const x = obj(r);
         return { key: str(x.key), doneAt: str(x.done_at), doneByName: str(x.done_by_name) };
@@ -345,6 +377,7 @@ export type InboxKind =
   | "invoices_overdue"
   | "alerts_high"
   | "open_months"
+  | "after_close"
   | "bank_unmatched";
 
 /** その場でできる操作（無ければリンクで該当画面へ） */
@@ -369,6 +402,7 @@ export const INBOX_KIND_ORDER: InboxKind[] = [
   "invoices_overdue",
   "tomorrow_unconfirmed",
   "alerts_high",
+  "after_close",
   "open_months",
   "bank_unmatched",
 ];
@@ -384,6 +418,27 @@ export function sortInbox(items: readonly InboxItem[]): InboxItem[] {
 
 /** 休み希望は、この日数以内の日のものを「急ぎ」にする */
 export const DAY_OFF_URGENT_DAYS = 3;
+
+/**
+ * 締めた月に残っている「締めたあとの手順」。
+ * 支払明細は全員に送った記録があるか、手でチェックを付けていれば済み。振込はチェックだけで判断する
+ */
+export function afterCloseRemaining(a: DeskAfterClose | null): { key: ManualCloseKey; label: string; detail: string }[] {
+  if (!a) return [];
+  const out: { key: ManualCloseKey; label: string; detail: string }[] = [];
+  const statementsDone = a.checks.includes("statements_sent") || a.statementTargets === 0 || a.statementSent >= a.statementTargets;
+  if (!statementsDone) {
+    out.push({
+      key: "statements_sent",
+      label: "支払明細の送付",
+      detail: a.statementSent > 0 ? `${a.statementTargets} 人中 ${a.statementSent} 人に送りました` : `${a.statementTargets} 人にまだ送っていません`,
+    });
+  }
+  if (!a.checks.includes("transfer_done")) {
+    out.push({ key: "transfer_done", label: "振込", detail: "振込が済んだらチェックを付けます" });
+  }
+  return out;
+}
 
 export function buildInbox(desk: OfficeDesk, reporters: TodayReporters = todayReporters(desk)): InboxItem[] {
   const today = desk.today;
@@ -504,6 +559,20 @@ export function buildInbox(desk: OfficeDesk, reporters: TodayReporters = todayRe
     });
   }
 
+  // 締めた月の残り（支払明細の送付・振込）
+  const after = afterCloseRemaining(desk.afterClose);
+  if (desk.afterClose && after.length > 0) {
+    const month = desk.afterClose.month;
+    items.push({
+      kind: "after_close",
+      urgency: "today",
+      title: `${formatMonthJa(month)}の締めのあと：${after.map((a) => a.label).join("・")}`,
+      detail: after.map((a) => a.detail).join("・"),
+      count: after.length,
+      href: `/office?m=${month}#closing`,
+    });
+  }
+
   // 消し込めていない入金
   if (desk.bankUnmatched > 0) {
     items.push({
@@ -533,7 +602,7 @@ export function buildInbox(desk: OfficeDesk, reporters: TodayReporters = todayRe
  */
 export type StepStatus = "done" | "todo" | "warn" | "skip";
 
-export type StepAction = "apply_recurring" | "close_month" | "check";
+export type StepAction = "apply_recurring" | "close_month" | "check" | "send_statements";
 
 export interface ClosingStep {
   key: string;
@@ -544,13 +613,15 @@ export interface ClosingStep {
   action?: StepAction;
   /** 手で付けるチェック（アプリが判定できない手順） */
   manual?: boolean;
+  /** 締めたあとの手順（支払明細の送付・振込）。締める手順より下に並ぶ */
+  afterClose?: boolean;
   doneAt?: string;
   doneBy?: string;
 }
 
 /** 手で付けるチェックの名前（month_close_checks.key） */
 export const MANUAL_CLOSE_STEPS = [
-  { key: "statements_sent", title: "支払明細をドライバーへ送った", detail: "明細の PDF・LINE 用の文面を送ったら付けます" },
+  { key: "statements_sent", title: "支払明細をドライバーへ送った", detail: "LINE で送ると自動で済みになります。紙や PDF で渡したときはチェックを付けます" },
   { key: "transfer_done", title: "振込を済ませた", detail: "振込データで銀行に振込を依頼したら付けます" },
 ] as const;
 
@@ -617,23 +688,50 @@ export function buildClosingSteps(facts: ClosingFacts, month: string, thisMonth:
 
   steps.push(invoiceStep(facts, q));
 
+  // 締める。ここまでが「締める前」の手順（締めてから明細を送り、振り込む）
+  steps.push(closeStep(facts, month, thisMonth, steps));
+
+  const closed = facts.status === "closed";
   for (const m of MANUAL_CLOSE_STEPS) {
     const c = facts.checks.find((x) => x.key === m.key);
-    steps.push({
+    const base = {
       key: m.key,
       title: m.title,
-      detail: c ? `${c.doneByName || "だれか"}さんが付けました` : m.detail,
-      status: c ? "done" : "todo",
       href: m.key === "transfer_done" ? `/payouts/transfer${q}` : `/payouts${q}`,
-      action: "check",
+      action: "check" as StepAction,
       manual: true,
+      afterClose: true,
       doneAt: c?.doneAt,
       doneBy: c?.doneByName,
-    });
+    };
+    if (c) {
+      steps.push({ ...base, detail: `${c.doneByName || "だれか"}さんが付けました`, status: "done" });
+      continue;
+    }
+    if (m.key === "statements_sent") {
+      steps.push(statementStep(facts, base, closed));
+      continue;
+    }
+    steps.push({ ...base, detail: closed ? m.detail : "締めてから振り込みます（締めると金額が確定します）", status: "todo" });
   }
-
-  steps.push(closeStep(facts, month, thisMonth, steps));
   return steps;
+}
+
+/** 支払明細の送付。LINE で全員に送った記録があれば自動で済み。締める前は送れない */
+function statementStep(facts: ClosingFacts, base: Omit<ClosingStep, "detail" | "status">, closed: boolean): ClosingStep {
+  const { statementTargets: targets, statementSent: sent, statementLineReady: line } = facts;
+  if (targets === 0) return { ...base, detail: "この月に稼働した人はいません", status: "skip", action: undefined };
+  if (sent >= targets) return { ...base, detail: `${targets} 人全員に送りました`, status: "done" };
+  if (!closed) return { ...base, detail: "締めてから送ります（締めると金額が確定します）", status: "todo" };
+  const parts = [sent > 0 ? `${targets} 人中 ${sent} 人に送りました` : `${targets} 人にまだ送っていません`];
+  parts.push(
+    line > 0
+      ? `LINE で送れる人 ${line} 人`
+      : sent > 0
+        ? "残りは LINE が届かない人です（PDF を渡したらチェックを付けます）"
+        : "LINE が届く人はいません（PDF を渡したらチェックを付けます）",
+  );
+  return { ...base, detail: parts.join("・"), status: "todo", action: line > 0 ? "send_statements" : "check" };
 }
 
 function invoiceStep(facts: ClosingFacts, q: string): ClosingStep {
@@ -677,14 +775,15 @@ export interface ClosingProgress {
   done: number;
   /** 数える手順の数（skip を除く） */
   total: number;
-  /** 締める手順より前に todo が残っていない */
+  /** 締める手順より前に todo が残っていない（締めたあとの手順は数えない） */
   ready: boolean;
   closed: boolean;
 }
 
 export function closingProgress(steps: readonly ClosingStep[]): ClosingProgress {
   const counted = steps.filter((s) => s.status !== "skip");
-  const beforeClose = steps.filter((s) => s.key !== "close");
+  // 締めたあとの手順（明細の送付・振込）は締める条件に入れない
+  const beforeClose = steps.filter((s) => s.key !== "close" && !s.afterClose);
   const close = steps.find((s) => s.key === "close");
   return {
     done: counted.filter((s) => s.status === "done").length,

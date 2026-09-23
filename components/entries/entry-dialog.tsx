@@ -34,6 +34,8 @@ export interface EntryDialogProps {
   /** 編集対象（mode = "edit"） */
   entry?: EntryRow | null;
   onSaved?: () => void;
+  /** プレビューに単価差額利益・行の利益を出す（経営の数字。事務員には出さない） */
+  showProfit?: boolean;
 }
 
 interface FormState {
@@ -135,7 +137,7 @@ export function EntryDialog(props: EntryDialogProps) {
   );
 }
 
-function EntryForm({ onOpenChange, mode, month, masters, allMasters, entry, onSaved }: EntryDialogProps) {
+function EntryForm({ onOpenChange, mode, month, masters, allMasters, entry, onSaved, showProfit = true }: EntryDialogProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [form, setForm] = useState<FormState>(() => initialForm(mode, month, entry));
@@ -428,18 +430,26 @@ function EntryForm({ onOpenChange, mode, month, masters, allMasters, entry, onSa
           <dd className="text-right">
             <Money value={calc.pay} />
           </dd>
-          <dt className="text-muted-foreground">単価差額利益</dt>
-          <dd className="text-right">
-            <Money value={calc.margin} className={cn(loss && "neg")} />
-          </dd>
+          {showProfit && (
+            <>
+              <dt className="text-muted-foreground">単価差額利益</dt>
+              <dd className="text-right">
+                <Money value={calc.margin} className={cn(loss && "neg")} />
+              </dd>
+            </>
+          )}
           <dt className="text-muted-foreground">ロイヤリティ</dt>
           <dd className="text-right">
             <Money value={calc.royalty} />
           </dd>
-          <dt className="font-semibold">行の利益</dt>
-          <dd className="text-right font-semibold">
-            <Money value={calc.entryProfit} />
-          </dd>
+          {showProfit && (
+            <>
+              <dt className="font-semibold">行の利益</dt>
+              <dd className="text-right font-semibold">
+                <Money value={calc.entryProfit} />
+              </dd>
+            </>
+          )}
         </dl>
       </div>
 

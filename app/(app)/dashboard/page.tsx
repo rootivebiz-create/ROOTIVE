@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { Lock } from "lucide-react";
-import { requireStaff, canEdit } from "@/lib/auth/session";
+import { canEdit, requireManagementPage } from "@/lib/auth/session";
 import { loadDashboardData } from "@/lib/db/queries-dashboard";
 import { loadDashboardCards, loadExpenseSummary, loadMonthKpi, loadMonthPl } from "@/lib/db/queries";
 import { isAiInsightsEnabled } from "@/lib/ai/config";
@@ -37,7 +37,7 @@ export const metadata = { title: "ダッシュボード" };
 export const maxDuration = 60;
 
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const { supabase, profile, company } = await requireStaff();
+  const { supabase, profile, company } = await requireManagementPage();
   const sp = await searchParams;
   const month = monthFromParam(sp.m);
   const prev = prevMonth(month);

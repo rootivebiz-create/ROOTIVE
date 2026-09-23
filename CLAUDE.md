@@ -16,7 +16,10 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
 - `lib/voice/` 声で入力（`parse.ts` 純関数の解析・`speech.ts` 音声認識の包み）
 - `lib/dispatch/` 配車（`board.ts` 純関数の週のボード・過不足・自動割り当て・見通し・`queries.ts` サーバー専用の読み取り）
 - `lib/compliance/` 法令対応（`helpers.ts` 純関数の不足のまとめ・台帳の記入率・`queries.ts` サーバー専用の読み取り）
-- `lib/office/` 事務（`desk.ts` 純関数の今日やること・今日の報告・月締めの手順・`queries.ts` サーバー専用の読み取り）
+- `lib/office/` 事務（`desk.ts` 純関数の今日やること・今日の報告・月締めの手順・締めのあと・`queries.ts` サーバー専用の読み取り）
+- `lib/statements/` 支払明細の送付（`delivery.ts` 純関数の送る相手と文面・`send.ts` サーバー専用の読み取りと送信）
+- `lib/mail/` メール（`address.ts` 宛先の純関数・`invoice.ts` 請求書の文面・`send.ts` Resend での送信。サーバー専用）
+- `lib/guide/` 使い方ガイド（`pages.ts` 各ページ・`overview.ts` 全体の流れと質問・`match.ts` いまの画面とロールで選ぶ純関数）
 - `lib/push/` 通知（`targets.ts` 純関数の宛先と文面・`config.ts` VAPID・`send.ts` 送信・`client.ts` ブラウザ側の購読・`notify-chat.ts` / `notify-daily.ts` 実際の通知）
 - `lib/alerts/` `lib/chat/` `lib/bank/` `lib/integrations/` `lib/daily/` `lib/fleet/` `lib/intake/` `lib/hr/` `lib/executive/`（代表：読み取り `queries.ts`・信号 `cockpit.ts`・現金の残り日数 `runway.ts`・予実の分解 `variance.ts`・朝のひとこと `brief.ts`） 各機能の純関数とサーバー専用の処理
 - `lib/db/database.types.ts` supabase-js 用の型（自動生成）、`lib/db/types.ts` 型エイリアス、`lib/db/queries.ts` 共通クエリ
@@ -26,7 +29,7 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
 - `lib/month.ts` 稼動月ユーティリティ、`lib/format.ts` 表示書式（円・%・数量）
 - `components/ui/*` UI 部品（shadcn/ui 相当）、`components/layout/*` シェル・ナビ・月セレクタ
 - `app/(app)/*` スタッフ画面（ホーム・稼働・支払・請求・経費・資金繰り・案件・レポート・ドライバー別の採算・設定）、`app/driver/*` ドライバーポータル、`app/(auth)/*` ログイン・招待、`app/api/export/*` 出力
-- `supabase/migrations/*.sql` スキーマ（0001 テーブル、0002 認証・RLS、0003 ビュー、0004 RPC、0005 ポータル・初期データ、0006 Storage・権限、0007 ドライバー別単価（bill_rate 上書き・rate_diffs・apply_master_rates）、0008 消費税・ロゴと認印・ドライバーごとの支払日、0009 経費と営業利益・取引先と請求書・月次目標、0010 資金繰り・案件別採算、0011 AI チャット・社内チャット・異常検知・外部連携、0012 運行管理と法令対応（点呼・業務記録・日別の稼働・車両・書類）、0013 取り込みと採用・契約、0014 法人の経営管理（振込先口座・決算と税務カレンダー・借入金・経営指標・契約書の保管）、0015 バックアップと復元を全テーブルへ拡張、0016 異常の検知を毎日自動で回す、0017 会社を明示して集計する RPC、0018 労務（拘束時間・休息）と元請の支払通知との突合、0019 代表（決裁・意思決定ログ・会社の台帳・中期計画・ログインの記録）、0020 代表の守り（機密の隔離・決裁のルールと委任・持ち出しの記録・計画の配分・振込口座の分離）、0021 表示を速くする（me / nav_badges）、0022 通知（端末への通知の購読・受け取り方の設定）、0023 配車・シフト（必要人数・割り当て・休み希望・定休日）、0024 法定帳票（運転者台帳・適性診断・保存期間・監査で足りないもの）、0025 使ってみて気づいた直し（台帳の出力を機密に・LINE 連携の復元・ダッシュボードの 1 往復）、0026 事務（月締めの手順のチェック・今日の報告の催促・最初に開く画面・office_desk））
+- `supabase/migrations/*.sql` スキーマ（0001 テーブル、0002 認証・RLS、0003 ビュー、0004 RPC、0005 ポータル・初期データ、0006 Storage・権限、0007 ドライバー別単価（bill_rate 上書き・rate_diffs・apply_master_rates）、0008 消費税・ロゴと認印・ドライバーごとの支払日、0009 経費と営業利益・取引先と請求書・月次目標、0010 資金繰り・案件別採算、0011 AI チャット・社内チャット・異常検知・外部連携、0012 運行管理と法令対応（点呼・業務記録・日別の稼働・車両・書類）、0013 取り込みと採用・契約、0014 法人の経営管理（振込先口座・決算と税務カレンダー・借入金・経営指標・契約書の保管）、0015 バックアップと復元を全テーブルへ拡張、0016 異常の検知を毎日自動で回す、0017 会社を明示して集計する RPC、0018 労務（拘束時間・休息）と元請の支払通知との突合、0019 代表（決裁・意思決定ログ・会社の台帳・中期計画・ログインの記録）、0020 代表の守り（機密の隔離・決裁のルールと委任・持ち出しの記録・計画の配分・振込口座の分離）、0021 表示を速くする（me / nav_badges）、0022 通知（端末への通知の購読・受け取り方の設定）、0023 配車・シフト（必要人数・割り当て・休み希望・定休日）、0024 法定帳票（運転者台帳・適性診断・保存期間・監査で足りないもの）、0025 使ってみて気づいた直し（台帳の出力を機密に・LINE 連携の復元・ダッシュボードの 1 往復）、0026 事務（月締めの手順のチェック・今日の報告の催促・最初に開く画面・office_desk）、0027 事務員ロール（enum の値だけ）、0028 事務員の権限・支払明細の送付・請求書のメール送付・締めたあとの手順）
 - `tests/` Vitest（`*.test.ts`）、`tests/sql/`（psql）、`tests/e2e/`（Playwright ＋ `supabase-lite` テストサーバー）
 
 ## 必ず守る規約
@@ -85,7 +88,7 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
 - **決裁のルールと代理決裁（0020）**：しきい値は `approval_rules`（会社を作ると既定 6 件）。判定は RPC `approval_required(kind, amount)` で、**画面や Server Action に金額を手書きしない**。代表が不在のときは `approval_delegations`（期間・上限金額・種別を切った一時的な委任）で admin が決裁でき、`can_decide_approval` が RLS・トリガー・RPC の 3 か所すべてで使われる。代理のときは `approvals.on_behalf_of` に代表が入る。**権限そのものの昇格はしない**
 - **持ち出しの記録（0020）**：`export_logs` に CSV・振込データ・バックアップ・明細 PDF の出力を残す（閲覧は代表のみ、書き込みは `record_export` のサービスロール専用、1 年で消える）。**記録に失敗しても出力自体は止めない**
 - **中期計画 → 月次目標（0020）**：`spread_plan_year(plan_id, year, 'even' | 'actual')` が年間目標を 12 か月へ配分する（端数は 12 月。手で入れてある月は上書きしない）。承認した申請からは `decision_from_approval` で意思決定ログの下書きを作る（同じ申請から二度は作らない）
-- 異常の検知は 29 ルール（0011 の 11 ＋ 0012 の 5 ＋ 0014 の 4 ＋ 0018 の 4 ＋ 0019 の 1（決裁の滞留）＋ 0020 の 1（出力の急増）＋ 0023 の 3（配車））。code は 30 種類
+- 異常の検知は 29 ルール（0011 の 11 ＋ 0012 の 5 ＋ 0014 の 4 ＋ 0018 の 4 ＋ 0019 の 1（決裁の滞留）＋ 0020 の 1（出力の急増）＋ 0023 の 3（配車））。code は 30 種類。うち経営のアラート 8 種類は事務員に出さない（0028）
 - バックアップは **version 9**。代表のテーブル（0019）・決裁のルール・委任・振込口座（0020）・配車（0023）・適性診断（0024）まで入る。0025 で LINE の連携（`drivers.line_user_id`）も戻すようにした。**外部連携のトークン・社内チャット・AI の履歴・監査ログ・アラート・ログインの記録・持ち出しの記録は含めない**。version 6 以前の `drivers` に入っていた口座も復元できる
 - **表示の速さ（0021）**：画面を 1 つ開くたびの Supabase への往復を減らす。
   - `getSessionContext()` は RPC **`me()`** の 1 往復だけ（以前は `getUser()` → `profiles` → `companies` の 3 連続）。
@@ -161,8 +164,22 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
     事務の人はスマホの下タブの先頭とロゴの行き先も事務になる（`bottomItemsFor(variant, role, startPage)`）
   - ナビのバッジ `nav_badges().office`＝承認待ちの稼働報告 ＋ 休み希望（admin 以上だけ）。ベルは増えたらトーストで知らせる
   - `month_close_checks` / `report_reminders` はバックアップに含めない（運用の記録。データ全削除では消す）
+- **事務員（clerk・0027 / 0028）**：事務の担当のロール。登録・編集は管理者と同じ（`is_admin()` と `ADMIN_ROLES` に入る）が、**経営の数字と経営の設定には入らない**。
+  - 判定は DB が `is_clerk()` / `is_manager()`（owner・admin）/ `can_see_management()`（owner・admin・viewer）、アプリが `canEdit` / `canManage` / `canSeeManagement`（`lib/auth/session.ts`）。**画面・Server Action・DB で同じ線を引く**
+  - 事務員に閉じるもの：ホーム・資金繰り・案件別・ドライバー別の採算・財務・レポート・AI（`requireManagementPage`、ナビは `noClerk`）、監査ログ・外部連携の設定（`managerOnly`）、月次目標・経営のアラート（`is_management_alert`。`MANAGEMENT_ALERT_CODES` と同じ 8 種類）・`cash_forecast`・締め時バックアップ（Storage の `backups_select` は `is_manager()`）
+  - 行ごとの売上・支払は事務の仕事（請求・支払）に要るので見える。**会社利益・行の利益は画面で出さないだけ**（`showProfit`）で、RLS では隠していない（`bill − pay` で出せるため）
+  - 機密の段階に「事務員まで」（`clerk`）を足した。振込データを任せるときは代表が振込口座を「事務員まで」にする
+  - 事務員はいつも `/office` から始まる（`homeFor`・`/` の振り分け・下タブの先頭）。入れない画面からも `/office` へ戻す
+  - **RLS が効かないサービスロールの経路（LINE の返事・送付）では、事務員に経営の数字を返さない判定をコードで行う**（`lib/line/answer.ts`）
+  - ロールの一覧を手で書いている箇所（`roleSchema`・`ANY_ROLES`・出力の口など）は clerk を足し忘れないこと
+- **支払明細の送付（0028）**：`statement_deliveries`（ドライバー × 月で 1 件。送った時点の税込額 `payout_incl` と送った人の名前が残る）。書き込みは RPC `record_statement_deliveries`（**締めた月だけ** hint `MONTH_NOT_CLOSED`）。
+  - 送るのは `lib/statements/send.ts` の `sendStatements` だけ（LINE ＋ 端末への通知。届いた人だけ記録。送信済みは飛ばし、金額が変わった人は送り直す）。`sendStatementsAction`（支払の画面・事務の画面）と、月締めの自動送信 `notifyStatementsAction`（LINE だけ・「支払明細の通知」がオンのとき）がこれを呼ぶ
+  - 事務員は `integrations` を読めないので、LINE 連携の有無はサービスロール（会社で絞る）か RPC `company_line_enabled()`（真偽だけ）で判定する
+- **請求書のメール送付（0028）**：`RESEND_API_KEY` と `MAIL_FROM` がそろっているときだけ画面に出す（`isMailEnabled`）。`sendInvoiceMailAction` が 下書きなら発行 → PDF を添付して送信 → `record_invoice_send`（送れなかったときも理由を残す）。宛先は `clients.email`（カンマ区切り 5 件まで）。E2E は `RESEND_API_BASE` / `LINE_API_BASE` でテストサーバーのモックへ向ける（本番では設定しない）
+- **月締めの手順の順番（0028 で直した）**：締める前の 7 つ → **月を締める** → 支払明細の送付 → 振込。締めたあとの手順は締めた月でもチェックできる（0026 の番人を外した）。明細は全員に送った記録があれば自動で済み。直近に締めた月（45 日以内）に残っていれば「今日やること」に「締めのあと」として出る（`office_desk` の `after_close`）
+- **使い方ガイド**：`/guide`（スタッフ）・`/driver/guide`（ドライバー）と、各画面の右上の「？」（スマホはメニューの「この画面の使い方」）。中身は `lib/guide/*` の純データで、出し分けはナビと同じ。**画面を足したらガイドも足す**（`tests/guide.test.ts` が page.tsx の抜けを見つける）
 - **新しいテーブルには必ず権限を出す**：0020 の末尾にある `grant ... on all tables in schema public to authenticated` は**そのあとの番号で作ったテーブルには届かない**。`security invoker` の RPC は RLS の手前で `permission denied` になる。テーブルを足したマイグレーションの末尾で grant を出し直すこと（`tests/sql/run.sh` が 1 回目の適用直後に抜けを検出する）
-- ロール：owner（すべて ＋ `/executive` の決裁・意思決定・会社の台帳・中期計画・守り）／admin（登録・編集・月締め・出力・代表への申請・`/office` の事務）／viewer（閲覧・CSV・チャット・AI 相談。借入・納税・現金・振込口座は既定で見えない）／driver（自分の締め済み月の明細、今日の報告（点呼・稼働）、自分の予定と休みの申請、自分の書類・車両・契約）
+- ロール：owner（すべて ＋ `/executive` の決裁・意思決定・会社の台帳・中期計画・守り）／admin（登録・編集・月締め・出力・代表への申請・`/office` の事務）／clerk（事務員。admin と同じ登録・編集・月締め・明細の送付・請求書のメール。経営の数字・監査ログ・外部連携の設定・バックアップは無し）／viewer（閲覧・CSV・チャット・AI 相談。借入・納税・現金・振込口座は既定で見えない）／driver（自分の締め済み月の明細、今日の報告（点呼・稼働）、自分の予定と休みの申請、自分の書類・車両・契約）
 
 ## supabase-js の使い方の制約（E2E 用の互換テストサーバーが対応する範囲に限定する）
 - `from(table|view).select("col, col2" | "*")` — **埋め込みリソース（`drivers(name)` など）は使わない**。名称が必要なら `v_*` ビューを使う

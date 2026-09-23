@@ -272,8 +272,19 @@ describe("機密の見せ方", () => {
     expect(canSeeConfidential("driver", staffScope, "bank_account")).toBe(false);
   });
 
-  it("見せ方の保存は owner / admin / staff だけを受ける", () => {
+  it("事務員まで（clerk）なら管理者と事務員は見えて、閲覧者は見えない。admin までなら事務員は見えない", () => {
+    const clerkScope = toConfidentialScope({ loans: "admin", cash: "admin", bank_account: "clerk" });
+    expect(canSeeConfidential("clerk", clerkScope, "bank_account")).toBe(true);
+    expect(canSeeConfidential("admin", clerkScope, "bank_account")).toBe(true);
+    expect(canSeeConfidential("owner", clerkScope, "bank_account")).toBe(true);
+    expect(canSeeConfidential("viewer", clerkScope, "bank_account")).toBe(false);
+    expect(canSeeConfidential("clerk", clerkScope, "loans")).toBe(false);
+    expect(canSeeConfidential("clerk", toConfidentialScope({ loans: "staff", cash: "staff", bank_account: "staff" }), "cash")).toBe(true);
+  });
+
+  it("見せ方の保存は owner / admin / clerk / staff だけを受ける", () => {
     expect(confidentialScopeSchema.safeParse({ loans: "owner", cash: "admin", bank_account: "staff" }).success).toBe(true);
+    expect(confidentialScopeSchema.safeParse({ loans: "owner", cash: "admin", bank_account: "clerk" }).success).toBe(true);
     expect(confidentialScopeSchema.safeParse({ loans: "everyone", cash: "admin", bank_account: "staff" }).success).toBe(false);
     expect(confidentialScopeSchema.safeParse({ loans: "owner", cash: "admin" }).success).toBe(false);
   });

@@ -3,11 +3,12 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronRight, Menu, Search } from "lucide-react";
+import { ChevronRight, CircleHelp, Menu, Search } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useMonth } from "@/lib/hooks/use-month";
 import { cn } from "@/lib/utils";
 import { openCommandPalette } from "./command-palette";
+import { openHelp } from "@/components/guide/help-button";
 import { badgeText, type NavBadges, type NavItem } from "./nav";
 
 /**
@@ -71,6 +72,17 @@ export function MoreMenu({
           >
             <Search className="h-4 w-4 shrink-0" />
             画面・ドライバー・案件・月を検索
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              openHelp();
+            }}
+            className="flex w-full items-center gap-2 rounded-md border px-3 py-2.5 text-left text-sm"
+          >
+            <CircleHelp className="h-4 w-4 shrink-0 text-primary" />
+            この画面の使い方
           </button>
 
           <ul className="grid grid-cols-2 gap-2">

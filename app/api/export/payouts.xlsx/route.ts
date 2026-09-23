@@ -3,7 +3,7 @@
  * 内容・並びは payouts.csv と同じ（支払額は税抜、実際の振込額は税込支払額）。
  */
 import type { NextRequest } from "next/server";
-import { STAFF_ROLES } from "@/lib/auth/session";
+import { MANAGEMENT_VIEW_ROLES } from "@/lib/auth/session";
 import { monthToDate } from "@/lib/month";
 import { monthFileLabel, payoutsCsvRows } from "@/lib/exports/csv";
 import { buildXlsx, sheetFromRows, type XlsxCellType } from "@/lib/exports/xlsx";
@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
 const TYPES: XlsxCellType[] = ["text", "text", "money", "money", "money", "money", "money", "money", "money", "money", "money", "money"];
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company, profile } = await requireExportRole(STAFF_ROLES);
+  const { supabase, company, profile } = await requireExportRole(MANAGEMENT_VIEW_ROLES);
   const month = monthParam(req, { allowAll: true });
 
   const rows = await fetchAllRows((from, to) => {

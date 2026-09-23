@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   MANUAL_CLOSE_STEPS,
   buildClosingSteps,
+  afterCloseRemaining,
   buildInbox,
   closingProgress,
   isManualCloseKey,
@@ -35,6 +36,7 @@ function desk(patch: Partial<OfficeDesk> = {}): OfficeDesk {
     alertsHigh: [],
     alertsOpen: 0,
     openPastMonths: [],
+    afterClose: null,
     closing: facts(),
     ...patch,
   };
@@ -57,6 +59,9 @@ function facts(patch: Partial<ClosingFacts> = {}): ClosingFacts {
     clients: [],
     unassignedBill: 0,
     invoices: [],
+    statementTargets: 3,
+    statementSent: 0,
+    statementLineReady: 0,
     checks: [],
     ...patch,
   };
@@ -82,7 +87,16 @@ describe("parseOfficeDesk", () => {
       tomorrow: { on_date: "2026-09-24", need: 3, assigned: 2, confirmed: 1, shortage: 1 },
       invoices_issued: [{ id: "i1", client_name: "A 社", invoice_no: "R-1", month: "2026-08-01", due_date: null, total: "1000" }],
       open_past_months: ["2026-07-01", "2026-08-01"],
-      closing: { status: "closed", rate_diffs: 2, invoices: [{ id: "i1", client_id: "c1", status: "issued", total: 5 }], checks: [{ key: "transfer_done", done_at: "x", done_by_name: "事務" }] },
+      after_close: { month: "2026-07-01", closed_at: "2026-08-03T01:00:00Z", statement_targets: "5", statement_sent: 2, checks: ["transfer_done"] },
+      closing: {
+        status: "closed",
+        rate_diffs: 2,
+        invoices: [{ id: "i1", client_id: "c1", status: "issued", total: 5 }],
+        statement_targets: "4",
+        statement_sent: 1,
+        statement_line_ready: 3,
+        checks: [{ key: "transfer_done", done_at: "x", done_by_name: "事務" }],
+      },
     });
     expect(d.month).toBe("2026-08");
     expect(d.pendingEntries[0].qty).toBe(1);
@@ -95,6 +109,8 @@ describe("parseOfficeDesk", () => {
     expect(d.closing.rateDiffs).toBe(2);
     expect(d.closing.invoices[0].status).toBe("issued");
     expect(d.closing.checks[0].doneByName).toBe("事務");
+    expect(d.closing).toMatchObject({ statementTargets: 4, statementSent: 1, statementLineReady: 3 });
+    expect(d.afterClose).toEqual({ month: "2026-07", closedAt: "2026-08-03T01:00:00Z", statementTargets: 5, statementSent: 2, checks: ["transfer_done"] });
   });
 
   it("壊れた値・欠けた値でも落ちずに空で返す", () => {
@@ -104,6 +120,8 @@ describe("parseOfficeDesk", () => {
     expect(d.closing.status).toBe("open");
     expect(d.closing.entryCount).toBe(0);
     expect(parseOfficeDesk({ drivers: "x", closing: [] }).drivers).toEqual([]);
+    expect(d.afterClose).toBeNull();
+    expect(parseOfficeDesk({ after_close: {} }).afterClose).toBeNull();
   });
 });
 
@@ -222,6 +240,20 @@ describe("buildInbox（今日やること）", () => {
     expect(items[0].detail).toBe("ほかに 1 か月");
   });
 
+  it("締めた月に明細の送付・振込が残っていれば「締めのあと」を出し、その月の手順へ案内する", () => {
+    const base = { month: "2026-08", closedAt: "2026-09-03T01:00:00Z", statementTargets: 5, statementSent: 2, checks: [] as string[] };
+    const items = buildInbox(desk({ afterClose: base }));
+    expect(items[0]).toMatchObject({ kind: "after_close", urgency: "today", href: "/office?m=2026-08#closing", count: 2 });
+    expect(items[0].title).toBe("2026年8月の締めのあと：支払明細の送付・振込");
+    expect(items[0].detail).toContain("5 人中 2 人に送りました");
+    expect(afterCloseRemaining(base).map((a) => a.key)).toEqual(["statements_sent", "transfer_done"]);
+    // 全員に送った記録があれば明細は済み。チェックが付いていれば振込も済み
+    expect(afterCloseRemaining({ ...base, statementSent: 5 }).map((a) => a.key)).toEqual(["transfer_done"]);
+    expect(afterCloseRemaining({ ...base, checks: ["statements_sent", "transfer_done"] })).toEqual([]);
+    expect(buildInbox(desk({ afterClose: { ...base, statementSent: 5, checks: ["transfer_done"] } }))).toEqual([]);
+    expect(afterCloseRemaining(null)).toEqual([]);
+  });
+
   it("急ぎ度 → 種類の順に並ぶ（同じ入力なら同じ並び）", () => {
     const mk = (kind: InboxItem["kind"], urgency: InboxItem["urgency"]): InboxItem => ({ kind, urgency, title: kind, detail: "", count: 1, href: "/" });
     const sorted = sortInbox([mk("bank_unmatched", "soon"), mk("day_offs", "today"), mk("invoices_overdue", "now"), mk("approve_entries", "today"), mk("tomorrow_shortage", "now")]);
@@ -232,7 +264,7 @@ describe("buildInbox（今日やること）", () => {
 describe("buildClosingSteps（月締めの手順）", () => {
   const byKey = (steps: ReturnType<typeof buildClosingSteps>) => Object.fromEntries(steps.map((s) => [s.key, s]));
 
-  it("手順は決まった順に並び、手作業の手順が 2 つ入る", () => {
+  it("手順は決まった順に並ぶ：締める前の 7 つ → 締める → 締めたあとの 2 つ（明細の送付・振込）", () => {
     const steps = buildClosingSteps(facts(), "2026-08", "2026-09");
     expect(steps.map((s) => s.key)).toEqual([
       "entries_approved",
@@ -242,11 +274,35 @@ describe("buildClosingSteps（月締めの手順）", () => {
       "recurring",
       "notices",
       "invoices",
+      "close",
       "statements_sent",
       "transfer_done",
-      "close",
     ]);
     expect(steps.filter((s) => s.manual).map((s) => s.key)).toEqual(MANUAL_CLOSE_STEPS.map((m) => m.key));
+    expect(steps.filter((s) => s.afterClose).map((s) => s.key)).toEqual(["statements_sent", "transfer_done"]);
+  });
+
+  it("締める前は、明細の送付・振込は「締めてから」と案内する（送る操作は出さない）", () => {
+    const s = byKey(buildClosingSteps(facts({ statementLineReady: 2 }), "2026-08", "2026-09"));
+    expect(s.statements_sent).toMatchObject({ status: "todo", action: "check" });
+    expect(s.statements_sent.detail).toContain("締めてから送ります");
+    expect(s.transfer_done.detail).toContain("締めてから振り込みます");
+  });
+
+  it("締めたあとの明細の送付：LINE が届く人がいれば送る操作、全員に送れば自動で済み、稼働した人がいなければ対象外", () => {
+    const line = byKey(buildClosingSteps(facts({ status: "closed", statementTargets: 4, statementSent: 1, statementLineReady: 3 }), "2026-08", "2026-09"));
+    expect(line.statements_sent).toMatchObject({ status: "todo", action: "send_statements" });
+    expect(line.statements_sent.detail).toBe("4 人中 1 人に送りました・LINE で送れる人 3 人");
+    // LINE で送れる人が残っていなければ、送る操作は出さずにチェックだけ
+    const rest = byKey(buildClosingSteps(facts({ status: "closed", statementTargets: 4, statementSent: 2 }), "2026-08", "2026-09"));
+    expect(rest.statements_sent).toMatchObject({ status: "todo", action: "check" });
+    expect(rest.statements_sent.detail).toContain("残りは LINE が届かない人です");
+    const noLine = byKey(buildClosingSteps(facts({ status: "closed", statementTargets: 4 }), "2026-08", "2026-09"));
+    expect(noLine.statements_sent).toMatchObject({ status: "todo", action: "check" });
+    expect(noLine.statements_sent.detail).toContain("LINE が届く人はいません");
+    const all = byKey(buildClosingSteps(facts({ status: "closed", statementTargets: 4, statementSent: 4 }), "2026-08", "2026-09"));
+    expect(all.statements_sent).toMatchObject({ status: "done", detail: "4 人全員に送りました" });
+    expect(byKey(buildClosingSteps(facts({ status: "closed", statementTargets: 0 }), "2026-08", "2026-09")).statements_sent.status).toBe("skip");
   });
 
   it("承認待ち・稼働なし・未計上の経費は todo、単価違い・点呼漏れ・数量 0 は warn", () => {
@@ -339,14 +395,19 @@ describe("closingProgress", () => {
     // 対象外 3 つ（経費・通知・請求書）を除いた 7 つのうち、締める以外の 6 つが済み
     expect(ready).toMatchObject({ done: 6, total: 7 });
 
+    // 締めたあとの手順（明細の送付・振込）が残っていても締められる
+    const beforeSending = closingProgress(buildClosingSteps(facts(), "2026-08", "2026-09"));
+    expect(beforeSending.ready).toBe(true);
+    expect(beforeSending).toMatchObject({ done: 4, total: 7 });
+
     const notReady = closingProgress(buildClosingSteps(facts({ pending: 1 }), "2026-08", "2026-09"));
     expect(notReady.ready).toBe(false);
   });
 
   it("手順の残りの数を締める手順の説明に出す", () => {
     const steps = buildClosingSteps(facts({ pending: 1 }), "2026-08", "2026-09");
-    // 承認待ち ＋ 手作業 2 つ
-    expect(steps.find((s) => s.key === "close")?.detail).toContain("残りの手順が 3 つ");
+    // 締める前の残りは承認待ちの 1 つだけ（明細の送付・振込は締めたあと）
+    expect(steps.find((s) => s.key === "close")?.detail).toContain("残りの手順が 1 つ");
   });
 });
 

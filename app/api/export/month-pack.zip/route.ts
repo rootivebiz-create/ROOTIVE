@@ -7,7 +7,7 @@
  * 途中で失敗したファイルは README.txt にエラーとして記録し、残りの処理は続ける。
  */
 import type { NextRequest } from "next/server";
-import { ADMIN_ROLES } from "@/lib/auth/session";
+import { MANAGER_ROLES } from "@/lib/auth/session";
 import type { BankAccountType, DriverMonthSummary, InvoiceListRow } from "@/lib/db/types";
 import { monthToDate } from "@/lib/month";
 import { translateError } from "@/lib/actions/result";
@@ -69,7 +69,7 @@ type TransferBankRow = {
 };
 
 export const GET = handleExport(async (req: NextRequest) => {
-  const { supabase, company, profile } = await requireExportRole(ADMIN_ROLES);
+  const { supabase, company, profile } = await requireExportRole(MANAGER_ROLES);
   const month = monthParam(req);
   const parts = parseMonthPackParts(req.nextUrl.searchParams.get("parts"));
   if (isEmptyParts(parts)) throw new ExportError(400, "含める出力を 1 つ以上選んでください。");

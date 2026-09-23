@@ -1,4 +1,4 @@
-import { requireStaff, canEdit, isOwner } from "@/lib/auth/session";
+import { requireStaff, canEdit, canManage, canSeeManagement, isOwner } from "@/lib/auth/session";
 import { loadMonthList } from "@/lib/db/queries";
 import { currentMonthJST, dateToMonth, formatMonthJa, isPastMonth } from "@/lib/month";
 import { Alert } from "@/components/ui/alert";
@@ -44,7 +44,7 @@ export default async function MonthsSettingsPage() {
         </Alert>
       )}
       {!editable && <p className="mb-4 text-sm text-muted-foreground">閲覧者は月締めの操作はできません。</p>}
-      <MonthsTable rows={rows} currentMonth={currentMonth} canClose={editable} canReopen={isOwner(profile.role)} />
+      <MonthsTable rows={rows} currentMonth={currentMonth} canClose={editable} canReopen={isOwner(profile.role)} showProfit={canSeeManagement(profile.role)} canDownloadBackup={canManage(profile.role)} />
     </div>
   );
 }

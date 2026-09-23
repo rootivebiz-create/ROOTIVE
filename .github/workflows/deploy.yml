@@ -6,6 +6,8 @@
 #   VERCEL_TOKEN           必須。Vercel のトークン（Account Settings → Tokens）
 #   SUPABASE_ORG_ID        任意。組織が複数ある場合のみ（組織の slug）
 #   ANTHROPIC_API_KEY      任意。AI 月次分析を使う場合のみ
+#   RESEND_API_KEY         任意。請求書をメールで送る場合のみ（Resend の API キー）
+#   MAIL_FROM              任意。メールの差出人（例：株式会社ROOTIVE <billing@example.jp>。Resend で認証したドメイン）
 #
 # 実行: Actions タブ → 「本番公開（Supabase + Vercel）」→ Run workflow
 # 何度実行しても壊れません（Supabase は既存プロジェクトを再利用、Vercel は再デプロイ）
@@ -46,6 +48,8 @@ jobs:
       SUPABASE_ORG_ID: ${{ secrets.SUPABASE_ORG_ID }}
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      MAIL_FROM: ${{ secrets.MAIL_FROM }}
       OWNER_EMAIL: ${{ inputs.owner_email }}
       COMPANY_NAME: ${{ inputs.company_name }}
       APP_URL: ${{ inputs.app_url }}

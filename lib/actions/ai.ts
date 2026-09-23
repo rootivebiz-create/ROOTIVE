@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { canEdit, requireAdminAction, requireStaffAction } from "@/lib/auth/session";
+import { canEdit, requireManagementAction, requireManagerAction } from "@/lib/auth/session";
 import { ActionError, ensureNoError, runAction, type ActionResult } from "@/lib/actions/result";
 import { AI_DISABLED_MESSAGE, isAiInsightsEnabled } from "@/lib/ai/config";
 import { loadAiContext } from "@/lib/ai/context";
@@ -49,7 +49,7 @@ export interface AiChatReply {
  */
 export async function startAiChatAction(month: string, question: string): Promise<ActionResult<AiChatReply>> {
   return runAction(async () => {
-    const { supabase, user, company } = await requireStaffAction();
+    const { supabase, user, company } = await requireManagementAction();
     const input = startAiChatSchema.parse({ month, question });
     assertAiEnabled();
 
@@ -97,7 +97,7 @@ export async function startAiChatAction(month: string, question: string): Promis
 /** 続けて質問する（staff）。履歴 ＋ 当月のデータパックから回答を作り、保存して返す */
 export async function sendAiChatAction(conversationId: string, question: string): Promise<ActionResult<AiChatReply>> {
   return runAction(async () => {
-    const { supabase, user, company } = await requireStaffAction();
+    const { supabase, user, company } = await requireManagementAction();
     const input = sendAiChatSchema.parse({ conversationId, question });
     assertAiEnabled();
 
@@ -141,7 +141,7 @@ export async function sendAiChatAction(conversationId: string, question: string)
 /** 会話の名前を変える（staff） */
 export async function renameAiConversationAction(id: string, title: string): Promise<ActionResult<null>> {
   return runAction(async () => {
-    const { supabase } = await requireStaffAction();
+    const { supabase } = await requireManagementAction();
     const input = renameAiConversationSchema.parse({ id, title });
     ensureNoError(await supabase.from("ai_conversations").update({ title: input.title }).eq("id", input.id));
     revalidateAi(input.id);
@@ -152,7 +152,7 @@ export async function renameAiConversationAction(id: string, title: string): Pro
 /** 会話を削除する（作成者本人か admin 以上。発言は DB のカスケードで消える） */
 export async function deleteAiConversationAction(id: string): Promise<ActionResult<null>> {
   return runAction(async () => {
-    const { supabase, user, profile } = await requireStaffAction();
+    const { supabase, user, profile } = await requireManagementAction();
     const input = deleteAiConversationSchema.parse({ id });
     const { data: conversation, error: conversationError } = await supabase.from("ai_conversations").select("id, created_by").eq("id", input.id).maybeSingle();
     if (conversationError) throw conversationError;
@@ -181,7 +181,7 @@ export interface GenerateAnalysisResult {
  */
 export async function generateAnalysisAction(month: string): Promise<ActionResult<GenerateAnalysisResult>> {
   return runAction(async () => {
-    const { supabase, user, company } = await requireAdminAction();
+    const { supabase, user, company } = await requireManagerAction();
     const input = generateAnalysisSchema.parse({ month });
     assertAiEnabled();
 
@@ -221,7 +221,7 @@ export interface GenerateDraftResult {
 /** 文章を作る（admin+）。生成した文章を返すだけで保存はしない */
 export async function generateDraftAction(kind: DraftKind, params: DraftParamsInput, month: string): Promise<ActionResult<GenerateDraftResult>> {
   return runAction(async () => {
-    const { supabase, company } = await requireAdminAction();
+    const { supabase, company } = await requireManagerAction();
     const input = generateDraftSchema.parse({ kind, params: params ?? {}, month });
     assertAiEnabled();
 

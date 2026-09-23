@@ -36,6 +36,7 @@ export async function saveClientAction(input: ClientFormInput): Promise<ActionRe
       honorific: parsed.honorific,
       address: parsed.address,
       tel: parsed.tel,
+      email: parsed.email,
       invoice_reg_no: parsed.invoice_reg_no,
       payment_month_offset: parsed.payment_month_offset,
       payment_day: parsed.payment_day,

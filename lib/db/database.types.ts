@@ -863,6 +863,7 @@ export type Database = {
           sort_order: number
           created_at: string
           updated_at: string
+          email: string
         }
         Insert: {
           id?: string
@@ -879,6 +880,7 @@ export type Database = {
           sort_order?: number
           created_at?: string
           updated_at?: string
+          email?: string
         }
         Update: {
           id?: string
@@ -895,6 +897,7 @@ export type Database = {
           sort_order?: number
           created_at?: string
           updated_at?: string
+          email?: string
         }
         Relationships: []
       }
@@ -2353,6 +2356,48 @@ export type Database = {
         }
         Relationships: []
       }
+      invoice_sends: {
+        Row: {
+          id: string
+          company_id: string
+          invoice_id: string
+          to_email: string
+          subject: string
+          status: string
+          error: string
+          provider_id: string
+          sent_at: string
+          sent_by: string | null
+          sent_by_name: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          invoice_id: string
+          to_email: string
+          subject?: string
+          status?: string
+          error?: string
+          provider_id?: string
+          sent_at?: string
+          sent_by?: string | null
+          sent_by_name?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          invoice_id?: string
+          to_email?: string
+          subject?: string
+          status?: string
+          error?: string
+          provider_id?: string
+          sent_at?: string
+          sent_by?: string | null
+          sent_by_name?: string
+        }
+        Relationships: []
+      }
       invoices: {
         Row: {
           id: string
@@ -3325,6 +3370,42 @@ export type Database = {
           sort_order?: number
           created_at?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      statement_deliveries: {
+        Row: {
+          id: string
+          company_id: string
+          month: string
+          driver_id: string
+          channel: string
+          payout_incl: number | null
+          sent_at: string
+          sent_by: string | null
+          sent_by_name: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          month: string
+          driver_id: string
+          channel?: string
+          payout_incl?: number | null
+          sent_at?: string
+          sent_by?: string | null
+          sent_by_name?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          month?: string
+          driver_id?: string
+          channel?: string
+          payout_incl?: number | null
+          sent_at?: string
+          sent_by?: string | null
+          sent_by_name?: string
         }
         Relationships: []
       }
@@ -4770,6 +4851,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      can_see_management: {
+        Args: Record<PropertyKey, never>
+        Returns: boolean
+      }
       cash_forecast: {
         Args: {
           p_from: string
@@ -4827,6 +4912,10 @@ export type Database = {
           p_note?: string
         }
         Returns: Json
+      }
+      company_line_enabled: {
+        Args: Record<PropertyKey, never>
+        Returns: boolean
       }
       confirm_dispatch: {
         Args: {
@@ -5028,7 +5117,21 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: boolean
       }
+      is_clerk: {
+        Args: Record<PropertyKey, never>
+        Returns: boolean
+      }
       is_driver_user: {
+        Args: Record<PropertyKey, never>
+        Returns: boolean
+      }
+      is_management_alert: {
+        Args: {
+          p_code: string
+        }
+        Returns: boolean
+      }
+      is_manager: {
         Args: Record<PropertyKey, never>
         Returns: boolean
       }
@@ -5198,6 +5301,17 @@ export type Database = {
         }
         Returns: string
       }
+      record_invoice_send: {
+        Args: {
+          p_invoice_id: string
+          p_to: string
+          p_subject: string
+          p_status?: string
+          p_error?: string
+          p_provider_id?: string
+        }
+        Returns: string
+      }
       record_login_event: {
         Args: {
           p_profile_id: string
@@ -5213,6 +5327,14 @@ export type Database = {
           p_driver_ids: string[]
         }
         Returns: string[]
+      }
+      record_statement_deliveries: {
+        Args: {
+          p_month: string
+          p_driver_ids: string[]
+          p_channel?: string
+        }
+        Returns: number
       }
       reopen_month: {
         Args: {
@@ -5445,7 +5567,7 @@ export type Database = {
       rounding_mode: "none" | "floor" | "round" | "ceil"
       tax_mode: "taxable" | "exempt"
       tax_task_status: "todo" | "done" | "skipped"
-      user_role: "owner" | "admin" | "viewer" | "driver"
+      user_role: "owner" | "admin" | "clerk" | "viewer" | "driver"
       vehicle_ownership: "owned" | "lease" | "driver"
     }
     CompositeTypes: Record<string, never>
