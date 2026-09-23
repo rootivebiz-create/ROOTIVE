@@ -1,4 +1,4 @@
-import { Money } from "@/components/ui";
+import { Money, TableWrap } from "@/components/ui";
 import { yen } from "@/lib/payroll/money";
 import { monthLabelJa } from "~/server/month";
 import { rateText, shortMonthLabel } from "~/server/features/profit/format";
@@ -62,50 +62,52 @@ export function TrendChart({ points, month }: { points: TrendPoint[]; month: str
         </div>
       </div>
 
-      <table className="w-full text-sm">
-        <caption className="sr-only">月ごとの売上と会社の利益</caption>
-        <thead>
-          <tr className="border-b border-border text-left text-xs text-muted-foreground">
-            <th scope="col" className="py-1 font-normal">
-              月
-            </th>
-            <th scope="col" className="py-1 text-right font-normal">
-              売上
-            </th>
-            <th scope="col" className="py-1 text-right font-normal">
-              会社の利益
-            </th>
-            <th scope="col" className="py-1 text-right font-normal">
-              利益率
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {[...points].reverse().map((p) => (
-            <tr key={p.month} className={`border-b border-border ${p.month === month ? "font-bold" : ""}`}>
-              <th scope="row" className="py-1.5 text-left font-[inherit]">
-                {monthLabelJa(p.month)}
-                {p.closed && <span className="ml-1 text-xs font-normal text-muted-foreground">締め済み</span>}
+      <TableWrap>
+        <table className="w-full min-w-[18rem] text-sm">
+          <caption className="sr-only">月ごとの売上と会社の利益</caption>
+          <thead>
+            <tr className="border-b border-border text-left text-xs text-muted-foreground">
+              <th scope="col" className="py-1 font-normal">
+                月
               </th>
-              {p.drivers === 0 ? (
-                <td colSpan={3} className="py-1.5 text-right text-muted-foreground">
-                  記録なし
-                </td>
-              ) : (
-                <>
-                  <td className="py-1.5 text-right">
-                    <Money value={p.sales} />
-                  </td>
-                  <td className="py-1.5 text-right">
-                    <Money value={p.profit} />
-                  </td>
-                  <td className={`num py-1.5 text-right ${p.profit < 0 ? "text-danger" : ""}`}>{rateText(p.rate)}</td>
-                </>
-              )}
+              <th scope="col" className="py-1 text-right font-normal">
+                売上
+              </th>
+              <th scope="col" className="py-1 text-right font-normal">
+                会社の利益
+              </th>
+              <th scope="col" className="py-1 text-right font-normal">
+                利益率
+              </th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {[...points].reverse().map((p) => (
+              <tr key={p.month} className={`border-b border-border ${p.month === month ? "font-bold" : ""}`}>
+                <th scope="row" className="py-1.5 text-left font-[inherit]">
+                  {monthLabelJa(p.month)}
+                  {p.closed && <span className="block text-xs font-normal text-muted-foreground">締め済み</span>}
+                </th>
+                {p.drivers === 0 ? (
+                  <td colSpan={3} className="py-1.5 text-right text-muted-foreground">
+                    記録なし
+                  </td>
+                ) : (
+                  <>
+                    <td className="py-1.5 text-right">
+                      <Money value={p.sales} />
+                    </td>
+                    <td className="py-1.5 text-right">
+                      <Money value={p.profit} />
+                    </td>
+                    <td className={`num py-1.5 text-right ${p.profit < 0 ? "text-danger" : ""}`}>{rateText(p.rate)}</td>
+                  </>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </TableWrap>
     </figure>
   );
 }

@@ -61,7 +61,7 @@ export const SOFTWARE: Record<SoftwareKey, SoftwareInfo> = {
     encoding: "sjis",
     about: [
       "freee には、弥生会計の形式の仕訳を取り込む機能があります。そのため freee を選んだときも、弥生会計のインポート形式と同じファイルを出します（freee 専用の形ではありません）。",
-      "取り込むときは、freee の画面で「弥生会計」の形式を選んでください。税区分の名前は、弥生会計の名前で書いています。",
+      "税区分の名前は、弥生会計の名前で書いています。取り込み方は freee のヘルプ（仕訳のインポート）で確かめてください。",
     ],
   },
   mf: {
@@ -182,6 +182,19 @@ function defaultTaxLabel(format: FormatKey, key: string): string {
     if (exempt) return Number(exempt[1]) === 0 ? "対象外" : `課税仕入10%（経過措置${exempt[1]}%）`;
   }
   return "";
+}
+
+/** 税区分の欄の短い名前（保存できなかったときの知らせに使う） */
+export function taxKeyLabel(key: string): string {
+  if (key === "purchase") return "登録のある方への委託料";
+  if (key === "sales") return "消費税のかかる控除";
+  if (key === "none") return "消費税の対象外";
+  if (key === "invoice") return "インボイスの欄（登録のある方）";
+  const exempt = /^exempt(\d+)$/.exec(key);
+  if (exempt) return `登録の無い方への委託料（経過措置 ${exempt[1]}%）`;
+  const invoiceExempt = /^invoiceExempt(\d+)$/.exec(key);
+  if (invoiceExempt) return `インボイスの欄（登録の無い方・経過措置 ${invoiceExempt[1]}%）`;
+  return key;
 }
 
 /** その形・その月の割合で使う税区分の欄（画面の入力欄の並び） */

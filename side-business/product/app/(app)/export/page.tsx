@@ -95,20 +95,20 @@ export default async function ExportPage({ searchParams }: { searchParams: Promi
               {view.error}。仕訳は作っていません。明細の画面で明細を作り直してから、もう一度開いてください。
             </p>
           ) : (
-            <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <dl className="grid grid-cols-1 gap-3 min-[360px]:grid-cols-2 sm:grid-cols-4">
               <Card>
                 <dt className="text-xs text-muted-foreground">伝票</dt>
                 <dd className="num text-xl font-bold">{check.slips}枚</dd>
               </Card>
               <Card>
                 <dt className="text-xs text-muted-foreground">借方の合計 ＝ 貸方の合計</dt>
-                <dd className="text-xl font-bold">
+                <dd className="text-lg font-bold sm:text-xl">
                   <Money value={check.debit} />
                 </dd>
               </Card>
-              <Card className="col-span-2">
+              <Card className="min-[360px]:col-span-2">
                 <dt className="text-xs text-muted-foreground">未払金の残り（振込する額）</dt>
-                <dd className="flex flex-wrap items-center gap-2 text-xl font-bold">
+                <dd className="flex flex-wrap items-center gap-2 text-lg font-bold sm:text-xl">
                   <Money value={check.payableNet} />
                   {check.ok ? <Badge tone="green">明細の振込額の合計と一致</Badge> : <Badge tone="red">明細の振込額と違います</Badge>}
                 </dd>

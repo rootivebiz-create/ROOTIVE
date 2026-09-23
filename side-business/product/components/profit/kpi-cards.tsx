@@ -18,7 +18,7 @@ function ChangeLine({ text, tone }: { text: string; tone: keyof typeof ARROW }) 
 export function KpiCards({ totals, changes }: { totals: ProfitTotals; changes: ProfitChanges }) {
   const profitTone = changeTone(changes.profit);
   return (
-    <dl className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+    <dl className="grid grid-cols-1 gap-3 min-[360px]:grid-cols-2 lg:grid-cols-5">
       <Card>
         <dt className="text-xs text-muted-foreground">売上（税抜）</dt>
         <dd className="text-lg font-bold sm:text-xl">
@@ -52,7 +52,7 @@ export function KpiCards({ totals, changes }: { totals: ProfitTotals; changes: P
           <ChangeLine text={pointChangeText(changes.rate)} tone={changeTone(changes.rate)} />
         </dd>
       </Card>
-      <Card className="col-span-2 lg:col-span-1">
+      <Card className="min-[360px]:col-span-2 lg:col-span-1">
         <dt className="text-xs text-muted-foreground">会社の利益の前月比</dt>
         <dd className={`num text-lg font-bold sm:text-xl ${profitTone === "down" ? "text-danger" : profitTone === "up" ? "text-success" : ""}`}>
           {changes.profit ? (

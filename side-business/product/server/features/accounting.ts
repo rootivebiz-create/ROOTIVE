@@ -22,6 +22,7 @@ import {
   paymentRecords,
   resolveMapping,
   taxFieldsFor,
+  taxKeyLabel,
   taxStoreKey,
   type AccountKey,
   type ExportKind,
@@ -191,7 +192,7 @@ export async function saveAccountingSettings(db: Db, tenantId: string, input: Sa
       if (!TAX_KEY_RE.test(key)) continue;
       const v = value.trim();
       const problem = labelProblem(v);
-      if (problem) problems.push(`税区分「${v.slice(0, 10)}…」：${problem}`);
+      if (problem) problems.push(`税区分「${taxKeyLabel(key)}」：${problem}`);
       taxLabels[taxStoreKey(format, key)] = v;
     }
     accounts[PAYABLE_SUB_KEY] = input.payableSubByDriver ? "driver" : "";
