@@ -3,7 +3,7 @@
  * 前提：§8.6 の初期データ（resetToSeed）。テストは順番に依存するため serial
  */
 import { test, expect } from "@playwright/test";
-import { E2E, adminSql, listRow, loginViaMagicLink, readState, requireState, resetToSeed, saveScreenshot, setMonthClosed, toast, yen } from "./helpers";
+import { E2E, adminSql, clickToUrl, listRow, loginViaMagicLink, readState, requireState, resetToSeed, saveScreenshot, setMonthClosed, toast, yen } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -85,7 +85,7 @@ test.describe("取引先と請求書", () => {
 
   test("発行済み → 入金済みにできる（入金済みは作り直せない）", async ({ page }) => {
     await loginViaMagicLink(page, E2E.users.owner.email, `/invoices?m=${MONTH}`);
-    await page.getByRole("link", { name: "開く" }).first().click();
+    await clickToUrl(page, page.getByRole("link", { name: "開く" }).first(), /\/invoices\/[0-9a-f-]{36}/);
     await expect(page.getByRole("heading", { name: "操作" })).toBeVisible();
 
     await page.getByRole("button", { name: "発行済みにする" }).click();
@@ -113,8 +113,7 @@ test.describe("取引先と請求書", () => {
     expect(text).toContain(String(BILL));
 
     // PDF（Route Handler の応答を直接確認する）
-    await page.getByRole("link", { name: "開く" }).first().click();
-    await page.waitForURL(/\/invoices\/[0-9a-f-]{36}/);
+    await clickToUrl(page, page.getByRole("link", { name: "開く" }).first(), /\/invoices\/[0-9a-f-]{36}/);
     const id = page.url().split("/invoices/")[1].split(/[?#]/)[0];
     const res = await page.request.get(`${E2E.appUrl}/api/export/invoice.pdf?id=${id}`);
     expect(res.status()).toBe(200);
