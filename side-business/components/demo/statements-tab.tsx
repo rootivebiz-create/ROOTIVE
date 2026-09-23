@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { buttonClass, Card, Money, TableWrap } from "@/components/ui";
+import { Button, buttonClass, Card, Money, TableWrap } from "@/components/ui";
 import type { MonthSummary, Statement } from "@/lib/payroll/calc";
 import { pct } from "@/lib/payroll/money";
 import type { MonthData } from "@/lib/payroll/types";
@@ -27,15 +27,15 @@ export function StatementsTab({ data, summary, storageOk }: Props) {
             <Money value={summary.payout} className="ml-2 text-2xl font-bold" />
           </p>
         </div>
-        <Link
-          href="/demo/print"
-          target="_blank"
-          rel="noopener"
-          className={cx(buttonClass("primary"), "w-full sm:w-auto", statements.length === 0 && "pointer-events-none opacity-50")}
-          aria-disabled={statements.length === 0 || undefined}
-        >
-          全員分を印刷・PDF
-        </Link>
+        {statements.length === 0 ? (
+          <Button type="button" disabled className="w-full sm:w-auto">
+            全員分を印刷・PDF
+          </Button>
+        ) : (
+          <Link href="/demo/print" target="_blank" rel="noopener" className={buttonClass("primary", "w-full sm:w-auto")}>
+            全員分を印刷・PDF
+          </Link>
+        )}
       </Card>
 
       {!storageOk && (
@@ -164,7 +164,7 @@ function StatementDetail({ st, data }: { st: Statement; data: MonthData }) {
           href={`/demo/print?driver=${encodeURIComponent(st.driver.id)}`}
           target="_blank"
           rel="noopener"
-          className={cx(buttonClass("secondary"), "w-full sm:w-auto")}
+          className={buttonClass("secondary", "w-full sm:w-auto")}
         >
           この明細を印刷・PDF
         </Link>

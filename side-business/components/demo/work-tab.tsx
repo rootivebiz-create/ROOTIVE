@@ -7,7 +7,7 @@ import { sum } from "@/lib/payroll/money";
 import { parseWorkPaste } from "@/lib/payroll/paste";
 import type { MonthData } from "@/lib/payroll/types";
 import { jpDate, parseYen, qtyText, unitPrice } from "./format";
-import { NumberField, SectionTitle, commaDisplay, cx, td, tdNum, textButton, th, thNum } from "./parts";
+import { MonthField, NumberField, SectionTitle, commaDisplay, cx, td, tdNum, textButton, th, thNum } from "./parts";
 import { pasteExample, qtyOf, type PasteMode } from "./reducer";
 import type { DemoActions } from "./state";
 
@@ -26,12 +26,7 @@ export function WorkTab({ data, summary, actions }: Props) {
       <section>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="対象の月" hint={`振込日：${jpDate(settings.payDate)}（月を変えると振込日も同じだけ動きます）`}>
-            <Input
-              type="month"
-              value={settings.month}
-              onChange={(e) => actions.setMonth(e.target.value)}
-              placeholder="2026-10"
-            />
+            <MonthField value={settings.month} onValue={actions.setMonth} placeholder="2026-10" autoComplete="off" />
           </Field>
         </div>
       </section>
@@ -176,8 +171,9 @@ function PasteBox({ data, onApply }: { data: MonthData; onApply: DemoActions["ap
       <SectionTitle>Excel から貼り付け</SectionTitle>
       <Card className="mt-3">
         <p className="text-sm leading-relaxed">
-          Excel やスプレッドシートで <strong>「ドライバー・案件・数量」の 3 列</strong>を選んでコピーし、下の欄に貼り付けます。
-          1 行目の見出しはあってもなくても大丈夫です。名前は設定の画面の名前と同じにしてください（空白の違いは気にしません）。
+          Excel やスプレッドシートで <strong>「ドライバー・案件・数量」の 3 列</strong>
+          {"を選んでコピーし、下の欄に貼り付けます。1 行目の見出しはあってもなくても大丈夫です。"}
+          名前は設定の画面の名前と同じにしてください（空白の違いは気にしません）。
         </p>
         <label className="mt-3 block">
           <span className="sr-only">貼り付ける稼働</span>

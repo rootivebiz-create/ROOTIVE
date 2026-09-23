@@ -5,7 +5,7 @@
  * 入力の中身は端末に保存しない。送れないとき（準備中・送信の失敗）は、メールの下書きで送れるようにする。
  */
 import Link from "next/link";
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Button, Input, Select, buttonClass } from "@/components/ui";
 import {
   CONTACT_TEXT,
@@ -118,7 +118,8 @@ export function ContactForm({
   const id = (field: string) => `${uid}-${field}`;
   const formRef = useRef<HTMLFormElement>(null);
   const doneRef = useRef<HTMLDivElement>(null);
-  const alertRef = useRef<HTMLDivElement>(null);
+  /** 描き直したあとでカーソルを移す欄（送信中は入力欄が無効なので、その場では移せない） */
+  const pendingFocus = useRef<InquiryField | null>(null);
 
   const [form, setForm] = useState<FormState>(EMPTY);
   const [errors, setErrors] = useState<FieldErrors>({});
@@ -126,12 +127,19 @@ export function ContactForm({
   const sending = status.kind === "sending";
 
   useEffect(() => {
-    if (status.kind === "done") doneRef.current?.focus();
-  }, [status.kind]);
+    if (status.kind === "done") {
+      doneRef.current?.focus();
+      return;
+    }
+    const field = pendingFocus.current;
+    if (!field) return;
+    pendingFocus.current = null;
+    formRef.current?.querySelector<HTMLElement>(`[name="${field}"]`)?.focus();
+  }, [status, errors]);
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }));
-    if (key in errors) setErrors((e) => ({ ...e, [key]: undefined }));
+    if (errors[key]) setErrors((e) => ({ ...e, [key]: undefined }));
   }
 
   function toggleTopic(topic: string, on: boolean) {
@@ -139,29 +147,21 @@ export function ContactForm({
     update("topics", next);
   }
 
-  function focusFirstError(found: FieldErrors) {
-    const first = FIELD_ORDER.find((f) => found[f]);
-    if (!first) return;
-    const el = formRef.current?.querySelector<HTMLElement>(`[name="${first}"]`);
-    el?.focus();
+  /** 欄の誤りを出し、最初の誤りの欄へカーソルを移す */
+  function showFieldErrors(found: FieldErrors) {
+    pendingFocus.current = FIELD_ORDER.find((f) => found[f]) ?? null;
+    setErrors(found);
+    setStatus({ kind: "idle" });
   }
 
-  function showError(message: string, draft: Inquiry | null) {
-    setStatus({ kind: "error", message, draft });
-    // 読み上げと画面の両方で気づけるよう、知らせの位置へ移る
-    requestAnimationFrame(() => alertRef.current?.focus());
-  }
-
-  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+  async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (sending) return;
 
     // おとりの欄は画面では確かめない（機械に気づかせない）。サーバーが判断する
     const checked = validateInquiry({ ...form, website: "" });
     if (!checked.ok) {
-      setErrors(checked.errors);
-      setStatus({ kind: "idle" });
-      focusFirstError(checked.errors);
+      showFieldErrors(checked.errors);
       return;
     }
     setErrors({});
@@ -175,7 +175,7 @@ export function ContactForm({
         body: JSON.stringify(form),
       });
     } catch {
-      showError(CONTACT_TEXT.network, checked.data);
+      setStatus({ kind: "error", message: CONTACT_TEXT.network, draft: checked.data });
       return;
     }
 
@@ -187,13 +187,11 @@ export function ContactForm({
     }
     const message = typeof data.error === "string" ? data.error : CONTACT_TEXT.failed;
     if (res.status === 400 && data.fieldErrors && typeof data.fieldErrors === "object") {
-      setErrors(data.fieldErrors);
-      setStatus({ kind: "idle" });
-      focusFirstError(data.fieldErrors);
+      showFieldErrors(data.fieldErrors);
       return;
     }
     // 準備中（503）・送信の失敗（502 など）はメールの下書きでも送れるようにする
-    showError(message, res.status >= 500 ? checked.data : null);
+    setStatus({ kind: "error", message, draft: res.status >= 500 ? checked.data : null });
   }
 
   if (status.kind === "done") {
@@ -209,10 +207,12 @@ export function ContactForm({
           <span className="break-all font-bold">{status.email}</span> あてにお送りします。届かないときは、迷惑メールのフォルダも見てください。
         </p>
         {bookingUrl && (
-          <p className="mt-4">
-            <a href={bookingUrl} target="_blank" rel="noopener noreferrer" className={buttonClass("secondary", "w-full sm:w-auto")}>
-              カレンダーから日時も選んでおく
+          <p className="mt-4 text-sm">
+            日時をすぐ決めたいときは、
+            <a href={bookingUrl} target="_blank" rel="noopener noreferrer">
+              カレンダーから選べます
             </a>
+            。
           </p>
         )}
         <p className="mt-4 text-sm">
@@ -407,9 +407,9 @@ export function ContactForm({
               className="size-5 shrink-0 accent-primary"
             />
             <span>
-              <a href="/legal/privacy" target="_blank" rel="noopener">
+              <Link href="/legal/privacy" target="_blank" rel="noopener">
                 プライバシーポリシー
-              </a>
+              </Link>
               に同意します
               <span className="ml-2 align-middle">
                 <Badge required />
@@ -421,12 +421,7 @@ export function ContactForm({
       </fieldset>
 
       {status.kind === "error" && (
-        <div
-          ref={alertRef}
-          tabIndex={-1}
-          role="alert"
-          className="rounded-card border-2 border-danger bg-card p-4 outline-none"
-        >
+        <div role="alert" className="rounded-card border-2 border-danger bg-card p-4">
           <p className="font-bold text-danger">{status.message}</p>
           {status.draft && (fallbackEmail || bookingUrl) && (
             <div className="mt-3 flex flex-col gap-2 sm:flex-row">

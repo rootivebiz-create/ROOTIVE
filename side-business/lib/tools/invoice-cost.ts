@@ -28,6 +28,8 @@ export type InvoiceCostRow = {
   status: PeriodStatus;
   /** 今の期間と比べて月いくら増えるか（今の期間が無いときは 0 と比べる） */
   diffMonthly: number;
+  /** 今の期間と比べて年いくら増えるか（年の負担どうしの差） */
+  diffYearly: number;
 };
 
 export type InvoiceCostResult = {
@@ -119,6 +121,17 @@ export function totalFromHeadcount(countText: string, perPersonText: string): nu
   return total > MAX_MONTHLY_AMOUNT ? null : total;
 }
 
+/** 控除できる割合が 0 になる期間（経過措置が終わったあと） */
+const NO_DEDUCTION_STEP = TRANSITIONAL_STEPS.find((step) => step.rate === 0) ?? TRANSITIONAL_STEPS[TRANSITIONAL_STEPS.length - 1];
+
+/**
+ * 仕入税額相当額（税込 × 10/110、1 円未満は切り捨て）。
+ * 控除できる割合が 0 の期間の「控除できない額」と同じなので、lib/payroll の nonDeductibleTax をそのまま使う。
+ */
+export function creditableTaxOf(amountInclTax: number): number {
+  return nonDeductibleTax(amountInclTax, NO_DEDUCTION_STEP.from);
+}
+
 function statusOf(today: string, from: string, to: string | null): PeriodStatus {
   if (today < from) return "future";
   if (to !== null && today > to) return "past";
@@ -151,7 +164,12 @@ export function calcInvoiceCost(input: {
   });
   const currentIndex = base.findIndex((r) => r.status === "current");
   const currentMonthly = currentIndex >= 0 ? base[currentIndex].monthly : 0;
-  const rows: InvoiceCostRow[] = base.map((r) => ({ ...r, diffMonthly: r.monthly - currentMonthly }));
+  const currentYearly = currentIndex >= 0 ? base[currentIndex].yearly : 0;
+  const rows: InvoiceCostRow[] = base.map((r) => ({
+    ...r,
+    diffMonthly: r.monthly - currentMonthly,
+    diffYearly: r.yearly - currentYearly,
+  }));
   const current = currentIndex >= 0 ? rows[currentIndex] : null;
   // 今が経過措置の前（2023年9月以前）なら最初の期間が「次」
   const nextIndex = currentIndex >= 0 ? currentIndex + 1 : rows.findIndex((r) => r.status === "future");
@@ -160,7 +178,7 @@ export function calcInvoiceCost(input: {
     monthlyPaidInclTax,
     taxMethod,
     affected,
-    creditableTax: roundYen((monthlyPaidInclTax * 0.1) / 1.1, "floor"),
+    creditableTax: creditableTaxOf(monthlyPaidInclTax),
     rows,
     current,
     next,
@@ -168,18 +186,19 @@ export function calcInvoiceCost(input: {
   };
 }
 
-/** 共有しやすい 1〜2 文のまとめ */
+/** 共有しやすい 1〜2 文のまとめ（原則課税か簡易課税かを必ず入れる。受け取った人が前提を取り違えないように） */
 export function shareText(result: InvoiceCostResult): string {
   const paid = `免税（インボイス未登録）のドライバーへの支払が月${yen(result.monthlyPaidInclTax)}（税込）`;
   if (!result.affected) {
     return `簡易課税・2割特例の会社は、${paid}でも、消費税の負担は増えません。`;
   }
+  const lead = `原則課税の会社で、${paid}だと、`;
   const { current, next } = result;
   if (!current) {
     const first = result.rows[0];
-    return `${paid}だと、${jpMonth(first.from)}から会社が負担する消費税は月${yen(first.monthly)}（年${yen(first.yearly)}）です。`;
+    return `${lead}${jpMonth(first.from)}から控除できずに負担する消費税は月${yen(first.monthly)}（年${yen(first.yearly)}）です。`;
   }
-  const now = `${paid}だと、控除できずに会社が負担する消費税は、いま月${yen(current.monthly)}（年${yen(current.yearly)}）。`;
-  if (!next) return `${now}経過措置が終わったので、全額が会社の負担です。`;
-  return `${now}${jpMonth(next.from)}からは月${yen(next.monthly)}（年${yen(next.yearly)}）になり、月${yen(next.diffMonthly)}増えます。`;
+  const now = `${lead}控除できずに負担する消費税は、いま月${yen(current.monthly)}（年${yen(current.yearly)}）。`;
+  if (!next) return `${now}経過措置が終わったので、仕入税額相当額の全額が会社の負担です。`;
+  return `${now}${jpMonth(next.from)}からは月${yen(next.monthly)}（年${yen(next.yearly)}）になり、負担が月${yen(next.diffMonthly)}増えます。`;
 }

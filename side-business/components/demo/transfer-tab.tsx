@@ -75,8 +75,8 @@ export function TransferTab({ data, summary, actions, requester, setRequester, o
   return (
     <div className="space-y-8">
       <p className="rounded-lg border border-border bg-card px-3 py-2 text-sm">
-        支払明細の振込額から、銀行のネットバンキングに取り込む<strong>総合振込のファイル（全銀協の形式・120 桁）</strong>を作ります。
-        デモのデータは架空です。実際の銀行には取り込まないでください。
+        支払明細の振込額から、銀行のネットバンキングに取り込む<strong>総合振込のファイル（全銀協の形式・120 桁）</strong>
+        {"を作ります。デモのデータは架空です。実際の銀行には取り込まないでください。"}
       </p>
 
       <section>
@@ -163,7 +163,11 @@ export function TransferTab({ data, summary, actions, requester, setRequester, o
               振込データをダウンロード
             </Button>
             <span className="text-sm text-muted-foreground">
-              {records ? zenginFileName(data.settings.month) : "赤字のところを直すと作れます"}
+              {records
+                ? zenginFileName(data.settings.month)
+                : transfers.length === 0
+                  ? "振り込む方がいません（口座があり、振込額が 1 円以上の方が対象です）"
+                  : "赤字のところを直すと作れます"}
             </span>
           </div>
           {error && (
@@ -174,7 +178,8 @@ export function TransferTab({ data, summary, actions, requester, setRequester, o
           {records && (
             <>
               <p className="mt-4 text-xs text-muted-foreground">
-                中身（最初の 10 行）：1 行目が振込元、続く行が振込先、最後の 2 行が件数・合計と終わりの印です。
+                中身（全 {records.length} 行{records.length > 10 ? "のうち最初の 10 行" : ""}
+                {"）：1 行目が振込元、続く行が振込先、最後の 2 行が件数・合計と終わりの印です。"}
               </p>
               <pre className="mt-1 max-h-72 overflow-auto rounded-lg border border-border bg-muted p-3 font-mono text-xs leading-relaxed">
                 {records.slice(0, 10).join("\n")}

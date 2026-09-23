@@ -119,7 +119,7 @@ export function InvoiceCostCalculator() {
                 aria-describedby={amount.error ? `${hintId} ${errorId}` : hintId}
                 className="pr-10 text-lg font-bold"
               />
-              <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-muted-foreground">
+              <span aria-hidden className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-muted-foreground">
                 円
               </span>
             </div>
@@ -149,7 +149,7 @@ export function InvoiceCostCalculator() {
                     onChange={(e) => updateHelper(e.target.value, perPersonText)}
                     className="pr-9"
                   />
-                  <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-muted-foreground">
+                  <span aria-hidden className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-muted-foreground">
                     人
                   </span>
                 </span>
@@ -165,7 +165,7 @@ export function InvoiceCostCalculator() {
                     }}
                     className="pr-9"
                   />
-                  <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-muted-foreground">
+                  <span aria-hidden className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-muted-foreground">
                     円
                   </span>
                 </span>
@@ -299,7 +299,7 @@ function CurrentCard({ result }: { result: InvoiceCostResult }) {
           <p className="mt-1">
             会社の負担は 月 <Money value={next.monthly} className="font-bold" />（年 <Money value={next.yearly} />
             ）。いまより 月 <span className="num font-bold">+{yen(next.diffMonthly)}</span>、年{" "}
-            <span className="num font-bold">+{yen(next.yearly - current.yearly)}</span> です。
+            <span className="num font-bold">+{yen(next.diffYearly)}</span> です。
           </p>
         </div>
       ) : (
@@ -341,14 +341,12 @@ function PeriodsTable({ result, ready }: { result: InvoiceCostResult; ready: boo
         どの割合になるかは、支払った日ではなく「仕事をしてもらった日（課税仕入れを行った日）」で決まります。
       </p>
       <TableWrap>
-        <table className="mt-3 w-full min-w-[36rem] border-collapse text-sm">
+        {/* 幅 375px でも「期間・月の負担・年の負担」が横スクロールなしで見えるよう、控除できる割合は期間の下に出す */}
+        <table className="mt-3 w-full border-collapse text-sm">
           <thead>
             <tr className="border-b border-border text-xs text-muted-foreground">
               <th scope="col" className="py-2 pl-2 pr-3 text-left">
                 期間
-              </th>
-              <th scope="col" className="px-3 py-2 text-right">
-                控除できる割合
               </th>
               <th scope="col" className="px-3 py-2 text-right">
                 月の負担
@@ -386,14 +384,22 @@ function PeriodRow({ row, status, affected }: { row: InvoiceCostRow; status: Inv
         status === "past" && "text-muted-foreground",
       )}
     >
-      <th scope="row" className={cx("whitespace-nowrap py-3 pl-2 pr-3 text-left", !isCurrent && "font-normal")}>
-        {row.label}
-        {isCurrent && (
-          <span className="ml-2 rounded bg-accent px-1.5 py-0.5 text-xs font-bold text-accent-foreground">いま</span>
-        )}
-        {status === "past" && <span className="ml-2 text-xs">終了</span>}
+      <th scope="row" className={cx("py-3 pl-2 pr-3 text-left", !isCurrent && "font-normal")}>
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span>
+            <span className="whitespace-nowrap">{jpMonth(row.from)}〜</span>
+            <wbr />
+            {row.to && <span className="whitespace-nowrap">{jpMonth(row.to)}</span>}
+          </span>
+          {isCurrent && (
+            <span className="rounded bg-accent px-1.5 py-0.5 text-xs font-bold text-accent-foreground">いま</span>
+          )}
+          {status === "past" && <span className="text-xs">終了</span>}
+        </span>
+        <span className="num mt-0.5 block whitespace-nowrap text-xs font-normal text-muted-foreground">
+          控除できる割合 {pct(row.deductibleRate)}
+        </span>
       </th>
-      <td className="num px-3 py-3 text-right">{pct(row.deductibleRate)}</td>
       <td className="px-3 py-3 text-right">
         <Money value={row.monthly} />
       </td>

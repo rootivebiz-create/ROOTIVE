@@ -4,7 +4,8 @@ import { InvoiceCostCalculator } from "@/components/tools/invoice-cost";
 import { buttonClass, Card } from "@/components/ui";
 import { pct } from "@/lib/payroll/money";
 import { TRANSITIONAL_SOURCE, TRANSITIONAL_STEPS, nonDeductibleTax } from "@/lib/payroll/tax";
-import { RULES_AS_OF_LABEL, jpDate } from "@/lib/tools/invoice-cost";
+import { RULES_AS_OF_LABEL, creditableTaxOf, groupDigits, jpDate } from "@/lib/tools/invoice-cost";
+import { SITE } from "@/site.config";
 
 const PATH = "/tools/invoice-cost";
 const TITLE = "免税ドライバーへの支払で会社が負担する消費税の計算（2026年10月から70%）";
@@ -27,8 +28,8 @@ const SOURCES = [
 const EXAMPLE_PAID = 110_000;
 const EXAMPLE_BEFORE = nonDeductibleTax(EXAMPLE_PAID, "2026-09-30");
 const EXAMPLE_AFTER = nonDeductibleTax(EXAMPLE_PAID, "2026-10-01");
-const EXAMPLE_CREDITABLE = Math.round((EXAMPLE_PAID * 10) / 110);
-const n = (v: number) => new Intl.NumberFormat("ja-JP").format(v);
+const EXAMPLE_CREDITABLE = creditableTaxOf(EXAMPLE_PAID);
+const n = groupDigits;
 
 const FAQ = [
   {
@@ -49,7 +50,8 @@ export const metadata: Metadata = {
   title: TITLE,
   description: DESCRIPTION,
   alternates: { canonical: PATH },
-  openGraph: { type: "website", title: TITLE, description: DESCRIPTION, url: PATH },
+  // openGraph はレイアウトの値を丸ごと置きかえるので、locale と siteName もここで入れる
+  openGraph: { type: "website", locale: SITE.locale, siteName: SITE.name, title: TITLE, description: DESCRIPTION, url: PATH },
 };
 
 export default function InvoiceCostPage() {
@@ -88,7 +90,7 @@ export default function InvoiceCostPage() {
       <div className="prose-ja mt-12">
         <h2>「経過措置」とは</h2>
         <p>
-          インボイス制度では、仕入れの消費税を差し引く（仕入税額控除）には、相手が出すインボイス（適格請求書）が必要です。インボイス登録をしていない免税のドライバーへの支払は、本来は差し引けません。
+          インボイス制度では、仕入れの消費税を差し引く（仕入税額控除）には、原則として相手が出すインボイス（適格請求書）が必要です。インボイス登録をしていない免税のドライバーへの支払は、本来は差し引けません。
         </p>
         <p>
           ただ、いきなり全額を差し引けなくなると影響が大きいため、しばらくの間は、免税事業者などからの仕入れでも
@@ -99,8 +101,21 @@ export default function InvoiceCostPage() {
           <thead>
             <tr>
               <th scope="col">仕入れた日</th>
-              <th scope="col">控除できる割合</th>
-              <th scope="col">会社がかぶる割合</th>
+              {/* 見出しは折り返さない（.prose-ja th）ので、幅 375px に収まるようスマホだけ 2 行にする */}
+              <th scope="col">
+                控除できる
+                <span className="sm:hidden">
+                  <br />
+                </span>
+                割合
+              </th>
+              <th scope="col">
+                会社が
+                <span className="sm:hidden">
+                  <br />
+                </span>
+                かぶる割合
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -153,15 +168,14 @@ export default function InvoiceCostPage() {
 
         <h2>1つの相手から年1億円を超える分は対象外</h2>
         <p>
-          2026年10月1日以後に始まる課税期間からは、1つの免税の相手からの仕入れが1つの課税期間（ふつうは1年）で1億円を超えると、超えた部分には経過措置が使えません。個人のドライバー1人への支払がここまで大きくなることは、ほとんどありません。
+          2026年10月1日以後に始まる課税期間からは、1つの免税の相手からの仕入れが1年（会社なら1事業年度）で1億円を超えると、超えた部分には経過措置が使えません。個人のドライバー1人への支払がここまで大きくなることは、ほとんどありません。
         </p>
       </div>
 
-      <aside
-        aria-label="単価を見直す前に"
-        className="mt-8 rounded-card border-2 border-warning bg-card p-4"
-      >
-        <p className="font-bold text-warning">単価を見直す前に</p>
+      <aside aria-labelledby="price-caution" className="mt-8 rounded-card border-2 border-warning bg-card p-4">
+        <h2 id="price-caution" className="font-bold text-warning">
+          単価を見直す前に
+        </h2>
         <p className="mt-2">
           単価を一方的に下げると、独占禁止法（優越的地位の濫用）・取適法・フリーランス法の問題になるおそれがあります。見直すときはドライバーと協議してください。
         </p>
@@ -169,12 +183,12 @@ export default function InvoiceCostPage() {
 
       <section className="mt-8 rounded-card border border-border bg-card p-4 text-sm">
         <h2 className="font-bold">出典・参考</h2>
-        <ul className="mt-2 space-y-2">
+        <ul className="mt-2 space-y-1">
           {SOURCES.map((s) => (
             <li key={s.url}>
-              <span className="block">{s.label}</span>
-              <a href={s.url} target="_blank" rel="noopener noreferrer" className="break-all">
-                {s.url}
+              <a href={s.url} target="_blank" rel="noopener noreferrer" className="block min-h-11 py-2">
+                {s.label}
+                <span className="block break-all text-xs text-muted-foreground">{s.url}</span>
               </a>
             </li>
           ))}

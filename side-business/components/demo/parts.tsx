@@ -2,10 +2,10 @@
 
 /** デモの画面で共通に使う小さな部品（数値の入力欄・開け閉めできるカード・インボイスの札・表のクラス） */
 import { useId, useState, type InputHTMLAttributes, type ReactNode } from "react";
-import { NumberInput } from "@/components/ui";
+import { Input, NumberInput } from "@/components/ui";
 import type { AccountType } from "@/lib/payroll/types";
 import { toZenginKana } from "@/lib/payroll/zengin";
-import { parseNonNegative } from "./format";
+import { normalizeMonth, parseNonNegative, readNumberDraft } from "./format";
 
 export const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
 
@@ -26,6 +26,7 @@ export function NumberField({
   onValue,
   parse = parseNonNegative,
   display = plain,
+  editText = plain,
   emptyAs = 0,
   className,
   ...props
@@ -33,12 +34,14 @@ export function NumberField({
   value: number;
   onValue: (value: number) => void;
   parse?: (text: string) => number | null;
-  /** 欄を離れているときの見せ方（打ち始めると素の数字になる） */
+  /** 欄を離れているときの見せ方 */
   display?: (value: number) => string;
+  /** 欄に入ったときの文字（既定は素の数字。% の欄なら 0.1 ではなく 10 にする） */
+  editText?: (value: number) => string;
   emptyAs?: number;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
-  const read = (text: string) => (text.trim() === "" ? emptyAs : parse(text));
+  const read = (text: string) => readNumberDraft(text, parse, emptyAs);
   const invalid = draft !== null && read(draft) === null;
   return (
     <NumberInput
@@ -46,11 +49,43 @@ export function NumberField({
       value={draft ?? display(value)}
       aria-invalid={invalid || undefined}
       className={cx(invalid && "ring-2 ring-danger", className)}
-      onFocus={() => setDraft(plain(value))}
+      onFocus={() => setDraft(editText(value))}
       onChange={(e) => {
         setDraft(e.target.value);
         const n = read(e.target.value);
         if (n !== null && n !== value) onValue(n);
+      }}
+      onBlur={() => setDraft(null)}
+    />
+  );
+}
+
+/**
+ * 対象の月の欄。月の欄（type=month）が使えないブラウザでは文字の欄になるので、打っている間は文字のまま持ち、
+ * 月として読めたとき（2026-10・2026/10・2026年10月）だけ onValue に渡す。欄を離れると保存されている月に戻す。
+ */
+export function MonthField({
+  value,
+  onValue,
+  className,
+  ...props
+}: Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange" | "onBlur" | "type"> & {
+  value: string;
+  onValue: (month: string) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const invalid = draft !== null && draft.trim() !== "" && normalizeMonth(draft) === null;
+  return (
+    <Input
+      {...props}
+      type="month"
+      value={draft ?? value}
+      aria-invalid={invalid || undefined}
+      className={cx(invalid && "ring-2 ring-danger", className)}
+      onChange={(e) => {
+        setDraft(e.target.value);
+        const month = normalizeMonth(e.target.value);
+        if (month && month !== value) onValue(month);
       }}
       onBlur={() => setDraft(null)}
     />

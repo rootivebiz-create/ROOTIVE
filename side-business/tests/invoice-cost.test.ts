@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   calcInvoiceCost,
+  creditableTaxOf,
   daysBetween,
   groupDigits,
   jpDate,
@@ -36,6 +37,7 @@ describe("免税ドライバーへの支払で会社が負担する消費税", (
     expect(general.daysUntilNext).toBe(8);
     expect(general.rows.map((r) => r.status)).toEqual(["current", "future", "future", "future", "future"]);
     expect(general.rows.map((r) => r.diffMonthly)).toEqual([0, 10_000, 30_000, 50_000, 80_000]);
+    expect(general.rows.map((r) => r.diffYearly)).toEqual([0, 120_000, 360_000, 600_000, 960_000]);
   });
 
   it("期間の境目は仕入れた日で切りかわる", () => {
@@ -80,17 +82,30 @@ describe("免税ドライバーへの支払で会社が負担する消費税", (
     expect(r.creditableTax).toBe(11_223);
   });
 
+  it("仕入税額相当額は 税込 × 10/110（1 円未満は切り捨て）で、最後の期間の負担と同じ", () => {
+    expect(creditableTaxOf(110_000)).toBe(10_000);
+    expect(creditableTaxOf(123_456)).toBe(11_223);
+    expect(creditableTaxOf(0)).toBe(0);
+    expect(general.rows[general.rows.length - 1].monthly).toBe(general.creditableTax);
+  });
+
   it("簡易課税・2割特例はすべて 0 で、説明を出す", () => {
     const r = calcInvoiceCost({ monthlyPaidInclTax: 1_100_000, taxMethod: "simplified", today: "2026-09-23" });
     expect(r.affected).toBe(false);
-    expect(r.rows.every((row) => row.monthly === 0 && row.yearly === 0 && row.diffMonthly === 0)).toBe(true);
+    expect(
+      r.rows.every((row) => row.monthly === 0 && row.yearly === 0 && row.diffMonthly === 0 && row.diffYearly === 0),
+    ).toBe(true);
     expect(r.current?.deductibleRate).toBe(0.8);
     expect(shareText(r)).toContain("負担は増えません");
   });
 
-  it("共有用の文章", () => {
+  it("共有用の文章（原則課税が前提だと分かるように）", () => {
     expect(shareText(general)).toBe(
-      "免税（インボイス未登録）のドライバーへの支払が月¥1,100,000（税込）だと、控除できずに会社が負担する消費税は、いま月¥20,000（年¥240,000）。2026年10月からは月¥30,000（年¥360,000）になり、月¥10,000増えます。",
+      "原則課税の会社で、免税（インボイス未登録）のドライバーへの支払が月¥1,100,000（税込）だと、控除できずに負担する消費税は、いま月¥20,000（年¥240,000）。2026年10月からは月¥30,000（年¥360,000）になり、負担が月¥10,000増えます。",
+    );
+    const before = calcInvoiceCost({ monthlyPaidInclTax: 1_100_000, taxMethod: "general", today: "2023-09-01" });
+    expect(shareText(before)).toBe(
+      "原則課税の会社で、免税（インボイス未登録）のドライバーへの支払が月¥1,100,000（税込）だと、2023年10月から控除できずに負担する消費税は月¥20,000（年¥240,000）です。",
     );
   });
 });

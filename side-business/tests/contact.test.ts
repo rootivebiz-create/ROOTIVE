@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { POST } from "@/app/api/contact/route";
 import {
+  CONTACT_TEXT,
   DEFAULT_FROM_EMAIL,
   DISCORD_CONTENT_MAX,
   clientIp,
@@ -267,5 +269,138 @@ describe("送信の回数の制限", () => {
     expect(clientIp(h({ "x-forwarded-for": "203.0.113.5, 10.0.0.1" }))).toBe("203.0.113.5");
     expect(clientIp(h({ "x-real-ip": "203.0.113.9" }))).toBe("203.0.113.9");
     expect(clientIp(h({}))).toBe("unknown");
+  });
+});
+
+describe("受け付けの API（/api/contact）", () => {
+  const fetchMock = vi.fn<typeof fetch>();
+  const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  let ipSeq = 0;
+
+  /** テストごとに別の IP から送る（回数の制限を持ち越さない） */
+  function post(body: unknown, ip = `198.51.100.${++ipSeq}`) {
+    return POST(
+      new Request("http://localhost/api/contact", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-forwarded-for": ip },
+        body: typeof body === "string" ? body : JSON.stringify(body),
+      }),
+    );
+  }
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", fetchMock);
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+    errorLog.mockClear();
+    for (const k of ["RESEND_API_KEY", "CONTACT_TO_EMAIL", "CONTACT_FROM_EMAIL", "CONTACT_WEBHOOK_URL"]) vi.stubEnv(k, "");
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  afterAll(() => errorLog.mockRestore());
+
+  it("送り先が無ければ 503（準備中）", async () => {
+    const res = await post(valid);
+    expect(res.status).toBe(503);
+    expect((await res.json()).error).toMatch(/^ただいまフォームの準備中です。/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("入力の誤りは 400 と欄ごとの日本語", async () => {
+    vi.stubEnv("CONTACT_WEBHOOK_URL", "https://discord.com/api/webhooks/1/abc");
+    const res = await post({ ...valid, email: "bad", agree: false });
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toBe(CONTACT_TEXT.invalid);
+    expect(data.fieldErrors.email).toContain("形が正しくありません");
+    expect(data.fieldErrors.agree).toBe("プライバシーポリシーへの同意が必要です");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("JSON でなければ 400、大きすぎれば 413", async () => {
+    expect((await post("{not json")).status).toBe(400);
+    expect((await post("[1,2]")).status).toBe(400);
+    expect((await post({ ...valid, message: "あ".repeat(40_000) })).status).toBe(413);
+  });
+
+  it("おとりの欄が埋まっていれば、送ったふり（200）だけで何も送らない", async () => {
+    vi.stubEnv("CONTACT_WEBHOOK_URL", "https://discord.com/api/webhooks/1/abc");
+    const res = await post({ ...valid, website: "https://spam.example" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("Webhook に content と text を送る", async () => {
+    vi.stubEnv("CONTACT_WEBHOOK_URL", "https://discord.com/api/webhooks/1/abc");
+    const res = await post(valid);
+    expect(res.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("https://discord.com/api/webhooks/1/abc");
+    const sent = JSON.parse(String(init?.body));
+    expect(sent.content).toContain("会社名：株式会社テスト運送");
+    expect(sent.text).toContain("会社名：株式会社テスト運送");
+    expect(sent.allowed_mentions).toEqual({ parse: [] });
+  });
+
+  it("Resend にメールを送る（返信先は申し込んだ人）", async () => {
+    vi.stubEnv("RESEND_API_KEY", "re_test");
+    vi.stubEnv("CONTACT_TO_EMAIL", "owner@example.com");
+    fetchMock.mockResolvedValue(Response.json({ id: "x" }));
+    const res = await post(valid);
+    expect(res.status).toBe(200);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("https://api.resend.com/emails");
+    expect(new Headers(init?.headers).get("authorization")).toBe("Bearer re_test");
+    const sent = JSON.parse(String(init?.body));
+    expect(sent).toMatchObject({
+      from: DEFAULT_FROM_EMAIL,
+      to: ["owner@example.com"],
+      subject: "【相談の申し込み】株式会社テスト運送（山田 太郎 様）",
+      reply_to: "taro@example.com",
+    });
+    expect(sent.text).toContain("■ ご相談の内容");
+  });
+
+  it("片方に届けば 200、すべて失敗なら 502。ログに入力の中身は出さない", async () => {
+    vi.stubEnv("RESEND_API_KEY", "re_test");
+    vi.stubEnv("CONTACT_TO_EMAIL", "owner@example.com");
+    vi.stubEnv("CONTACT_WEBHOOK_URL", "https://hooks.slack.com/services/secret-token");
+
+    fetchMock.mockImplementation(async (url) =>
+      String(url).includes("resend") ? new Response("{}", { status: 500 }) : new Response("ok", { status: 200 }),
+    );
+    expect((await post(valid)).status).toBe(200);
+    expect(errorLog).toHaveBeenCalledTimes(1);
+
+    errorLog.mockClear();
+    fetchMock.mockImplementation(async (url) => {
+      if (String(url).includes("resend")) return new Response("{}", { status: 422 });
+      throw new TypeError("fetch failed");
+    });
+    const res = await post(valid);
+    expect(res.status).toBe(502);
+    expect((await res.json()).error).toBe(CONTACT_TEXT.failed);
+    expect(errorLog).toHaveBeenCalledTimes(2);
+    const logged = errorLog.mock.calls.flat().map(String).join("\n");
+    expect(logged).not.toContain("株式会社テスト運送");
+    expect(logged).not.toContain("taro@example.com");
+    expect(logged).not.toContain("月末に2日");
+    expect(logged).not.toContain("secret-token");
+  });
+
+  it("同じ IP から 10 分に 6 回目は 429", async () => {
+    vi.stubEnv("CONTACT_WEBHOOK_URL", "https://discord.com/api/webhooks/1/abc");
+    for (let i = 0; i < 5; i++) expect((await post(valid, "192.0.2.77")).status).toBe(200);
+    const res = await post(valid, "192.0.2.77");
+    expect(res.status).toBe(429);
+    expect(Number(res.headers.get("retry-after"))).toBeGreaterThan(0);
+    expect((await res.json()).error).toBe(CONTACT_TEXT.rateLimited);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
   });
 });

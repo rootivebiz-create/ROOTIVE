@@ -28,6 +28,7 @@ export function DemoApp() {
   const { requester, setRequester, resetRequester } = useRequesterState();
   const [tab, setTab] = useState<TabId>("work");
   const panelRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   // 選んでいる画面は URL の # に持つ（再読み込み・共有しても同じ画面が開く）
@@ -40,6 +41,17 @@ export function DemoApp() {
     window.addEventListener("hashchange", read);
     return () => window.removeEventListener("hashchange", read);
   }, []);
+
+  // 幅の狭い画面でタブが横にはみ出したとき、選んでいるタブを見える位置まで横に送る（縦には動かさない）
+  useEffect(() => {
+    const list = listRef.current;
+    const el = tabRefs.current[tab];
+    if (!list || !el) return;
+    const lr = list.getBoundingClientRect();
+    const er = el.getBoundingClientRect();
+    if (er.left < lr.left) list.scrollLeft -= lr.left - er.left + 8;
+    else if (er.right > lr.right) list.scrollLeft += er.right - lr.right + 8;
+  }, [tab]);
 
   const choose = useCallback((id: TabId) => {
     setTab(id);
@@ -72,7 +84,13 @@ export function DemoApp() {
   return (
     <div className="mt-6">
       <div className="sticky top-14 z-20 -mx-4 border-b border-border bg-background/95 px-4 backdrop-blur">
-        <div role="tablist" aria-label="デモの画面" onKeyDown={onKeyDown} className="flex gap-1 overflow-x-auto py-2">
+        <div
+          ref={listRef}
+          role="tablist"
+          aria-label="デモの画面"
+          onKeyDown={onKeyDown}
+          className="flex gap-0.5 overflow-x-auto py-2 sm:gap-1"
+        >
           {TABS.map((t) => {
             const active = t.id === tab;
             return (
@@ -89,7 +107,7 @@ export function DemoApp() {
                 tabIndex={active ? 0 : -1}
                 onClick={() => choose(t.id)}
                 className={cx(
-                  "min-h-11 shrink-0 whitespace-nowrap rounded-lg px-4 text-sm font-bold transition",
+                  "min-h-11 shrink-0 whitespace-nowrap rounded-lg px-3 text-sm font-bold transition sm:px-4",
                   active ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-muted",
                 )}
               >
@@ -104,10 +122,16 @@ export function DemoApp() {
         <span>{jpMonth(demo.data.settings.month)}分</span>
         <span>明細 {summary.statements.length} 人</span>
         <span>
-          振込額の合計 <Money value={summary.payout} className="font-bold text-foreground" />
+          振込額の合計{" "}
+          <span className="font-bold text-foreground">
+            <Money value={summary.payout} />
+          </span>
         </span>
         <span>
-          会社に残る利益 <Money value={summary.profit} className="font-bold text-foreground" />
+          会社に残る利益{" "}
+          <span className="font-bold text-foreground">
+            <Money value={summary.profit} />
+          </span>
         </span>
       </p>
 

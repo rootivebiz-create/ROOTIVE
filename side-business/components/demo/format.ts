@@ -19,6 +19,27 @@ export function isDate(value: string): boolean {
   return d <= new Date(Date.UTC(y, mo, 0)).getUTCDate();
 }
 
+/**
+ * 月の入力（「2026-10」「2026/10」「2026年10月」「202610」、全角も可）→ YYYY-MM。読めなければ null。
+ * 月の欄（type=month）が使えないブラウザ（Firefox・Mac の Safari）では文字の欄になるため、ゆるく読む。
+ */
+export function normalizeMonth(text: string): string | null {
+  const s = text.normalize("NFKC").replace(/\s+/g, "");
+  const m = /^(\d{4})(?:[-/.年](\d{1,2})月?|(\d{2}))$/.exec(s);
+  if (!m) return null;
+  const month = `${m[1]}-${(m[2] ?? m[3]).padStart(2, "0")}`;
+  return isMonth(month) ? month : null;
+}
+
+/**
+ * 数値の欄で打っている途中の文字を読む。空欄は emptyAs、最後の「.」は打ちかけとして無視する（「10.」→ 10）。
+ * 読めなければ null。
+ */
+export function readNumberDraft(text: string, parse: (text: string) => number | null, emptyAs = 0): number | null {
+  const t = text.trim().replace(/[.．]$/, "");
+  return t === "" ? emptyAs : parse(t);
+}
+
 /** 2026-11-25 → 2026年11月25日（形が違えばそのまま返す） */
 export function jpDate(date: string): string {
   const m = DATE_RE.exec(date);

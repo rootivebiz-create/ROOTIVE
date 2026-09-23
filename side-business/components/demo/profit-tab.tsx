@@ -93,9 +93,16 @@ export function ProfitTab({ data, summary }: Props) {
             設定が簡易課税なので、インボイスの負担は計算していません（簡易課税では、支払先が登録しているかどうかで納める消費税は変わりません）。
           </p>
         )}
-        <p className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm">
-          <Link href="/tools/invoice-cost">御社の負担を計算する</Link>
-          <a href={TRANSITIONAL_SOURCE} target="_blank" rel="noopener noreferrer">
+        <p className="mt-2 flex flex-wrap gap-x-5 text-sm">
+          <Link href="/tools/invoice-cost" className="inline-flex min-h-11 items-center underline underline-offset-4">
+            御社の負担を計算する
+          </Link>
+          <a
+            href={TRANSITIONAL_SOURCE}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex min-h-11 items-center underline underline-offset-4"
+          >
             国税庁の説明（経過措置）
           </a>
         </p>

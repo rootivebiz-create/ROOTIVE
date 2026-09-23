@@ -29,6 +29,9 @@ const EMPTY_BANK: BankAccount = {
 
 const UNITS = ["日", "個", "件", "時間", "便", "回", "km"];
 
+/** 率（0.1）→ % の欄の文字（10）。0 は空欄にして placeholder を見せる */
+const percentDisplay = (rate: number) => (rate === 0 ? "" : rateToPercentText(rate));
+
 function Checkbox({ checked, onChange, label, hint }: { checked: boolean; onChange: (v: boolean) => void; label: string; hint?: string }) {
   return (
     <label className="flex min-h-11 cursor-pointer items-start gap-3 py-2">
@@ -261,7 +264,8 @@ function DriverEditor({
             value={d.royaltyRate}
             onValue={(v) => set({ royaltyRate: v })}
             parse={percentTextToRate}
-            display={(v) => (v === 0 ? "" : rateToPercentText(v))}
+            display={percentDisplay}
+            editText={percentDisplay}
             placeholder="0"
           />
         </Field>

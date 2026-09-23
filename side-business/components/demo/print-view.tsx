@@ -177,7 +177,7 @@ function StatementSheet({ st, settings: s, breakAfter }: { st: Statement; settin
             value={st.tax}
             note={!reg && !s.payTaxToExempt ? "お支払いしない設定" : undefined}
           />
-          <SumRow label="委託料（税込）" value={st.subtotal + st.tax} />
+          {st.tax > 0 && <SumRow label="委託料（税込）" value={st.subtotal + st.tax} />}
           {st.royalty > 0 && <SumRow label={`控除：ロイヤリティ（委託料の ${pct(st.driver.royaltyRate)}）`} value={-st.royalty} />}
           {st.fee > 0 && <SumRow label="控除：管理費" value={-st.fee} />}
           {st.deductionTax > 0 && <SumRow label={`控除：上記の消費税（${rate}）`} value={-st.deductionTax} />}
