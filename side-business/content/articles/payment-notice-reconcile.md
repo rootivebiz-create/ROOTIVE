@@ -5,7 +5,7 @@ published: 2026-09-23
 updated: 2026-09-23
 category: 利益管理
 order: 9
-sources: https://www.nta.go.jp/taxes/shiraberu/zeimokubetsu/shohi/keigenzeiritsu/pdf/qa/86.pdf https://www.nta.go.jp/publication/pamph/sonota/0021011-068.pdf https://www.jftc.go.jp/toriteki/toritekigaiyo/gaiyo.html https://www.jftc.go.jp/toriteki/toritekigaiyo/oyagimu.html https://www.jftc.go.jp/toriteki_pointleaflet2.pdf https://www.jftc.go.jp/file/toriteki_leaflet.pdf https://www.jftc.go.jp/dk/guideline/tokuteiunsou.html https://www.mlit.go.jp/jidosha/jidosha_mn4_000014.html https://www.jftc.go.jp/fllaw_limited/fllaw_qa.html https://www.jftc.go.jp/file/flpamph.pdf
+sources: https://www.nta.go.jp/taxes/shiraberu/zeimokubetsu/shohi/keigenzeiritsu/pdf/qa/86.pdf https://www.nta.go.jp/law/joho-zeikaishaku/sonota/jirei/tokusetsu/pdf/0023011-012.pdf https://www.jftc.go.jp/toriteki/toritekigaiyo/gaiyo.html https://www.jftc.go.jp/toriteki_pointleaflet2.pdf https://www.jftc.go.jp/file/toriteki_leaflet.pdf https://www.jftc.go.jp/dk/guideline/tokuteiunsou.html https://www.mlit.go.jp/jidosha/jidosha_mn4_000014.html https://www.jftc.go.jp/fllaw_limited/fllaw_qa.html https://www.jftc.go.jp/file/flpamph.pdf
 ---
 
 > **この記事のまとめ**
@@ -30,7 +30,7 @@ sources: https://www.nta.go.jp/taxes/shiraberu/zeimokubetsu/shohi/keigenzeiritsu
 
 元請が支払通知を、消費税の「仕入明細書」として使っていることがあります。国税庁の資料では、仕入明細書は相手（ここでは御社）の確認を受けたものでなければならない、とされています。
 
-確認の方法として、「送付後一定期間内に誤りのある旨の連絡がない場合には記載内容のとおり確認があったものとする」と取り決めておく形も認められています。この文言があれば、期間が過ぎると書いてあるとおりに確認したものとして扱われます。通知が届いたら、まず確認の期間を見て、その日までに確かめましょう。
+確認の方法として、「送付後一定期間内に誤りのある旨の連絡がない場合には記載内容のとおり確認があったものとする」という文言を書き、御社の了承を得ておく形も認められています。この形で取り決めていると、期間内に連絡しなければ、消費税の書類としては書いてあるとおりに確認したものとして扱われます。通知が届いたら、まず確認の期間を見て、その日までに確かめましょう。
 
 ### 受け取った通知の保存
 
@@ -42,7 +42,7 @@ PDFやメール、元請のWebの画面で受け取った支払通知は、電�
 
 契約書・単価表と、単価を変えたときのメールなどです。書いたものがない単価は、どちらが正しいか確かめられません。
 
-2025年4月の改正貨物自動車運送事業法で、荷主やトラック事業者などは、運送契約を結ぶときに、運送の内容と運賃・料金（附帯業務料や燃料サーチャージなどもふくむ）を書面で交付することになりました。御社の取引が対象になるかは、国土交通省のQ&Aで確かめてください。対象でなくても、単価と数え方は書面かメールで残しておくのが安全です。
+2025年4月の改正貨物自動車運送事業法で、荷主・トラック事業者・利用運送事業者は、運送契約を結ぶときなどに、運送の内容と運賃・料金（附帯業務料や燃料サーチャージなどもふくむ）を書いた書面を交付することになりました。軽貨物の会社の取引が対象になるかは、国土交通省のQ&Aで確かめてください。対象でなくても、単価と数え方は書面かメールで残しておくのが安全です。
 
 ### 2. 元請の締め日で集計した自社の実績
 
@@ -89,7 +89,7 @@ PDFやメール、元請のWebの画面で受け取った支払通知は、電�
 
 ### 端数
 
-消費税を行ごとに出すか、合計で1回出すかで、数円の差が出ることがあります。どちらで計算しているかを一度確かめ、自社の集計もそれに合わせると、毎月の小さな差を減らせます。
+1円未満の端数を切り捨てるか四捨五入するか、税抜の金額から計算するか税込の金額から計算するかで、数円の差が出ることがあります。元請がどう計算しているかを一度確かめ、自社の集計もそれに合わせると、毎月の小さな差を減らせます。
 
 ## 月末の確認手順
 
@@ -145,7 +145,7 @@ Excelでも突き合わせはできます。ただ、案件が増えると、並
 
 - 差がある行が上に並び、数量の差か単価の差か、片方にしかない行かが分かります。
 - 案件名の対応は一度決めれば、翌月から自動で当てはめます。
-- 行ごとに「問い合わせ中」「翌月で調整」などの状況を残せるので、持ち越した分を忘れません。
+- 行ごとに「問い合わせ中」「翌月で調整」などの状況を残せるので、持ち越した分を忘れにくくなります。
 - 同じ台帳から、元請別・案件別の売上と利益も出ます（出し方は[案件別・元請別の利益の記事](/articles/profit-by-project)で説明しています）。
 
 仕組みが示すのは「どこに差があるか」までです。どちらが正しいかは、人が資料で確かめます。通知の形（CSV・PDF・紙・Webの画面）によって取り込み方も変わり、PDFや紙は読み取りや手入力が必要になることもあります。

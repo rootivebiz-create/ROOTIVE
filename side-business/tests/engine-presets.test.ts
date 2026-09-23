@@ -176,6 +176,37 @@ describe("美容・サロン", () => {
   });
 });
 
+describe("業種の注意と区分の目安（ファクトチェックで直した）", () => {
+  it("軽貨物：振込手数料を「合意すればよい控除」に入れない。支払う側の負担が安全と書く", () => {
+    const cautions = getPreset("trucking").cautions;
+    const deductionLine = cautions.find((c) => c.startsWith("控除"));
+    expect(deductionLine).toBeDefined();
+    expect(deductionLine).not.toContain("振込手数料");
+    const fee = cautions.find((c) => c.includes("振込手数料")) ?? "";
+    expect(fee).toContain("支払う側（会社）が負担するのが安全");
+    expect(fee).toContain("合意があっても");
+    expect(fee).toContain("フリーランス法");
+    expect(fee).toContain("専門家");
+  });
+
+  it("美容：モデル料は4号（ko4_standard）。講師料・デザイン料は1号", () => {
+    const beauty = getPreset("beauty");
+    const model = beauty.withholdingHints.find((h) => h.item.includes("モデル料"));
+    expect(model?.category).toBe("ko4_standard");
+    expect(beauty.withholdingHints.find((h) => h.item.includes("講師料"))?.category).toBe("ko1");
+    expect(beauty.cautions.join("")).toContain("モデル料の行は4号");
+    expect(beauty.cautions.join("")).not.toContain("モデル料の行だけ1号");
+  });
+
+  it("スクール：見本の行は「教材プリントの原稿」、目安は「教材の原稿（作問は要確認）」", () => {
+    const school = getPreset("school");
+    const labels = sample("school", "school-b").input.lines.map((l) => l.label);
+    expect(labels).toContain("教材プリントの原稿");
+    expect(labels).not.toContain("テストの作問");
+    expect(school.withholdingHints.map((h) => h.item)).toContain("教材の原稿（作問は要確認）");
+  });
+});
+
 describe("スクール・講師", () => {
   it("講師A（免税）：80,000 → 源泉 8,168 → 振込 71,832。負担は10月 2,181・9月 1,454", () => {
     expectNumbers("school", "school-a", { subtotal: 80_000, tax: 0, withholding: 8_168, payout: 71_832, invoiceBurden: 2_181 });

@@ -13,7 +13,8 @@ import {
   floorToStep,
   salesForRate,
 } from "@/lib/engine/payModels";
-import { buildPayout, type PayoutInput } from "@/lib/engine/statement";
+import { buildPayout, closingPeriodStart, paymentTermsCheck, type PayoutInput } from "@/lib/engine/statement";
+import { paymentDeadlineCheck, type DayOfMonth, type PayMonthOffset } from "@/lib/tools/torihiki-joken";
 
 describe("数量 × 単価", () => {
   it("42,000字 × 2.0円 = 84,000円", () => {
@@ -280,6 +281,12 @@ describe("明細（buildPayout）の順序と注意", () => {
       ["labor_risk_penalty", "罰金"],
       ["transfer_fee_deducted", "振込手数料"],
     ]);
+    const fee = r.warnings.find((w) => w.code === "transfer_fee_deducted")?.message ?? "";
+    expect(fee).toContain("支払う側が負担するのが安全");
+    expect(fee).toContain("取適法");
+    expect(fee).toContain("合意があっても");
+    expect(fee).toContain("フリーランス法");
+    expect(fee).toContain("専門家");
   });
 
   it("行ごとに源泉の区分を持つ（開発は none、デザインは 1号）。同じ区分を合計してから段階を当てる", () => {
@@ -544,9 +551,10 @@ describe("明細の追加（レビューで足した）", () => {
     expect(r.payout).toBe(100_000 + 10_000 - 10_210);
   });
 
-  it("支払期日：月単位の締め（10/31締め）は12/30まで。12/31は60日超え", () => {
-    const ok = buildPayout({ ...base, paymentTerms: { receivedOn: "2026-10-31", payOn: "2026-12-30", monthlyClosing: true } });
-    expect(ok.warnings).toEqual([]);
+  it("支払期日：月単位の締め（10/31締め）。12/30は締め日から数えれば以内（要注意）、12/31は60日超え", () => {
+    const caution = buildPayout({ ...base, paymentTerms: { receivedOn: "2026-10-31", payOn: "2026-12-30", monthlyClosing: true } });
+    expect(caution.warnings.map((w) => [w.code, w.level])).toEqual([["over_60_days_from_period_start", "caution"]]);
+    expect(caution.dueStatus).toBe("caution");
     const over = buildPayout({ ...base, paymentTerms: { receivedOn: "2026-10-31", payOn: "2026-12-31", monthlyClosing: true } });
     expect(over.warnings.map((w) => w.code)).toEqual(["over_60_days"]);
   });
@@ -559,5 +567,57 @@ describe("明細の追加（レビューで足した）", () => {
     const oct = buildPayout({ ...base, payee: exempt, serviceDate: "2026-10-01" });
     expect(oct.deductibleRate).toBe(0.7);
     expect(oct.invoiceBurden).toBe(3_000);
+  });
+});
+
+describe("支払期日の60日：明細（buildPayout）と取引条件明示書の道具（torihiki-joken）は同じ決まり", () => {
+  const payee = { name: "テスト", invoiceRegistered: true, isCorporation: false, paysTaxOnTop: true };
+  const input: PayoutInput = {
+    payee,
+    lines: [{ label: "報酬", model: "fixed", input: { amount: 100_000 } }],
+    serviceDate: "2026-10-31",
+    orderSideTaxMethod: "general",
+  };
+  const cases: [string, DayOfMonth, PayMonthOffset, DayOfMonth, "ok" | "caution" | "ng"][] = [
+    ["末締め翌月末払い", "末", 1, "末", "ok"],
+    ["末締め翌々月10日払い", "末", 2, 10, "caution"],
+    ["20日締め翌月末払い", 20, 1, "末", "caution"],
+    ["末締め翌々月末払い", "末", 2, "末", "ng"],
+  ];
+  for (const [name, closingDay, payMonthOffset, payDay, expected] of cases) {
+    it(`${name}：どちらも ${expected}（12か月の月ごとにも一致）`, () => {
+      const tool = paymentDeadlineCheck({ closingDay, payMonthOffset, payDay, serviceFrom: "2026-10-01", months: 12 });
+      expect(tool.status).toBe(expected);
+      const statuses = tool.rows.map((row, i) => {
+        const terms = { receivedOn: row.periodEnd, payOn: row.payDateActual, monthlyClosing: true, periodStart: row.periodStart };
+        // 2か月目からは、締め期間の初日を渡さなくても締め日から同じ日になる（1か月目は業務を始めた日から）
+        if (i > 0) {
+          expect(closingPeriodStart(row.periodEnd)).toBe(row.periodStart);
+          expect(paymentTermsCheck({ ...terms, periodStart: undefined }).status).toBe(row.status);
+        }
+        expect(paymentTermsCheck(terms).status).toBe(row.status);
+        const r = buildPayout({ ...input, paymentTerms: terms });
+        expect(r.dueStatus).toBe(row.status);
+        const codes = r.warnings.map((w) => w.code);
+        expect(codes).toEqual(
+          row.status === "ok" ? [] : row.status === "caution" ? ["over_60_days_from_period_start"] : ["over_60_days"],
+        );
+        return r.dueStatus;
+      });
+      const worst = statuses.includes("ng") ? "ng" : statuses.includes("caution") ? "caution" : "ok";
+      expect(worst).toBe(expected);
+    });
+  }
+
+  it("締め期間の初日：末日締めは月の1日、20日締めは前月21日、1月は前年12月から", () => {
+    expect(closingPeriodStart("2026-10-31")).toBe("2026-10-01");
+    expect(closingPeriodStart("2026-02-28")).toBe("2026-02-01");
+    expect(closingPeriodStart("2026-10-20")).toBe("2026-09-21");
+    expect(closingPeriodStart("2027-01-20")).toBe("2026-12-21");
+  });
+
+  it("月単位で締めない支払は、受け取った日を1日目として60日目まで", () => {
+    expect(paymentTermsCheck({ receivedOn: "2026-10-01", payOn: "2026-11-29" }).status).toBe("ok");
+    expect(paymentTermsCheck({ receivedOn: "2026-10-01", payOn: "2026-11-30" }).status).toBe("ng");
   });
 });

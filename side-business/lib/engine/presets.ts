@@ -124,7 +124,8 @@ const trucking: IndustryPreset = {
   ],
   cautions: [
     "運送の報酬は源泉徴収の対象として挙げられていないため、源泉徴収はしません。",
-    "控除（車両のリース・保険・振込手数料など）は、取引条件として明示し、合意したものだけにします。",
+    "控除（車両のリース・保険など）は、取引条件として明示し、合意したものだけにします。",
+    "振込手数料は、支払う側（会社）が負担するのが安全です。取適法（旧・下請法）の運用では合意があっても報酬から差し引くと減額とされうるとされ、フリーランス法でも問題になりえます（判断は専門家へ）。",
   ],
 };
 
@@ -406,7 +407,8 @@ const beauty: IndustryPreset = {
   defaultWithholding: "none",
   withholdingHints: [
     { item: "施術の報酬", category: "none", note: "所得税法204条1項に挙げられていない" },
-    { item: "講習の講師料・デザイン料・モデル料", category: "ko1" },
+    { item: "講習の講師料・デザイン料", category: "ko1" },
+    { item: "モデル料", category: "ko4_standard", note: "4号。税額の出し方は1号と同じ（10.21%。1回の支払で100万円を超える部分は20.42%）" },
   ],
   disclosureExtras: ["売上の区分ごとの率と、率を掛ける売上が税込か税抜か", "材料費などを差し引く場合の項目と計算方法", "最低保証の有無と条件"],
   sampleCompany: "ヘアサロン ルミエ（架空）",
@@ -527,7 +529,7 @@ const beauty: IndustryPreset = {
     },
   ],
   cautions: [
-    "施術の報酬は源泉徴収の対象として挙げられていません。講習の講師料・デザイン料・モデル料の行だけ1号です。",
+    "施術の報酬は源泉徴収の対象として挙げられていません。講習の講師料・デザイン料の行は1号、モデル料の行は4号です（モデル料の税額の出し方は1号と同じ）。",
     "この道具は労働者性を判定しません。固定の日額保証・罰金・時間の拘束の設定には「リスクのある設計」とだけ知らせます。",
   ],
 };
@@ -542,7 +544,7 @@ const school: IndustryPreset = {
   defaultWithholding: "ko1",
   withholdingHints: [
     { item: "授業・レッスン（教授料）", category: "ko1" },
-    { item: "作問・教材の原稿", category: "ko1" },
+    { item: "教材の原稿（作問は要確認）", category: "ko1" },
     { item: "教室の運営事務", category: "none", note: "要確認" },
   ],
   disclosureExtras: ["欠講・振替の扱い", "教室の使用料などを相殺する場合の項目と金額", "交通費の扱い（報酬と一緒に払うと源泉の元に入る）"],
@@ -569,13 +571,13 @@ const school: IndustryPreset = {
     },
     {
       id: "school-b",
-      title: "社会人講師B（架空・課税事業者）集団授業と作問",
+      title: "社会人講師B（架空・課税事業者）集団授業と教材プリント",
       point: "消費税が分けて書いてあるので、源泉は税抜の額に",
       input: {
         payee: registered("社会人講師B（架空）"),
         lines: [
           { label: "集団授業", model: "unit", input: { qty: 16, rate: 4_500, unitLabel: "コマ" }, withholding: "ko1" },
-          { label: "テストの作問", model: "fixed", input: { amount: 10_000, text: "一式" }, withholding: "ko1" },
+          { label: "教材プリントの原稿", model: "fixed", input: { amount: 10_000, text: "一式" }, withholding: "ko1" },
         ],
         serviceDate: OCT,
         orderSideTaxMethod: "general",

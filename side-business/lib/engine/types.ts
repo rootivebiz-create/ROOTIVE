@@ -33,8 +33,10 @@ export type WarningCode =
   | "withholding_needs_review"
   /** 外交員の固定の部分（給与）を計算から外した */
   | "gaikoin_salary_part"
-  /** 支払期日が60日を超える */
+  /** 支払期日が60日を超える（月単位の締めなら、締め日から数えても超える） */
   | "over_60_days"
+  /** 月単位の締めで、締め期間の初日から数えると60日（2か月）を超える（締め日から数えれば以内。条件つき） */
+  | "over_60_days_from_period_start"
   /** 請求書の受け取りを起点にした支払期日 */
   | "due_from_invoice_receipt"
   /** 振込額がマイナス */

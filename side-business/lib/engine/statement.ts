@@ -14,7 +14,7 @@
  */
 import { roundYen } from "@/lib/payroll/money";
 import { deductibleRateForExempt, nonDeductibleTax } from "@/lib/payroll/tax";
-import { addDays, sixtyDayLimit } from "@/lib/tools/torihiki-joken";
+import { addDays, dayInMonth, daysInMonth, sixtyDayLimit, type DeadlineStatus } from "@/lib/tools/torihiki-joken";
 import { calcModel, isTaxableModel, PAY_MODEL_LABELS, type LineSpec, type PayModel } from "./payModels";
 import {
   DEFAULT_CONSUMPTION_TAX_RATE,
@@ -88,6 +88,11 @@ export type PaymentTerms = {
   payOn: string;
   /** 月単位で締めてまとめて払うことを合意し、明示書に書いているか（60日を2か月として数える） */
   monthlyClosing?: boolean;
+  /**
+   * 月単位で締めるときの、締め期間の初日。省略すると receivedOn（締め日）の前月の同じ締め日の翌日
+   * （末日締めなら月の1日）とみなす。
+   */
+  periodStart?: string;
   /** 「請求書を受け取った月の翌月末」のように、請求書の受け取りを起点にした期日か */
   basedOnInvoiceReceipt?: boolean;
 };
@@ -151,6 +156,8 @@ export type PayoutResult = {
   deductibleRate: number;
   /** 源泉税の納付期限（支払日の翌月10日）。支払日が分からなければ null */
   withholdingDue: string | null;
+  /** 支払期日の60日の判定（paymentTermsCheck と同じ）。支払の条件が無ければ null */
+  dueStatus: DeadlineStatus | null;
   warnings: EngineWarning[];
   notes: string[];
   explanation: string[];
@@ -158,6 +165,46 @@ export type PayoutResult = {
 
 export const FEE_WITHHOLDING_NOTE =
   "契約で決めた差し引き（管理費・材料費など）は、源泉の元から引きません（源泉は差し引く前の報酬にかけます）。";
+
+/**
+ * 月単位で締めるときの締め期間の初日。締め日（YYYY-MM-DD）の前月の同じ締め日の翌日。
+ * 締め日が月末なら「末日締め」とみなし、その月の1日。日付の数え方は lib/tools/torihiki-joken の関数を使う。
+ */
+export function closingPeriodStart(closingDate: string): string {
+  const [y, m, d] = closingDate.split("-").map(Number);
+  const closingDay = d === daysInMonth(y, m) ? "末" : d;
+  const prevY = m === 1 ? y - 1 : y;
+  const prevM = m === 1 ? 12 : m - 1;
+  return addDays(dayInMonth(prevY, prevM, closingDay), 1);
+}
+
+export type PaymentTermsCheck = {
+  status: DeadlineStatus;
+  /** 数え始めの日（月単位の締めなら締め期間の初日） */
+  countFrom: string;
+  /** 数え始めの日からの期限 */
+  limit: string;
+  /** 月単位の締めで、締め日から数えた期限（条件つき）。締めないなら null */
+  limitFromClosing: string | null;
+};
+
+/**
+ * 支払期日の60日の判定。lib/tools/torihiki-joken の paymentDeadlineCheck と同じ決まりで数える（実装は1つ）。
+ *  - 月単位で締めない：給付を受け取った日を1日目として60日目まで（addDays(受け取った日, 59)）。超えたら ng
+ *  - 月単位で締める：締め期間の初日から数えて期限内（sixtyDayLimit）なら ok、
+ *    締め日から数えてはじめて期限内なら caution（締め日から数えてよい条件つき）、締め日から数えても超えるなら ng
+ */
+export function paymentTermsCheck(terms: PaymentTerms): PaymentTermsCheck {
+  if (!terms.monthlyClosing) {
+    const limit = addDays(terms.receivedOn, 59);
+    return { status: terms.payOn <= limit ? "ok" : "ng", countFrom: terms.receivedOn, limit, limitFromClosing: null };
+  }
+  const countFrom = terms.periodStart ?? closingPeriodStart(terms.receivedOn);
+  const limit = sixtyDayLimit(countFrom);
+  const limitFromClosing = sixtyDayLimit(terms.receivedOn);
+  const status: DeadlineStatus = terms.payOn <= limit ? "ok" : terms.payOn <= limitFromClosing ? "caution" : "ng";
+  return { status, countFrom, limit, limitFromClosing };
+}
 
 function sumOf(values: number[]): number {
   return values.reduce((a, b) => a + b, 0);
@@ -293,7 +340,7 @@ export function buildPayout(input: PayoutInput): PayoutResult {
         code: "transfer_fee_deducted",
         level: "warning",
         message:
-          "振込手数料は、支払う側が負担するのが基本です。合意していても、一方的に差し引く運用は問題とされうるため、見直しをおすすめします。",
+          "振込手数料は、支払う側が負担するのが安全です。取適法（旧・下請法）の運用では、合意があっても報酬から差し引くと減額とされうるとされ、フリーランス法でも問題になりえます。判断は専門家へ。",
         source: d.label,
       });
     }
@@ -318,7 +365,8 @@ export function buildPayout(input: PayoutInput): PayoutResult {
 
   // 支払期日（フリーランス法4条：給付を受け取った日から起算して60日以内）
   const terms = input.paymentTerms;
-  if (terms) {
+  const dueCheck = terms ? paymentTermsCheck(terms) : null;
+  if (terms && dueCheck) {
     if (terms.basedOnInvoiceReceipt) {
       warnings.push({
         code: "due_from_invoice_receipt",
@@ -327,15 +375,27 @@ export function buildPayout(input: PayoutInput): PayoutResult {
           "支払期日は、請求書を受け取った日ではなく、給付を受け取った日（月単位で締めるなら締切日）から数えます。請求書の受け取りを起点にすると60日を超えるおそれがあります。",
       });
     }
-    const limit = terms.monthlyClosing ? sixtyDayLimit(terms.receivedOn) : addDays(terms.receivedOn, 59);
-    if (terms.payOn > limit) {
+    const check = dueCheck;
+    if (check.status === "ng") {
+      const limit = check.limitFromClosing ?? check.limit;
       warnings.push({
         code: "over_60_days",
         level: "warning",
-        message: `支払日（${terms.payOn}）が、給付を受け取った日（${terms.receivedOn}）から数えて60日の期限（${limit}）を過ぎています。`,
+        message: terms.monthlyClosing
+          ? `支払日（${terms.payOn}）が、締め日（${terms.receivedOn}）から数えても60日（2か月）の期限（${limit}）を過ぎています。`
+          : `支払日（${terms.payOn}）が、給付を受け取った日（${terms.receivedOn}）から数えて60日の期限（${limit}）を過ぎています。`,
+      });
+    } else if (check.status === "caution") {
+      warnings.push({
+        code: "over_60_days_from_period_start",
+        level: "caution",
+        message:
+          `締め期間の最初の日（${check.countFrom}）から数えると、支払日（${terms.payOn}）は60日（2か月）の期限（${check.limit}）を過ぎます。` +
+          "締め日から数えてよいのは、同じ種類の業務が続き、締めてまとめて払うことと報酬の額（算定方法）を明示書に書いている場合です。あてはまるか確かめてください。",
       });
     }
   }
+  const dueStatus = dueCheck?.status ?? null;
   const withholdingDue = withholding > 0 && terms ? withholdingPaymentDue(terms.payOn) : null;
 
   const explanation = explain({
@@ -377,6 +437,7 @@ export function buildPayout(input: PayoutInput): PayoutResult {
     invoiceBurden,
     deductibleRate,
     withholdingDue,
+    dueStatus,
     warnings,
     notes,
     explanation,

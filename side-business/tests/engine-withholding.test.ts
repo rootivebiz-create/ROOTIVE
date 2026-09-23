@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  WITHHOLDING_CATEGORIES,
+  WITHHOLDING_CATEGORY_ORDER,
   WITHHOLDING_RATES,
   applyBp,
   calcPaymentWithholding,
@@ -78,6 +80,48 @@ describe("司法書士・土地家屋調査士・海事代理士", () => {
   });
 });
 
+describe("4号のモデル料など（外交員を除く）", () => {
+  it("1号と同じ出し方：10.21%、1回の支払で100万円を超える部分は20.42%。12万円は引かない", () => {
+    expect(calcWithholding("ko4_standard", 50_000).tax).toBe(5_105);
+    expect(calcWithholding("ko4_standard", 100_000).tax).toBe(10_210);
+    expect(calcWithholding("ko4_standard", 1_000_000).tax).toBe(102_100);
+    expect(calcWithholding("ko4_standard", 1_500_000).tax).toBe(204_200);
+    for (const base of [1, 99_999, 120_000, 1_000_000, 1_000_001, 2_345_678]) {
+      expect(calcWithholding("ko4_standard", base).tax).toBe(calcWithholding("ko1", base).tax);
+    }
+    expect(calcWithholding("ko4_standard", 100_000, { monthlySalaryForGaikoin: 50_000 }).tax).toBe(10_210);
+    expect(calcWithholding("ko4_standard", 100_000).deduction).toBe(0);
+  });
+
+  it("外交員とは別の区分（外交員は12万円を引き、段階が無い）", () => {
+    expect(calcWithholding("ko4_gaikoin", 100_000).tax).toBe(0);
+    expect(calcWithholding("ko4_standard", 100_000).tax).toBe(10_210);
+    expect(WITHHOLDING_CATEGORIES.ko4_standard.label).toBe("4号（モデル料など）");
+    expect(WITHHOLDING_CATEGORY_ORDER.indexOf("ko4_standard")).toBeLessThan(WITHHOLDING_CATEGORY_ORDER.indexOf("ko4_gaikoin"));
+  });
+
+  it("支払調書は年5万円超（外交員の50万円ではない）。法人なら0", () => {
+    expect(paymentReportRequired("ko4_standard", 50_000)).toBe(false);
+    expect(paymentReportRequired("ko4_standard", 50_001)).toBe(true);
+    expect(calcWithholding("ko4_standard", 100_000, { payeeIsCorporation: true }).tax).toBe(0);
+  });
+
+  it("1回の支払でモデル料の行をまとめてから段階を当てる（1号の行とは別に）", () => {
+    const pw = calcPaymentWithholding(
+      [
+        { category: "ko4_standard", amount: 600_000 },
+        { category: "ko4_standard", amount: 600_000 },
+        { category: "ko1", amount: 100_000 },
+      ],
+      { taxShownSeparately: true },
+    );
+    expect(pw.groups.map((g) => [g.category, g.base, g.tax])).toEqual([
+      ["ko1", 100_000, 10_210],
+      ["ko4_standard", 1_200_000, 102_100 + 40_840],
+    ]);
+  });
+});
+
 describe("外交員（4号）", () => {
   it("給与が無ければ 12万円を引いてから10.21%", () => {
     expect(calcWithholding("ko4_gaikoin", 300_000).tax).toBe(18_378);
@@ -128,6 +172,15 @@ describe("税率の表", () => {
     expect(next.status).toBe("expected");
     expect(WITHHOLDING_RATES.every((r) => r.stepThreshold === 1_000_000)).toBe(true);
     expect(calcWithholding("ko1", 84_000, { date: "2027-02-10" }).tax).toBe(8_576);
+  });
+
+  it("2027年の行：内訳の改正は成立済み、合計10.21%は見込み（「確定」とは書かない）", () => {
+    const next = withholdingRateFor("2027-01-01");
+    expect(next.note).toContain("防衛特別所得税（1%）");
+    expect(next.note).toContain("1.1%");
+    expect(next.note).toContain("成立済み");
+    expect(next.note).toContain("10.21%のまま変わらない見込み");
+    expect(next.note).not.toContain("確定");
   });
 
   it("日付が無ければ施行済みの率", () => {

@@ -6,22 +6,24 @@
  * - 100万円の段階（20.42%）は「同一人に対する1回の支払」で、源泉の区分が同じ行を合計した額に当てる。
  *   年の合計にも、行ごとにも当てない（calcPaymentWithholding がまとめる）。
  * - 司法書士・土地家屋調査士・海事代理士、外交員には20.42%の段階は無い。
+ * - 4号のうちモデル料など（外交員を除く）は、1号と同じ出し方（10.21%、1回の支払で100万円を超える部分は20.42%。控除額なし）。
  * - 支払先が法人なら、区分にかかわらず0（ここで扱うのは個人に払う報酬の源泉）。
  * - 元は原則として消費税を含めた額。請求書等で消費税がはっきり分けて書いてあれば、報酬の額だけでよい。
  *
- * 出典（2026年9月時点）：国税庁 No.2792・No.2795・No.2798・No.2801・No.2804・No.7431、
+ * 出典（2026年9月時点）：国税庁 No.2792・No.2795・No.2798・No.2801・No.2804・No.2810・No.7431、
  * 『復興特別所得税（源泉徴収関係）Q&A』、『インボイス制度開始後の報酬・料金等に対する源泉徴収』。
  * 区分の最終判断は税理士へ（この道具は個別の税務判断をしない）。
  */
 import { bpText, en, num } from "./types";
 
-export type WithholdingCategory = "none" | "ko1" | "ko2_shigyo" | "ko2_shihoshoshi" | "ko4_gaikoin";
+export type WithholdingCategory = "none" | "ko1" | "ko2_shigyo" | "ko2_shihoshoshi" | "ko4_standard" | "ko4_gaikoin";
 
 export const WITHHOLDING_CATEGORY_ORDER: WithholdingCategory[] = [
   "none",
   "ko1",
   "ko2_shigyo",
   "ko2_shihoshoshi",
+  "ko4_standard",
   "ko4_gaikoin",
 ];
 
@@ -65,6 +67,13 @@ export const WITHHOLDING_CATEGORIES: Record<WithholdingCategory, WithholdingCate
     method: "minus_10000",
     paymentReportOver: 50_000,
   },
+  ko4_standard: {
+    label: "4号（モデル料など）",
+    short: "4号（モデル料）",
+    examples: "ヘアモデル・広告のモデルなどへのモデル料（所得税法204条1項4号。税額の出し方は1号と同じで、12万円の控除は無い）",
+    method: "two_tier",
+    paymentReportOver: 50_000,
+  },
   ko4_gaikoin: {
     label: "4号（外交員）",
     short: "4号（外交員）",
@@ -76,8 +85,10 @@ export const WITHHOLDING_CATEGORIES: Record<WithholdingCategory, WithholdingCate
 
 /**
  * 源泉の税率の表（効力の始まる日つき）。コードに率を直書きしない。
- * 2027年1月からは、所得税の率を下げて防衛特別所得税1.0%・復興特別所得税1.1%を足し、
- * 合計は10.21%のまま変わらない見込み（見込みであって確定ではない。status = "expected"）。
+ * 2027年1月から防衛特別所得税（1%）が加わり、復興特別所得税は1.1%に下がる改正は成立済み（令和8年度改正）。
+ * 源泉徴収の合計の率は10.21%のまま変わらない見込み（合計の率は見込みとしてデータで持つ。status = "expected"）。
+ * 出典：国税庁「防衛特別所得税及び復興特別所得税の源泉徴収のあらまし」
+ * https://www.nta.go.jp/publication/pamph/pdf/0026005-024_02.pdf
  */
 export type WithholdingRateRow = {
   from: string;
@@ -117,7 +128,7 @@ export const WITHHOLDING_RATES: WithholdingRateRow[] = [
     shihoshoshiDeduction: 10_000,
     gaikoinMonthlyDeduction: 120_000,
     status: "expected",
-    note: "防衛特別所得税1.0%・復興特別所得税1.1%で、合計の税率は10.21%のまま変わらない見込み（確定ではない）",
+    note: "2027年1月から防衛特別所得税（1%）が加わり、復興特別所得税は1.1%に下がる（改正は成立済み。令和8年度改正）。源泉徴収の合計の率は10.21%のまま変わらない見込み",
   },
 ];
 
@@ -356,7 +367,7 @@ export function calcPaymentWithholding(
 
 /**
  * 同じ人への年の支払の合計が基準を超えたら、支払調書（翌年1月31日まで）の対象。
- * 1号・2号は5万円超、外交員は50万円超（国税庁 No.7431）。
+ * 1号・2号・4号のモデル料などは5万円超、外交員は50万円超（国税庁 No.7431）。
  */
 export function paymentReportRequired(category: WithholdingCategory, annualTotal: number): boolean {
   const over = WITHHOLDING_CATEGORIES[category].paymentReportOver;
