@@ -1,14 +1,15 @@
 import { count } from "drizzle-orm";
 import type { Db } from "~/db/client";
 import * as s from "~/db/schema";
+import { DEMO_MONTH, DEMO_PREV_MONTH } from "~/server/month";
 
 /**
  * デモ用の架空の会社（実在の人物・会社ではない）。
  * 8 人のドライバー（うち 3 人はインボイス未登録）、2 社の元請、5 つの案件、2 か月分の稼働、
  * 合意の印が無い控除（見張り番が拾う）、元請の支払通知（突合で差が出る）まで入れる。
  */
-export const DEMO_MONTH = "2026-10-01";
-export const DEMO_PREV_MONTH = "2026-09-01";
+
+export { DEMO_MONTH, DEMO_PREV_MONTH };
 
 export async function seedDemo(db: Db): Promise<{ tenantId: string }> {
   const [tenant] = await db
@@ -67,7 +68,7 @@ export async function seedDemo(db: Db): Promise<{ tenantId: string }> {
       { tenantId, code: "D01", name: "青木 翔太", kana: "アオキ ショウタ", invoiceRegistered: true, registrationNo: "T9876543210987", bankCode: "0001", bankNameKana: "ﾐｽﾞﾎ", branchCode: "101", branchNameKana: "ｻﾝﾌﾟﾙ", accountNumber: "1234567", holderKana: "アオキ ショウタ", termsIssuedOn: "2026-04-01" },
       { tenantId, code: "D02", name: "井上 美咲", kana: "イノウエ ミサキ", invoiceRegistered: true, registrationNo: "T2345678901234", bankCode: "0005", bankNameKana: "ﾐﾂﾋﾞｼUFJ", branchCode: "202", branchNameKana: "ｻﾝﾌﾟﾙ", accountNumber: "2345678", holderKana: "イノウエ ミサキ", termsIssuedOn: "2026-04-01" },
       { tenantId, code: "D03", name: "上田 健", kana: "ウエダ ケン", invoiceRegistered: false, bankCode: "0009", bankNameKana: "ﾐﾂｲｽﾐﾄﾓ", branchCode: "303", branchNameKana: "ｻﾝﾌﾟﾙ", accountNumber: "3456789", holderKana: "ウエダ ケン", termsIssuedOn: "2026-05-10" },
-      { tenantId, code: "D04", name: "遠藤 大輔", kana: "エンドウ ダイスケ", invoiceRegistered: false, bankCode: "9900", bankNameKana: "ﾕｳﾁﾖ", branchCode: "418", branchNameKana: "ﾖﾝｲﾁﾊﾁ", accountNumber: "4567890", holderKana: "エンドウ ダイスケ" },
+      { tenantId, code: "D04", name: "遠藤 大輔", startedOn: "2026-05-01", kana: "エンドウ ダイスケ", invoiceRegistered: false, bankCode: "9900", bankNameKana: "ﾕｳﾁﾖ", branchCode: "418", branchNameKana: "ﾖﾝｲﾁﾊﾁ", accountNumber: "4567890", holderKana: "エンドウ ダイスケ" },
       { tenantId, code: "D05", name: "岡田 拓也", kana: "オカダ タクヤ", invoiceRegistered: true, registrationNo: "T3456789012345", bankCode: "0001", bankNameKana: "ﾐｽﾞﾎ", branchCode: "104", branchNameKana: "ｻﾝﾌﾟﾙ", accountNumber: "5678901", holderKana: "オカダ タクヤ", termsIssuedOn: "2026-04-01" },
       { tenantId, code: "D06", name: "加藤 由美", kana: "カトウ ユミ", invoiceRegistered: true, registrationNo: "T4567890123456", bankCode: "0005", bankNameKana: "ﾐﾂﾋﾞｼUFJ", branchCode: "205", branchNameKana: "ｻﾝﾌﾟﾙ", accountNumber: "6789012", holderKana: "カトウ ユミ", termsIssuedOn: "2026-06-01" },
       { tenantId, code: "D07", name: "木村 誠", kana: "キムラ マコト", invoiceRegistered: false, termsIssuedOn: "2026-07-01" },

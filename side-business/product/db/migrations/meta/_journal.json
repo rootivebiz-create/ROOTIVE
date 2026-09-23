@@ -29,6 +29,20 @@
       "when": 1790155225632,
       "tag": "0003_statements_guard_delivery",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790155491056,
+      "tag": "0004_ledger_details",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790155515325,
+      "tag": "0005_statements_guard_version",
+      "breakpoints": true
     }
   ]
 }

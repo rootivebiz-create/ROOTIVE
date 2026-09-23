@@ -23,7 +23,27 @@
 
 ## 計算
 - 明細は `server/calc/statement.ts` の `buildStatementDrafts`（`loadBuildInput` で読む）。**画面で独自に計算しない**
-- 端数・経過措置・源泉・全銀は `@/lib/...` の関数を使う
+- 端数・経過措置・源泉・全銀は `@/lib/...` の関数を使う（経過措置の割合は `@/lib/payroll/tax` の日付つきの表。70% を直書きしない）
+- 60 日・支払期日・銀行の休日は `@/lib/tools/torihiki-joken`（`sixtyDayLimit`・`adjustForBankHoliday` など）
+
+## 共通の部品（機能から使う。形を変えない）
+| 場所 | 役目 |
+|---|---|
+| `server/tabular.ts` | Excel・CSV を文字の表に（`readTable`・文字コードの自動判定・`detectHeaderRow`・`dataRows`・`parseNumberCell`・`parseDateCell`・`headerSignature`） |
+| `server/names.ts` | 名前の照合（`matchName`・`rankCandidates`・`normalizeName`）。表記ゆれ・かな・会社の種類・括弧書きを吸収 |
+| `server/statements-core.ts` | 明細の写しを作る入口 `generateStatements`（中身が変わったときだけ版を上げ、ハッシュを付ける）・`readSnapshot`・`snapshotHash` |
+| `server/features/watch.ts` | 見張り番 `runWatch(db, tenantId, month)` → `WatchIssue[]`（形は `watch-types.ts`） |
+| `server/pdf/fonts.ts` | PDF の日本語フォント `registerPdfFonts()`・`PDF_FONT` |
+| `server/download.ts` | ダウンロード（`csvText`・`encodeSjis`・`utf8WithBom`・`fileResponse`） |
+| `server/tokens.ts` | 明細リンクの署名 `signStatementLink`・`verifyStatementLink` |
+| `server/rate-limit.ts` | 回数の制限 `tooMany` |
+
+## ドライバーの画面（ログインなし）
+- `/s/<署名つきの値>`。毎回 `verifyStatementLink` と明細の `link_nonce` を確かめる。Server Action も毎回確かめ直す（画面を信じない）
+- `noindex`・キャッシュしない・リファラーを送らない。見られるのはその明細と、同じドライバーの明細だけ
+
+## ダウンロード（`app/api/**/route.ts`）
+- 最初に `requireUser(role)`（`AuthError` なら 403）。会社で絞る。持ち出したことを `audit()` に残す
 
 ## テスト
 - 単体・結合：`tests/*.test.ts`（Vitest）。DB は `createTestDb()`（PGlite・メモリ）と `seedDemo(db)`（架空の会社）

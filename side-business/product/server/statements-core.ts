@@ -1,0 +1,108 @@
+import "server-only";
+import { and, eq } from "drizzle-orm";
+import type { Db } from "~/db/client";
+import * as s from "~/db/schema";
+import { UserError } from "~/server/action";
+import { audit } from "~/server/audit";
+import { buildStatementDrafts, type StatementDraft } from "~/server/calc/statement";
+import { isMonthClosed, loadBuildInput } from "~/server/repo";
+import { sha256 } from "~/server/tokens";
+
+/**
+ * 支払明細の「写し」を作る・作り直す（明細・振込・締め・利益が共通で使う入口）。
+ * - 計算は buildStatementDrafts だけ。ここでは保存と版の管理をする
+ * - 中身が変わったときだけ版（version）を 1 つ上げ、ハッシュを付け直す（ドライバーが何を確認したかを後から示すため）
+ * - 締めた月は作り直せない（DB も止める）
+ */
+
+/** キーの順を固定した JSON（同じ中身なら必ず同じ文字になる） */
+export function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  const obj = value as Record<string, unknown>;
+  return `{${Object.keys(obj)
+    .filter((k) => obj[k] !== undefined)
+    .sort()
+    .map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`)
+    .join(",")}}`;
+}
+
+export function snapshotHash(draft: StatementDraft): string {
+  return sha256(stableStringify(draft));
+}
+
+/** 保存した写しを明細の形で読む */
+export function readSnapshot(row: { snapshot: unknown }): StatementDraft {
+  return row.snapshot as StatementDraft;
+}
+
+/** 振込から差し引く額（控除 ＋ 控除の消費税）。statements.deductions に入れる値 */
+export function deductionsWithTax(d: StatementDraft): number {
+  return d.deductionTotal + d.deductionTax;
+}
+
+export type GenerateResult = { created: number; updated: number; unchanged: number; removed: number; total: number };
+
+export async function generateStatements(db: Db, tenantId: string, month: string, userId?: string | null): Promise<GenerateResult> {
+  if (await isMonthClosed(db, tenantId, month)) throw new UserError("この月は締め済みです。明細は作り直せません（直すには、先に締めを外してください）");
+  const drafts = buildStatementDrafts(await loadBuildInput(db, tenantId, month));
+  const result: GenerateResult = { created: 0, updated: 0, unchanged: 0, removed: 0, total: drafts.length };
+
+  await db.transaction(async (tx) => {
+    const existing = await tx
+      .select({ id: s.statements.id, driverId: s.statements.driverId, hash: s.statements.hash, version: s.statements.version })
+      .from(s.statements)
+      .where(and(eq(s.statements.tenantId, tenantId), eq(s.statements.month, month)));
+    const byDriver = new Map(existing.map((e) => [e.driverId, e]));
+    const seen = new Set<string>();
+
+    for (const d of drafts) {
+      seen.add(d.driverId);
+      const hash = snapshotHash(d);
+      const values = {
+        snapshot: d as unknown as Record<string, unknown>,
+        subtotal: d.subtotal,
+        tax: d.tax,
+        deductions: deductionsWithTax(d),
+        withholding: d.withholding?.amount ?? 0,
+        total: d.total,
+        hash,
+      };
+      const prev = byDriver.get(d.driverId);
+      if (!prev) {
+        await tx.insert(s.statements).values({ tenantId, month, driverId: d.driverId, version: 1, ...values });
+        result.created++;
+      } else if (prev.hash === hash) {
+        result.unchanged++;
+      } else {
+        await tx
+          .update(s.statements)
+          .set({ ...values, version: prev.version + 1, updatedAt: new Date() })
+          .where(and(eq(s.statements.id, prev.id), eq(s.statements.tenantId, tenantId)));
+        result.updated++;
+      }
+    }
+
+    // 稼働も調整も無くなった人の明細は消す（確認の記録があれば操作の記録に残す）
+    for (const e of existing) {
+      if (seen.has(e.driverId)) continue;
+      const confirmations = await tx
+        .select({ id: s.statementConfirmations.id, createdAt: s.statementConfirmations.createdAt, version: s.statementConfirmations.version })
+        .from(s.statementConfirmations)
+        .where(and(eq(s.statementConfirmations.tenantId, tenantId), eq(s.statementConfirmations.statementId, e.id)));
+      await tx.delete(s.statements).where(and(eq(s.statements.id, e.id), eq(s.statements.tenantId, tenantId)));
+      await audit(tx as unknown as Db, {
+        tenantId,
+        userId,
+        action: "statement.remove",
+        entity: "statement",
+        entityId: e.id,
+        detail: { month, driverId: e.driverId, version: e.version, confirmations },
+      });
+      result.removed++;
+    }
+  });
+
+  await audit(db, { tenantId, userId, action: "statement.generate", entity: "month", entityId: month, detail: { ...result } });
+  return result;
+}

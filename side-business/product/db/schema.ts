@@ -69,6 +69,21 @@ export type TenantSettings = {
   statementNote?: string;
   /** AI の読み取りを使ってよいか（お客様の同意） */
   aiAssistConsent?: boolean;
+  /** 取引条件に書いている支払期日の文言（見張り番が「まで」「以内」などを見る） */
+  paymentTermsText?: string;
+  /** 振込手数料をどちらが持つか（driver は見張り番が必ず指摘する） */
+  transferFeeBearer?: "company" | "driver";
+  /** 取適法の対象かの目安（資本金・常時使用する従業員の数） */
+  capitalYen?: number;
+  employees?: number;
+  /** 明細を送ってから、連絡が無ければ確認とみなすまでの日数（既定 7） */
+  deemedConfirmDays?: number;
+  /** 会計ソフトへの出力（ソフトと勘定科目の対応） */
+  accounting?: {
+    software?: "yayoi" | "freee" | "mf" | "generic";
+    accounts?: Record<string, string>;
+    taxLabels?: Record<string, string>;
+  };
 };
 
 export const users = pgTable(
@@ -137,6 +152,13 @@ export const drivers = pgTable(
     holderKana: text("holder_kana"),
     /** フリーランス法の取引条件を明示した日（未明示なら null） */
     termsIssuedOn: date("terms_issued_on", { mode: "string" }),
+    /** 委託を始めた日（6 か月以上の継続の判定・明示の日との比較に使う） */
+    startedOn: date("started_on", { mode: "string" }),
+    /** 委託の終了日と、終了を伝えた日（30 日前の予告の確認に使う） */
+    endOn: date("end_on", { mode: "string" }),
+    endNoticedOn: date("end_noticed_on", { mode: "string" }),
+    /** インボイスの登録を国税庁の公表サイトで確かめた日 */
+    registrationCheckedOn: date("registration_checked_on", { mode: "string" }),
     active: boolean("active").notNull().default(true),
     notes: text("notes"),
     createdAt: createdAt(),
@@ -187,7 +209,10 @@ export const rateOverrides = pgTable(
     driverId: uuid("driver_id").notNull().references(() => drivers.id, { onDelete: "cascade" }),
     projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
     payRate: dec("pay_rate").notNull(),
+    /** この単価で合意した日（単価を変えたのに明示・合意の記録が無いと見張り番が指摘する） */
+    agreedOn: date("agreed_on", { mode: "string" }),
     createdAt: createdAt(),
+    updatedAt: updatedAt(),
   },
   (t) => [uniqueIndex("rate_overrides_unique").on(t.tenantId, t.driverId, t.projectId)],
 );
@@ -212,6 +237,9 @@ export const deductionRules = pgTable(
     taxable: boolean("taxable").notNull().default(true),
     /** 取引条件に書いて合意しているか（していないとフリーランス法の減額のおそれを警告） */
     agreedInWriting: boolean("agreed_in_writing").notNull().default(false),
+    /** 合意した日（支払の対象期間が始まる前か、を見張り番が見る） */
+    agreedOn: date("agreed_on", { mode: "string" }),
+    /** 根拠（契約書の条項など） */
     basis: text("basis"),
     active: boolean("active").notNull().default(true),
     sort: integer("sort").notNull().default(0),
@@ -282,6 +310,8 @@ export const adjustments = pgTable(
     amount: integer("amount").notNull(),
     taxable: boolean("taxable").notNull().default(false),
     agreedInWriting: boolean("agreed_in_writing").notNull().default(false),
+    /** 根拠（領収書・事故の報告・合意書 など） */
+    basis: text("basis"),
     createdAt: createdAt(),
   },
   (t) => [index("adjustments_month").on(t.tenantId, t.month)],
@@ -318,6 +348,9 @@ export const statements = pgTable(
     deductions: integer("deductions").notNull(),
     withholding: integer("withholding").notNull().default(0),
     total: integer("total").notNull(),
+    /** 作り直すたびに 1 ずつ増える版と、写しの中身のハッシュ（何を確認したかを後から示す） */
+    version: integer("version").notNull().default(1),
+    hash: text("hash").notNull().default(""),
     /** リンクを無効にしたいときに変える（署名に含める） */
     linkNonce: text("link_nonce").notNull().default(sql`replace(gen_random_uuid()::text, '-', '')`),
     /** ドライバーへリンクを送った（コピーした）日時 */
@@ -337,6 +370,9 @@ export const statementConfirmations = pgTable("statement_confirmations", {
   statementId: uuid("statement_id").notNull().references(() => statements.id, { onDelete: "cascade" }),
   /** 確認したときの振込額（あとで明細が変わっても、何を確認したか分かるように） */
   totalAtConfirm: integer("total_at_confirm").notNull(),
+  /** 確認した明細の版とハッシュ */
+  version: integer("version").notNull().default(1),
+  hash: text("hash").notNull().default(""),
   ipHash: text("ip_hash"),
   userAgent: text("user_agent"),
   createdAt: createdAt(),
@@ -352,8 +388,12 @@ export const statementMessages = pgTable(
     /** driver・staff */
     author: text("author").notNull(),
     authorUserId: uuid("author_user_id").references(() => users.id, { onDelete: "set null" }),
+    /** どの行についての質問か（明細の行の projectId・控除の ruleId・"adj:<n>"。全体なら null） */
+    lineKey: text("line_key"),
     body: text("body").notNull(),
     readAt: timestamp("read_at", { withTimezone: true }),
+    /** 事務が「解決」にした日時 */
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (t) => [index("statement_messages_statement").on(t.statementId)],
@@ -385,6 +425,10 @@ export const paymentNotices = pgTable("payment_notices", {
   month: date("month", { mode: "string" }).notNull(),
   fileName: text("file_name").notNull(),
   total: integer("total").notNull().default(0),
+  /** 元請から入金された日（受け取る側の 60 日の確認に使う） */
+  paidOn: date("paid_on", { mode: "string" }),
+  /** 振込手数料などで差し引かれた額（受け取る側の確認に使う） */
+  feeDeducted: integer("fee_deducted").notNull().default(0),
   createdAt: createdAt(),
 });
 
@@ -407,8 +451,15 @@ export const reconciliationItems = pgTable("reconciliation_items", {
   tenantId: tenantId(),
   noticeId: uuid("notice_id").notNull().references(() => paymentNotices.id, { onDelete: "cascade" }),
   projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
+  driverId: uuid("driver_id").references(() => drivers.id, { onDelete: "set null" }),
+  /** 画面と問い合わせ文に出す名前（案件名・待機料 など） */
+  label: text("label").notNull().default(""),
   /** missing（請求したのに無い）・price（単価違い）・qty（数量違い）・extra（こちらに無い） */
   kind: text("kind").notNull(),
+  ourQty: dec("our_qty"),
+  theirQty: dec("their_qty"),
+  ourPrice: dec("our_price"),
+  theirPrice: dec("their_price"),
   ourAmount: integer("our_amount").notNull(),
   theirAmount: integer("their_amount").notNull(),
   diff: integer("diff").notNull(),
@@ -417,6 +468,29 @@ export const reconciliationItems = pgTable("reconciliation_items", {
   note: text("note"),
   createdAt: createdAt(),
 });
+
+// ---------------------------------------------------------------- 振込
+
+/** 全銀の振込データを作った記録と、実際に振り込んだ日（支払期日との比較に使う） */
+export const transferBatches = pgTable(
+  "transfer_batches",
+  {
+    id: id(),
+    tenantId: tenantId(),
+    month: date("month", { mode: "string" }).notNull(),
+    /** 振込指定日（全銀データに書いた日） */
+    transferDate: date("transfer_date", { mode: "string" }).notNull(),
+    /** 実際に振り込んだ日（お客様が入れる。未入力なら null） */
+    executedOn: date("executed_on", { mode: "string" }),
+    statementIds: uuid("statement_ids").array().notNull().default(sql`ARRAY[]::uuid[]`),
+    count: integer("count").notNull().default(0),
+    total: integer("total").notNull().default(0),
+    fileName: text("file_name").notNull(),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("transfer_batches_month").on(t.tenantId, t.month)],
+);
 
 // ---------------------------------------------------------------- 見張り番と記録
 
