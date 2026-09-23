@@ -1,4 +1,5 @@
 import { requirePageRole } from "@/lib/auth/session";
+import { overrideCount } from "@/lib/auth/access";
 import { createAdminClient, hasServiceRoleKey } from "@/lib/supabase/admin";
 import { appUrl } from "@/lib/env";
 import { Alert } from "@/components/ui/alert";
@@ -56,6 +57,7 @@ export default async function UsersSettingsPage() {
       isActive: p.is_active,
       lastSignInAt: lastSignIn.get(p.id) ?? null,
       createdAt: p.created_at,
+      overrideCount: overrideCount(p.role, p.access_overrides),
     }))
     .sort((a, b) => ROLE_ORDER[a.role] - ROLE_ORDER[b.role] || a.email.localeCompare(b.email));
 
@@ -94,7 +96,7 @@ export default async function UsersSettingsPage() {
 
   return (
     <div>
-      <PageHeader title="ユーザー管理" description={`有効 ${activeCount} 名／全 ${users.length} 名。招待・ロール変更・無効化はオーナーのみ行えます。`} actions={<InviteDialog drivers={drivers} />} />
+      <PageHeader title="ユーザー管理" description={`有効 ${activeCount} 名／全 ${users.length} 名。「詳しく設定」から、ロール・見せる範囲・代表を譲る などを人ごとに決められます（オーナーのみ）。`} actions={<InviteDialog drivers={drivers} />} />
       {adminWarning && (
         <Alert variant="warning" className="mb-4">
           {adminWarning}

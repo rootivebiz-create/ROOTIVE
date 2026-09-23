@@ -5,15 +5,21 @@ import { requireOwnerAction } from "@/lib/auth/session";
 import { ActionError, ensureNoError, runAction, unwrap, type ActionResult } from "@/lib/actions/result";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { appUrl } from "@/lib/env";
-import { ROLE_LABELS, type Role } from "@/lib/db/types";
+import { ROLE_LABELS, toConfidentialScope, type Role } from "@/lib/db/types";
 import type { ServerSupabase } from "@/lib/supabase/server";
+import { buildAccessOverrides, canCustomizeAccess } from "@/lib/auth/access";
 import {
   cancelInvitationSchema,
   inviteUserSchema,
   resendInvitationSchema,
+  setUserAccessSchema,
   setUserActiveSchema,
+  transferOwnershipSchema,
+  updateUserBasicsSchema,
   updateUserRoleSchema,
   type InviteUserInput,
+  type SetUserAccessInput,
+  type TransferOwnershipInput,
 } from "@/lib/schemas/users";
 
 /** 招待リンク `/invite/<token>` の絶対 URL */
@@ -37,6 +43,7 @@ const EXISTING_USER_GUIDE =
 
 function revalidateUsers() {
   revalidatePath("/settings/users");
+  revalidatePath("/settings/users/[id]", "page");
 }
 
 /** 会社内に同じメールのユーザーが既にいるか（RLS：owner は自社の profiles を参照できる） */
@@ -210,4 +217,77 @@ export async function setUserActiveAction(userId: string, isActive: boolean): Pr
     revalidateUsers();
     return null;
   }, isActive ? "ユーザーを有効にしました。" : "ユーザーを無効にしました。");
+}
+
+/** 自社のユーザーを 1 人読む（RLS：代表は自社の profiles を読める） */
+async function loadCompanyProfile(supabase: ServerSupabase, companyId: string, userId: string) {
+  const res = await supabase.from("profiles").select("id, role, is_active, email, display_name").eq("id", userId).eq("company_id", companyId).maybeSingle();
+  ensureNoError(res);
+  if (!res.data) throw new ActionError("ユーザーが見つかりません。");
+  return res.data;
+}
+
+/**
+ * 表示名・最初に開く画面（owner）。相手の画面の出し方を代表が整える。
+ * 事務（office）は登録・編集ができるロールだけ（set_start_page と同じ線）
+ */
+export async function updateUserBasicsAction(input: { userId: string; displayName: string; startPage: string }): Promise<ActionResult<null>> {
+  return runAction(async () => {
+    const { supabase, company } = await requireOwnerAction();
+    const parsed = updateUserBasicsSchema.parse(input);
+    const target = await loadCompanyProfile(supabase, company.id, parsed.userId);
+    const canOffice = target.role === "owner" || target.role === "admin" || target.role === "clerk";
+    if (parsed.startPage === "office" && !canOffice) {
+      throw new ActionError("事務の画面は、登録・編集ができるロール（オーナー・管理者・事務員）だけが使えます。", { startPage: ["このロールでは選べません"] });
+    }
+    const res = await supabase
+      .from("profiles")
+      .update({ display_name: parsed.displayName, start_page: parsed.startPage })
+      .eq("id", parsed.userId)
+      .eq("company_id", company.id)
+      .select("id");
+    ensureNoError(res);
+    if ((res.data ?? []).length === 0) throw new ActionError("ユーザーが見つかりません。");
+    revalidateUsers();
+    return null;
+  }, "保存しました。");
+}
+
+/**
+ * 見せる範囲（owner。0029）。項目ごとに「ロールのとおり／見せる／見せない」。
+ * ロールの既定と同じ選択は保存しない（buildAccessOverrides）。代表・ドライバー・自分自身には付けない
+ * （DB でも protect_profile_columns が代表以外と自分自身の変更を拒否する）
+ */
+export async function setUserAccessAction(input: SetUserAccessInput): Promise<ActionResult<null>> {
+  return runAction(async () => {
+    const { supabase, company, user } = await requireOwnerAction();
+    const parsed = setUserAccessSchema.parse(input);
+    if (parsed.userId === user.id) throw new ActionError("自分自身の見せる範囲は変えられません。");
+    const target = await loadCompanyProfile(supabase, company.id, parsed.userId);
+    if (!canCustomizeAccess(target.role)) {
+      throw new ActionError(target.role === "owner" ? "代表はいつもすべて見られます。" : "ドライバーには会社の数字を見せられません。");
+    }
+    const overrides = buildAccessOverrides(target.role, parsed.choices, toConfidentialScope(company.confidential_scope));
+    const res = await supabase.from("profiles").update({ access_overrides: overrides }).eq("id", parsed.userId).eq("company_id", company.id).select("id");
+    ensureNoError(res);
+    if ((res.data ?? []).length === 0) throw new ActionError("ユーザーが見つかりません。");
+    revalidateUsers();
+    return null;
+  }, "見せる範囲を保存しました。次に画面を開いたときから変わります。");
+}
+
+/**
+ * 代表を譲る（owner。0029）。相手を代表にし、自分は選んだロールになる（RPC transfer_ownership が 1 回で入れ替える）。
+ * 成功すると自分はもう代表ではないので、画面側は最初の画面へ移る
+ */
+export async function transferOwnershipAction(input: TransferOwnershipInput): Promise<ActionResult<{ targetName: string }>> {
+  return runAction(async () => {
+    const { supabase, company, user } = await requireOwnerAction();
+    const parsed = transferOwnershipSchema.parse(input);
+    if (parsed.userId === user.id) throw new ActionError("自分には譲れません。譲る相手を選んでください。");
+    const target = await loadCompanyProfile(supabase, company.id, parsed.userId);
+    ensureNoError(await supabase.rpc("transfer_ownership", { p_to: parsed.userId, p_my_role: parsed.myRole }));
+    revalidatePath("/", "layout");
+    return { targetName: target.display_name || target.email };
+  }, `代表を譲りました。あなたは「${ROLE_LABELS[(input.myRole as Role) ?? "admin"] ?? "管理者"}」になりました。`);
 }

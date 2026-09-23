@@ -20,7 +20,7 @@ export default async function SettingsIndexPage() {
       { href: "/settings/safety", label: "安全管理", desc: "貨物軽自動車安全管理者・指導監督の記録・事故の記録", icon: ShieldCheck, adminOnly: true },
       { href: "/settings/integrations", label: "外部連携", desc: "LINE 公式アカウント・Google ドライブへの自動保存", icon: Plug, managerOnly: true },
       { href: "/settings/company", label: "会社設定", desc: "端数処理・標準値・振込日・弥生の勘定科目", icon: Building2, ownerOnly: true },
-      { href: "/settings/users", label: "ユーザー管理", desc: "招待・権限・無効化", icon: UserCog, ownerOnly: true },
+      { href: "/settings/users", label: "ユーザー管理", desc: "招待・ロール・人ごとの見せる範囲・代表を譲る", icon: UserCog, ownerOnly: true },
       { href: "/settings/data", label: "データ", desc: "CSV・バックアップ・取り込み・復元", icon: Database },
       { href: "/settings/audit", label: "監査ログ", desc: "誰が・いつ・何を変更したか", icon: ScrollText, managerOnly: true },
       { href: "/settings/account", label: "アカウント", desc: "表示名・パスワード", icon: UserCircle },

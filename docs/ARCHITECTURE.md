@@ -342,7 +342,7 @@ driver_profit= Σmargin + Σroyalty + mgmt_fee + adj_profit
 | `bank_account` | `driver_bank_accounts`（振込口座） | admin |
 
 判定は DB の `can_see_confidential(key)` の 1 本だけで、ポリシーもビューも画面もここを見ます
-（アプリ側の同じ判定は `canSeeConfidential(role, scope, key)`）。
+（アプリ側の同じ判定は `effectiveAccess()` の結果 `ctx.access`。0029 から人ごとの上書きが先に効きます → 4-14）。
 
 **落とし穴**：`*_write` のポリシーは `for all` で作られており、`FOR ALL` は SELECT も含みます。
 select 側だけを閉じても write 側のポリシーで読めてしまうため、両方に判定を入れています。
@@ -702,7 +702,7 @@ office_desk(month, today)  ── 1 往復（security invoker・admin 以上）�
 | 種類 | コマンド | 内容 |
 |---|---|---|
 | 単体（Vitest） | `npm test` | `lib/calc`（§2.6 の全ケース、誤差 0.01 円以内、端数処理 4 種、恒等式）、zod スキーマ、`lib/migrate` の変換と決定的 ID、`lib/voice` の解析、`lib/push` の宛先と文面。**プッシュの送信（`tests/push-send.test.ts`）は使い捨ての自己署名証明書で HTTPS のテストサーバーを立て、暗号化された本文と VAPID の署名が届くこと・410 なら購読を消すことまで確かめる**（openssl が無い環境では飛ばす） |
-| SQL 結合（psql） | `npm run test:sql` | ローカル PostgreSQL に `tests/sql/auth_stub.sql`（auth.uid() 等のスタブ）+ 全マイグレーションを適用し `tests/sql/test.sql` を実行。ビューの計算が §2.6 と一致、RLS（viewer / driver の拒否）、締めガード、招待制、復元・全削除、経費と営業利益（`v_month_pl`）、取引先と請求書（`build_invoice` / 合計の自動計算 / 状態）、ポータルの速報、代表と機密の隔離、通知の購読と設定、配車（必要人数・割り当て・休み希望・写しと確定・見通し）、法定帳票（運転者台帳・適性診断・保存期間・監査で足りないもの）、出力の機密判定と LINE 連携の復元とダッシュボードの 1 往復、事務（月締めのチェック・催促・最初に開く画面・office_desk）。33 節。**1 回目の適用直後にテーブル権限の抜けも確かめる** |
+| SQL 結合（psql） | `npm run test:sql` | ローカル PostgreSQL に `tests/sql/auth_stub.sql`（auth.uid() 等のスタブ）+ 全マイグレーションを適用し `tests/sql/test.sql` を実行。ビューの計算が §2.6 と一致、RLS（viewer / driver の拒否）、締めガード、招待制、復元・全削除、経費と営業利益（`v_month_pl`）、取引先と請求書（`build_invoice` / 合計の自動計算 / 状態）、ポータルの速報、代表と機密の隔離、通知の購読と設定、配車（必要人数・割り当て・休み希望・写しと確定・見通し）、法定帳票（運転者台帳・適性診断・保存期間・監査で足りないもの）、出力の機密判定と LINE 連携の復元とダッシュボードの 1 往復、事務（月締めのチェック・催促・最初に開く画面・office_desk）、事務員と明細の送付、ユーザーごとの見せる範囲と代表を譲る。35 節。**1 回目の適用直後にテーブル権限の抜けも確かめる** |
 | E2E（Playwright） | `npm run test:e2e` | Supabase 互換のテストサーバー（`supabase-lite`：PostgreSQL + GoTrue 相当 + PostgREST 相当の軽量実装）を自動起動し、iPhone 13 と Desktop Chrome の 2 プロジェクトで主要導線（招待ログイン → ダッシュボード → 稼働追加・複製・一括入力 → 支払明細・PDF → 設定 → 月締め・解除 → 経費と営業利益 → 取引先と請求書（PDF・入金） → 年次レポートと月次目標 → ナビとコマンドパレット・ポータルの速報 → 閲覧者／ドライバーの権限 → 移行 JSON の取り込み）をブラウザで確認。26 spec・143 シナリオ × 2 プロジェクト = **286 件**。スクリーンショットを `docs/screenshots/` に保存。詳細は [docs/E2E.md](E2E.md) |
 | 静的 | `npm run typecheck` / `npm run lint` / `npm run build` | 型・Lint・本番ビルド |
 | まとめ | `npm run check` | typecheck + lint + test + build:sql |
@@ -719,9 +719,9 @@ supabase-js の使い方は、E2E 用の互換サーバーが対応する範囲�
 |---|---|---|
 | `is_admin()` / `ADMIN_ROLES` / `canEdit` | owner・admin・clerk | 登録・編集・月締め・出力の多く（今までの「管理者以上」） |
 | `is_manager()` / `MANAGER_ROLES` / `canManage` | owner・admin | 監査ログ・外部連携・AI の分析・月次目標・バックアップ・チャットのルーム以外の経営の設定 |
-| `can_see_management()` / `MANAGEMENT_VIEW_ROLES` / `canSeeManagement` | owner・admin・viewer | ホーム・資金繰り・案件別・採算・財務・レポート・AI と、画面の会社利益の列 |
+| `can_see_management()` / `MANAGEMENT_VIEW_ROLES` / `ctx.access.management` | owner・admin・viewer（0029 から人ごとに変えられる） | ホーム・資金繰り・案件別・採算・財務・レポート・AI と、画面の会社利益の列 |
 
-- ナビの `RoleVisibility` に `managerOnly` と `noClerk` を足した（`lib/nav/visibility.ts`）
+- ナビの `RoleVisibility` に `managerOnly` と `noClerk` を足した（`lib/nav/visibility.ts`。0029 で `noClerk` は `management` に改めた）
 - 行ごとの売上・支払は請求と支払の仕事に要るので、事務員にも見える。会社利益は**画面で出さないだけ**（既知の制限）
 - 経営のアラート 8 種類（利益の急減・ドライバーの赤字・目標未達・資金不足・税務・決裁の滞留・出力の急増）は `is_management_alert(code)` で RLS から外す
 - `cash_forecast` は 0017 まで `is_staff` だけを見ていたため、借入を見られない閲覧者にも返済の行が返っていた。0028 で `can_see_management()` を必須にし、返済の行は `can_see_confidential('loans')` の人にだけ返す
@@ -755,6 +755,46 @@ sendStatementsAction / notifyStatementsAction（月締めの自動送信）
 
 ---
 
+## 4-14. ユーザーごとの見せる範囲・代表を譲る（0029）
+
+### 見える範囲の決まり方
+
+```
+ロール（owner / admin / clerk / viewer / driver）
+  └─ 会社の機密の見せ方（companies.confidential_scope：借入・現金・振込口座）
+        └─ その人だけの上書き（profiles.access_overrides：allow / deny）   ← 0029
+```
+
+| キー | 中身 | ロールの既定 |
+|---|---|---|
+| `management` | 経営の数字（ホーム・資金繰り・案件別・採算・財務・レポート・AI・会社利益・経営のアラート） | owner・admin・viewer |
+| `loans` / `cash` / `bank_account` | 借入と納税／現金と資金繰り／ドライバーの振込口座 | 会社の機密の見せ方（既定は管理者まで） |
+| `export` | 出力（CSV・Excel・PDF・ZIP・バックアップのダウンロード） | スタッフ全員 |
+
+- **代表（常にすべて）とドライバー（会社の数字は見ない）には上書きが効かない**
+- DB は `can_see_management()` / `can_see_confidential(key)` / `can_export()`、アプリは `lib/auth/access.ts` の `effectiveAccess()`。
+  `getSessionContext()` が 1 回計算して `SessionContext.access` に入れ、画面・Server Action・出力の口はこれを見る（ロールだけで判定を書かない）
+- `access_overrides` は**ロールの既定と違うものだけ**を持つ（画面の「ロールのとおり」はキーを消す。`buildAccessOverrides`）。形は `valid_access_overrides()` の check 制約で守る
+- 経営のアラートの出し分けは `is_clerk()` から `can_see_management()` に変えた（事務員に見せる設定にすれば経営のアラートも見える）
+- `export` は RLS では止めない：画面に出せるデータを一覧で持ち出すかどうかの話で、読めるものを DB で止めると画面ごと止まるため。
+  **出力の口（`requireExportRole`）が 403** を返し、画面は `AppShell` の `data-export-off` と CSS で出力のリンク（`/api/export/…`）・出力のボタン群（`[data-export-menu]`）・出力センターを隠す。
+  締め時のバックアップ（`export_backup`）は月締めの一部なので止めない
+- 経営の数字を見せない人はホームに入れないので、行き先は `staffHome()`（編集できる人は事務、閲覧者は稼働）。`/` の振り分け・`requirePageRole` の戻し先・ロゴ・下タブが同じ判定
+- 変えられるのは代表だけで、**自分自身のものは変えられない**（`protect_profile_columns` に `access_overrides` を足した）
+- RLS が効かないサービスロールの経路（週次サマリー・重大なアラートの LINE・LINE の返事）は `seesManagement()` / `effectiveAccess()` で宛先と返事を絞る
+
+### 代表を譲る
+
+RPC `transfer_ownership(p_to, p_my_role)`（security definer）。
+
+1. 呼んだ人が有効な owner か（`OWNER_ONLY`）、相手が同じ会社の有効なスタッフか（ドライバー・無効・自分は `INVALID`、ほかの会社は `NOT_FOUND`）
+2. `app.bypass_profile_guard` をこの処理の中だけ立てて、相手を owner、自分を admin / clerk / viewer に**続けて**更新する（代表が 0 人になる瞬間が無い）
+3. 両方の `access_overrides` を外す（代表には効かず、新しいロールでは意味が変わるため）
+4. 変更の記録は profiles の監査トリガーが残す（アプリで二重に書かない）
+
+画面は `/settings/users/[id]` の「代表を譲る…」。成功すると自分はもう代表ではないので、`/` から開き直してナビと権限を読み直す。
+一時的に任せるだけなら 0020 の「決裁の委任」を使う（権限そのものは動かさない）。
+
 ## 10. 既知の制限
 
 1. **driver ロールが自分の稼働行の `bill_rate`（受注単価）を API 経由で読める**：`work_entries` の driver 用 SELECT ポリシーは行単位で列を制限できないため、supabase-js を直接叩けば自分の締め済み月の行の受注単価・会社側の値が取得できます。画面・PDF・ポータル RPC（`driver_portal_statement`）では出していません。厳密に隠す場合は列を分離したビューだけを driver に許可する変更が必要です。
@@ -764,6 +804,7 @@ sendStatementsAction / notifyStatementsAction（月締めの自動送信）
 5. **Supabase 無料プランの休止**：7 日間 API アクセスが無いとプロジェクトが一時停止します（ダッシュボードの「Restore project」で再開可）。`vercel.json` の `crons` が毎日（UTC 21:00 = 日本時間 6:00）`/api/cron/keepalive`（service_role で `companies` を 1 件数えるだけ）を呼び出して防止します。**`CRON_SECRET` は必須**で、未設定だと Route Handler が 503 を返して定期アクセスは無効になります（設定済みなら Vercel が付与する `Authorization: Bearer <CRON_SECRET>` を照合）。`scripts/deploy-vercel.sh` と GitHub Actions は未指定時に自動生成します。念のため月 1 回の手動バックアップを推奨。
 6. **PDF のフォント**：`public/fonts/NotoSansJP-*.ttf` を実行時にファイルとして読み込みます。`next.config.ts` の `outputFileTracingIncludes` で `/api/export/statement.pdf` に `public/fonts/**` を同梱する設定済みです。フォントが見つからないエラーが出た場合は、この設定と `public/fonts/` の中身を確認してください。
 7. **2 段階認証の UI なし**（Supabase 側で有効化できる構成のみ）。
+8. **出力を止めても画面の内容は読める**（0029）：「出力（ダウンロード）」を止めた人でも、画面に出ている数字は見られ、supabase-js を直接叩けば同じ行も読めます。止めているのは一覧のダウンロード（出力の口）と画面の出力ボタンだけです。見せたくない数字そのものは「経営の数字」「借入と納税」「現金」「振込口座」の見せる範囲で止めてください（こちらは RLS で止まります）。
 
 ---
 

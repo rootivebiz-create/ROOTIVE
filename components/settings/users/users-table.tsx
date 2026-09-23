@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Link2, UserCog, UserMinus, UserPlus } from "lucide-react";
+import { Link2, SlidersHorizontal, UserCog, UserMinus, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Empty } from "@/components/ui/empty";
@@ -30,6 +31,8 @@ export interface UserRow {
   isActive: boolean;
   lastSignInAt: string | null;
   createdAt: string;
+  /** 代表が個別に変えた見せる範囲の数（0029） */
+  overrideCount: number;
 }
 
 const ROLES: Role[] = ["owner", "admin", "clerk", "viewer", "driver"];
@@ -100,6 +103,9 @@ export function UsersTable({ rows, drivers, selfId, lastSignInAvailable }: { row
     const self = u.id === selfId;
     return (
       <div className="flex flex-wrap gap-1.5">
+        <Link href={`/settings/users/${u.id}`} className={buttonVariants({ size: "sm" })} aria-label={`${u.displayName || u.email} を詳しく設定`}>
+          <SlidersHorizontal /> 詳しく設定
+        </Link>
         <Button size="sm" variant="outline" onClick={() => openRole(u)} disabled={pending || self} title={self ? "自分自身のロールは変更できません" : undefined}>
           <UserCog /> ロール変更
         </Button>
@@ -146,6 +152,7 @@ export function UsersTable({ rows, drivers, selfId, lastSignInAvailable }: { row
                   <div className="flex shrink-0 flex-col items-end gap-1">
                     <RoleBadge role={u.role} />
                     {u.isActive ? <Badge variant="success">有効</Badge> : <Badge variant="destructive">無効</Badge>}
+                    {u.overrideCount > 0 && <Badge variant="outline">個別の設定 {u.overrideCount}</Badge>}
                   </div>
                 </div>
                 <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-sm">
@@ -188,7 +195,10 @@ export function UsersTable({ rows, drivers, selfId, lastSignInAvailable }: { row
                       {u.id === selfId && <span className="ml-1 text-xs text-muted-foreground">（自分）</span>}
                     </TableCell>
                     <TableCell>
-                      <RoleBadge role={u.role} />
+                      <div className="flex flex-wrap items-center gap-1">
+                        <RoleBadge role={u.role} />
+                        {u.overrideCount > 0 && <Badge variant="outline">個別の設定 {u.overrideCount}</Badge>}
+                      </div>
                     </TableCell>
                     <TableCell>{u.role === "driver" ? (u.driverName ?? "（未設定）") : "—"}</TableCell>
                     <TableCell>{u.isActive ? <Badge variant="success">有効</Badge> : <Badge variant="destructive">無効</Badge>}</TableCell>

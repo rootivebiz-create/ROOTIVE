@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { inviteUserAction, type InvitationResult } from "@/lib/actions/users";
+import { ROLE_SUMMARIES } from "@/lib/auth/access";
 import { ROLE_LABELS, type Role } from "@/lib/db/types";
 import { InviteResultDialog } from "./invite-link";
 
@@ -21,14 +22,6 @@ export interface DriverOption {
 }
 
 const ROLES: Role[] = ["admin", "clerk", "viewer", "driver", "owner"];
-
-const ROLE_HINTS: Record<Role, string> = {
-  owner: "すべての操作（ユーザー管理・会社設定・締め解除を含む）",
-  admin: "稼働・マスタ・管理費・調整の登録と月締め、CSV 出力、経営の数字の閲覧",
-  clerk: "事務の仕事（稼働・日報・配車・請求・支払・月締め）。経営の数字・振込口座・借入・監査ログは見えない",
-  viewer: "閲覧と CSV 出力のみ",
-  driver: "自分の締め済み月の支払明細のみ（ドライバーポータル）",
-};
 
 function FieldError({ messages }: { messages?: string[] }) {
   if (!messages || messages.length === 0) return null;
@@ -109,7 +102,7 @@ export function InviteDialog({ drivers }: { drivers: DriverOption[] }) {
                   </option>
                 ))}
               </Select>
-              <p className="text-xs text-muted-foreground">{ROLE_HINTS[role]}</p>
+              <p className="text-xs text-muted-foreground">{ROLE_SUMMARIES[role]}</p>
               <FieldError messages={errors.role} />
             </div>
             {role === "driver" && (

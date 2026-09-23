@@ -19,7 +19,7 @@ const SETTINGS_SUBNAV: ({ href: string; label: string; keywords?: string[] } & R
   { href: "/settings/safety", label: "安全管理", keywords: ["safety", "あんぜん", "安全管理者", "指導", "事故", "点呼"], adminOnly: true },
   { href: "/settings/integrations", label: "外部連携", keywords: ["line", "らいん", "google", "drive", "ばっくあっぷ", "ai", "連携"], managerOnly: true },
   { href: "/settings/company", label: "会社設定", keywords: ["company", "かいしゃ", "消費税", "振込"], ownerOnly: true },
-  { href: "/settings/users", label: "ユーザー管理", keywords: ["user", "ゆーざー", "権限", "招待"], ownerOnly: true },
+  { href: "/settings/users", label: "ユーザー管理", keywords: ["user", "ゆーざー", "権限", "招待", "見せる範囲", "公開", "代表を譲る", "譲渡", "じょうと"], ownerOnly: true },
   { href: "/settings/data", label: "データ", keywords: ["data", "csv", "backup", "ばっくあっぷ", "取り込み"] },
   { href: "/settings/audit", label: "監査ログ", keywords: ["audit", "log", "かんさ", "履歴"], managerOnly: true },
   { href: "/settings/notifications", label: "通知", keywords: ["notification", "つうち", "通知", "push", "ぷっしゅ", "line", "らいん", "お知らせ"] },

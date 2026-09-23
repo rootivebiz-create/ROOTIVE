@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { emailSchema, roleSchema, uuidSchema } from "./common";
 import type { Role } from "@/lib/db/types";
+import { ACCESS_KEYS, type AccessChoice, type AccessKey } from "@/lib/auth/access";
 
 /** 「＋ ユーザーを招待」フォームの入力 */
 export interface InviteUserInput {
@@ -59,3 +60,32 @@ export const setUserActiveSchema = z.object({
   userId: uuidSchema,
   isActive: z.boolean(),
 });
+
+/** ユーザーの基本（表示名・最初に開く画面）。代表が相手の分を直す */
+export const updateUserBasicsSchema = z.object({
+  userId: uuidSchema,
+  displayName: displayNameSchema,
+  startPage: z.enum(["dashboard", "office"], { message: "最初に開く画面を選んでください" }),
+});
+
+const accessChoiceSchema = z.enum(["role", "allow", "deny"], { message: "見せる範囲の選び方が正しくありません" });
+
+/** 見せる範囲（0029）。項目ごとに ロールのとおり／見せる／見せない */
+export const setUserAccessSchema = z.object({
+  userId: uuidSchema,
+  choices: z
+    .record(z.string(), accessChoiceSchema)
+    .refine((v) => Object.keys(v).every((k) => (ACCESS_KEYS as readonly string[]).includes(k)), { message: "見せる範囲の項目が正しくありません" })
+    .transform((v) => v as Partial<Record<AccessKey, AccessChoice>>),
+});
+
+export type SetUserAccessInput = z.input<typeof setUserAccessSchema>;
+
+/** 代表を譲る（0029）。譲ったあとの自分のロールと、確認のチェック */
+export const transferOwnershipSchema = z.object({
+  userId: uuidSchema,
+  myRole: z.enum(["admin", "clerk", "viewer"], { message: "譲ったあとのあなたのロールを選んでください" }),
+  acknowledged: z.literal(true, { message: "確認のチェックを入れてください" }),
+});
+
+export type TransferOwnershipInput = z.input<typeof transferOwnershipSchema>;

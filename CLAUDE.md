@@ -23,13 +23,13 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
 - `lib/push/` 通知（`targets.ts` 純関数の宛先と文面・`config.ts` VAPID・`send.ts` 送信・`client.ts` ブラウザ側の購読・`notify-chat.ts` / `notify-daily.ts` 実際の通知）
 - `lib/alerts/` `lib/chat/` `lib/bank/` `lib/integrations/` `lib/daily/` `lib/fleet/` `lib/intake/` `lib/hr/` `lib/executive/`（代表：読み取り `queries.ts`・信号 `cockpit.ts`・現金の残り日数 `runway.ts`・予実の分解 `variance.ts`・朝のひとこと `brief.ts`） 各機能の純関数とサーバー専用の処理
 - `lib/db/database.types.ts` supabase-js 用の型（自動生成）、`lib/db/types.ts` 型エイリアス、`lib/db/queries.ts` 共通クエリ
-- `lib/auth/session.ts` セッション・ロール確認（`requireStaff` / `requirePageRole` / `requireAdminAction` など）
+- `lib/auth/session.ts` セッション・ロール確認（`requireStaff` / `requirePageRole` / `requireAdminAction` など。`SessionContext.access` がその人の見える範囲）、`lib/auth/access.ts` 見せる範囲の純関数（`effectiveAccess` / `buildAccessOverrides` / `staffHome`）
 - `lib/actions/*.ts` Server Actions（`"use server"`）、`lib/actions/result.ts` 共通の `ActionResult` / `runAction` / エラー変換
 - `lib/schemas/*.ts` zod スキーマ（サーバー・クライアント共用）
 - `lib/month.ts` 稼動月ユーティリティ、`lib/format.ts` 表示書式（円・%・数量）
 - `components/ui/*` UI 部品（shadcn/ui 相当）、`components/layout/*` シェル・ナビ・月セレクタ
 - `app/(app)/*` スタッフ画面（ホーム・稼働・支払・請求・経費・資金繰り・案件・レポート・ドライバー別の採算・設定）、`app/driver/*` ドライバーポータル、`app/(auth)/*` ログイン・招待、`app/api/export/*` 出力
-- `supabase/migrations/*.sql` スキーマ（0001 テーブル、0002 認証・RLS、0003 ビュー、0004 RPC、0005 ポータル・初期データ、0006 Storage・権限、0007 ドライバー別単価（bill_rate 上書き・rate_diffs・apply_master_rates）、0008 消費税・ロゴと認印・ドライバーごとの支払日、0009 経費と営業利益・取引先と請求書・月次目標、0010 資金繰り・案件別採算、0011 AI チャット・社内チャット・異常検知・外部連携、0012 運行管理と法令対応（点呼・業務記録・日別の稼働・車両・書類）、0013 取り込みと採用・契約、0014 法人の経営管理（振込先口座・決算と税務カレンダー・借入金・経営指標・契約書の保管）、0015 バックアップと復元を全テーブルへ拡張、0016 異常の検知を毎日自動で回す、0017 会社を明示して集計する RPC、0018 労務（拘束時間・休息）と元請の支払通知との突合、0019 代表（決裁・意思決定ログ・会社の台帳・中期計画・ログインの記録）、0020 代表の守り（機密の隔離・決裁のルールと委任・持ち出しの記録・計画の配分・振込口座の分離）、0021 表示を速くする（me / nav_badges）、0022 通知（端末への通知の購読・受け取り方の設定）、0023 配車・シフト（必要人数・割り当て・休み希望・定休日）、0024 法定帳票（運転者台帳・適性診断・保存期間・監査で足りないもの）、0025 使ってみて気づいた直し（台帳の出力を機密に・LINE 連携の復元・ダッシュボードの 1 往復）、0026 事務（月締めの手順のチェック・今日の報告の催促・最初に開く画面・office_desk）、0027 事務員ロール（enum の値だけ）、0028 事務員の権限・支払明細の送付・請求書のメール送付・締めたあとの手順）
+- `supabase/migrations/*.sql` スキーマ（0001 テーブル、0002 認証・RLS、0003 ビュー、0004 RPC、0005 ポータル・初期データ、0006 Storage・権限、0007 ドライバー別単価（bill_rate 上書き・rate_diffs・apply_master_rates）、0008 消費税・ロゴと認印・ドライバーごとの支払日、0009 経費と営業利益・取引先と請求書・月次目標、0010 資金繰り・案件別採算、0011 AI チャット・社内チャット・異常検知・外部連携、0012 運行管理と法令対応（点呼・業務記録・日別の稼働・車両・書類）、0013 取り込みと採用・契約、0014 法人の経営管理（振込先口座・決算と税務カレンダー・借入金・経営指標・契約書の保管）、0015 バックアップと復元を全テーブルへ拡張、0016 異常の検知を毎日自動で回す、0017 会社を明示して集計する RPC、0018 労務（拘束時間・休息）と元請の支払通知との突合、0019 代表（決裁・意思決定ログ・会社の台帳・中期計画・ログインの記録）、0020 代表の守り（機密の隔離・決裁のルールと委任・持ち出しの記録・計画の配分・振込口座の分離）、0021 表示を速くする（me / nav_badges）、0022 通知（端末への通知の購読・受け取り方の設定）、0023 配車・シフト（必要人数・割り当て・休み希望・定休日）、0024 法定帳票（運転者台帳・適性診断・保存期間・監査で足りないもの）、0025 使ってみて気づいた直し（台帳の出力を機密に・LINE 連携の復元・ダッシュボードの 1 往復）、0026 事務（月締めの手順のチェック・今日の報告の催促・最初に開く画面・office_desk）、0027 事務員ロール（enum の値だけ）、0028 事務員の権限・支払明細の送付・請求書のメール送付・締めたあとの手順、0029 ユーザーごとの見せる範囲・代表を譲る）
 - `tests/` Vitest（`*.test.ts`）、`tests/sql/`（psql）、`tests/e2e/`（Playwright ＋ `supabase-lite` テストサーバー）
 
 ## 必ず守る規約
@@ -83,7 +83,7 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
 - 異常の検知は 24 ルール（0011 の 11 ＋ 0012 の 5 ＋ 0014 の 4 ＋ 0018 の 4：拘束時間が長い日・休息の不足・連続勤務の超過・支払通知との差）。**再発したアラートは「未対応」に戻る。「対象外」にしたものは戻らない**
 - **代表（0019）**：`/executive` 配下は owner 専用（`requirePageRole(["owner"])`）。決裁（`approvals`。申請は admin 以上の RPC `request_approval`、決裁は `decide_approval`）、意思決定ログ（`decisions`）、会社の台帳（`company_profile` / `officers` / `shareholders` / `insurance_policies` / `advisors` / `guarantees`）、中期計画（`plans` / `plan_years`）、ログインの記録（`login_events`。書き込みは `record_login_event` のサービスロール専用、1 年で消える）。**代表専用のテーブルは RLS で `public.is_owner()` を必須にしており、代表以外には 1 行も見えない**（バックアップも RLS が効くので、管理者が書き出すとそのぶんは空になる）
 - **代表だけの気づきは `alerts` に出さない（0019）**：`alerts` はスタッフ全員が読めるため、保険・役員・意思決定など代表だけの内容を載せると漏れる。代わりに `v_executive_tasks`（決裁待ち・見直し日・保険の満了・役員の任期・委任の期限）と `v_executive_summary` で代表にだけ出す。`alerts` に足してよいのは全員が見てよい「決裁待ちの滞留（`approval_pending`）」と「出力の急増（`export_burst`）」だけ
-- **機密の隔離（0020）**：`companies.confidential_scope`（`loans` / `cash` / `bank_account` を owner / admin / staff の 3 段階。既定はすべて admin）で、借入・納税（`loans` / `loan_payments` / `tax_tasks`）、現金（`cash_snapshots`）、ドライバーの振込口座の見せ方を決める。判定は DB の `can_see_confidential(key)` 1 本（アプリ側は `canSeeConfidential(role, scope, key)`）。**書き込みポリシーが `for all`（＝ select も通す）なので、閉じるときは select と write の両方に判定を入れる**
+- **機密の隔離（0020）**：`companies.confidential_scope`（`loans` / `cash` / `bank_account` を owner / admin / staff の 3 段階。既定はすべて admin）で、借入・納税（`loans` / `loan_payments` / `tax_tasks`）、現金（`cash_snapshots`）、ドライバーの振込口座の見せ方を決める。判定は DB の `can_see_confidential(key)` 1 本（アプリ側は `ctx.access`。0029 で人ごとの上書きが先に効く）。**書き込みポリシーが `for all`（＝ select も通す）なので、閉じるときは select と write の両方に判定を入れる**
 - **ドライバーの振込口座（0020）**：列単位の RLS が無いため `drivers` から `driver_bank_accounts`（主キー `driver_id`）へ分離した。読み取りは必ずビュー `v_driver_bank` を使う（`drivers` に口座の列はもう無い）
 - **決裁のルールと代理決裁（0020）**：しきい値は `approval_rules`（会社を作ると既定 6 件）。判定は RPC `approval_required(kind, amount)` で、**画面や Server Action に金額を手書きしない**。代表が不在のときは `approval_delegations`（期間・上限金額・種別を切った一時的な委任）で admin が決裁でき、`can_decide_approval` が RLS・トリガー・RPC の 3 か所すべてで使われる。代理のときは `approvals.on_behalf_of` に代表が入る。**権限そのものの昇格はしない**
 - **持ち出しの記録（0020）**：`export_logs` に CSV・振込データ・バックアップ・明細 PDF の出力を残す（閲覧は代表のみ、書き込みは `record_export` のサービスロール専用、1 年で消える）。**記録に失敗しても出力自体は止めない**
@@ -165,8 +165,8 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
   - ナビのバッジ `nav_badges().office`＝承認待ちの稼働報告 ＋ 休み希望（admin 以上だけ）。ベルは増えたらトーストで知らせる
   - `month_close_checks` / `report_reminders` はバックアップに含めない（運用の記録。データ全削除では消す）
 - **事務員（clerk・0027 / 0028）**：事務の担当のロール。登録・編集は管理者と同じ（`is_admin()` と `ADMIN_ROLES` に入る）が、**経営の数字と経営の設定には入らない**。
-  - 判定は DB が `is_clerk()` / `is_manager()`（owner・admin）/ `can_see_management()`（owner・admin・viewer）、アプリが `canEdit` / `canManage` / `canSeeManagement`（`lib/auth/session.ts`）。**画面・Server Action・DB で同じ線を引く**
-  - 事務員に閉じるもの：ホーム・資金繰り・案件別・ドライバー別の採算・財務・レポート・AI（`requireManagementPage`、ナビは `noClerk`）、監査ログ・外部連携の設定（`managerOnly`）、月次目標・経営のアラート（`is_management_alert`。`MANAGEMENT_ALERT_CODES` と同じ 8 種類）・`cash_forecast`・締め時バックアップ（Storage の `backups_select` は `is_manager()`）
+  - 判定は DB が `is_clerk()` / `is_manager()`（owner・admin）/ `can_see_management()`（owner・admin・viewer ＋ 人ごとの設定）、アプリが `canEdit` / `canManage` / `ctx.access.management`（`lib/auth/session.ts`・`lib/auth/access.ts`）。**画面・Server Action・DB で同じ線を引く**
+  - 事務員に閉じるもの：ホーム・資金繰り・案件別・ドライバー別の採算・財務・レポート・AI（`requireManagementPage`、ナビは `management`）、監査ログ・外部連携の設定（`managerOnly`）、月次目標・経営のアラート（`is_management_alert`。`MANAGEMENT_ALERT_CODES` と同じ 8 種類）・`cash_forecast`・締め時バックアップ（Storage の `backups_select` は `is_manager()`）
   - 行ごとの売上・支払は事務の仕事（請求・支払）に要るので見える。**会社利益・行の利益は画面で出さないだけ**（`showProfit`）で、RLS では隠していない（`bill − pay` で出せるため）
   - 機密の段階に「事務員まで」（`clerk`）を足した。振込データを任せるときは代表が振込口座を「事務員まで」にする
   - 事務員はいつも `/office` から始まる（`homeFor`・`/` の振り分け・下タブの先頭）。入れない画面からも `/office` へ戻す
@@ -177,9 +177,18 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
   - 事務員は `integrations` を読めないので、LINE 連携の有無はサービスロール（会社で絞る）か RPC `company_line_enabled()`（真偽だけ）で判定する
 - **請求書のメール送付（0028）**：`RESEND_API_KEY` と `MAIL_FROM` がそろっているときだけ画面に出す（`isMailEnabled`）。`sendInvoiceMailAction` が 下書きなら発行 → PDF を添付して送信 → `record_invoice_send`（送れなかったときも理由を残す）。宛先は `clients.email`（カンマ区切り 5 件まで）。E2E は `RESEND_API_BASE` / `LINE_API_BASE` でテストサーバーのモックへ向ける（本番では設定しない）
 - **月締めの手順の順番（0028 で直した）**：締める前の 7 つ → **月を締める** → 支払明細の送付 → 振込。締めたあとの手順は締めた月でもチェックできる（0026 の番人を外した）。明細は全員に送った記録があれば自動で済み。直近に締めた月（45 日以内）に残っていれば「今日やること」に「締めのあと」として出る（`office_desk` の `after_close`）
+- **ユーザーごとの見せる範囲・代表を譲る（0029）**：`/settings/users/[id]`（代表のみ）で 1 人ずつ、表示名・最初に開く画面・ロール・見せる範囲・有効／無効・最近のログインを変え、代表を譲れる。
+  - 見せる範囲は `profiles.access_overrides`（`management` / `loans` / `cash` / `bank_account` / `export` を `allow` / `deny`。**ロールの既定と違うものだけを持つ**＝`buildAccessOverrides`）。**代表とドライバーには効かない**
+  - 判定は DB の `can_see_management()` / `can_see_confidential(key)` / `can_export()` と、アプリの `effectiveAccess(role, overrides, scope)`（`SessionContext.access`）。**画面・Server Action・出力の口は `ctx.access` を見る**（`canSeeManagement(role)` と `canSeeBankAccount` は消した。ロールだけで判定を書かない）
+  - 経営のアラートは `is_clerk()` ではなく `can_see_management()` で出し分ける（事務員に見せる設定にしたら経営のアラートも見える）
+  - `export` は DB では止めない（画面に出せるデータを一覧で持ち出すかの話）。**出力の口 `requireExportRole` が 403**（`EXPORT_STOPPED_MESSAGE`）、画面は `AppShell` の `data-export-off` と CSS で出力のリンク・`[data-export-menu]`・出力センターを隠す。締め時のバックアップ（`export_backup`）は月締めの一部なので止めない
+  - 経営の数字を見せない人はホームへ行かない（`staffHome`：編集できる人は事務、閲覧者は稼働）。`homeFor(role, access)` と `/` の振り分け・ロゴ・下タブが同じ判定
+  - 見せる範囲の変更は代表だけ、**自分のものは変えられない**（`protect_profile_columns`）
+  - 代表を譲るのは RPC `transfer_ownership(p_to, p_my_role)`（相手を owner、自分を admin / clerk / viewer に 1 回で入れ替える。相手はスタッフで有効な人だけ。両方の上書きを外す）。記録は監査ログのトリガーが残す
+  - サービスロールで宛先を選ぶ経路（週次サマリー・重大なアラートの LINE・LINE の返事）は `seesManagement` / `effectiveAccess` で絞る
 - **使い方ガイド**：`/guide`（スタッフ）・`/driver/guide`（ドライバー）と、各画面の右上の「？」（スマホはメニューの「この画面の使い方」）。中身は `lib/guide/*` の純データで、出し分けはナビと同じ。**画面を足したらガイドも足す**（`tests/guide.test.ts` が page.tsx の抜けを見つける）
 - **新しいテーブルには必ず権限を出す**：0020 の末尾にある `grant ... on all tables in schema public to authenticated` は**そのあとの番号で作ったテーブルには届かない**。`security invoker` の RPC は RLS の手前で `permission denied` になる。テーブルを足したマイグレーションの末尾で grant を出し直すこと（`tests/sql/run.sh` が 1 回目の適用直後に抜けを検出する）
-- ロール：owner（すべて ＋ `/executive` の決裁・意思決定・会社の台帳・中期計画・守り）／admin（登録・編集・月締め・出力・代表への申請・`/office` の事務）／clerk（事務員。admin と同じ登録・編集・月締め・明細の送付・請求書のメール。経営の数字・監査ログ・外部連携の設定・バックアップは無し）／viewer（閲覧・CSV・チャット・AI 相談。借入・納税・現金・振込口座は既定で見えない）／driver（自分の締め済み月の明細、今日の報告（点呼・稼働）、自分の予定と休みの申請、自分の書類・車両・契約）
+- ロール：owner（すべて ＋ `/executive` の決裁・意思決定・会社の台帳・中期計画・守り ＋ ユーザーごとの見せる範囲と代表を譲る）／admin（登録・編集・月締め・出力・代表への申請・`/office` の事務）／clerk（事務員。admin と同じ登録・編集・月締め・明細の送付・請求書のメール。経営の数字・監査ログ・外部連携の設定・バックアップは無し）／viewer（閲覧・CSV・チャット・AI 相談。借入・納税・現金・振込口座は既定で見えない）／driver（自分の締め済み月の明細、今日の報告（点呼・稼働）、自分の予定と休みの申請、自分の書類・車両・契約）
 
 ## supabase-js の使い方の制約（E2E 用の互換テストサーバーが対応する範囲に限定する）
 - `from(table|view).select("col, col2" | "*")` — **埋め込みリソース（`drivers(name)` など）は使わない**。名称が必要なら `v_*` ビューを使う
