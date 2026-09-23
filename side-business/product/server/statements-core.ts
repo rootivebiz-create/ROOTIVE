@@ -106,3 +106,44 @@ export async function generateStatements(db: Db, tenantId: string, month: string
   await audit(db, { tenantId, userId, action: "statement.generate", entity: "month", entityId: month, detail: { ...result } });
   return result;
 }
+
+export type StatementsStatus = {
+  /** 今の稼働・設定から作ると何人ぶんになるか */
+  expected: number;
+  /** 保存済みの明細の数 */
+  saved: number;
+  /** まだ作っていない人 */
+  missing: string[];
+  /** 作ったあとに稼働・設定が変わった人（作り直しが必要） */
+  stale: string[];
+  /** 稼働が無くなったのに明細が残っている人 */
+  orphan: string[];
+  upToDate: boolean;
+};
+
+/** 保存済みの明細が、今の稼働・設定と同じか（締め・ホームの「明細が最新か」の判定） */
+export async function statementsStatus(db: Db, tenantId: string, month: string): Promise<StatementsStatus> {
+  const drafts = buildStatementDrafts(await loadBuildInput(db, tenantId, month));
+  const saved = await db
+    .select({ driverId: s.statements.driverId, hash: s.statements.hash })
+    .from(s.statements)
+    .where(and(eq(s.statements.tenantId, tenantId), eq(s.statements.month, month)));
+  const byDriver = new Map(saved.map((r) => [r.driverId, r.hash]));
+  const missing: string[] = [];
+  const stale: string[] = [];
+  for (const d of drafts) {
+    const hash = byDriver.get(d.driverId);
+    if (hash === undefined) missing.push(d.driverId);
+    else if (hash !== snapshotHash(d)) stale.push(d.driverId);
+  }
+  const expectedIds = new Set(drafts.map((d) => d.driverId));
+  const orphan = saved.filter((r) => !expectedIds.has(r.driverId)).map((r) => r.driverId);
+  return {
+    expected: drafts.length,
+    saved: saved.length,
+    missing,
+    stale,
+    orphan,
+    upToDate: missing.length === 0 && stale.length === 0 && orphan.length === 0 && saved.length > 0,
+  };
+}
