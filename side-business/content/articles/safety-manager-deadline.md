@@ -5,7 +5,7 @@ published: 2026-09-23
 updated: 2026-09-23
 category: 安全対策
 order: 10
-sources: https://www.mlit.go.jp/jidosha/jidosha_tk2_000172.html https://www.mlit.go.jp/report/press/jidosha02_hh_000665.html https://www.mlit.go.jp/jidosha/content/001768524.pdf https://wwwtb.mlit.go.jp/kinki/wakayama/truck/anzen_faq.pdf https://wwwtb.mlit.go.jp/kyushu/car/file04b_00001.htm https://wwwtb.mlit.go.jp/kanto/jidou_gian/seibikanrisya/kamotsukeikanrisha.html https://www.mlit.go.jp/jidosha/jidosha_tk2_000173.html https://www.nasva.go.jp/fusegu/kamotsu_kousyu.html https://www.mlit.go.jp/jidosha/anzen/03safety/report.html https://www.mlit.go.jp/jidosha/anzen/03safety/instruction.html https://www.mhlw.go.jp/content/001462383.pdf https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/0000077386_00020.html
+sources: https://www.mlit.go.jp/jidosha/jidosha_tk2_000172.html https://www.mlit.go.jp/report/press/jidosha02_hh_000665.html https://www.mlit.go.jp/jidosha/content/001768524.pdf https://wwwtb.mlit.go.jp/kinki/wakayama/truck/anzen_faq.pdf https://wwwtb.mlit.go.jp/kyushu/car/file04b_00001.htm https://wwwtb.mlit.go.jp/kanto/jidou_gian/seibikanrisya/kamotsukeikanrisha.html https://www.mlit.go.jp/jidosha/jidosha_tk2_000173.html https://www.nasva.go.jp/fusegu/kamotsu_kousyu.html https://www.mlit.go.jp/jidosha/anzen/03safety/report.html https://www.mlit.go.jp/jidosha/anzen/03safety/instruction.html https://www.mhlw.go.jp/content/001462383.pdf https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/koyou_roudou/roudoukijun/keiyaku/index02.html https://wwwtb.mlit.go.jp/tohoku/content/000336040.pdf
 ---
 
 > **この記事のまとめ**
@@ -33,7 +33,7 @@ sources: https://www.mlit.go.jp/jidosha/jidosha_tk2_000172.html https://www.mlit
 
 ### 営業所ごとに選ぶ
 
-安全管理者は、**営業所ごと**に選びます。営業所が2つあれば、それぞれに選びます。運輸局が公開しているFAQでは、その営業所の運行の安全を実際に管理できる人を選ぶよう求めています。1人で複数の営業所を兼ねたいときなど、迷う点は運輸支局に確かめてください。
+安全管理者は、**営業所ごと**に選びます。営業所が2つあれば、それぞれに選びます。近畿運輸局が公開しているFAQでは、その営業所の運行の安全を実際に管理できる人を選ぶこと、ほかの営業所の安全管理者とは兼ねられないことが説明されています。社外の人を選べるかなど、迷う点は運輸支局に確かめてください。
 
 ### 選べる人
 
@@ -43,7 +43,7 @@ sources: https://www.mlit.go.jp/jidosha/jidosha_tk2_000172.html https://www.mlit
 2. 講習を修了していて、選ぶ日の前2年以内に定期講習を修了した人
 3. 一般・特定貨物自動車運送事業もしている事業者で、運行管理者に選ばれている人
 
-講習を修了した日から2年を過ぎると、そのままでは選べません。早めに講習を受けた人は、選ぶ日まで2年を過ぎていないかを確かめます。
+講習を修了した日から2年を過ぎた人は、そのままでは選べません。定期講習を受けてから選びます。早めに講習を受けた人は、選ぶ日まで2年を過ぎていないかを確かめます。
 
 ### 講習を受ける
 
@@ -63,7 +63,7 @@ sources: https://www.mlit.go.jp/jidosha/jidosha_tk2_000172.html https://www.mlit
 
 ## あわせて確かめる記録と義務
 
-安全管理者のほかにも、2025年4月から求められていることがあります。選任の準備とあわせて、今の運用を見直しましょう。
+安全管理者のほかにも、2025年4月から求められていることがあります。点呼は前からの義務ですが、あわせて表にしました。選任の準備とあわせて、今の運用を見直しましょう。
 
 | 項目 | 中身 | 期限・保存 |
 | --- | --- | --- |
@@ -72,7 +72,7 @@ sources: https://www.mlit.go.jp/jidosha/jidosha_tk2_000172.html https://www.mlit
 | 事故報告 | 死傷者が出た事故など、一定の事故を運輸支局などを通じて国土交通大臣へ報告 | 30日以内。とくに重いものは24時間以内に速報 |
 | 初任・高齢などの運転者 | 特別な指導と、国土交通大臣が認定した適性診断 | 既存の事業者は2028年3月まで猶予 |
 | 運転者等台帳 | 運転者ごとに、指導や適性診断の受診の状況などを書く | 営業所に備える |
-| 点呼 | 業務前・業務後の点呼 | 記録を残す（個人事業主も対象） |
+| 点呼（前からの義務） | 業務前・業務後の点呼。アルコール検知器で酒気帯びを確かめる | 記録を1年保存（一人の事業者は自分で行う） |
 
 業務記録や事故記録を紙で付けている会社は、どこに何年分あるかを1か所にまとめておきます。監査のときに、すぐ出せる形にしておくことが大切です。記録の様式例は、[国土交通省の制度改正のページ](https://www.mlit.go.jp/jidosha/jidosha_tk2_000172.html)や各地方運輸局のページにあります。
 
@@ -91,7 +91,7 @@ sources: https://www.mlit.go.jp/jidosha/jidosha_tk2_000172.html https://www.mlit
 ドライバーの手間を減らそうと、会社が毎朝の点呼を行い、記録も会社が付けることを考える会社もあると思います。ただし、次の2点に注意が要ります。
 
 - **本人の義務を果たしたことになるとは限りません。** ドライバーが事業者として行うべきことを、会社が代わりに行えば済むとは言えません。会社が点呼をしていても、ドライバー本人の選任や記録が必要なことは変わらない、と考えておくのが安全です。
-- **雇用に近いと見られるおそれがあります。** 厚生労働省は、契約の名前が業務委託でも、実態によっては労働基準法上の「労働者」と判断されることがあるとしています。仕事の進め方への指揮監督があるか、時間や場所を縛っているか、仕事を断る自由があるかなどを、まとめて見て判断します。会社が点呼を「仕事の指示や監督」として行うと、その判断の材料になるおそれがあります。いわゆる偽装請負の問題です。
+- **雇用に近いと見られるおそれがあります。** 厚生労働省は、契約の名前が業務委託でも、実態によっては労働基準法上の「労働者」と判断されることがあるとしています。仕事の進め方への指揮監督があるか、時間や場所を縛っているか、仕事を断る自由があるかなどを、まとめて見て判断します。会社が点呼を「仕事の指示や監督」として行うと、その判断の材料になるおそれがあります。労働者と判断されると、労働時間や社会保険などの扱いが問題になることがあります。
 
 どこまでが「支援」で、どこからが「指揮監督」になるかは、契約の中身と実際の運用しだいです。仕組みを決める前に、弁護士・社労士に確かめてください。
 
@@ -132,7 +132,7 @@ sources: https://www.mlit.go.jp/jidosha/jidosha_tk2_000172.html https://www.mlit
 
 ### 2月：記録の仕組みを見直す
 
-- 業務記録（1年）・事故記録（3年）・点呼の記録を、すぐ出せる形で残しているか
+- 業務記録（1年）・事故記録（3年）・点呼の記録（1年）を、すぐ出せる形で残しているか
 - 運転者等台帳を作っているか
 - 業務委託ドライバーに、期限と公的な情報を知らせる
 

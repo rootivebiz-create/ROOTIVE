@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { NextConfig } from "next";
 
 const securityHeaders = [
@@ -10,6 +11,8 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // 会社のリポジトリの中にあるあいだも、このフォルダを起点にする（親の package-lock.json を拾わない）
+  outputFileTracingRoot: path.join(__dirname),
   poweredByHeader: false,
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders }];

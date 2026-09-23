@@ -32,7 +32,7 @@
     --border: #2d2f35;
     --plate: #000000;
     --plate-foreground: #f5c400;
-    --primary: #f5c400;
+    --primary: #ececea;
     --primary-foreground: #16171a;
     --accent: #f5c400;
     --accent-foreground: #16171a;
@@ -183,7 +183,12 @@
     --background: #ffffff;
     --foreground: #000000;
     --card: #ffffff;
+    --muted: #f0f0ec;
+    --muted-foreground: #444444;
     --border: #000000;
+    --link: #000000;
+    --primary: #16171a;
+    --primary-foreground: #ffffff;
     color-scheme: light;
   }
   body {

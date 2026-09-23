@@ -2,7 +2,7 @@
   "name": "side-business",
   "version": "0.1.0",
   "private": true,
-  "description": "個人事業：軽貨物ドライバー向けのツールとサイト（株式会社ROOTIVE とは別の事業）",
+  "description": "しめ日ラボ（個人事業）のサイトと営業資料",
   "scripts": {
     "dev": "next dev -p 3200",
     "build": "next build",
