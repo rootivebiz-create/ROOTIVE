@@ -9,17 +9,7 @@ const compat = new FlatCompat({ baseDirectory: __dirname });
 const eslintConfig = [
   ...compat.extends("next/core-web-vitals", "next/typescript"),
   {
-    ignores: [
-      ".next/**",
-      "node_modules/**",
-      "out/**",
-      "playwright-report/**",
-      "test-results/**",
-      "next-env.d.ts",
-      "public/sw.js",
-      // 個人事業のプロジェクト（別の package.json と設定を持つ）
-      "side-business/**",
-    ],
+    ignores: [".next/**", "node_modules/**", "out/**", "playwright-report/**", "test-results/**", "next-env.d.ts", "public/sw.js"],
   },
   {
     rules: {
