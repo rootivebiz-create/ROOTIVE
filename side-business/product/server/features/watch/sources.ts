@@ -5,6 +5,18 @@
 
 /** ルールのもとにした情報の時点 */
 export const WATCH_RULES_AS_OF = "2026年9月";
+/** 同じ時点（YYYY-MM。ルールごとの asOf の既定） */
+export const WATCH_RULES_AS_OF_MONTH = "2026-09";
+
+/** 法律が始まった日（これより前の月には、その法律のルールを当てない） */
+export const EFFECTIVE = {
+  /** フリーランス法（特定受託事業者に係る取引の適正化等に関する法律） */
+  freelance: "2024-11-01",
+  /** 取適法（中小受託取引適正化法） */
+  toriteki: "2026-01-01",
+  /** インボイス制度 */
+  invoice: "2023-10-01",
+} as const;
 
 export const SOURCES = {
   /** 公正取引委員会 フリーランス法 Q&A */
@@ -43,6 +55,9 @@ export const BASIS = {
   payDate: "フリーランス法 第4条（報酬の支払期日）",
   reduction: "フリーランス法 第5条（報酬の減額の禁止）",
   rateDown: "フリーランス法 第5条（報酬の減額・買いたたきの禁止）",
+  penalty: "フリーランス法 第5条（報酬の減額の禁止）・違約金などの差し引き",
+  exemptCut: "免税事業者との取引（公正取引委員会などのインボイス Q&A）",
+  subcontract: "フリーランス法 第4条第3項（再委託の支払期日）",
   fee: "フリーランス法 第5条（報酬の減額の禁止）・取適法",
   toriteki: "取適法（中小受託取引適正化法）",
   endNotice: "フリーランス法 第16条（解除等の予告）",
@@ -61,6 +76,10 @@ export const FIX = {
   drivers: "/settings/drivers",
   /** そのドライバーの設定（取引条件の日付・口座・登録番号・終了日） */
   driver: (driverId: string) => `/settings/drivers/${encodeURIComponent(driverId)}`,
+  /** そのドライバーの取引条件の記録（明示書） */
+  terms: (driverId: string) => `/terms/${encodeURIComponent(driverId)}`,
+  /** 1 人の明細（質問への返事もここ） */
+  statement: (statementId: string) => `/statements/${encodeURIComponent(statementId)}`,
   /** 人ごとの単価（合意した日もここで入れる） */
   rates: (driverId: string, projectId: string) => `/settings/rates?driver=${encodeURIComponent(driverId)}&project=${encodeURIComponent(projectId)}`,
   /** 控除のルール（その月の金額つき。1 人だけの控除ならその人で絞る） */
@@ -82,7 +101,9 @@ export function fixLabel(href: string): string {
     [/^\/settings\/rates/, "人ごとの単価"],
     [/^\/settings\/rules/, "控除のルール"],
     [/^\/settings\/projects/, "案件の設定"],
+    [/^\/terms/, "取引条件の記録"],
     [/^\/work/, "稼働と調整"],
+    [/^\/statements\/[^?#/]+/, "明細のやりとり"],
     [/^\/statements/, "支払明細"],
     [/^\/transfer/, "振込データ"],
   ];
@@ -108,6 +129,8 @@ export function fixLink(href: string, who: { role: "owner" | "staff" | "viewer";
   const view = (note: string | null): FixLink => ({ href, text: `見る（${name}）`, note, canFix: false });
   if (who.role === "viewer") return view("直すのは事務・オーナーの方です。");
   if (/^\/settings\/company/.test(href) && who.role !== "owner") return view("会社の設定を変えられるのはオーナーです。オーナーに頼んでください。");
+  // 質問への返事は、明細を変えないので締めたあとでもできる
+  if (/^\/statements\/[^?#/]+/.test(href)) return { href, text: `返事をする（${name}）`, note: null, canFix: true };
   if (who.closed && /^\/(work|statements)(\?|$|\/)/.test(href)) {
     return view("締めた月の稼働と明細は変えられません。直すときは、オーナーが締めを外してからにします。");
   }

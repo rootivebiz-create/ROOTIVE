@@ -2,8 +2,11 @@
  * 明細の「届いたか・見たか・確認したか」の状態（純関数。DB の値から毎回計算する。保存しない）。
  *
  * - 確認済み：今の版を確認した記録がある
- * - みなし確認：今の中身を送ってから決めた日数が過ぎ、その間にドライバーからの連絡（質問）が無い。
- *   明細の注記（「連絡が無ければ確認とみなす」）に沿った状態の表示で、法的な結論ではない
+ * - みなし確認：次の 3 つがすべてそろったときだけ（1 つでも欠けたら未確認のまま）
+ *   ① 今の中身を送ってから、決めた日数（deemedConfirmDays）が過ぎた
+ *   ② 送ってからドライバーの連絡（質問）が無く、解決していない質問も無い
+ *   ③ その人のいちばん新しい取引条件の記録に「連絡が無ければ確認とみなす」条項がある
+ *   明細の注記と取引条件に沿った状態の表示で、法的な結論ではない
  * - 確認後に変更あり：前の版を確認したが、そのあと中身が変わった（もう一度の確認が要る）
  * - 開封・送付済み・未送付：送った・開いた記録から
  */
@@ -38,6 +41,25 @@ export type StatusInput = {
   confirmations: { version: number; createdAt: Date }[];
   /** ドライバーからの連絡だけ（事務の返事は入れない） */
   driverMessages: { createdAt: Date; resolvedAt: Date | null; readAt: Date | null }[];
+  /**
+   * その人のいちばん新しい取引条件の記録に「みなし確認」の条項があるか。
+   * 記録が無い・渡さないときは「無い」として扱う（条項が無ければ、日数が過ぎても みなし確認 にしない）
+   */
+  deemedClause?: boolean;
+};
+
+/** みなし確認の 3 つの条件が、いまそろっているか（明細の画面で 1 つずつ見せる） */
+export type DeemedCheck = {
+  /** 今の中身を送った（送ったあとで中身が変わっていない） */
+  sent: boolean;
+  /** 送ってから何日たったか（送っていなければ null） */
+  daysSinceSent: number | null;
+  /** ① 決めた日数が過ぎた */
+  daysPassed: boolean;
+  /** ② 送ってから質問が無く、解決していない質問も無い */
+  noQuestion: boolean;
+  /** ③ 取引条件の記録に「みなし確認」の条項がある */
+  clause: boolean;
 };
 
 export type StatementStatus = {
@@ -58,6 +80,10 @@ export type StatementStatus = {
   confirmedAt: Date | null;
   /** 確認した版のうちいちばん新しいもの（無ければ null） */
   lastConfirmedVersion: number | null;
+  /** みなし確認の 3 つの条件 */
+  deemedCheck: DeemedCheck;
+  /** 日数と質問の条件はそろったが、取引条件に条項が無いので みなし確認 にしていない（未確認のまま） */
+  deemedBlockedByClause: boolean;
 };
 
 const DAY_MS = 86_400_000;
@@ -82,12 +108,19 @@ export function statementStatus(input: StatusInput, now: Date, deemedAfterDays: 
   // 前の中身を開いただけなら「開封」にしない（作り直したあとで開けば、開いた日時が今の中身のものになる）
   const viewedCurrent = !!input.viewedAt && input.viewedAt.getTime() >= input.updatedAt.getTime();
 
-  let deemedDays: number | null = null;
-  if (sentAt && sentCurrent) {
-    const days = Math.floor((now.getTime() - sentAt.getTime()) / DAY_MS);
-    const contacted = openQuestions > 0 || input.driverMessages.some((m) => m.createdAt.getTime() >= sentAt.getTime());
-    if (days >= deemedAfterDays && !contacted) deemedDays = days;
-  }
+  // みなし確認の 3 つの条件（① 日数 ② 質問なし ③ 取引条件の条項）
+  const daysSinceSent = sentAt && sentCurrent ? Math.floor((now.getTime() - sentAt.getTime()) / DAY_MS) : null;
+  // 送ったあとに連絡があれば、解決していても みなさない（注記の「ご連絡がない場合は」に当たらないため。確認を押してもらう）
+  const contacted = openQuestions > 0 || (!!sentAt && input.driverMessages.some((m) => m.createdAt.getTime() >= sentAt.getTime()));
+  const deemedCheck: DeemedCheck = {
+    sent: sentCurrent,
+    daysSinceSent,
+    daysPassed: daysSinceSent !== null && daysSinceSent >= deemedAfterDays,
+    noQuestion: !contacted,
+    clause: input.deemedClause === true,
+  };
+  const withoutClause = deemedCheck.sent && deemedCheck.daysPassed && deemedCheck.noQuestion;
+  const deemedDays = withoutClause && deemedCheck.clause ? daysSinceSent : null;
 
   let key: StatusKey;
   if (current.length > 0) key = "confirmed";
@@ -112,6 +145,8 @@ export function statementStatus(input: StatusInput, now: Date, deemedAfterDays: 
     deemedDays,
     confirmedAt,
     lastConfirmedVersion,
+    deemedCheck,
+    deemedBlockedByClause: withoutClause && !deemedCheck.clause && current.length === 0,
   };
 }
 

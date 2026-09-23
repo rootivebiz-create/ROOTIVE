@@ -25,8 +25,11 @@ export function ackNoteMin(severity: WatchIssue["severity"]): number {
   return severity === "red" ? ACK_NOTE_MIN.red : ACK_NOTE_MIN.other;
 }
 
-/** 締めたあとでも確認済みにできる指摘（締めたあとの記録から出るもの） */
-export const AFTER_CLOSE_CODES: ReadonlySet<string> = new Set(["paid_late"]);
+/**
+ * 締めたあとでも確認済みにできる指摘（締めたあとの記録から出るもの）。
+ * 振込はふつう締めのあと。明細への質問も、締めたあとに届くことがある（返事も締めたあとにできる）
+ */
+export const AFTER_CLOSE_CODES: ReadonlySet<string> = new Set(["paid_late", "late_payment_prev", "open_questions"]);
 
 /** その月の状態で、この種類の指摘に印を付け外しできるか */
 export function ackAllowed(code: string, closed: boolean): boolean {

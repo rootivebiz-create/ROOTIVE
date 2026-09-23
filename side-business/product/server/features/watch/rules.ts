@@ -23,9 +23,10 @@ import {
   type DayOfMonth,
   type PayMonthOffset,
 } from "@/lib/tools/torihiki-joken";
+import type { Rounding } from "@/lib/payroll/types";
 import { payDateFor, type StatementDraft } from "~/server/calc/statement";
-import { BASIS, FIX, SOURCES } from "~/server/features/watch/sources";
-import type { IssueDraft, WatchContext, WatchDriver, WatchSeverity } from "~/server/features/watch/types";
+import { BASIS, EFFECTIVE, FIX, SOURCES, WATCH_RULES_AS_OF_MONTH } from "~/server/features/watch/sources";
+import type { IssueDraft, WatchContext, WatchDriver, WatchImpact, WatchSeverity, WatchSubcontract } from "~/server/features/watch/types";
 
 // ---------------------------------------------------------------- 小さな部品
 
@@ -39,13 +40,23 @@ export const DAMAGE_WORDS = /事故|破損|弁償|罰金|修理|違約金|ペナ
 export const PERIOD_WORDS = ["まで", "以内"] as const;
 /** 支払期日を、仕事を受け取った日ではない日から数えている言葉 */
 export const START_WORDS = ["請求書受領", "請求書到着", "検収後"] as const;
+/** 違約金・ペナルティの名目に見える名前（差し引きの理由を確かめてもらう） */
+export const PENALTY_WORDS = /違約金|ペナルティ|罰金/;
 /** 公表サイトで登録を確かめ直す目安の日数 */
-export const REGISTRATION_CHECK_DAYS = 90;
+export const REGISTRATION_CHECK_DAYS = 180;
 /** 数量の急な変化の目安（±50%） */
 export const QTY_JUMP_RATIO = 0.5;
-/** 取適法の目安（資本金・常時使用する従業員の数） */
+/**
+ * 取適法の目安（運送の委託＝役務提供委託の区分）：委託する側の資本金が 1,000 万円を超える、
+ * または常時使用する従業員が 300 人を超える（相手が個人か、資本金 1,000 万円以下・従業員 300 人以下の会社のとき）。
+ * 区分ごとに基準が違うので、画面では「目安」として出す
+ */
 export const TORITEKI_CAPITAL_YEN = 10_000_000;
-export const TORITEKI_EMPLOYEES = 100;
+export const TORITEKI_EMPLOYEES = 300;
+/** 経過措置の次の段が、この月数のうちに始まるならお知らせする */
+export const TRANSITIONAL_NEXT_MONTHS = 6;
+/** 再委託の特例：元委託の支払期日から数える日数 */
+export const SUBCONTRACT_DAYS = 30;
 
 const EPS = 1e-9;
 
@@ -86,6 +97,17 @@ function driverName(ctx: WatchContext, driverId: string, fallback?: string): str
 }
 
 const monthQuery = (ctx: WatchContext) => ctx.month.slice(0, 7);
+const rounding = (ctx: WatchContext): Rounding => ctx.tenant.amountRounding ?? "round";
+
+/** 影響額（出せないときは yen: null。画面では「—」） */
+export function impactOf(yen: number | null, label: string): WatchImpact {
+  return { yen: yen === null || !Number.isFinite(yen) ? null : Math.round(yen), label };
+}
+
+/** 支払額の合計（振込額がプラスの人だけ） */
+function payTotal(drafts: StatementDraft[]): number {
+  return drafts.reduce((a, d) => a + (d.total > 0 ? d.total : 0), 0);
+}
 /** 「2026年10月分」（締めた月を開いても「今月」と書かない） */
 const monthOf = (ctx: WatchContext) => `${jpMonth(ctx.month)}分`;
 
@@ -107,6 +129,7 @@ export function termsMissing(ctx: WatchContext): IssueDraft[] {
       basis: BASIS.terms,
       sourceUrl: SOURCES.flQa,
       fixHref: FIX.driver(d.driverId),
+      impact: impactOf(d.total, `${drv.name}さんの${monthOf(ctx)}の支払額`),
     };
     const pay = `${monthOf(ctx)}の支払額は ${signedYen(d.total)}です。`;
     const first = drv.termsFirstIssuedOn;
@@ -190,6 +213,7 @@ export function rateChangedWithoutRecord(ctx: WatchContext): IssueDraft[] {
       basis: BASIS.terms,
       sourceUrl: SOURCES.flQa,
       fixHref: FIX.rates(o.driverId, o.projectId),
+      impact: impactOf(line.amount, `この単価での${monthOf(ctx)}の支払`),
     });
   }
   return out;

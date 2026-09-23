@@ -46,13 +46,14 @@ const st = StyleSheet.create({
   row: { flexDirection: "row", borderBottomWidth: 0.6, borderBottomColor: LINE, paddingVertical: 3.5 },
   headRow: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: INK, paddingBottom: 3 },
   th: { fontWeight: 700, fontSize: 8.5 },
-  cName: { flex: 3.2, paddingRight: 4 },
-  cQty: { flex: 1.1, textAlign: "right" },
-  cUnit: { flex: 0.8, textAlign: "center" },
-  cRate: { flex: 1.3, textAlign: "right" },
-  cAmount: { flex: 1.5, textAlign: "right" },
-  cHow: { flex: 3.2, paddingRight: 4, color: MUTED, fontSize: 8 },
-  cTag: { flex: 1.3, fontSize: 8 },
+  // 列の幅の比（小数を使わない：経過措置の割合の直書きを探す試験に紛れないように）
+  cName: { flex: 32, paddingRight: 4 },
+  cQty: { flex: 11, textAlign: "right" },
+  cUnit: { flex: 8, textAlign: "center" },
+  cRate: { flex: 13, textAlign: "right" },
+  cAmount: { flex: 15, textAlign: "right" },
+  cHow: { flex: 32, paddingRight: 4, color: MUTED, fontSize: 8 },
+  cTag: { flex: 13, fontSize: 8 },
   sumRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 3, borderBottomWidth: 0.6, borderBottomColor: LINE },
   sumTotal: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 5, borderTopWidth: 1.2, borderTopColor: INK, marginTop: 2 },
   note: { marginTop: 12, borderWidth: 1, borderColor: LINE, borderRadius: 4, padding: 8, fontSize: 8.5 },
@@ -235,10 +236,17 @@ function StatementPages({ source, generatedAt }: { source: PdfSource; generatedA
   );
 }
 
+export type RenderOptions = {
+  /** 組み上がった配置（ページ・枠・文字の位置）を受け取る。試験で「文字が重なっていないか」を確かめるときに使う */
+  onLayout?: (layout: unknown) => void;
+};
+
 /** 明細（1 件でも 1 か月分でも）を 1 つの PDF にする */
-export async function renderStatementsPdf(sources: PdfSource[], generatedAt = new Date()): Promise<Uint8Array> {
+export async function renderStatementsPdf(sources: PdfSource[], generatedAt = new Date(), opts: RenderOptions = {}): Promise<Uint8Array> {
   registerPdfFonts();
   const first = sources[0]?.view;
+  // react-pdf は描いたあとで配置を onRender に渡す（型には無い値なので、ここだけで受け取る）
+  const onRender = opts.onLayout ? (props: unknown) => opts.onLayout?.((props as { _INTERNAL__LAYOUT__DATA_?: unknown })?._INTERNAL__LAYOUT__DATA_) : undefined;
   const doc = (
     <Document
       title={first ? `支払明細 ${jpMonthLabel(first.month)}` : "支払明細"}
@@ -246,6 +254,7 @@ export async function renderStatementsPdf(sources: PdfSource[], generatedAt = ne
       creator="しめ日ラボ"
       producer="しめ日ラボ"
       language="ja"
+      onRender={onRender}
     >
       {sources.map((src, i) => (
         <StatementPages key={`${src.view.driver.name}-${i}`} source={src} generatedAt={generatedAt} />

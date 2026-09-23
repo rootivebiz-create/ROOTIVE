@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, getTableColumns, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, gt, inArray, isNull, sql } from "drizzle-orm";
 import type { Db } from "~/db/client";
 import * as s from "~/db/schema";
 import { UserError } from "~/server/action";
@@ -9,6 +9,8 @@ import { monthLabelJa } from "~/server/month";
 import { getTenant, isMonthClosed } from "~/server/repo";
 import { readSnapshot, statementsStatus } from "~/server/statements-core";
 import { csvText } from "~/server/download";
+import { sha256 } from "~/server/tokens";
+import { deemedDaysOf, statementStatus } from "~/server/features/statements/status";
 import type { AccountType } from "@/lib/payroll/types";
 import { buildZenginRecords, toZenginKana, validateTransfers, zenginBytes, type Requester, type Transfer } from "@/lib/payroll/zengin";
 import { adjustForBankHoliday, isBankHoliday, isDateString, shortDate } from "@/lib/tools/torihiki-joken";
@@ -214,6 +216,204 @@ function csvSafe(value: string): string {
   return /^[=+@\t\r]/.test(value) ? `'${value}` : value;
 }
 
+// ---------------------------------------------------------------- 口座の目印（前回の振込との比べ合わせ）
+
+/**
+ * 振込データに入れたときの口座の目印。口座番号そのものは残さず、「同じか・どこが違うか」だけが分かる形にする。
+ * - fp：銀行・支店・種目・番号・名義をまとめたハッシュ（会社ごとに変わる）
+ * - n / h：番号だけ・名義だけのハッシュ（どこが変わったかを言うため）
+ * - tail：番号の下 3 桁（画面で「****567」と見せるため）
+ */
+export type BankStamp = { fp: string; bankCode: string; branchCode: string; accountType: AccountType; tail: string; n: string; h: string };
+
+/** 名義は半角カナにそろえてから比べる（全角・半角の違いだけでは「変わった」にしない） */
+function holderKey(holderKana: string): string {
+  return toZenginKana(holderKana).value.replace(/\s+/g, " ").trim();
+}
+
+/** 口座の目印（sha256。会社の id を混ぜるので、他社の記録と照らし合わせても番号は分からない） */
+export function bankFingerprint(tenantId: string, b: BankFields): string {
+  return sha256(`bank:${tenantId}|${b.bankCode}|${b.branchCode}|${b.accountType}|${b.accountNumber}|${holderKey(b.holderKana)}`);
+}
+
+export function bankStamp(tenantId: string, b: BankFields): BankStamp {
+  return {
+    fp: bankFingerprint(tenantId, b),
+    bankCode: b.bankCode,
+    branchCode: b.branchCode,
+    accountType: b.accountType,
+    tail: b.accountNumber.slice(-3),
+    n: sha256(`bank-number:${tenantId}|${b.accountNumber}`).slice(0, 16),
+    h: sha256(`bank-holder:${tenantId}|${holderKey(b.holderKana)}`).slice(0, 16),
+  };
+}
+
+const ACCOUNT_TYPE_JA: Record<AccountType, string> = { ordinary: "普通", checking: "当座" };
+
+/** 口座の見せ方（番号は下 3 桁だけ）：0001-101 普通 ****567 */
+export function maskedBank(stamp: Pick<BankStamp, "bankCode" | "branchCode" | "accountType" | "tail">): string {
+  return `${stamp.bankCode}-${stamp.branchCode} ${ACCOUNT_TYPE_JA[stamp.accountType] ?? "普通"} ****${stamp.tail}`;
+}
+
+/** 前の目印と今の目印で、どこが違うか（日本語） */
+export function stampDiff(before: BankStamp, after: BankStamp): string[] {
+  const out: string[] = [];
+  if (before.bankCode !== after.bankCode) out.push("銀行");
+  if (before.branchCode !== after.branchCode) out.push("支店");
+  if (before.accountType !== after.accountType) out.push("預金の種類");
+  if (before.n !== after.n) out.push("口座番号");
+  if (before.h !== after.h) out.push("口座名義");
+  return out.length || before.fp === after.fp ? out : ["口座"];
+}
+
+/** ドライバーの設定の記録（driver.update の changed）の項目名 → 日本語 */
+const BANK_FIELD_LABEL: Record<string, string> = {
+  bankCode: "銀行コード",
+  bankNameKana: "銀行名",
+  branchCode: "支店コード",
+  branchNameKana: "支店名",
+  accountType: "預金の種類",
+  accountNumber: "口座番号",
+  holderKana: "口座名義",
+};
+
+function isStamp(v: unknown): v is BankStamp {
+  if (!v || typeof v !== "object") return false;
+  const o = v as Record<string, unknown>;
+  return typeof o.fp === "string" && typeof o.bankCode === "string" && typeof o.branchCode === "string" && typeof o.tail === "string";
+}
+
+type StampedLine = { driverId: string; bank?: BankStamp };
+
+/** 振込データを作った記録（取り消したものを除く）。新しい順 */
+type CreatedRecord = { batchId: string; month: string; fileName: string; at: Date; lines: StampedLine[] };
+
+async function createdTransferRecords(db: Db, tenantId: string): Promise<CreatedRecord[]> {
+  const rows = await db
+    .select({ action: s.auditLog.action, entityId: s.auditLog.entityId, detail: s.auditLog.detail, createdAt: s.auditLog.createdAt })
+    .from(s.auditLog)
+    .where(and(eq(s.auditLog.tenantId, tenantId), inArray(s.auditLog.action, ["transfer.create", "transfer.delete"])))
+    .orderBy(desc(s.auditLog.id));
+  const deleted = new Set(rows.filter((r) => r.action === "transfer.delete").map((r) => r.entityId));
+  const out: CreatedRecord[] = [];
+  for (const r of rows) {
+    if (r.action !== "transfer.create" || !r.entityId || deleted.has(r.entityId)) continue;
+    const d = r.detail ?? {};
+    const lines = Array.isArray(d.lines) ? (d.lines as unknown[]) : [];
+    out.push({
+      batchId: r.entityId,
+      month: typeof d.month === "string" ? d.month : "",
+      fileName: typeof d.fileName === "string" ? d.fileName : "",
+      at: r.createdAt,
+      lines: lines
+        .filter((l): l is Record<string, unknown> => !!l && typeof l === "object" && typeof (l as Record<string, unknown>).driverId === "string")
+        .map((l) => ({ driverId: l.driverId as string, bank: isStamp(l.bank) ? l.bank : undefined })),
+    });
+  }
+  return out;
+}
+
+export type BankEdit = { at: Date; userName: string | null; fields: string[] };
+
+export type BankChange = {
+  driverId: string;
+  driverName: string;
+  driverCode: string | null;
+  /** 前回の振込（この人が入っていた、いちばん新しい振込データ） */
+  previous: { batchId: string; fileName: string; month: string; at: Date; masked: string };
+  /** 今の口座（番号は下 3 桁だけ） */
+  currentMasked: string;
+  /** どこが変わったか（銀行・支店・預金の種類・口座番号・口座名義） */
+  fields: string[];
+  /** だれが・いつ変えたか（ドライバーの設定の記録から。新しい順） */
+  edits: BankEdit[];
+};
+
+export type BankReview = {
+  /** 前回の振込から口座が変わった人 */
+  changed: BankChange[];
+  /** 前に振り込んだ記録が無い人（初めての振込） */
+  firstTime: { driverId: string; driverName: string; driverCode: string | null }[];
+  /** 前に振り込んではいるが、そのときの口座の記録が無い人（この確かめを入れる前の振込） */
+  unknown: { driverId: string; driverName: string; driverCode: string | null }[];
+  /** 比べた人数 */
+  compared: number;
+};
+
+type ReviewTarget = { driverId: string; driverName: string; driverCode: string | null; bank: BankFields };
+
+/**
+ * 前回の振込から口座が変わった人を探す（振込データを作る前に必ず見せる）。
+ * 前回の口座は、振込データを作ったときの記録（transfer.create）に残した目印と比べる。
+ * 変えた人と日時は、ドライバーの設定を直した記録（driver.update）から探す。見つからなければ edits は空。
+ */
+export async function reviewBankChanges(db: Db, tenantId: string, targets: ReviewTarget[]): Promise<BankReview> {
+  const records = await createdTransferRecords(db, tenantId);
+  const changed: BankChange[] = [];
+  const firstTime: BankReview["firstTime"] = [];
+  const unknown: BankReview["unknown"] = [];
+  const pending: { target: ReviewTarget; since: Date; change: BankChange }[] = [];
+
+  for (const t of targets) {
+    const who = { driverId: t.driverId, driverName: t.driverName, driverCode: t.driverCode };
+    const inAny = records.some((r) => r.lines.some((l) => l.driverId === t.driverId));
+    const last = records.find((r) => r.lines.some((l) => l.driverId === t.driverId && l.bank));
+    if (!last) {
+      (inAny ? unknown : firstTime).push(who);
+      continue;
+    }
+    const before = last.lines.find((l) => l.driverId === t.driverId && l.bank)!.bank!;
+    const now = bankStamp(tenantId, t.bank);
+    if (before.fp === now.fp) continue;
+    const change: BankChange = {
+      ...who,
+      previous: { batchId: last.batchId, fileName: last.fileName, month: last.month, at: last.at, masked: maskedBank(before) },
+      currentMasked: maskedBank(now),
+      fields: stampDiff(before, now),
+      edits: [],
+    };
+    changed.push(change);
+    pending.push({ target: t, since: last.at, change });
+  }
+
+  // 変えた人と日時（ドライバーの設定を直した記録のうち、口座の項目が変わったもの）
+  if (pending.length) {
+    const since = new Date(Math.min(...pending.map((p) => p.since.getTime())));
+    const [edits, users] = await Promise.all([
+      db
+        .select({ entityId: s.auditLog.entityId, userId: s.auditLog.userId, detail: s.auditLog.detail, createdAt: s.auditLog.createdAt })
+        .from(s.auditLog)
+        .where(
+          and(
+            eq(s.auditLog.tenantId, tenantId),
+            eq(s.auditLog.action, "driver.update"),
+            inArray(
+              s.auditLog.entityId,
+              pending.map((p) => p.target.driverId),
+            ),
+            gt(s.auditLog.createdAt, since),
+          ),
+        )
+        .orderBy(desc(s.auditLog.id)),
+      db.select({ id: s.users.id, name: s.users.name }).from(s.users).where(eq(s.users.tenantId, tenantId)),
+    ]);
+    const userName = new Map(users.map((u) => [u.id, u.name]));
+    for (const p of pending) {
+      for (const e of edits) {
+        if (e.entityId !== p.target.driverId || e.createdAt.getTime() <= p.since.getTime()) continue;
+        const changedKeys = e.detail?.changed && typeof e.detail.changed === "object" ? Object.keys(e.detail.changed as object) : [];
+        const fields = changedKeys.filter((k) => k in BANK_FIELD_LABEL).map((k) => BANK_FIELD_LABEL[k]);
+        if (fields.length === 0) continue;
+        p.change.edits.push({ at: e.createdAt, userName: e.userId ? userName.get(e.userId) ?? null : null, fields });
+      }
+    }
+  }
+
+  const byName = (a: { driverCode: string | null; driverName: string }, b: { driverCode: string | null; driverName: string }) =>
+    (a.driverCode ?? "").localeCompare(b.driverCode ?? "", "ja") || a.driverName.localeCompare(b.driverName, "ja");
+  return { changed: changed.sort(byName), firstTime: firstTime.sort(byName), unknown: unknown.sort(byName), compared: targets.length };
+}
+
 // ---------------------------------------------------------------- 読む
 
 /** この月の明細と口座を読み、振込データに入る人・入らない人に分ける */
@@ -303,6 +503,141 @@ export async function loadTransferPlan(db: Db, tenantId: string, month: string):
     total: included.reduce((a, r) => a + r.amount, 0),
     batches: batches.map(({ statementIds: _ids, driverIds: _drivers, ...b }) => b),
   };
+}
+
+// ---------------------------------------------------------------- 作る前に確かめること（止めずに知らせる）
+
+export type NoteDriver = { driverId: string; driverName: string; driverCode: string | null };
+
+export type TransferNotes = {
+  /** ドライバーからの質問で、まだ解決にしていないもの */
+  openQuestions: (NoteDriver & { count: number })[];
+  /** 今の版をまだ確認していない人（みなし確認は含めない） */
+  unconfirmed: (NoteDriver & { status: string })[];
+  /** 前の版を確認したが、そのあと明細が変わった人 */
+  oldVersion: (NoteDriver & { confirmedVersion: number; currentVersion: number })[];
+};
+
+/** 振込の前に知らせること：未解決の質問・未確認の明細・前の版を確認したままの明細 */
+export async function loadTransferNotes(db: Db, tenantId: string, month: string, now: Date = new Date()): Promise<TransferNotes> {
+  assertMonth(month);
+  const tenant = await getTenant(db, tenantId);
+  const statements = await db
+    .select({
+      id: s.statements.id,
+      driverId: s.statements.driverId,
+      version: s.statements.version,
+      total: s.statements.total,
+      sentAt: s.statements.sentAt,
+      viewedAt: s.statements.viewedAt,
+      updatedAt: s.statements.updatedAt,
+      snapshot: s.statements.snapshot,
+    })
+    .from(s.statements)
+    .where(and(eq(s.statements.tenantId, tenantId), eq(s.statements.month, month)));
+  const out: TransferNotes = { openQuestions: [], unconfirmed: [], oldVersion: [] };
+  if (statements.length === 0) return out;
+  const ids = statements.map((st) => st.id);
+  const [confirmations, messages, drivers] = await Promise.all([
+    db
+      .select({ statementId: s.statementConfirmations.statementId, version: s.statementConfirmations.version, createdAt: s.statementConfirmations.createdAt })
+      .from(s.statementConfirmations)
+      .where(and(eq(s.statementConfirmations.tenantId, tenantId), inArray(s.statementConfirmations.statementId, ids))),
+    db
+      .select({
+        statementId: s.statementMessages.statementId,
+        createdAt: s.statementMessages.createdAt,
+        resolvedAt: s.statementMessages.resolvedAt,
+        readAt: s.statementMessages.readAt,
+      })
+      .from(s.statementMessages)
+      .where(and(eq(s.statementMessages.tenantId, tenantId), eq(s.statementMessages.author, "driver"), inArray(s.statementMessages.statementId, ids))),
+    db.select({ id: s.drivers.id, name: s.drivers.name, code: s.drivers.code }).from(s.drivers).where(eq(s.drivers.tenantId, tenantId)),
+  ]);
+  const driverById = new Map(drivers.map((d) => [d.id, d]));
+  const deemedDays = deemedDaysOf(tenant.settings);
+  for (const st of statements) {
+    const d = driverById.get(st.driverId);
+    const snap = readSnapshot(st);
+    const who: NoteDriver = { driverId: st.driverId, driverName: d?.name ?? snap.driver?.name ?? "（不明）", driverCode: d?.code ?? snap.driver?.code ?? null };
+    const status = statementStatus(
+      {
+        version: st.version,
+        sentAt: st.sentAt,
+        viewedAt: st.viewedAt,
+        updatedAt: st.updatedAt,
+        confirmations: confirmations.filter((c) => c.statementId === st.id),
+        driverMessages: messages.filter((m) => m.statementId === st.id),
+      },
+      now,
+      deemedDays,
+    );
+    if (status.openQuestions > 0) out.openQuestions.push({ ...who, count: status.openQuestions });
+    if (status.key === "changed") {
+      out.oldVersion.push({ ...who, confirmedVersion: status.lastConfirmedVersion ?? 0, currentVersion: st.version });
+    } else if (status.key !== "confirmed" && status.key !== "deemed") {
+      out.unconfirmed.push({ ...who, status: status.label });
+    }
+  }
+  const byName = (a: NoteDriver, b: NoteDriver) => (a.driverCode ?? "").localeCompare(b.driverCode ?? "", "ja") || a.driverName.localeCompare(b.driverName, "ja");
+  out.openQuestions.sort(byName);
+  out.unconfirmed.sort(byName);
+  out.oldVersion.sort(byName);
+  return out;
+}
+
+export type TransferReview = {
+  /** 振込データに入る人（included）について、前回の振込からの口座の変わり方 */
+  bank: BankReview;
+  /** まだ振込データに入っていない人のうち、口座が変わった人の数（「まだの人だけ」を選んだときの確認に使う） */
+  changedRemaining: number;
+  notes: TransferNotes;
+  /** この月の振込データのうち、作ったあとに口座が変わった人を含むもの（ダウンロードを止める） */
+  staleBankBatches: { batchId: string; drivers: string[] }[];
+};
+
+/** 振込データを作る前に見せること（口座の変更・質問・確認の様子）。止めるのは口座の変更の確認だけ */
+export async function loadTransferReview(db: Db, tenantId: string, month: string, plan?: TransferPlan): Promise<TransferReview> {
+  const p = plan ?? (await loadTransferPlan(db, tenantId, month));
+  const [bank, notes, staleBankBatches] = await Promise.all([
+    reviewBankChanges(db, tenantId, p.included),
+    loadTransferNotes(db, tenantId, month),
+    batchesWithBankChanges(db, tenantId, month),
+  ]);
+  const remaining = new Set(p.included.filter((r) => r.inBatches.length === 0).map((r) => r.driverId));
+  return { bank, changedRemaining: bank.changed.filter((c) => remaining.has(c.driverId)).length, notes, staleBankBatches };
+}
+
+/** 振込データを作ったときの口座の目印（記録が無い＝この確かめを入れる前のデータなら null） */
+async function batchStamps(db: Db, tenantId: string, batchId: string): Promise<Map<string, BankStamp> | null> {
+  const rows = await db
+    .select({ detail: s.auditLog.detail })
+    .from(s.auditLog)
+    .where(and(eq(s.auditLog.tenantId, tenantId), eq(s.auditLog.action, "transfer.create"), eq(s.auditLog.entityId, batchId)))
+    .orderBy(desc(s.auditLog.id))
+    .limit(1);
+  const lines = Array.isArray(rows[0]?.detail?.lines) ? (rows[0].detail.lines as Record<string, unknown>[]) : [];
+  const out = new Map<string, BankStamp>();
+  for (const l of lines) if (l && typeof l.driverId === "string" && isStamp(l.bank)) out.set(l.driverId, l.bank);
+  return out.size ? out : null;
+}
+
+/** この月の振込データのうち、作ったあとに口座が変わった人を含むもの（振り込んだ日が入っているものは除く） */
+async function batchesWithBankChanges(db: Db, tenantId: string, month: string): Promise<{ batchId: string; drivers: string[] }[]> {
+  const batches = await db
+    .select({ id: s.transferBatches.id })
+    .from(s.transferBatches)
+    .where(and(eq(s.transferBatches.tenantId, tenantId), eq(s.transferBatches.month, month), isNull(s.transferBatches.executedOn)));
+  if (batches.length === 0) return [];
+  const drivers = await db.select().from(s.drivers).where(eq(s.drivers.tenantId, tenantId));
+  const out: { batchId: string; drivers: string[] }[] = [];
+  for (const b of batches) {
+    const stamps = await batchStamps(db, tenantId, b.id);
+    if (!stamps) continue;
+    const names = drivers.filter((d) => stamps.has(d.id) && stamps.get(d.id)!.fp !== bankFingerprint(tenantId, bankOf(d))).map((d) => d.name);
+    if (names.length) out.push({ batchId: b.id, drivers: names.sort((a, c) => a.localeCompare(c, "ja")) });
+  }
+  return out;
 }
 
 type BatchWithIds = BatchView & {

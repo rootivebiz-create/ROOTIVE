@@ -3,7 +3,9 @@
  * ルールはこの形だけを見るので、DB なしで単体テストができる。
  */
 import type { TenantSettings } from "~/db/schema";
+import type { Rounding } from "@/lib/payroll/types";
 import type { StatementDraft } from "~/server/calc/statement";
+import type { TermsChange, TermsContent } from "~/server/features/terms-content";
 import type { WatchIssue, WatchSeverity } from "~/server/features/watch-types";
 
 export type WatchDriver = {
@@ -43,6 +45,8 @@ export type WatchRule = {
   agreedOn: string | null;
   basis: string | null;
   active: boolean;
+  /** 稼働が無い月も引くか（無ければ「稼働した月だけ」とみなす） */
+  onlyWhenWorked?: boolean;
 };
 
 export type WatchOverride = {
@@ -68,6 +72,38 @@ export type WatchStatement = { id: string; driverId: string; total: number; payD
 
 export type WatchBatch = { id: string; fileName: string; transferDate: string; executedOn: string | null; statementIds: string[] };
 
+/** この月の、日付のある稼働の行（同じ日・同じ案件の重なりを見るため） */
+export type WatchWorkRow = { driverId: string; projectId: string; workDate: string; qty: number };
+
+/** まだ解決にしていない、ドライバーからの明細の質問（1 件ずつ） */
+export type WatchQuestion = {
+  statementId: string;
+  driverId: string;
+  /** どの行の話か（全体なら null） */
+  lineKey: string | null;
+  /** 質問した日（日本時間の YYYY-MM-DD） */
+  askedOn: string;
+  /** 質問の行の名前と金額（保存した明細の写しから。分からなければ amount は null） */
+  line: { label: string; amount: number | null };
+};
+
+/** 再委託の 3 項目（取引条件の記録にあるもの） */
+export type WatchSubcontract = { isSubcontract?: boolean; originalClient?: string; originalPayDate?: string };
+
+/** その人のいちばん新しい取引条件の記録と、今の台帳から作った中身との違い */
+export type WatchTerms = {
+  driverId: string;
+  version: number;
+  issuedOn: string;
+  /** 記録した中身（古い形・空で読めないときは null。そのときは比べない） */
+  recorded: TermsContent | null;
+  /** 今の台帳から作った中身（作れなかったときは null） */
+  current: TermsContent | null;
+  /** compareTermsContent の結果 */
+  changes: TermsChange[];
+  subcontract: WatchSubcontract | null;
+};
+
 export type WatchContext = {
   /** YYYY-MM-01 */
   month: string;
@@ -80,10 +116,12 @@ export type WatchContext = {
     payDay: number;
     taxMethod: string;
     settings: TenantSettings;
+    /** 金額の端数処理（影響額の見込みに使う。無ければ四捨五入） */
+    amountRounding?: Rounding;
   };
   /** この月の明細（締めた月は保存した写し、開いている月は今の稼働から作った見込み） */
   drafts: StatementDraft[];
-  /** 前の月の明細（比べるため。同じ読み方） */
+  /** 前の月の明細（比べるため。保存した写しがある人は写し、無い人は今の稼働から作った見込み） */
   prevDrafts: StatementDraft[];
   drivers: WatchDriver[];
   rules: WatchRule[];
@@ -96,9 +134,36 @@ export type WatchContext = {
   batches: WatchBatch[];
   /** 明細が今の稼働と同じか（開いている月だけ。締めた月は null） */
   statementsStatus: { saved: number; missing: number; stale: number; orphan: number; upToDate: boolean } | null;
+  /** この月の日付のある稼働の行 */
+  workRows?: WatchWorkRow[];
+  /** この月の明細への、まだ解決にしていない質問 */
+  questions?: WatchQuestion[];
+  /** 前の月の保存済みの明細と振込データ（前の月の振込の遅れを見る） */
+  prevStatements?: WatchStatement[];
+  prevBatches?: WatchBatch[];
+  /** この月に明細がある人の、いちばん新しい取引条件の記録 */
+  terms?: WatchTerms[];
+};
+
+/**
+ * 影響額（円）。出せないものは yen を null にする（画面では「—」）。
+ * label は「何の額か」（例：「この人の今月の支払額」）。
+ */
+export type WatchImpact = { yen: number | null; label: string };
+
+/**
+ * 見張り番の指摘に、この機能だけが足す項目（共通の WatchIssue の形は変えない。runWatch はこれを付けたまま返す）
+ */
+export type IssueExtras = {
+  impact?: WatchImpact;
+  /** ルールのもとにした情報の時点（例：「2026年9月」） */
+  asOf?: string;
 };
 
 /** ルールが返す指摘（確認済みかどうかは runWatch が足す） */
-export type IssueDraft = Omit<WatchIssue, "acked" | "ackNote" | "blocksClose">;
+export type IssueDraft = Omit<WatchIssue, "acked" | "ackNote" | "blocksClose"> & IssueExtras;
+
+/** 画面が読む指摘（影響額と時点つき） */
+export type WatchIssueEx = WatchIssue & IssueExtras;
 
 export type { WatchIssue, WatchSeverity };
