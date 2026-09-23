@@ -4,7 +4,7 @@ import { SITE } from "@/site.config";
 
 const NAV = [
   { href: "/demo", label: "デモ" },
-  { href: "/tools/invoice-cost", label: "計算" },
+  { href: "/tools", label: "無料ツール" },
   { href: "/articles", label: "記事" },
   { href: "/contact", label: "相談する" },
 ] as const;

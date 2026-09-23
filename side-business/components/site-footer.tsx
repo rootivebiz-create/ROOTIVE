@@ -8,6 +8,9 @@ export function SiteFooter() {
         <nav aria-label="フッター" className="flex flex-wrap gap-x-4 gap-y-2">
           <Link href="/demo">デモ</Link>
           <Link href="/tools/invoice-cost">インボイスの負担の計算</Link>
+          <Link href="/tools/torihiki-joken">取引条件明示書</Link>
+          <Link href="/tools/payout">業種別の報酬の計算</Link>
+          <Link href="/for">業種別のまとめ</Link>
           <Link href="/articles">記事</Link>
           <Link href="/about">運営者について</Link>
           <Link href="/contact">相談・問い合わせ</Link>

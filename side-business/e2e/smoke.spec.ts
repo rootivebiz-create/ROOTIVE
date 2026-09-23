@@ -6,7 +6,41 @@ async function expectNoHorizontalScroll(page: Page) {
   expect(overflow, "ページが横にはみ出しています").toBeLessThanOrEqual(1);
 }
 
-const PAGES = ["/", "/demo", "/tools/invoice-cost", "/tools/torihiki-joken", "/contact", "/about", "/legal/privacy", "/articles"];
+const PAGES = [
+  "/",
+  "/demo",
+  "/tools",
+  "/tools/invoice-cost",
+  "/tools/torihiki-joken",
+  "/tools/payout",
+  "/tools/payout?preset=publishing",
+  "/tools/payout?preset=it",
+  "/tools/payout?preset=beauty",
+  "/tools/payout?preset=school",
+  "/for",
+  "/for/trucking",
+  "/for/publishing",
+  "/for/it",
+  "/for/beauty",
+  "/for/school",
+  "/contact",
+  "/about",
+  "/legal/privacy",
+  "/articles",
+];
+
+/** 印刷用の営業資料（検索には出さないが、開けて崩れないこと） */
+const KIT_PAGES = ["/kit", "/kit/proposal", "/kit/fax", "/kit/fax?hook=freelance", "/kit/fax?hook=safety", "/kit/flyer"];
+
+for (const path of KIT_PAGES) {
+  test(`${path}（営業資料）が開ける`, async ({ page }) => {
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    const res = await page.goto(path);
+    expect(res?.status()).toBe(200);
+    expect(errors).toEqual([]);
+  });
+}
 
 for (const path of PAGES) {
   test(`${path} が開けて、横にはみ出さない`, async ({ page }) => {
