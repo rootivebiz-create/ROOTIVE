@@ -15,12 +15,21 @@ export const monthSchema = z
   .trim()
   .regex(/^\d{4}-(0[1-9]|1[0-2])-01$/, "月の形が正しくありません");
 
-/** 画面の「2026-10」も DB の「2026-10-01」も受ける */
+/**
+ * 画面の「2026-10」も DB の「2026-10-01」も受ける。月の入力欄が使えないブラウザで手で打った
+ * 「2026/10」「2026年10月」「２０２６－１０」も読む
+ */
 export const monthInputSchema = z
   .string()
-  .trim()
-  .regex(/^\d{4}-(0[1-9]|1[0-2])(-01)?$/, "月を選んでください")
-  .transform((v) => (v.length === 7 ? `${v}-01` : v));
+  .transform((v) => {
+    const m = v
+      .normalize("NFKC")
+      .trim()
+      .match(/^(\d{4})\s*[-/.年]\s*(\d{1,2})\s*(?:月|-01)?$/);
+    if (!m) return v.trim();
+    return `${m[1]}-${m[2].padStart(2, "0")}-01`;
+  })
+  .pipe(z.string().regex(/^\d{4}-(0[1-9]|1[0-2])-01$/, "月を選んでください（例：2026-10）"));
 
 const optionalText = (max: number, label: string) =>
   z
@@ -119,13 +128,17 @@ export const quickDriverSchema = z.object({
   code: optionalText(30, "番号"),
 });
 
-const rateSchema = (label: string) =>
+const rateSchema = (label: string, required = false) =>
   z
     .string()
     .trim()
     .optional()
     .transform((v, ctx) => {
-      if (!v) return 0;
+      if (!v) {
+        if (!required) return 0;
+        ctx.addIssue({ code: "custom", message: `${label}を入れてください（明細の金額は 支払単価 × 数量 です。無償なら 0）` });
+        return z.NEVER;
+      }
       const n = parseAmount(v);
       if (n === null || n < 0) {
         ctx.addIssue({ code: "custom", message: `${label}は 0 以上の数で入れてください` });
@@ -139,7 +152,8 @@ export const quickProjectSchema = z.object({
   name: z.string().trim().min(1, "案件の名前を入れてください").max(60, "案件の名前は 60 文字までにしてください"),
   unit: z.string().trim().min(1, "単位を入れてください（例：個・日・時間）").max(10, "単位は 10 文字までにしてください"),
   billRate: rateSchema("受注単価"),
-  payRate: rateSchema("支払単価"),
+  // 支払単価は空のまま登録させない（空が 0 円になり、明細が 0 円のまま進んでしまうため）
+  payRate: rateSchema("支払単価", true),
   clientId: z
     .string()
     .trim()

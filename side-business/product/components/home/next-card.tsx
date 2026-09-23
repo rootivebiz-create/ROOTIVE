@@ -14,8 +14,9 @@ function daysBetween(from: string, to: string): number {
   return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
 }
 
-/** 支払日まで何日か（日本時間の今日から） */
-function payDateText(payDate: string, today: string): string {
+/** 支払日まで何日か（日本時間の今日から）。振り込んだ日を記録してあれば、そう書く */
+function payDateText(payDate: string, today: string, paid: boolean): string {
+  if (paid) return `ドライバーへの支払日は ${mdw(payDate)} です。振り込んだ日も記録してあります。`;
   const days = daysBetween(today, payDate);
   if (days > 0) return `ドライバーへの支払日は ${mdw(payDate)}、あと ${days}日です。`;
   if (days === 0) return `ドライバーへの支払日は今日（${mdw(payDate)}）です。`;
@@ -23,7 +24,7 @@ function payDateText(payDate: string, today: string): string {
 }
 
 /** いちばん大きな「次にやること」。押す先は 1 つだけにする */
-export function NextCard({ view, month, payDate, today }: { view: HomeView; month: string; payDate: string; today: string }) {
+export function NextCard({ view, month, payDate, today, paid = false }: { view: HomeView; month: string; payDate: string; today: string; paid?: boolean }) {
   const m = monthParam(month);
   if (view.allDone) {
     const nextMonth = shiftMonth(month, 1);
@@ -39,7 +40,7 @@ export function NextCard({ view, month, payDate, today }: { view: HomeView; mont
             元請の支払通知と突き合わせる
           </Link>
           <Link href={`/profit?m=${m}`} className={buttonClass("secondary", "w-full")}>
-            今月の利益を見る
+            この月の利益を見る
           </Link>
           <Link href={`/?m=${monthParam(nextMonth)}`} className={buttonClass("secondary", "w-full")}>
             {monthLabelJa(nextMonth)}分へ
@@ -60,7 +61,7 @@ export function NextCard({ view, month, payDate, today }: { view: HomeView; mont
         {next.label} →
       </Link>
       <p className="mt-3 text-sm">{next.description}</p>
-      <p className="mt-2 text-xs text-muted-foreground">{payDateText(payDate, today)}</p>
+      <p className="mt-2 text-xs text-muted-foreground">{payDateText(payDate, today, paid)}</p>
     </section>
   );
 }

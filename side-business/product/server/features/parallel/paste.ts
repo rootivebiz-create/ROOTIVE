@@ -51,13 +51,20 @@ export function rowsFromText(text: string): string[][] {
   return parseCsv(t, t.includes("\t") ? "\t" : ",");
 }
 
-/** 見出し行：上から 15 行のうち、名前らしい見出しがある最初の行 */
+/**
+ * 見出し行：上から 15 行のうち、名前らしい見出しと金額らしい見出しの両方がある最初の行。
+ * 無ければ、名前らしい見出しがある最初の行（「ドライバー支払一覧」のような題の行を見出しと取り違えないため）。
+ */
 function findHeader(rows: string[][]): number | null {
   const limit = Math.min(rows.length, 15);
+  let fallback: number | null = null;
   for (let i = 0; i < limit; i++) {
-    if (rows[i].some((c) => wordScore(c, NAME_WORDS) > 0)) return i;
+    const hasName = rows[i].some((c) => wordScore(c, NAME_WORDS) > 0);
+    if (!hasName) continue;
+    if (rows[i].some((c) => wordScore(c, NAME_WORDS) === 0 && wordScore(c, AMOUNT_WORDS) > 0)) return i;
+    fallback ??= i;
   }
-  return null;
+  return fallback;
 }
 
 export function readAmountTable(rows: string[][], drivers: Candidate[], opts: { nameCol?: number | null; amountCol?: number | null } = {}): AmountTable {

@@ -110,7 +110,9 @@ export default async function ImportPage({ searchParams }: { searchParams: Promi
           </ul>
         )}
         <p className="mt-3 text-sm">
-          <Link href={`/work?m=${monthParam(month)}`}>この月の稼働と調整を見る →</Link>
+          <Link href={`/work?m=${monthParam(month)}`} className="inline-block min-h-11 py-2">
+            この月の稼働と調整を見る →
+          </Link>
         </p>
       </section>
 

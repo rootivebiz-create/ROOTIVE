@@ -4,7 +4,7 @@ import type { Db } from "~/db/client";
 import * as s from "~/db/schema";
 import { getTenant } from "~/server/repo";
 import { changes } from "./common";
-import { deemedNote } from "./format";
+import { deemedNote, isStandardNote } from "./format";
 import type { CompanyInput } from "./schemas";
 
 /**
@@ -18,12 +18,10 @@ export async function loadCompany(db: Db, tenantId: string): Promise<CompanyView
   return getTenant(db, tenantId);
 }
 
-const AUTO_NOTE = /^記載内容に誤りがある場合は、受け取りから\d+日以内にご連絡ください。ご連絡がない場合は、内容を確認いただいたものとします。$/;
-
 /** 明細の注記：空か、日数だけ違う決まった文なら、日数に合わせた文にする（7 日なら空＝明細の既定の文） */
 export function resolveStatementNote(note: string | null, days: number): string | undefined {
   const t = (note ?? "").trim();
-  if (!t || AUTO_NOTE.test(t)) return days === 7 ? undefined : deemedNote(days);
+  if (!t || isStandardNote(t)) return days === 7 ? undefined : deemedNote(days);
   return t;
 }
 

@@ -157,6 +157,20 @@ async function ensureOpen(db: Db, tenantId: string, month: string): Promise<void
   }
 }
 
+/**
+ * 日付の打ち間違い（年や月の違い）を止める。締め日が月末でない会社のために、前後 1 か月までは受ける
+ * （例：20 日締めの 10 月分なら 9/21〜10/20）
+ */
+function ensureDateNearMonth(workDate: string | null, month: string): void {
+  if (!workDate) return;
+  const index = (v: string) => Number(v.slice(0, 4)) * 12 + Number(v.slice(5, 7));
+  if (Math.abs(index(workDate) - index(month)) > 1) {
+    throw new UserError(
+      `日付（${workDate.replace(/-/g, "/")}）が${monthLabelJa(month)}分から離れています。年と月を確かめてください（前後 1 か月の日付まで入れられます）`,
+    );
+  }
+}
+
 async function ensureDriver(db: Db, tenantId: string, id: string): Promise<{ id: string; name: string }> {
   if (!UUID.test(id)) throw new UserError("ドライバーを選んでください");
   const rows = await db
@@ -205,6 +219,7 @@ async function getAdjustment(db: Db, tenantId: string, id: string) {
 
 export async function addWorkEntry(db: Db, tenantId: string, month: string, input: WorkInput) {
   await ensureOpen(db, tenantId, month);
+  ensureDateNearMonth(input.workDate, month);
   const driver = await ensureDriver(db, tenantId, input.driverId);
   const project = await ensureProject(db, tenantId, input.projectId);
   const [row] = await db
@@ -217,6 +232,7 @@ export async function addWorkEntry(db: Db, tenantId: string, month: string, inpu
 export async function updateWorkEntry(db: Db, tenantId: string, id: string, input: WorkInput) {
   const before = await getEntry(db, tenantId, id);
   await ensureOpen(db, tenantId, before.month);
+  ensureDateNearMonth(input.workDate, before.month);
   const driver = await ensureDriver(db, tenantId, input.driverId);
   const project = await ensureProject(db, tenantId, input.projectId);
   const [after] = await db

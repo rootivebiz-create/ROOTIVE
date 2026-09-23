@@ -54,7 +54,12 @@ export const DRIVER_FIELDS: { key: DriverField; label: string; words: string[] }
   { key: "email", label: "メール", words: ["メールアドレス", "メール", "mail", "email", "e-mail"] },
   { key: "phone", label: "電話", words: ["電話番号", "携帯番号", "電話", "携帯", "tel", "phone"] },
   { key: "startedOn", label: "委託の開始日", words: ["委託開始日", "契約開始日", "取引開始日", "稼働開始日", "開始日"] },
-  { key: "code", label: "番号", words: ["ドライバー番号", "ドライバーコード", "社内番号", "管理番号", "委託者番号", "番号", "コード", "code", "no", "id"] },
+  // 「No.」だけの列は、たいてい上から 1・2・3 と振った行の番号なので、番号（照合に使う）とは見ない
+  {
+    key: "code",
+    label: "番号",
+    words: ["ドライバー番号", "ドライバーコード", "ドライバーno", "ドライバーid", "社内番号", "社員番号", "社員no", "管理番号", "管理no", "委託者番号", "委託者no", "番号", "コード", "code", "id"],
+  },
   { key: "name", label: "氏名", words: ["氏名", "名前", "お名前", "ドライバー名", "委託者名", "委託先名", "乗務員名", "ドライバー", "乗務員", "name"] },
 ];
 
@@ -71,7 +76,7 @@ export function fieldOfHeader(header: string): DriverField | null {
   for (const f of DRIVER_FIELDS) {
     for (const w of f.words) {
       const nw = normalizeHeader(w);
-      // 完全に同じ見出しは強く、含むだけなら言葉の長さで比べる（「口座番号」は「番号」より強い）
+      // まったく同じ見出しは強く、含むだけなら言葉の長さで比べる（「口座番号」は「番号」より強い）
       const score = h === nw ? 100 : nw.length >= 2 && h.includes(nw) ? nw.length : 0;
       if (score > 0 && (!best || score > best.score)) best = { key: f.key, score };
     }
@@ -81,25 +86,39 @@ export function fieldOfHeader(header: string): DriverField | null {
 
 export type ColumnInfo = { index: number; header: string; field: DriverField | null; label: string | null };
 
-/** 見出し行を探す（上から 10 行のうち、「氏名」「名前」などの列がある最初の行）。無ければ null */
+/**
+ * 見出し行を探す（上から 10 行のうち、「氏名」「名前」などの列がある行）。無ければ null。
+ * 表の上に「ドライバー名簿」のような題の行があると、それも「氏名の列」に見えてしまうので、
+ * 氏名のほかにも列の名前が当たる行を先に選ぶ（氏名の 1 列だけの名簿なら、その行を使う）。
+ */
 export function findDriverHeader(rows: string[][]): { index: number; columns: ColumnInfo[] } | null {
   const limit = Math.min(rows.length, 10);
+  let fallback: number | null = null;
+  let chosen: number | null = null;
   for (let i = 0; i < limit; i++) {
     const row = rows[i];
     if (!row || isBlankRow(row)) continue;
     const fields = row.map((c) => fieldOfHeader(c));
     if (!fields.includes("name")) continue;
-    // 同じ列が 2 つ当たったら、左のものを使う
-    const used = new Set<DriverField>();
-    const columns = row.map((header, index) => {
-      const f = fields[index];
-      if (!f || used.has(f)) return { index, header, field: null, label: null };
-      used.add(f);
-      return { index, header, field: f, label: FIELD_LABEL[f] };
-    });
-    return { index: i, columns };
+    if (new Set(fields.filter(Boolean)).size >= 2) {
+      chosen = i;
+      break;
+    }
+    fallback ??= i;
   }
-  return null;
+  const index = chosen ?? fallback;
+  if (index === null) return null;
+  const row = rows[index];
+  const fields = row.map((c) => fieldOfHeader(c));
+  // 同じ列が 2 つ当たったら、左のものを使う
+  const used = new Set<DriverField>();
+  const columns = row.map((header, i) => {
+    const f = fields[i];
+    if (!f || used.has(f)) return { index: i, header, field: null, label: null };
+    used.add(f);
+    return { index: i, header, field: f, label: FIELD_LABEL[f] };
+  });
+  return { index, columns };
 }
 
 // ---------------------------------------------------------------- 1 行の中身
@@ -283,6 +302,17 @@ export function parseDriverRows(rows: string[][], existing: ExistingDriver[]): D
     headerRow = header.index + 1;
     body = dataRows(rows, header.index);
   } else {
+    // 見出しらしい行（列の名前が 2 つ以上）なのに氏名が無いときは、決まった順で読まずに知らせる
+    const first = rows.find((r) => !isBlankRow(r));
+    if (first && first.filter((c) => fieldOfHeader(c)).length >= 2) {
+      return {
+        headerRow: rows.indexOf(first) + 1,
+        columns: [],
+        rows: [],
+        counts: { new: 0, duplicate: 0, error: 0 },
+        problem: "氏名の列が見つかりません。見出しに「氏名」か「名前」の列を足してから、もう一度読み込んでください",
+      };
+    }
     const width = Math.max(0, ...rows.map((r) => r.length));
     columns = Array.from({ length: width }, (_, index) => {
       const field = TEMPLATE_ORDER[index] ?? null;

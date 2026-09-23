@@ -4,12 +4,13 @@ import type { Db } from "~/db/client";
 import * as s from "~/db/schema";
 import { UserError } from "~/server/action";
 import { buildStatementDrafts, payDateFor, type StatementDraft } from "~/server/calc/statement";
+import { loadReport as defaultLoadReport, type Report } from "~/server/features/reconcile";
 import { listMonthStatements } from "~/server/features/statements";
 import { runWatch as defaultRunWatch } from "~/server/features/watch";
 import type { WatchIssue } from "~/server/features/watch-types";
 import { shiftMonth } from "~/server/month";
 import { getTenant, isMonthClosed, loadBuildInput } from "~/server/repo";
-import { readSnapshot } from "~/server/statements-core";
+import { readSnapshot, statementsStatus } from "~/server/statements-core";
 import {
   changeOf,
   futureBurden,
@@ -140,6 +141,8 @@ export async function loadProfitPage(db: Db, tenantId: string, month: string): P
 export type CeoDeps = {
   /** 見張り番（テストでは差し替える） */
   runWatch?: (db: Db, tenantId: string, month: string) => Promise<WatchIssue[]>;
+  /** 突合のまとめ（テストでは差し替える） */
+  loadReport?: (db: Db, tenantId: string, from: string, to: string) => Promise<Pick<Report, "cells">>;
 };
 
 export type CeoSheet = {
@@ -155,18 +158,48 @@ export type CeoSheet = {
   topProjects: ProjectProfit[];
   bottomProjects: ProjectProfit[];
   burden: { affected: boolean; people: number; current: BurdenStep | null; next: BurdenStep | null };
-  /** 元請の支払通知との突合で、まだ片付いていない差（未対応・問い合わせ済み） */
-  reconcile: { notices: number; count: number; net: number; short: number; shortCount: number; over: number; overCount: number };
+  /**
+   * 元請の支払通知との突合で、まだ片付いていない差（未対応・問い合わせ済み）。
+   * 突合の画面と同じ出し方（差は今の記録で出し、状態は保存したもの）。まだ突合の画面を開いていない通知の差も入る
+   * short・over は支払通知が当社の記録より少ない・多い額。unread は行を読み取れていない（比べられない）通知の数
+   */
+  reconcile: { notices: number; unread: number; count: number; net: number; short: number; shortCount: number; over: number; overCount: number; error: string | null };
   /** 見張り番（まだ確認済みにしていない赤・黄） */
   watch: { red: number; yellow: number; acked: number; titles: { severity: "red" | "yellow"; title: string; subject: string }[]; error: string | null };
-  /** ドライバーの確認（保存した明細のうち、今の版を確認した人） */
-  confirm: { statements: number; confirmed: number; deemed: number };
-  /** 振込（明細の振込額の合計と、明細に書いた支払日） */
-  transfer: { total: number; people: number; payDate: string };
+  /**
+   * ドライバーの確認（保存した明細のうち、今の版を確認した人）。
+   * stale：まだ締めていない月で、保存した明細が今の稼働・設定と違う（作り直すと確認の数も変わる）
+   */
+  confirm: { statements: number; confirmed: number; deemed: number; stale: boolean };
+  /**
+   * 振込（振込額がプラスの人の合計と、明細に書いた支払日）。
+   * 控除が委託料を上回って 0 円以下になった人は振込が無いので、合計に入れず人数だけ数える（振込データの画面と同じ）
+   */
+  transfer: { total: number; people: number; notPositive: number; payDate: string };
 };
 
-/** 片付いていない差の状態（突合の画面と同じ決まり） */
-const UNSETTLED = new Set(["open", "asked"]);
+/** 突合の差（突合の画面と同じ読み方。読めなくても 1 枚は出す） */
+async function reconcileSummary(db: Db, tenantId: string, month: string, load: NonNullable<CeoDeps["loadReport"]>): Promise<CeoSheet["reconcile"]> {
+  const out: CeoSheet["reconcile"] = { notices: 0, unread: 0, count: 0, net: 0, short: 0, shortCount: 0, over: 0, overCount: 0, error: null };
+  try {
+    const report = await load(db, tenantId, month, month);
+    for (const c of report.cells) {
+      if (!c.notice || c.month !== month) continue;
+      out.notices++;
+      if (c.notice.lineCount === 0) out.unread++;
+      out.short += c.short;
+      out.shortCount += c.shortCount;
+      out.over += c.over;
+      out.overCount += c.overCount;
+    }
+    out.count = out.shortCount + out.overCount;
+    out.net = out.over - out.short;
+  } catch (error) {
+    console.error("ceo sheet: reconcile failed", error instanceof Error ? error.message : error);
+    return { ...out, error: "突合の結果を読めませんでした。元請との突合の画面で確かめてください。" };
+  }
+  return out;
+}
 
 export async function loadCeoSheet(db: Db, tenantId: string, month: string, deps: CeoDeps = {}): Promise<CeoSheet> {
   assertMonth(month);
@@ -177,31 +210,8 @@ export async function loadCeoSheet(db: Db, tenantId: string, month: string, deps
   const future = futureBurden(current.drafts, month, tenant.taxMethod);
   const { top, bottom } = topAndBottom(current.projects, 3);
 
-  // 突合の差（この月の支払通知についたものだけ。会社で絞る）
-  const [items, notices] = await Promise.all([
-    db
-      .select({ diff: s.reconciliationItems.diff, status: s.reconciliationItems.status })
-      .from(s.reconciliationItems)
-      .innerJoin(s.paymentNotices, eq(s.paymentNotices.id, s.reconciliationItems.noticeId))
-      .where(and(eq(s.reconciliationItems.tenantId, tenantId), eq(s.paymentNotices.tenantId, tenantId), eq(s.paymentNotices.month, month))),
-    db
-      .select({ id: s.paymentNotices.id })
-      .from(s.paymentNotices)
-      .where(and(eq(s.paymentNotices.tenantId, tenantId), eq(s.paymentNotices.month, month))),
-  ]);
-  const reconcile = { notices: notices.length, count: 0, net: 0, short: 0, shortCount: 0, over: 0, overCount: 0 };
-  for (const it of items) {
-    if (!UNSETTLED.has(it.status) || it.diff === 0) continue;
-    reconcile.count++;
-    reconcile.net += it.diff;
-    if (it.diff < 0) {
-      reconcile.short += -it.diff;
-      reconcile.shortCount++;
-    } else {
-      reconcile.over += it.diff;
-      reconcile.overCount++;
-    }
-  }
+  // 突合の差（この月の支払通知。会社で絞る）
+  const reconcile = await reconcileSummary(db, tenantId, month, deps.loadReport ?? defaultLoadReport);
 
   // 見張り番（読めなくても 1 枚は出す）
   const watch: CeoSheet["watch"] = { red: 0, yellow: 0, acked: 0, titles: [], error: null };
@@ -223,6 +233,8 @@ export async function loadCeoSheet(db: Db, tenantId: string, month: string, deps
   }
 
   const statements = await listMonthStatements(db, tenantId, month);
+  // 締める前の月は、保存した明細が今の計算と同じかも見る（利益と振込は今の計算、確認は保存した明細のため）
+  const status = !current.closed && statements.counts.all > 0 ? await statementsStatus(db, tenantId, month) : null;
 
   return {
     companyName: tenant.name,
@@ -239,10 +251,11 @@ export async function loadCeoSheet(db: Db, tenantId: string, month: string, deps
     burden: { affected: future.affected, people: future.people, current: future.current, next: future.next },
     reconcile,
     watch,
-    confirm: { statements: statements.counts.all, confirmed: statements.counts.confirmed, deemed: statements.counts.deemed },
+    confirm: { statements: statements.counts.all, confirmed: statements.counts.confirmed, deemed: statements.counts.deemed, stale: status ? !status.upToDate : false },
     transfer: {
-      total: current.totals.transfer,
+      total: current.drafts.reduce((a, d) => a + (d.total > 0 ? d.total : 0), 0),
       people: current.drafts.filter((d) => d.total > 0).length,
+      notPositive: current.drafts.filter((d) => d.total <= 0).length,
       payDate: current.drafts[0]?.payDate ?? payDateFor(month, tenant),
     },
   };

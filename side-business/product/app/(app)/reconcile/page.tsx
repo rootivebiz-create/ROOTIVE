@@ -24,6 +24,9 @@ export default async function ReconcilePage({ searchParams }: { searchParams: Pr
   const withNotice = rows.filter((r) => r.notice);
   const short = withNotice.reduce((a, r) => a + (r.notice?.short ?? 0), 0);
   const shortCount = withNotice.reduce((a, r) => a + (r.notice?.shortCount ?? 0), 0);
+  const over = withNotice.reduce((a, r) => a + (r.notice?.over ?? 0), 0);
+  const overCount = withNotice.reduce((a, r) => a + (r.notice?.overCount ?? 0), 0);
+  const recovered = withNotice.reduce((a, r) => a + (r.notice?.recovered ?? 0), 0);
 
   return (
     <div>
@@ -42,7 +45,13 @@ export default async function ReconcilePage({ searchParams }: { searchParams: Pr
 
       {clients.length === 0 ? (
         <EmptyState title="元請が登録されていません">
-          先に <Link href="/settings">設定</Link> で元請と案件（受注単価）を登録してください。案件の受注単価と、稼働の数量から「当社の記録」を出します。
+          {canEdit ? (
+            <>
+              先に <Link href="/settings">設定</Link> で元請と案件（受注単価）を登録してください。案件の受注単価と、稼働の数量から「当社の記録」を出します。
+            </>
+          ) : (
+            "事務の方に、設定で元請と案件（受注単価）を登録してもらってください。案件の受注単価と、稼働の数量から「当社の記録」を出します。"
+          )}
         </EmptyState>
       ) : (
         <>
@@ -53,6 +62,15 @@ export default async function ReconcilePage({ searchParams }: { searchParams: Pr
                 受け取りが少ない可能性：<Money value={short} className={short > 0 ? "text-danger" : ""} />
                 <span className="ml-1 text-base font-normal text-muted-foreground">（{shortCount}件）</span>
               </p>
+              <p className="mt-1 text-base font-bold">
+                受け取りが多い可能性：<Money value={over} />
+                <span className="ml-1 text-sm font-normal text-muted-foreground">（{overCount}件。待機料など、お支払通知にだけある行を含む）</span>
+              </p>
+              {recovered > 0 && (
+                <p className="mt-1 text-sm">
+                  取り戻せた額（確定）：<Money value={recovered} className="font-bold text-success" />
+                </p>
+              )}
               <p className="mt-1 text-xs text-muted-foreground">差は「記録の違い」です。払われていないと決まったものではありません。元請に確かめてください。</p>
             </Card>
           )}
@@ -138,6 +156,7 @@ function ClientCard({ row, month }: { row: MonthClientRow; month: string }) {
           )}
         </div>
         <p className="mt-1 truncate text-xs text-muted-foreground">{n.fileName}</p>
+        {n.zeroRate.length > 0 && <p className="mt-1 text-xs font-bold text-danger">受注単価が 0 円の案件があります（{n.zeroRate.join("・")}）。設定で単価を入れてください。</p>}
         <dl className="mt-3 space-y-1 text-sm">
           <div className="flex justify-between gap-2">
             <dt className="text-muted-foreground">受け取りが少ない可能性</dt>

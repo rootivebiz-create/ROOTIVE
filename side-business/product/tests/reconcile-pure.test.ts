@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { columnsProblem, detectColumns, EMPTY_COLUMNS, parseNoticeRows } from "~/server/features/reconcile/columns";
 import { compareNotice, sumDiffs, type CmpLine, type CompareInput } from "~/server/features/reconcile/compare";
 import { daysAfter, receivingFacts } from "~/server/features/reconcile/facts";
-import { formulaText, isChargeName, lineKey } from "~/server/features/reconcile/labels";
+import { formulaText, isChargeName, lineKey, waitingDays } from "~/server/features/reconcile/labels";
 import { buildLetter, mailtoHref, type LetterItem } from "~/server/features/reconcile/letter";
 import { detectHeaderRow, parseCsv } from "~/server/tabular";
 
@@ -147,6 +147,44 @@ describe("突き合わせの計算", () => {
     );
     expect(r.items).toHaveLength(1);
     expect(r.items[0]).toMatchObject({ kind: "price", theirPrice: 185, mixedPrices: true, diff: -500 });
+  });
+
+  it("数量も単価も同じで、端数の扱いだけで 1〜2 円違うときは差に数えない（元請に 1 円を問い合わせない）", () => {
+    const hours = [{ id: "p5", name: "ルート配送（時給）", clientId: "c1", unit: "時間", billRate: 2601 }];
+    // 当社 7.5 時間 × 2,601円 = 19,507.5 → 19,508円。通知は 3.75 時間 × 2 行、行ごとに切り捨て 9,753円 × 2 = 19,506円
+    const r = compareNotice({
+      ...base(
+        [
+          line({ rawProject: "ルート", projectId: "p5", qty: 3.75, unitPrice: 2601, amount: 9753 }),
+          line({ rawProject: "ルート", projectId: "p5", qty: 3.75, unitPrice: 2601, amount: 9753 }),
+        ],
+        [{ projectId: "p5", driverId: "d1", qty: 7.5 }],
+      ),
+      projects: hours,
+    });
+    expect(r.items).toEqual([]);
+    expect(r.projects[0]).toMatchObject({ ourAmount: 19508, theirAmount: 19506, diff: -2, roundingOnly: true });
+    // 数量と単価が同じでも、金額が大きく違えば「金額の違い」として出す
+    const big = compareNotice({ ...base([line({ rawProject: "ルート", projectId: "p5", qty: 7.5, unitPrice: 2601, amount: 19000 })], [{ projectId: "p5", driverId: "d1", qty: 7.5 }]), projects: hours });
+    expect(big.items.map((i) => [i.kind, i.diff])).toEqual([["amount", -508]]);
+    expect(big.projects[0].roundingOnly).toBe(false);
+  });
+
+  it("受注単価が 0 円の案件は知らせる（当社の記録が 0 円になり、差が正しく出ないため）", () => {
+    const r = compareNotice({
+      ...base([line({ rawProject: "宅配", projectId: "p1", qty: 100, unitPrice: 190, amount: 19000 })], [{ projectId: "p1", driverId: "d1", qty: 100 }]),
+      projects: [{ id: "p1", name: "宅配（個建て）", clientId: "c1", unit: "個", billRate: 0 }],
+    });
+    expect(r.zeroRateProjects).toEqual([{ projectId: "p1", name: "宅配（個建て）" }]);
+    expect(compareNotice(base([], [{ projectId: "p1", driverId: "d1", qty: 1 }])).zeroRateProjects).toEqual([]);
+  });
+
+  it("返事待ちの日数：問い合わせ済みのときだけ数える", () => {
+    const now = new Date("2026-11-20T09:00:00+09:00");
+    expect(waitingDays("asked", new Date("2026-11-05T10:00:00+09:00"), now)).toBe(14);
+    expect(waitingDays("asked", new Date("2026-11-19T10:00:00+09:00"), now)).toBe(0);
+    expect(waitingDays("open", new Date("2026-11-01T10:00:00+09:00"), now)).toBeNull();
+    expect(waitingDays("asked", null, now)).toBeNull();
   });
 
   it("名前をまとめる鍵は括弧の中を残す", () => {

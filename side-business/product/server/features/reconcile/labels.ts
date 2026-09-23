@@ -47,6 +47,17 @@ export function isUnsettled(status: string): boolean {
   return status === "open" || status === "asked";
 }
 
+/** 問い合わせてから、この日数を過ぎても返事が無ければ「返事待ち n 日」を目立たせる */
+export const WAIT_ALERT_DAYS = 14;
+
+/** 問い合わせてから何日たったか（問い合わせ済みでなければ null） */
+export function waitingDays(status: string, askedAt: Date | string | null | undefined, now: Date = new Date()): number | null {
+  if (status !== "asked" || !askedAt) return null;
+  const t = typeof askedAt === "string" ? new Date(askedAt) : askedAt;
+  if (Number.isNaN(t.getTime())) return null;
+  return Math.max(0, Math.floor((now.getTime() - t.getTime()) / 86400000));
+}
+
 /** 追加の料金らしい名前（待機料・再配達・積込・取卸・高速代・燃料サーチャージ など） */
 export const CHARGE_RE = /待機|再配達|再配|積込|積み込|取卸|取り卸|荷卸|荷降|高速|燃料|サーチャージ|付帯/;
 

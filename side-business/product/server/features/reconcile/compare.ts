@@ -9,6 +9,8 @@
  *     単価の差 ＝ 通知の金額 −（通知の数量 × 当社の単価）
  *   2 つを足すと、必ず差の全体になる
  * - 当社に案件が無い行（待機料など）は「お支払通知にだけある」として、そのまま並べる（どちらが正しいとは言わない）
+ * - 数量も単価も同じで、金額だけが端数の分（行の数 ＋ 1 円まで）違うときは「端数」として差に数えない
+ *   （1 円の違いを元請に問い合わせないように。案件の行には roundingOnly として残す）
  */
 import { roundYen } from "@/lib/payroll/money";
 import type { Rounding } from "@/lib/payroll/types";
@@ -77,6 +79,8 @@ export type ProjectRow = {
   lineCount: number;
   diff: number;
   mixedPrices: boolean;
+  /** 数量も単価も同じで、端数の分だけ金額が違う（差に数えない） */
+  roundingOnly: boolean;
 };
 
 /** ドライバー別の内訳（お支払通知にドライバーの列があるときだけ） */
@@ -108,6 +112,8 @@ export type CompareResult = {
   chargeWarnings: ChargeWarning[];
   /** 案件に当たらず、まだ決めていない行の数 */
   unknownLines: number;
+  /** 受注単価が 0 円の案件（当社の記録が 0 円になり、差が正しく出ない） */
+  zeroRateProjects: { projectId: string; name: string }[];
 };
 
 const EPS = 1e-6;
@@ -172,13 +178,14 @@ export function compareNotice(input: CompareInput): CompareResult {
   const projects: ProjectRow[] = [];
   const chargeWarnings: ChargeWarning[] = [];
   const base = { driverId: null, split: false, mixedPrices: false, confirmedExtra: false };
+  const zeroRateProjects = scope.filter((p) => !(p.billRate > 0)).map((p) => ({ projectId: p.id, name: p.name }));
 
   for (const p of scope) {
     const oq = ourQty.get(p.id) ?? 0;
     const ourAmount = roundYen(oq * p.billRate, rounding);
     const lines = linesByProject.get(p.id) ?? [];
     if (lines.length === 0) {
-      projects.push({ projectId: p.id, name: p.name, unit: p.unit, ourQty: oq, ourPrice: p.billRate, ourAmount, theirQty: null, theirPrice: null, theirAmount: 0, lineCount: 0, diff: -ourAmount, mixedPrices: false });
+      projects.push({ projectId: p.id, name: p.name, unit: p.unit, ourQty: oq, ourPrice: p.billRate, ourAmount, theirQty: null, theirPrice: null, theirAmount: 0, lineCount: 0, diff: -ourAmount, mixedPrices: false, roundingOnly: false });
       if (isChargeName(p.name) && oq > 0) chargeWarnings.push({ projectId: p.id, name: p.name, unit: p.unit, qty: oq, amount: ourAmount });
       if (ourAmount !== 0) {
         items.push({
@@ -202,8 +209,14 @@ export function compareNotice(input: CompareInput): CompareResult {
 
     const t = summarizeLines(lines);
     const diff = t.amount - ourAmount;
-    projects.push({ projectId: p.id, name: p.name, unit: p.unit, ourQty: oq, ourPrice: p.billRate, ourAmount, theirQty: t.qty, theirPrice: t.price, theirAmount: t.amount, lineCount: lines.length, diff, mixedPrices: t.mixed });
+    const row: ProjectRow = { projectId: p.id, name: p.name, unit: p.unit, ourQty: oq, ourPrice: p.billRate, ourAmount, theirQty: t.qty, theirPrice: t.price, theirAmount: t.amount, lineCount: lines.length, diff, mixedPrices: t.mixed, roundingOnly: false };
+    projects.push(row);
     if (diff === 0) continue;
+    // 数量も単価も同じで、行ごとの端数（1 行 1 円まで ＋ 当社の 1 円）だけの違いは、差に数えない
+    if (t.qty !== null && same(t.qty, oq) && t.price !== null && same(t.price, p.billRate) && !t.mixed && Math.abs(diff) <= lines.length + 1) {
+      row.roundingOnly = true;
+      continue;
+    }
 
     const common = { ...base, projectId: p.id, label: p.name, unit: p.unit, mixedPrices: t.mixed };
     if (t.qty === null) {
@@ -313,7 +326,7 @@ export function compareNotice(input: CompareInput): CompareResult {
 
   const ourTotal = projects.reduce((a, r) => a + r.ourAmount, 0);
   const theirTotal = input.lines.filter((l) => l.role !== "ignore").reduce((a, l) => a + l.amount, 0);
-  return { items, projects, drivers, ourTotal, theirTotal, ignoredTotal, chargeWarnings, unknownLines };
+  return { items, projects, drivers, ourTotal, theirTotal, ignoredTotal, chargeWarnings, unknownLines, zeroRateProjects };
 }
 
 /** 差の合計（少ない可能性・多い可能性を分けて） */

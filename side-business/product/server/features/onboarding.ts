@@ -5,7 +5,7 @@ import * as s from "~/db/schema";
 import { UserError } from "~/server/action";
 import { audit } from "~/server/audit";
 import { getTenant } from "~/server/repo";
-import { readTable, TableReadError } from "~/server/tabular";
+import { isBlankRow, readTable, TableReadError } from "~/server/tabular";
 import type { CompanyBasics } from "~/server/features/onboarding/company";
 import {
   draftFromCells,
@@ -21,6 +21,7 @@ import { checkRule, type RuleDraft, type RuleInput } from "~/server/features/onb
 import {
   finishRecord,
   onboardingProgress,
+  reopenRecord,
   withMark,
   type OnboardingKey,
   type OnboardingProgress,
@@ -71,11 +72,10 @@ export async function finishOnboarding(db: Db, tenantId: string, userId?: string
   await audit(db, { tenantId, userId, action: "onboarding.finish", entity: "tenant", entityId: tenantId });
 }
 
-/** 案内をもう一度出す（終えた印を外す） */
+/** 案内をもう一度出す（終えた印と「あとで」を外す。済んだ手順はそのまま） */
 export async function reopenOnboarding(db: Db, tenantId: string, userId?: string | null): Promise<void> {
   const tenant = await getTenant(db, tenantId);
-  const next = withMark(tenant.onboarding, "finished", null);
-  await db.update(s.tenants).set({ onboarding: next }).where(eq(s.tenants.id, tenantId));
+  await db.update(s.tenants).set({ onboarding: reopenRecord(tenant.onboarding) }).where(eq(s.tenants.id, tenantId));
   await audit(db, { tenantId, userId, action: "onboarding.reopen", entity: "tenant", entityId: tenantId });
 }
 
@@ -154,9 +154,18 @@ async function existingDrivers(db: Db, tenantId: string) {
     .where(eq(s.drivers.tenantId, tenantId));
 }
 
+/** 空でない行の数（Excel は書式だけの空の行を何千行も持つことがあるので、空の行は数えない） */
+function filledRows(rows: string[][]): number {
+  return rows.filter((r) => !isBlankRow(r)).length;
+}
+
+function assertRowLimit(rows: string[][]): void {
+  if (filledRows(rows) > MAX_DRIVER_ROWS + 10) throw new UserError(`一度に読み込めるのは ${MAX_DRIVER_ROWS}人までです。分けて読み込んでください`);
+}
+
 /** 表（貼り付け・ファイル）から、登録の前の確かめを作る */
 export async function previewDriverRows(db: Db, tenantId: string, rows: string[][]): Promise<DriverPreview> {
-  if (rows.length > MAX_DRIVER_ROWS + 10) throw new UserError(`一度に読み込めるのは ${MAX_DRIVER_ROWS}人までです。分けて読み込んでください`);
+  assertRowLimit(rows);
   return parseDriverRows(rows, await existingDrivers(db, tenantId));
 }
 
@@ -178,7 +187,7 @@ export async function previewDriverFile(db: Db, tenantId: string, fileName: stri
   const existing = await existingDrivers(db, tenantId);
   let first: (DriverPreview & { sheetName: string }) | null = null;
   for (const sheet of sheets) {
-    if (sheet.rows.length > MAX_DRIVER_ROWS + 10) throw new UserError(`一度に読み込めるのは ${MAX_DRIVER_ROWS}人までです。分けて読み込んでください`);
+    assertRowLimit(sheet.rows);
     const p = { ...parseDriverRows(sheet.rows, existing), sheetName: sheet.name };
     if (!p.problem) return p;
     first ??= p;

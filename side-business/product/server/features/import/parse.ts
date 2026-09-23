@@ -2,8 +2,8 @@
  * 取り込み：決めた読み方で表を 1 件ずつに読む（純関数。DB に触らない）。
  * 取り込まない行は、行番号と理由を残す。ファイル自身の合計（合計の行・「計」の列）と照らし合わせる。
  */
-import { isBlankRow, isTotalRow, parseDateCell, parseNumberCell } from "~/server/tabular";
-import { colLetter, dayColumnDates, dayOfHeader, effectiveHeader, isTotalHeader, mappingProblem } from "./detect";
+import { isBlankRow, isTotalRow, parseNumberCell } from "~/server/tabular";
+import { colLetter, dateNear, dayColumnDates, dayOfHeader, effectiveHeader, isTotalHeader, mappingProblem } from "./detect";
 import { layoutOf, type ColumnRole, type ParseResult, type RawRecord, type SkippedRow, type TotalCheck, type WorkMapping } from "./types";
 
 const EPS = 1e-6;
@@ -41,6 +41,9 @@ function monthLabel(ym: string): string {
   const [y, m] = ym.split("-").map(Number);
   return `${y}年${m}月`;
 }
+
+/** 行の日付を読む（年の無い日付は、取り込む月にいちばん近い年。detect.ts の dateNear と同じ） */
+export const parseRowDate = dateNear;
 
 export function emptyParse(problem: string | null): ParseResult {
   return { records: [], skipped: [], emptyCells: 0, checks: [], warnings: [], dateMonths: {}, problem };
@@ -91,7 +94,6 @@ export function parseWithMapping(rows: string[][], mapping: WorkMapping, month: 
   }
 
   const start = mapping.headerRow + mapping.headerDepth;
-  const year = Number(month.slice(0, 4));
   const records: RawRecord[] = [];
   const skipped: SkippedRow[] = [];
   const totalRows: { rowNo: number; label: string; row: string[] }[] = [];
@@ -127,7 +129,7 @@ export function parseWithMapping(rows: string[][], mapping: WorkMapping, month: 
     if (dateCol >= 0) {
       const rawDate = cellOf(row, dateCol);
       if (rawDate) {
-        const d = parseDateCell(rawDate, year);
+        const d = parseRowDate(rawDate, month);
         if (d) {
           date = d;
           dateMonths[d.slice(0, 7)] = (dateMonths[d.slice(0, 7)] ?? 0) + 1;

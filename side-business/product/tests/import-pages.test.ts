@@ -103,10 +103,12 @@ describe("取り込みの画面", () => {
     expect(page).toContain("明細の金額は全員（8人）変わりません");
     expect(page).toContain("反映する（11件を2026年10月分へ）");
     expect(page).toContain("木村 誠");
+    expect(page).toContain("反映へ進む");
     as("viewer");
     const viewer = await batchPage(draft.id);
     expect(viewer).not.toContain("反映する（11件");
     expect(viewer).not.toContain("この読み方で読み直す");
+    expect(viewer).not.toContain("反映へ進む");
 
     // 別の会社からは見えない
     as("staff", otherTenant);
@@ -119,6 +121,35 @@ describe("取り込みの画面", () => {
     expect(applied).toContain("反映しました。11 件");
     expect(applied).toContain("この取り込みを取り消す");
     expect(applied).toContain("明細を作る・作り直す");
+
+    // 同じ形のファイルをもう一度置くと「前回の読み方で読みました（読み方を変える）」。押すと読み方の欄が開く
+    const again = await createDraftFromFile(state.db!, tenantId, { id: null }, { fileName, bytes, pageMonth: DEMO_MONTH });
+    const second = await batchPage(again.id);
+    expect(second).toContain("前回と同じ形のファイルなので、前回の読み方で読みました");
+    expect(second).toContain("読み方を変える");
+    const opened = await html(
+      await (await import("~/app/(app)/import/[id]/page")).default({
+        params: Promise.resolve({ id: again.id }),
+        searchParams: Promise.resolve({ mapping: "1" }),
+      }),
+    );
+    expect(opened).toMatch(/<details id="mapping" open=""/);
+    as("viewer");
+    expect(await batchPage(again.id)).not.toContain("読み方を変える");
+  });
+
+  it("台帳に無い人が 2 人以上なら「まとめて登録する」を出す（閲覧には出さない）。一部だけ当たった人は確かめてもらう", async () => {
+    const file = "ドライバー,コース,個数\n新人 一郎,宅配,10\n新人 二郎,宅配,20\n青木 翔太郎,宅配,5\n";
+    const draft = await createDraftFromFile(state.db!, tenantId, { id: null }, { fileName: "新人_2026年11月.csv", bytes: new TextEncoder().encode(file), pageMonth: DEMO_MONTH });
+    as("staff");
+    const page = await batchPage(draft.id);
+    expect(page).toContain("台帳に無い人が 2 人います");
+    expect(page).toContain("2 人をまとめて登録する");
+    expect(page).toContain("名前の一部が「 青木 翔太 」と同じです");
+    expect(page).toContain("名前を選んでください（3 件）");
+    expect(page).not.toContain("反映へ進む");
+    as("viewer");
+    expect(await batchPage(draft.id)).not.toContain("まとめて登録する");
   });
 
   it("締めた月に向けた下書きは、反映のボタンを出さずに理由を出す", async () => {

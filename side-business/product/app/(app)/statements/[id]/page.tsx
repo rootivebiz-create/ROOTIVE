@@ -110,8 +110,9 @@ export default async function StatementDetailPage({ params }: { params: Promise<
         </Card>
       )}
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
-        <div className="order-2 space-y-3 lg:order-1">
+      {/* 列は必ず画面の幅に収める（確認の記録の表などが広くても、ページを横にはみ出させない） */}
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
+        <div className="order-2 min-w-0 space-y-3 lg:order-1">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-lg font-bold">ドライバーに見えている明細</h2>
             <a href={`/api/statements/${st.id}/pdf`} className={buttonClass("secondary")}>
@@ -121,7 +122,7 @@ export default async function StatementDetailPage({ params }: { params: Promise<
           <StatementView view={v} account={detail.account} />
         </div>
 
-        <div className="order-1 space-y-5 lg:order-2">
+        <div className="order-1 min-w-0 space-y-5 lg:order-2">
           <Card>
             <h2 className="font-bold">送る</h2>
             <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">

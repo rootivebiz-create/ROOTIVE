@@ -120,7 +120,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
                         {m.loss && <Badge tone="red">支払 ＞ 受注</Badge>}
                         {p.billRate === 0 && <Badge tone="yellow">受注単価なし</Badge>}
                         {p.overrides > 0 && (
-                          <Link href={`/settings/rates?project=${p.id}`} className="no-underline">
+                          <Link href={`/settings/rates?project=${p.id}`} className="-my-3 inline-flex min-h-11 items-center no-underline">
                             <Badge>人ごとの単価 {p.overrides}件</Badge>
                           </Link>
                         )}

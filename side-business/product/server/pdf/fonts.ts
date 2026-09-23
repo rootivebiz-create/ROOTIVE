@@ -19,5 +19,6 @@ export function registerPdfFonts(): void {
     ],
   });
   // 日本語は 1 文字ずつ折り返せるようにする（英語向けのハイフン処理をしない）
-  Font.registerHyphenationCallback((word) => (/[^\x00-\x7f]/.test(word) ? Array.from(word) : [word]));
+  // 空文字を挟むと、折り返した所に「-」が入らない
+  Font.registerHyphenationCallback((word) => (/[^\x00-\x7f]/.test(word) ? Array.from(word).flatMap((c) => [c, ""]) : [word]));
 }

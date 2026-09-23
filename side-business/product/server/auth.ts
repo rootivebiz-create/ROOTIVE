@@ -70,12 +70,15 @@ export async function requirePageUser(need: Role = "viewer"): Promise<SessionUse
 
 export class AuthError extends Error {}
 
-/** サーバーの処理用：ログインと役割を確かめる（画面で隠していても、ここで必ず止める） */
-export async function requireUser(need: Role = "viewer"): Promise<SessionUser> {
+/**
+ * サーバーの処理用：ログインと役割を確かめる（画面で隠していても、ここで必ず止める）。
+ * 読むだけの処理（ダウンロードなど）は readOnly: true にすると、デモの「保存できない」設定でも通る
+ */
+export async function requireUser(need: Role = "viewer", opts: { readOnly?: boolean } = {}): Promise<SessionUser> {
   const user = await currentUser();
   if (!user) throw new AuthError("ログインしてください");
   if (!roleAtLeast(user.role, need)) throw new AuthError("この操作をする権限がありません");
-  if (need !== "viewer" && process.env.DEMO_MODE === "1" && process.env.DEMO_READONLY === "1") {
+  if (!opts.readOnly && need !== "viewer" && process.env.DEMO_MODE === "1" && process.env.DEMO_READONLY === "1") {
     throw new AuthError("デモでは保存できません");
   }
   return user;

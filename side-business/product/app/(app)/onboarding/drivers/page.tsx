@@ -6,6 +6,7 @@ import { NextStepLink, StepHeader } from "~/components/onboarding/step-header";
 import { getDb } from "~/db/client";
 import * as s from "~/db/schema";
 import { requirePageUser } from "~/server/auth";
+import { loadOnboarding } from "~/server/features/onboarding";
 
 export const metadata = { title: "ドライバーの名簿を読み込む" };
 
@@ -16,15 +17,19 @@ export const metadata = { title: "ドライバーの名簿を読み込む" };
 export default async function OnboardingDriversPage() {
   const user = await requirePageUser("staff");
   const db = await getDb();
-  const [all] = await db
-    .select({ n: count() })
-    .from(s.drivers)
-    .where(and(eq(s.drivers.tenantId, user.tenantId), eq(s.drivers.active, true)));
+  const [[all], progress] = await Promise.all([
+    db
+      .select({ n: count() })
+      .from(s.drivers)
+      .where(and(eq(s.drivers.tenantId, user.tenantId), eq(s.drivers.active, true))),
+    loadOnboarding(db, user.tenantId),
+  ]);
 
   return (
     <div className="mx-auto max-w-3xl">
       <StepHeader
         step="drivers"
+        state={progress.steps.find((x) => x.def.key === "drivers")?.state}
         description={
           <>
             今お使いの Excel の名簿を、そのまま貼り付けてください。1 人ずつ「登録番号の形」「口座の桁」を確かめてから登録します。

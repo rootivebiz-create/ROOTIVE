@@ -8,7 +8,7 @@ import { isMonthClosed, loadBuildInput } from "~/server/repo";
 import { readSnapshot } from "~/server/statements-core";
 import { changes, countWhere } from "./common";
 import { fieldError } from "./errors";
-import type { RuleInput } from "./schemas";
+import { looseKey, type RuleInput } from "./schemas";
 
 /**
  * 控除のルール（ロイヤリティ・管理費・リース・保険 など）。
@@ -58,6 +58,30 @@ async function assertDriver(db: Db, tenantId: string, driverId: string | null) {
   if (!rows[0]) throw fieldError("driverId", "そのドライバーは見つかりません。選び直してください");
 }
 
+/**
+ * 同じ名前・同じ当て先（全員／同じ人）の、使っている控除を探す（二重に引かないように）。
+ */
+async function findDuplicate(db: Db, tenantId: string, rule: { name: string; driverId: string | null; active: boolean }, exceptId?: string) {
+  if (!rule.active) return null;
+  const rows = await db
+    .select({ id: s.deductionRules.id, name: s.deductionRules.name, driverId: s.deductionRules.driverId, active: s.deductionRules.active })
+    .from(s.deductionRules)
+    .where(eq(s.deductionRules.tenantId, tenantId));
+  const key = looseKey(rule.name);
+  return rows.find((r) => r.id !== exceptId && r.active && r.driverId === rule.driverId && looseKey(r.name) === key) ?? null;
+}
+
+async function assertNoDuplicate(db: Db, tenantId: string, input: RuleInput, exceptId?: string) {
+  const hit = await findDuplicate(db, tenantId, input, exceptId);
+  if (hit) {
+    throw fieldError(
+      "name",
+      `同じ名前の控除「${hit.name}」（${input.driverId ? "この人だけ" : "全員"}）がすでにあります。二重に引かれないよう、そちらを直すか、名前を変えてください`,
+    );
+  }
+}
+
+/** 入力欄から変える項目。「使う・使わない」は別のボタン（setRuleActive）だけで変える（画面の古い値で戻さないように） */
 function values(input: RuleInput) {
   return {
     driverId: input.driverId,
@@ -70,18 +94,18 @@ function values(input: RuleInput) {
     agreedInWriting: input.agreedInWriting,
     agreedOn: input.agreedOn,
     basis: input.basis,
-    active: input.active,
     sort: input.sort,
   };
 }
 
-const KEYS = ["driverId", "name", "kind", "rate", "amount", "onlyWhenWorked", "taxable", "agreedInWriting", "agreedOn", "basis", "active", "sort"] as const;
+const KEYS = ["driverId", "name", "kind", "rate", "amount", "onlyWhenWorked", "taxable", "agreedInWriting", "agreedOn", "basis", "sort"] as const;
 
 export async function createRule(db: Db, tenantId: string, input: RuleInput): Promise<RuleRow> {
   await assertDriver(db, tenantId, input.driverId);
+  await assertNoDuplicate(db, tenantId, input);
   const [row] = await db
     .insert(s.deductionRules)
-    .values({ tenantId, ...values(input) })
+    .values({ tenantId, ...values(input), active: input.active })
     .returning();
   return row;
 }
@@ -90,6 +114,8 @@ export async function updateRule(db: Db, tenantId: string, id: string, input: Ru
   const before = await getRule(db, tenantId, id);
   if (!before) throw new UserError("その控除は見つかりません。一覧から開き直してください");
   await assertDriver(db, tenantId, input.driverId);
+  // 重なりは、いまの「使う・使わない」で確かめる（入力欄の値ではなく）
+  await assertNoDuplicate(db, tenantId, { ...input, active: before.active }, id);
   const next = values(input);
   const [after] = await db
     .update(s.deductionRules)
@@ -103,6 +129,9 @@ export async function updateRule(db: Db, tenantId: string, id: string, input: Ru
 export async function setRuleActive(db: Db, tenantId: string, id: string, active: boolean) {
   const before = await getRule(db, tenantId, id);
   if (!before) throw new UserError("その控除は見つかりません。一覧から開き直してください");
+  if (active && (await findDuplicate(db, tenantId, { name: before.name, driverId: before.driverId, active: true }, id))) {
+    throw new UserError(`同じ名前の「${before.name}」を使っているので、戻すと二重に引かれます。先にそちらを「使わない」にしてください。`);
+  }
   const [after] = await db
     .update(s.deductionRules)
     .set({ active })
@@ -139,20 +168,34 @@ export type RuleImpact = { drivers: number; total: number; names: string[] };
  * 画面で独自に計算しない（明細と同じ計算の結果を数えるだけ）。
  */
 export async function ruleImpact(db: Db, tenantId: string, month: string): Promise<Map<string, RuleImpact>> {
-  const drafts = (await isMonthClosed(db, tenantId, month))
+  return (await ruleImpactOfMonth(db, tenantId, month)).byRule;
+}
+
+export type MonthRuleImpact = {
+  /** 締めた月か（締めた月は明細の写しから数える） */
+  closed: boolean;
+  /** 数えた明細の数（締めた月で 0 なら、写しが残っていない） */
+  statements: number;
+  byRule: Map<string, RuleImpact>;
+};
+
+/** ruleImpact に、締めた月か・明細が何件あったかを添えたもの（画面の説明に使う） */
+export async function ruleImpactOfMonth(db: Db, tenantId: string, month: string): Promise<MonthRuleImpact> {
+  const closed = await isMonthClosed(db, tenantId, month);
+  const drafts = closed
     ? (await db.select().from(s.statements).where(and(eq(s.statements.tenantId, tenantId), eq(s.statements.month, month)))).map(readSnapshot)
     : buildStatementDrafts(await loadBuildInput(db, tenantId, month));
-  const out = new Map<string, RuleImpact>();
+  const byRule = new Map<string, RuleImpact>();
   for (const d of drafts) {
     for (const x of d.deductions ?? []) {
-      const cur = out.get(x.ruleId) ?? { drivers: 0, total: 0, names: [] };
+      const cur = byRule.get(x.ruleId) ?? { drivers: 0, total: 0, names: [] };
       cur.drivers += 1;
       cur.total += x.amount;
       cur.names.push(d.driver?.name ?? "");
-      out.set(x.ruleId, cur);
+      byRule.set(x.ruleId, cur);
     }
   }
-  return out;
+  return { closed, statements: drafts.length, byRule };
 }
 
 /** 明細に使ったことのある控除のルールの id（一覧で「消す」を出すかどうかに使う） */

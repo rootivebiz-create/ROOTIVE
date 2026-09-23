@@ -4,7 +4,7 @@ import { NextStepLink, StepHeader } from "~/components/onboarding/step-header";
 import { Notice } from "~/components/page";
 import { getDb } from "~/db/client";
 import { requirePageUser } from "~/server/auth";
-import { loadCompanyForm } from "~/server/features/onboarding";
+import { loadCompanyForm, loadOnboarding } from "~/server/features/onboarding";
 import { payRuleText, TAX_METHODS } from "~/server/features/onboarding/company";
 
 export const metadata = { title: "最初の設定：会社の基本" };
@@ -17,13 +17,14 @@ function todayJst(now = new Date()): string {
 export default async function OnboardingCompanyPage() {
   const user = await requirePageUser("staff");
   const db = await getDb();
-  const c = await loadCompanyForm(db, user.tenantId);
+  const [c, progress] = await Promise.all([loadCompanyForm(db, user.tenantId), loadOnboarding(db, user.tenantId)]);
   const isOwner = user.role === "owner";
 
   return (
     <div className="mx-auto max-w-3xl">
       <StepHeader
         step="company"
+        state={progress.steps.find((x) => x.def.key === "company")?.state}
         description={
           <>
             {c.name}の、ドライバーへの支払の決まりです。明細に書く支払日・見張り番の確かめ・振込データに使います。
@@ -50,7 +51,7 @@ export default async function OnboardingCompanyPage() {
         <div className="space-y-4">
           <Notice tone="info">
             会社の基本を保存できるのはオーナーの方です{c.owners.length ? `（${c.owners.map((n) => `${n}さん`).join("・")}）` : ""}。
-            中身が違うときは、オーナーの方に直してもらってください。この手順は「あとでやる」にして、先に進めても大丈夫です。
+            中身が違うときは、オーナーの方に直してもらってください。この手順は「あとでやる」にして、先に進めても構いません。
           </Notice>
           <Card>
             <dl className="grid gap-3 text-sm sm:grid-cols-2">

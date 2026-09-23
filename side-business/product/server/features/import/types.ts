@@ -113,7 +113,11 @@ export type BatchStats = {
   byProject: { name: string; unit: string; qty: number }[];
 };
 
-export type StoredSheet = { name: string; rows: string[][] | null; dataRows: number };
+/** truncated：読み取りの上限（2 万行）に届いたシート。途中から先を読めていないおそれがある */
+export type StoredSheet = { name: string; rows: string[][] | null; dataRows: number; truncated?: boolean };
+
+/** 読み取りの上限の行数（server/tabular.ts と同じ）。ここまで行があるシートは、先を読めていないおそれがある */
+export const MAX_SHEET_ROWS = 20000;
 
 /** import_batches.summary の中身 */
 export type DraftSummary = {
@@ -128,7 +132,9 @@ export type DraftSummary = {
   profileId: string | null;
   /** 反映したとき、この読み方を覚えるか（既定は覚える） */
   remember?: boolean;
-  monthFrom: "dates" | "title" | "file" | "page" | "user";
+  monthFrom: "dates" | "title" | "sheet" | "file" | "page" | "user";
+  /** シートの選び方（month：開いていた月のシート／rows：データの行がいちばん多いシート／user：選び直した） */
+  sheetFrom?: "month" | "rows" | "user";
   skip: SkipLists;
   learned: Learned[];
   stats?: BatchStats;

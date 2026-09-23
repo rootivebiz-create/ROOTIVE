@@ -54,7 +54,11 @@ export default async function DriversPage({ searchParams }: { searchParams: Prom
 
       {counts.total === 0 ? (
         <EmptyState title="まだドライバーがいません">
-          <p>今の Excel の名簿を貼り付けると、まとめて登録できます。1 人ずつなら「追加」から。</p>
+          <p>
+            {canEdit
+              ? "今の Excel の名簿を貼り付けると、まとめて登録できます。1 人ずつなら「追加」から。"
+              : "登録は事務・オーナーの方がします。登録されると、ここに一覧が出ます。"}
+          </p>
           {canEdit && (
             <div className="mt-3 flex flex-wrap justify-center gap-2">
               <Link href="/onboarding/drivers" className={buttonClass("primary")}>

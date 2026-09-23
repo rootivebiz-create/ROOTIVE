@@ -73,7 +73,7 @@ export async function loadSampleAction(_prev: ActionResult<{ noticeId: string }>
     const user = await requireUser("staff");
     const db = await getDb();
     const client = await findSampleClient(db, user.tenantId);
-    if (!client) throw new UserError("見本の元請（A物流）が登録されていないため、見本では試せません。お手元のお支払通知を上げてください");
+    if (!client) throw new UserError("見本は、デモ（架空の会社・架空の A物流）でだけ試せます。お手元のお支払通知を上げてください");
     const res = await importNotice(db, user.tenantId, user.id, {
       clientId: client.id,
       month: SAMPLE_NOTICE_MONTH,
@@ -166,15 +166,24 @@ export async function updateNoticeMetaAction(_prev: ActionResult<void> | undefin
 export async function setItemStatusAction(_prev: ActionResult<void> | undefined, form: FormData): Promise<ActionResult<void>> {
   return runAction(async () => {
     const user = await requireUser("staff");
+    const recovered = String(form.get("recoveredAmount") ?? "")
+      .normalize("NFKC")
+      .replace(/[,\s円¥]/g, "");
     const input = z
       .object({
         itemId: idSchema,
         status: z.enum(ITEM_STATUSES, "状態を選んでください"),
         note: z.string().trim().max(500, "メモは 500 文字までにしてください"),
+        recoveredAmount: z.union([z.literal(""), z.string().regex(/^\d{1,10}$/, "取り戻せた額は円の数だけで入れてください（例：81700）")]),
       })
-      .parse({ itemId: form.get("itemId"), status: form.get("status"), note: String(form.get("note") ?? "") });
+      .parse({ itemId: form.get("itemId"), status: form.get("status"), note: String(form.get("note") ?? ""), recoveredAmount: recovered });
     const db = await getDb();
-    await setItemStatus(db, user.tenantId, user.id, { itemId: input.itemId, status: input.status, note: input.note || null });
+    await setItemStatus(db, user.tenantId, user.id, {
+      itemId: input.itemId,
+      status: input.status,
+      note: input.note || null,
+      recoveredAmount: input.recoveredAmount ? Number(input.recoveredAmount) : null,
+    });
     revalidateAll();
   }, "保存しました");
 }

@@ -104,7 +104,7 @@ describe("口座（全銀）", () => {
   });
 
   it("名義が長すぎると、略し方を案内する", () => {
-    const e = errors(driverSchema.safeParse({ ...driverBase, bankCode: "0001", branchCode: "001", accountNumber: "1", holderKana: "カブシキガイシャサンプルウンソウホッカイドウシテン" }));
+    const e = errors(driverSchema.safeParse({ ...driverBase, bankCode: "0001", branchCode: "001", accountNumber: "1", holderKana: "カブシキガイシャサンプルウンソウホッカイドウシテンエイギョウブ" }));
     expect(e.holderKana).toContain("30 文字");
     expect(e.holderKana).toContain("ｶ)");
   });

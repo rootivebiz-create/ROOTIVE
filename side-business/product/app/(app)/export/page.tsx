@@ -119,6 +119,17 @@ export default async function ExportPage({ searchParams }: { searchParams: Promi
             </dl>
           )}
 
+          {view.statementGap.length > 0 && (
+            <p role="alert" className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm text-foreground">
+              保存した明細（ドライバーに送った明細）と、今の稼働・設定から出した数字が違う方がいます：
+              <span className="mx-1 font-bold">{view.statementGap.join("・")}</span>
+              仕訳は今の数字で作るため、送った明細と合わなくなります。
+              <Link href={`/statements?m=${m}`} className="font-bold">
+                明細の画面
+              </Link>
+              で明細を作り直してから出してください。
+            </p>
+          )}
           {view.unmappable.length > 0 && (
             <p role="alert" className="rounded-lg border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
               次の文字は、このファイルの文字コード（Shift_JIS）で表せないため「?」になります：
@@ -128,7 +139,7 @@ export default async function ExportPage({ searchParams }: { searchParams: Promi
           )}
           {view.blankTaxDrivers.length > 0 && (
             <Notice tone="info">
-              免税の方に消費税相当額を払わない設定のため、{view.blankTaxDrivers.join("・")}さんの委託料の税額の欄は空けています。会計ソフトでの扱いは、税理士さんと確かめてください。
+              インボイスの登録が無い方（{view.blankTaxDrivers.join("さん・")}さん）の委託料は、税額の欄を空けて出します。経過措置で控除できる割合がかかるため、明細の「消費税相当額」をそのまま税額にはしていません。取り込んだあと、会計ソフトで税額が期待どおりになっているかを確かめ、扱いは税理士さんと確かめてください。
             </Notice>
           )}
           {view.neverSaved && (
@@ -222,7 +233,7 @@ export default async function ExportPage({ searchParams }: { searchParams: Promi
         </h2>
         <ul className="list-disc space-y-1 pl-5">
           <li>取引日はその月の末日、摘要は「ドライバー名 ◯年◯月分 委託料」などです。</li>
-          <li>委託料：借方 外注費 ／ 貸方 未払金。登録の無い方は、その月の経過措置の割合の税区分にしています。</li>
+          <li>委託料：借方 外注費 ／ 貸方 未払金。登録の無い方は、その月の経過措置の割合の税区分にし、消費税相当額を含めた税込の額で出します（税額の欄は空けます）。</li>
           <li>控除（ロイヤリティ・管理費など）：借方 未払金 ／ 貸方 売上高（消費税のかからない控除は別の科目）。</li>
           <li>調整：支払を増やすものは 借方 立替金 ／ 貸方 未払金、減らすものは 借方 未払金 ／ 貸方 雑収入（どれも変えられます）。</li>
           <li>源泉徴収：借方 未払金 ／ 貸方 預り金。</li>

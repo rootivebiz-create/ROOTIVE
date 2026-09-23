@@ -1,7 +1,7 @@
 import { getDb } from "~/db/client";
 import { UserError } from "~/server/action";
 import { audit } from "~/server/audit";
-import { AuthError, requireUser, type SessionUser } from "~/server/auth";
+import { AuthError, requireUser, roleAtLeast, type SessionUser } from "~/server/auth";
 import { fileResponse } from "~/server/download";
 import { buildAccountingFile, parseExportKind } from "~/server/features/accounting";
 import { monthFromParam } from "~/server/month";
@@ -29,7 +29,9 @@ function problemPage(message: string, status: number, m?: string): Response {
 export async function GET(req: Request, { params }: { params: Promise<{ kind: string }> }): Promise<Response> {
   let user: SessionUser;
   try {
-    user = await requireUser("staff");
+    // 出力は読むだけなので、保存できないデモ（DEMO_READONLY）でも出せるように、ログインを確かめてから役割を見る
+    user = await requireUser("viewer");
+    if (!roleAtLeast(user.role, "staff")) throw new AuthError("この操作をする権限がありません");
   } catch (error) {
     if (error instanceof AuthError) return problemPage(error.message, 403);
     throw error;

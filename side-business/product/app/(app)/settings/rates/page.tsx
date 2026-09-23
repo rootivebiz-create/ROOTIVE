@@ -42,6 +42,12 @@ export default async function RatesPage({ searchParams }: { searchParams: Promis
   const projectOptions = projects.map((p) => ({ id: p.id, name: p.name, clientName: p.clientName, unit: p.unit, payRate: p.payRate, billRate: p.billRate, active: p.active }));
   const existing = all.map((o) => ({ driverId: o.driverId, projectId: o.projectId, payRate: o.payRate, agreedOn: o.agreedOn }));
   const noAgreed = all.filter((o) => !o.agreedOn).length;
+  // 見張り番などから「この人 × この案件」で開いたとき：登録済みなら今の単価と合意日を入れておく（合意日だけ足せるように）
+  const target = driverFilter && projectFilter ? all.find((o) => o.driverId === driverFilter && o.projectId === projectFilter) : undefined;
+  const formInitial =
+    driverFilter || projectFilter
+      ? { driverId: driverFilter ?? "", projectId: projectFilter ?? "", payRate: target ? String(target.payRate) : "", agreedOn: target?.agreedOn ?? "" }
+      : undefined;
 
   return (
     <div className="max-w-3xl space-y-5">
@@ -66,16 +72,16 @@ export default async function RatesPage({ searchParams }: { searchParams: Promis
         <>
           {canEdit && (
             <Card>
-              <Expand summary="人ごとの単価を登録" open={all.length === 0 || !!driverFilter}>
+              <Expand summary={target ? "この人 × この案件の単価を直す" : "人ごとの単価を登録"} open={all.length === 0 || !!driverFilter || !!projectFilter}>
                 <p className="text-xs text-muted-foreground">{RATE_CHANGE_HINT}</p>
                 <RateForm
-                  key={driverFilter ?? "all"}
+                  key={`${driverFilter ?? "all"}:${projectFilter ?? "all"}`}
                   action={saveOverrideAction}
                   drivers={driverOptions}
                   projects={projectOptions}
                   existing={existing}
                   today={today}
-                  initial={driverFilter || projectFilter ? { driverId: driverFilter ?? "", projectId: projectFilter ?? "", payRate: "", agreedOn: "" } : undefined}
+                  initial={formInitial}
                 />
               </Expand>
             </Card>

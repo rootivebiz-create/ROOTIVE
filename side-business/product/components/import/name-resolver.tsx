@@ -14,6 +14,8 @@ export type NameGroupView = {
   needsCheck: boolean;
   skipped: boolean;
   candidates: { id: string; name: string }[];
+  /** ファイルにあった番号（新しく登録するときの下書き） */
+  codes?: string[];
 };
 
 type Kind = "driver" | "project";
@@ -122,7 +124,7 @@ export function NameResolver({
           </div>
           {creating &&
             (kind === "driver" ? (
-              <CreateDriver action={action} batchId={batchId} group={group} />
+              <CreateDriver action={action} batchId={batchId} group={group} defaultName={defaults.name} />
             ) : (
               <CreateProject action={action} batchId={batchId} group={group} clients={clients} defaults={defaults} />
             ))}
@@ -173,21 +175,21 @@ function OtherPicker({
   );
 }
 
-function CreateDriver({ action, batchId, group }: { action: FormAction; batchId: string; group: NameGroupView }) {
+function CreateDriver({ action, batchId, group, defaultName }: { action: FormAction; batchId: string; group: NameGroupView; defaultName: string }) {
   const { state, pending, onSubmit } = useFormAction(action);
   const fe = state && !state.ok ? (state.fieldErrors ?? {}) : {};
   return (
     <form onSubmit={onSubmit} className="space-y-3 rounded-lg border border-border bg-muted/40 p-3">
       <Hidden batchId={batchId} kind="driver" groupKey={group.key} action="create" />
       <Field label="名前" hint={fe.name ?? "明細に出る名前です"}>
-        <Input name="name" defaultValue={group.raw} required maxLength={60} />
+        <Input name="name" defaultValue={defaultName} required maxLength={60} />
       </Field>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="フリガナ（任意）" hint={fe.kana}>
           <Input name="kana" maxLength={60} />
         </Field>
         <Field label="社内の番号（任意）" hint={fe.code ?? "Excel に番号の列があれば、次から番号で当たります"}>
-          <Input name="code" maxLength={30} />
+          <Input name="code" maxLength={30} defaultValue={group.codes?.length === 1 ? group.codes[0] : ""} />
         </Field>
       </div>
       <p className="text-xs text-muted-foreground">口座・登録番号などは、あとで台帳から入れられます（明細や振込を作るときに案内します）。</p>
@@ -229,8 +231,8 @@ function CreateProject({
         <Field label="受注単価（税抜・元請から）" hint={fe.billRate ?? "あとで直せます。利益の計算に使います"}>
           <NumberInput name="billRate" placeholder="例：190" />
         </Field>
-        <Field label="支払単価（税抜・ドライバーへ）" hint={fe.payRate ?? "明細の金額はこの単価 × 数量です"}>
-          <NumberInput name="payRate" placeholder="例：150" />
+        <Field label="支払単価（税抜・ドライバーへ）" hint={fe.payRate ?? "明細の金額はこの単価 × 数量です（あとで直せます）"}>
+          <NumberInput name="payRate" placeholder="例：150" required />
         </Field>
       </div>
       {clients.length > 0 && (

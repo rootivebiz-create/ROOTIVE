@@ -54,9 +54,10 @@ export default async function UsersPage() {
                   <div className="flex flex-wrap gap-1">
                     <Badge tone={u.role === "owner" ? "green" : "gray"}>{ROLE_LABEL[u.role]}</Badge>
                     {self && <Badge>あなた</Badge>}
-                    {u.disabledAt && <Badge tone="red">止めています（{fmt.format(u.disabledAt)}から）</Badge>}
+                    {u.disabledAt && <Badge tone="red">止めています</Badge>}
                     {!u.hasPassword && !u.disabledAt && <Badge tone="yellow">パスワードをまだ決めていません</Badge>}
                   </div>
+                  {u.disabledAt && <p className="text-xs text-muted-foreground">{fmt.format(u.disabledAt)} から止めています。</p>}
                   {lastOwner ? (
                     <p className="text-xs text-muted-foreground">
                       ただ 1 人のオーナーなので、役割を変えたり止めたりできません。先にほかの方をオーナーにしてください。

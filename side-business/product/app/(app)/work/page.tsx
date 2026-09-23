@@ -191,9 +191,9 @@ export default async function WorkPage({ searchParams }: { searchParams: Promise
                             <Link
                               key={s.batchId}
                               href={`/import/${s.batchId}`}
-                              className="inline-block max-w-full truncate rounded-full border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground no-underline"
+                              className="inline-flex min-h-11 max-w-full items-center rounded-full border border-border bg-muted px-3 text-xs text-muted-foreground no-underline"
                             >
-                              取り込み：{s.label}
+                              <span className="truncate">取り込み：{s.label}</span>
                             </Link>
                           ) : (
                             <Badge key="manual" tone="yellow">

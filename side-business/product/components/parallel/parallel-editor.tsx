@@ -80,6 +80,8 @@ export function ParallelEditor({ month, rows, otherDrivers }: { month: string; r
   const dirty = all.filter((r) => {
     const v = valueOf(r.driverId);
     const i = initial[r.driverId] ?? { excel: "", note: "" };
+    // 額の無いメモだけでは保存しない（メモは Excel の額と一緒に残す）
+    if (!v.excel.trim() && !i.excel.trim()) return false;
     return v.excel.trim() !== i.excel.trim() || v.note.trim() !== i.note.trim();
   });
   const invalid = dirty.filter((r) => amountOf(valueOf(r.driverId).excel) === undefined);
@@ -157,6 +159,7 @@ export function ParallelEditor({ month, rows, otherDrivers }: { month: string; r
               }}
             />
           </label>
+          {fileName && <p className="text-xs text-muted-foreground">ファイルを選んだときは、貼り付けよりファイルを先に読みます。</p>}
           {table && table.columns.length > 1 && (
             <div className="grid gap-2 sm:grid-cols-2">
               <label className="block text-sm">
@@ -267,7 +270,7 @@ export function ParallelEditor({ month, rows, otherDrivers }: { month: string; r
                   </div>
                 )}
                 <label className="mt-2 block text-xs">
-                  <span className="text-muted-foreground">メモ（どちらに合わせたか など）</span>
+                  <span className="text-muted-foreground">メモ（どちらに合わせたか など。Excel の額と一緒に保存します）</span>
                   <Input value={v.note} onChange={(e) => set(r.driverId, { note: e.target.value })} maxLength={200} placeholder="例：Excel の端数を切り捨てに直した" />
                 </label>
               </li>

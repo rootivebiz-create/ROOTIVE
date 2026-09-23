@@ -7,6 +7,7 @@ import { audit } from "~/server/audit";
 import { buildStatementDrafts } from "~/server/calc/statement";
 import { explainDiff, parallelSummary, partsOf, type DiffParts, type Explanation, type ParallelSummary } from "~/server/features/parallel/explain";
 import { readAmountTable, rowsFromText, type AmountTable } from "~/server/features/parallel/paste";
+import { monthLabelJa, shiftMonth } from "~/server/month";
 import { getTenant, isMonthClosed, loadBuildInput } from "~/server/repo";
 import { readSnapshot, snapshotHash } from "~/server/statements-core";
 import { readTable, TableReadError } from "~/server/tabular";
@@ -123,6 +124,88 @@ export async function loadParallel(db: Db, tenantId: string, month: string): Pro
     .map((d) => ({ id: d.id, name: d.name, code: d.code }));
   const lastUpdated = checks.reduce<Date | null>((m, c) => (!m || c.updatedAt > m ? c.updatedAt : m), null);
   return { month, closed, rows, summary: parallelSummary(rows), otherDrivers, lastUpdated };
+}
+
+// ---------------------------------------------------------------- 切り替えの目安と記録
+
+export type MonthCheck = { month: string; state: "ok" | "diff" | "none"; compared: number; matched: number };
+
+/**
+ * この月を含む直近 count か月の比べ合わせ（新しい順）。ok：比べた人が全員「一致」か「理由のメモあり」。
+ * streak：この月から続けて ok の月の数（切り替えの目安は 2〜3 か月）。
+ */
+export async function parallelHistory(
+  db: Db,
+  tenantId: string,
+  month: string,
+  count = 3,
+  /** この月の比べ合わせをもう読んであれば渡す（読み直さない） */
+  known?: ParallelView,
+): Promise<{ months: MonthCheck[]; streak: number }> {
+  assertMonth(month);
+  const months = Array.from({ length: count }, (_, i) => shiftMonth(month, -i));
+  const rows = await db
+    .select({ month: s.parallelChecks.month })
+    .from(s.parallelChecks)
+    .where(and(eq(s.parallelChecks.tenantId, tenantId), inArray(s.parallelChecks.month, months)));
+  const withChecks = new Set(rows.map((r) => r.month));
+  const out: MonthCheck[] = [];
+  for (const m of months) {
+    if (!withChecks.has(m)) {
+      out.push({ month: m, state: "none", compared: 0, matched: 0 });
+      continue;
+    }
+    const v = known && known.month === m ? known : await loadParallel(db, tenantId, m);
+    out.push({ month: m, state: v.summary.allExplained ? "ok" : "diff", compared: v.summary.compared, matched: v.summary.matched });
+  }
+  let streak = 0;
+  for (const c of out) {
+    if (c.state !== "ok") break;
+    streak++;
+  }
+  return { months: out, streak };
+}
+
+/** しめ日ラボだけで締め始めた月（まだなら null）。tenants.onboarding.golive に入れる */
+export async function goLiveMonth(db: Db, tenantId: string): Promise<string | null> {
+  const t = await getTenant(db, tenantId);
+  const v = t.onboarding?.golive;
+  return typeof v === "string" && MONTH_RE.test(v) ? v : null;
+}
+
+/**
+ * 「Excel をやめて、しめ日ラボで締める」を記録する（オーナーが決める。役割は Server Action で確かめる）。
+ * その月に比べた人が全員「一致」か「理由のメモあり」でないと記録しない。
+ */
+export async function goLive(db: Db, tenantId: string, month: string, userId?: string | null): Promise<void> {
+  assertMonth(month);
+  const v = await loadParallel(db, tenantId, month);
+  if (v.summary.compared === 0) throw new UserError(`${monthLabelJa(month)}分は、まだ Excel の額を入れていません。比べてから切り替えてください`);
+  if (!v.summary.allExplained) {
+    throw new UserError(`差があって、理由のメモがまだ無い人が ${v.summary.unexplained}人います。どちらに合わせるかを決めてメモに残してから切り替えてください`);
+  }
+  const t = await getTenant(db, tenantId);
+  const next = { ...(t.onboarding ?? {}), parallel: "done", golive: month };
+  await db.update(s.tenants).set({ onboarding: next }).where(eq(s.tenants.id, tenantId));
+  const history = await parallelHistory(db, tenantId, month);
+  await audit(db, {
+    tenantId,
+    userId,
+    action: "parallel.golive",
+    entity: "month",
+    entityId: month,
+    detail: { compared: v.summary.compared, matched: v.summary.matched, explained: v.summary.different, streak: history.streak },
+  });
+}
+
+/** 切り替えの記録を取り消す（Excel との並行に戻す） */
+export async function undoGoLive(db: Db, tenantId: string, userId?: string | null): Promise<void> {
+  const t = await getTenant(db, tenantId);
+  const next = { ...(t.onboarding ?? {}) };
+  const was = next.golive ?? null;
+  delete next.golive;
+  await db.update(s.tenants).set({ onboarding: next }).where(eq(s.tenants.id, tenantId));
+  await audit(db, { tenantId, userId, action: "parallel.golive_undo", entity: "tenant", entityId: tenantId, detail: { was } });
 }
 
 export type ParallelEntry = { driverId: string; excelTotal: number | null; note?: string | null };

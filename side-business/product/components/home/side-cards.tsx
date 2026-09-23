@@ -2,9 +2,9 @@ import Link from "next/link";
 import { Card, Money } from "@/components/ui";
 import type { HomeStatus } from "~/server/features/home/types";
 import { jstShort } from "~/server/features/home/steps";
-import { monthParam } from "~/server/month";
+import { monthLabelJa, monthParam } from "~/server/month";
 
-/** 横のカード：今月の会社の利益・元請との突合・ドライバーからの質問 */
+/** 横のカード：その月の会社の利益・元請との突合・ドライバーからの質問 */
 export function SideCards({ st, otherQuestions }: { st: HomeStatus; otherQuestions: number }) {
   const m = monthParam(st.month);
   const r = st.reconcile;
@@ -12,7 +12,7 @@ export function SideCards({ st, otherQuestions }: { st: HomeStatus; otherQuestio
   return (
     <div className="space-y-3">
       <Card>
-        <h3 className="text-sm font-bold text-muted-foreground">今月の会社の利益</h3>
+        <h3 className="text-sm font-bold text-muted-foreground">{monthLabelJa(st.month)}分の会社の利益</h3>
         <p className="mt-1 text-2xl font-bold">
           <Money value={st.profit.profit} />
         </p>

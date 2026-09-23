@@ -130,10 +130,61 @@ describe("突合の画面（デモ）", () => {
     expect(logs).toHaveLength(1);
   });
 
+  it("CSV：元請のファイルから来た名前が「=」などで始まっても、Excel で式として動かないようにする", async () => {
+    const db = await getDb();
+    const [b] = await db.select().from(s.clients).where(and(eq(s.clients.tenantId, tenantId), eq(s.clients.name, "B商事（架空）")));
+    const file = new TextEncoder().encode('品目,数量,単価,金額\n"=HYPERLINK(""http://example.invalid"",""x"")",1,1000,1000\n@SUM(1),1,500,500\n');
+    await importNotice(db, tenantId, null, { clientId: b.id, month: "2026-11-01", fileName: "b.csv", bytes: file, replace: false });
+    const res = await GET(new Request("http://localhost/api/reconcile/items?from=2026-11&to=2026-11"));
+    const body = new TextDecoder("utf-8", { ignoreBOM: true }).decode(new Uint8Array(await res.arrayBuffer()));
+    expect(body).toContain(`"'=HYPERLINK(""http://example.invalid"",""x"")"`);
+    expect(body).toContain("'@SUM(1)");
+    expect(body).not.toMatch(/,=HYPERLINK|,"=HYPERLINK|,@SUM/);
+    expect(body.split("\r\n")[0]).toContain("問い合わせた日,片付けた日,取り戻せた額,メモ");
+  });
+
+  it("保存できないデモ（DEMO_READONLY）では、結果の画面を開いても突き合わせを保存しない", async () => {
+    const db = await getDb();
+    const [a] = await db.select().from(s.clients).where(and(eq(s.clients.tenantId, tenantId), eq(s.clients.name, "A物流（架空）")));
+    // まだ一度も突き合わせていない 12 月分（行だけある）
+    const [n] = await db.insert(s.paymentNotices).values({ tenantId, clientId: a.id, month: "2026-12-01", fileName: "12月.csv", total: 19000 }).returning();
+    await db.insert(s.paymentNoticeLines).values({ tenantId, noticeId: n.id, rawProject: "宅配", qty: 100, unitPrice: 190, amount: 19000 });
+    process.env.DEMO_READONLY = "1";
+    try {
+      const out = text(html(await NoticePage({ params: Promise.resolve({ id: n.id }), searchParams: Promise.resolve({}) })));
+      expect(out).toContain("+¥19,000");
+      expect(await db.select().from(s.reconciliationItems).where(eq(s.reconciliationItems.noticeId, n.id))).toEqual([]);
+    } finally {
+      delete process.env.DEMO_READONLY;
+    }
+    // ふだんのデモ（保存できる）では、開いたときに 1 回だけ保存する
+    html(await NoticePage({ params: Promise.resolve({ id: n.id }), searchParams: Promise.resolve({}) }));
+    expect(await db.select().from(s.reconciliationItems).where(eq(s.reconciliationItems.noticeId, n.id))).toHaveLength(1);
+  });
+
   it("小さな部品：差の金額の色と符号", async () => {
     const { DiffAmount } = await import("~/components/reconcile/bits");
     expect(html(createElement(DiffAmount, { value: -81700 }))).toContain("text-danger");
     expect(text(html(createElement(DiffAmount, { value: 3000 })))).toBe("+¥3,000");
+  });
+
+  it("直したお支払通知を上げ直すと、問い合わせた差は「片付いた差の記録」に移り、取り戻せた額を入れる欄が出る", async () => {
+    const db = await getDb();
+    const { markItemsAsked } = await import("~/server/features/reconcile");
+    const [a] = await db.select().from(s.clients).where(and(eq(s.clients.tenantId, tenantId), eq(s.clients.name, "A物流（架空）")));
+    const open = await db.select().from(s.reconciliationItems).where(and(eq(s.reconciliationItems.tenantId, tenantId), eq(s.reconciliationItems.noticeId, noticeId)));
+    await markItemsAsked(db, tenantId, null, { noticeId, itemIds: open.filter((i) => i.diff < 0).map((i) => i.id) });
+    const fixed = new TextEncoder().encode("品目,数量,単価,金額\n宅配,4950,190,940500\n企業配,61,22000,1342000\n夜間便,20,12000,240000\n");
+    await importNotice(db, tenantId, null, { clientId: a.id, month: "2026-10-01", fileName: "直し.csv", bytes: fixed, replace: true });
+    const page = html(await NoticePage({ params: Promise.resolve({ id: noticeId }), searchParams: Promise.resolve({}) }));
+    const out = text(page);
+    expect(out).toContain("当社の記録とお支払通知の金額は、案件ごとに一致しました");
+    expect(out).toContain("片付いた差の記録（2件）");
+    expect(out).toContain("記録がそろいました");
+    expect(out).toContain("取り戻せた額がわかれば");
+    // 片付いた記録の扱いは「解決」「了承」だけから選ぶ
+    expect(page).not.toContain('<option value="open">');
+    expect(out).not.toContain("問い合わせ文を作る");
   });
 
   it("閲覧の人：差は見えるが、変える欄は出さず、見ただけでは何も書かない。書き込みは断る", async () => {

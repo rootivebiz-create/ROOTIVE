@@ -27,6 +27,8 @@ vi.mock("~/server/auth", async () => {
     requireUser: async (need: keyof typeof RANK = "viewer") => {
       if (!state.user) throw new AuthError("ログインしてください");
       if (RANK[state.user.role] < RANK[need]) throw new AuthError("この操作をする権限がありません");
+      // 本物と同じ：保存できないデモでは、閲覧より上の役割を求める処理を止める
+      if (need !== "viewer" && process.env.DEMO_MODE === "1" && process.env.DEMO_READONLY === "1") throw new AuthError("デモでは保存できません");
       return state.user;
     },
     AuthError,
@@ -75,6 +77,8 @@ describe("会計ソフトへの出力の画面", () => {
     expect(html).toContain("課対仕入込10%区分70%");
     expect(html).toContain("まだ締めていません");
     expect(html).toContain("青木 翔太 2026年10月分 委託料");
+    // 登録の無い方は税額の欄を空けることを知らせる
+    expect(html).toContain("インボイスの登録が無い方（上田 健さん・遠藤 大輔さん・木村 誠さん）");
     for (const re of FORBIDDEN) expect(html).not.toMatch(re);
   });
 
@@ -160,6 +164,26 @@ describe("ダウンロード（GET /api/export/[kind]）", () => {
     expect(logs.find((l) => l.action === "export.accounting")!.detail).toMatchObject({ kind: "yayoi", slips: 8 });
     expect((await call("excel")).status).toBe(404);
     expect((await call("mf", "2026-05")).status).toBe(404);
+  });
+
+  it("保存できないデモでも、出力は読むだけなので出せる（対応の保存は止まる）", async () => {
+    state.user = asUser("owner");
+    process.env.DEMO_MODE = "1";
+    process.env.DEMO_READONLY = "1";
+    try {
+      expect((await call("yayoi")).status).toBe(200);
+      expect((await call("payments")).status).toBe(200);
+      const { saveAccountingAction } = await import("~/app/(app)/export/actions");
+      const form = new FormData();
+      form.set("software", "yayoi");
+      form.set("account.outsourcing", "デモの科目");
+      expect(await saveAccountingAction(undefined, form)).toMatchObject({ ok: false, error: "デモでは保存できません" });
+      state.user = asUser("viewer");
+      expect((await call("yayoi")).status).toBe(403);
+    } finally {
+      delete process.env.DEMO_MODE;
+      delete process.env.DEMO_READONLY;
+    }
   });
 
   it("ほかの会社の人は、ほかの会社の数字だけを出す", async () => {

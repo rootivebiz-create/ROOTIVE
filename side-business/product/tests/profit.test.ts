@@ -16,6 +16,8 @@ import {
   sortRows,
   topAndBottom,
 } from "~/server/features/profit";
+import { runReconcile } from "~/server/features/reconcile";
+import { runWatch } from "~/server/features/watch";
 import type { WatchIssue } from "~/server/features/watch-types";
 import { loadBuildInput } from "~/server/repo";
 import { DEMO_MONTH, DEMO_PREV_MONTH, seedDemo } from "~/server/seed-demo";
@@ -190,21 +192,41 @@ describe("推移と前月比", () => {
 });
 
 describe("社長の 1 枚の中身", () => {
-  it("突合の差（片付いていないものだけ）・見張り番・確認・振込をまとめる", async () => {
+  it("突合の差は突合の画面と同じ数え方（まだ突合を開いていない通知の差も入り、片付いた差は数えない）", async () => {
+    const noWatch = { runWatch: async () => [] };
+    // デモの 10 月：A物流の支払通知は 宅配 4,520個（当社 4,950個）・夜間便 11,500円（当社 12,000円）
+    const before = await loadCeoSheet(db, tenantId, DEMO_MONTH, noWatch);
+    expect(before.reconcile).toEqual({ notices: 1, unread: 0, count: 2, net: -91_700, short: 81_700 + 10_000, shortCount: 2, over: 0, overCount: 0, error: null });
+
+    // 突合を保存して、夜間便の単価の差を「了承」にすると、その差は数えない
     const [notice] = await db
       .select()
       .from(s.paymentNotices)
       .where(and(eq(s.paymentNotices.tenantId, tenantId), eq(s.paymentNotices.month, DEMO_MONTH)));
-    await db.insert(s.reconciliationItems).values([
-      { tenantId, noticeId: notice.id, label: "宅配", kind: "qty", ourAmount: 940_500, theirAmount: 858_800, diff: -81_700, status: "open" },
-      { tenantId, noticeId: notice.id, label: "夜間便", kind: "price", ourAmount: 240_000, theirAmount: 230_000, diff: -10_000, status: "asked" },
-      { tenantId, noticeId: notice.id, label: "待機料", kind: "extra", ourAmount: 0, theirAmount: 3_000, diff: 3_000, status: "open" },
-      { tenantId, noticeId: notice.id, label: "企業配", kind: "qty", ourAmount: 0, theirAmount: 0, diff: -22_000, status: "resolved" },
-    ]);
-    // ほかの会社の差は数えない
-    const [otherNotice] = await db.select().from(s.paymentNotices).where(eq(s.paymentNotices.tenantId, otherId));
-    await db.insert(s.reconciliationItems).values({ tenantId: otherId, noticeId: otherNotice.id, label: "宅配", kind: "qty", ourAmount: 1, theirAmount: 0, diff: -999_999, status: "open" });
+    await runReconcile(db, tenantId, notice.id);
+    const items = await db.select().from(s.reconciliationItems).where(and(eq(s.reconciliationItems.tenantId, tenantId), eq(s.reconciliationItems.noticeId, notice.id)));
+    const night = items.find((i) => i.diff === -10_000)!;
+    expect(night).toBeTruthy();
+    await db.update(s.reconciliationItems).set({ status: "accepted", note: "単価の改定を確認" }).where(and(eq(s.reconciliationItems.id, night.id), eq(s.reconciliationItems.tenantId, tenantId)));
+    const after = await loadCeoSheet(db, tenantId, DEMO_MONTH, noWatch);
+    expect(after.reconcile).toMatchObject({ notices: 1, count: 1, net: -81_700, short: 81_700, shortCount: 1 });
 
+    // ほかの会社の差を全部「解決」にしても、この会社の数は変わらない（ほかの会社の数にも、この会社の了承は効かない）
+    const [otherNotice] = await db.select().from(s.paymentNotices).where(eq(s.paymentNotices.tenantId, otherId));
+    await runReconcile(db, otherId, otherNotice.id);
+    await db.update(s.reconciliationItems).set({ status: "resolved" }).where(eq(s.reconciliationItems.tenantId, otherId));
+    expect((await loadCeoSheet(db, tenantId, DEMO_MONTH, noWatch)).reconcile).toMatchObject({ count: 1, net: -81_700 });
+    expect((await loadCeoSheet(db, otherId, DEMO_MONTH, noWatch)).reconcile).toMatchObject({ notices: 1, count: 0, net: 0 });
+    await db.update(s.reconciliationItems).set({ status: "open" }).where(eq(s.reconciliationItems.tenantId, otherId));
+
+    // 支払通知の無い月・読めなかったとき
+    expect((await loadCeoSheet(db, tenantId, DEMO_PREV_MONTH, noWatch)).reconcile).toMatchObject({ notices: 0, count: 0 });
+    const broken = await loadCeoSheet(db, tenantId, DEMO_MONTH, { ...noWatch, loadReport: async () => { throw new Error("boom"); } });
+    expect(broken.reconcile.error).toContain("突合の結果を読めませんでした");
+    expect(broken.totals.profit).toBe(980_270);
+  });
+
+  it("見張り番・確認・振込をまとめる", async () => {
     const issues: WatchIssue[] = [
       { code: "terms_missing", severity: "red", title: "取引条件を明示した記録が見つかりません", detail: "", subjectId: "x", subjectLabel: "遠藤 大輔", acked: false, blocksClose: true },
       { code: "deduction_unagreed", severity: "yellow", title: "合意の記録が無い控除があります", detail: "", subjectId: "y", subjectLabel: "木村 誠", acked: false, blocksClose: false },
@@ -213,23 +235,53 @@ describe("社長の 1 枚の中身", () => {
     ];
     const sheet = await loadCeoSheet(db, tenantId, DEMO_MONTH, { runWatch: async (_db, t, m) => (t === tenantId && m === DEMO_MONTH ? issues : []) });
     expect(sheet.totals.profit).toBe(980_270);
-    expect(sheet.reconcile).toEqual({ notices: 1, count: 3, net: -81_700 - 10_000 + 3_000, short: 91_700, shortCount: 2, over: 3_000, overCount: 1 });
     expect(sheet.watch).toMatchObject({ red: 1, yellow: 1, acked: 1, error: null });
     expect(sheet.watch.titles.map((x) => x.severity)).toEqual(["red", "yellow"]);
-    expect(sheet.confirm).toEqual({ statements: 0, confirmed: 0, deemed: 0 });
+    expect(sheet.confirm).toEqual({ statements: 0, confirmed: 0, deemed: 0, stale: false });
     expect(sheet.transfer.payDate).toBe("2026-11-25");
     expect(sheet.transfer.people).toBe(8);
+    expect(sheet.transfer.notPositive).toBe(0);
+    expect(sheet.transfer.total).toBe(sheet.totals.transfer);
     expect(sheet.burden.current!.monthly).toBe(20_490);
     expect(sheet.burden.next!.monthly).toBe(34_150);
     expect(sheet.topProjects[0].name).toBe("企業配（日当）");
+
+    // 本物の見張り番（デモには、取引条件の明示の記録が無い人・口座の無い人・合意の印が無い控除がある）
+    const real = await loadCeoSheet(db, tenantId, DEMO_MONTH);
+    const direct = await runWatch(db, tenantId, DEMO_MONTH);
+    expect(real.watch.error).toBeNull();
+    expect(real.watch.red).toBe(direct.filter((i) => !i.acked && i.severity === "red").length);
+    expect(real.watch.yellow).toBe(direct.filter((i) => !i.acked && i.severity === "yellow").length);
+    expect(real.watch.red + real.watch.yellow).toBeGreaterThan(0);
 
     // 明細を作って 1 人が確認すると、確認の数に出る
     await generateStatements(db, tenantId, DEMO_MONTH);
     const [st] = await db.select().from(s.statements).where(and(eq(s.statements.tenantId, tenantId), eq(s.statements.month, DEMO_MONTH))).limit(1);
     await db.insert(s.statementConfirmations).values({ tenantId, statementId: st.id, totalAtConfirm: st.total, version: st.version, hash: st.hash });
     const after = await loadCeoSheet(db, tenantId, DEMO_MONTH, { runWatch: async () => { throw new Error("boom"); } });
-    expect(after.confirm).toMatchObject({ statements: 8, confirmed: 1 });
+    expect(after.confirm).toMatchObject({ statements: 8, confirmed: 1, stale: false });
     expect(after.watch.error).toContain("見張り番を読めませんでした");
+  });
+
+  it("振込は 0 円以下の人を合計に入れない。保存した明細が古ければそう伝える", async () => {
+    const { db: db2, client: c2 } = await createTestDb();
+    const { tenantId: t } = await seedDemo(db2);
+    await generateStatements(db2, t, DEMO_MONTH);
+    // 木村さん（振込 34,430円）に −50,000円の調整を入れる → 差し引き −15,570円で振込なし
+    const [kimura] = await db2.select().from(s.drivers).where(and(eq(s.drivers.tenantId, t), eq(s.drivers.code, "D07")));
+    const drafts0 = buildStatementDrafts(await loadBuildInput(db2, t, DEMO_MONTH));
+    expect(drafts0.find((d) => d.driverId === kimura.id)!.total).toBe(34_430);
+    await db2.insert(s.adjustments).values({ tenantId: t, month: DEMO_MONTH, driverId: kimura.id, label: "事故の負担", amount: -50_000, agreedInWriting: true });
+    const drafts = buildStatementDrafts(await loadBuildInput(db2, t, DEMO_MONTH));
+    expect(drafts.find((d) => d.driverId === kimura.id)!.total).toBe(-15_570);
+    const sheet = await loadCeoSheet(db2, t, DEMO_MONTH, { runWatch: async () => [] });
+    expect(sheet.transfer.notPositive).toBe(1);
+    expect(sheet.transfer.people).toBe(7);
+    expect(sheet.transfer.total).toBe(sum(drafts.filter((d) => d.total > 0).map((d) => d.total)));
+    expect(sheet.transfer.total).toBe(sheet.totals.transfer + 15_570);
+    expect(sheet.transfer.total).toBe(sum(drafts0.map((d) => d.total)) - 34_430);
+    expect(sheet.confirm).toMatchObject({ statements: 8, stale: true });
+    await c2.close();
   });
 });
 
@@ -243,9 +295,9 @@ describe("会社の区切り", () => {
     expect(after.totals).toEqual(before.totals);
     const other = await monthProfit(db, otherId, DEMO_MONTH);
     expect(other.totals.sales).toBe(3_013_300 + 100 * 12_000);
-    // この会社の差だけ（ほかの会社の −999,999 は入らない）
+    // ほかの会社の社長の 1 枚は、その会社の数字だけ（稼働を足した分だけ多い）
     const sheet = await loadCeoSheet(db, otherId, DEMO_MONTH, { runWatch: async () => [] });
-    expect(sheet.reconcile.count).toBe(1);
+    expect(sheet.totals.sales).toBe(3_013_300 + 100 * 12_000);
     expect(sheet.companyName).toBe("サンプル運送株式会社（架空）");
   });
 });

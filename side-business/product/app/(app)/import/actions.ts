@@ -14,6 +14,7 @@ import {
   deleteProfile,
   discardDraft,
   readSampleFile,
+  registerAllDrivers,
   resolveName,
   selectSheet,
   setBatchMonth,
@@ -183,6 +184,27 @@ export async function resolveAction(_prev: State, form: FormData): Promise<State
       detail: { batchId: base.batchId, key: base.key, learned: out.learned ?? null },
     });
     refresh(base.batchId);
+  });
+  return res.ok ? { ...res, message } : res;
+}
+
+/** 台帳に無いドライバーを、まとめて登録する */
+export async function registerAllDriversAction(_prev: State, form: FormData): Promise<State> {
+  let message = "";
+  const res = await runAction(async () => {
+    const user = await requireUser("staff");
+    const batchId = batchIdSchema.parse(text(form, "batchId"));
+    const db = await getDb();
+    const out = await registerAllDrivers(db, user.tenantId, batchId);
+    message = out.message;
+    await audit(db, {
+      tenantId: user.tenantId,
+      userId: user.id,
+      action: "import.name.createAllDrivers",
+      entity: "driver",
+      detail: { batchId, created: out.created },
+    });
+    refresh(batchId);
   });
   return res.ok ? { ...res, message } : res;
 }

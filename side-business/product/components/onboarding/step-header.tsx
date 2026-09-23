@@ -1,10 +1,11 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { MarkButton } from "~/components/onboarding/mark-button";
-import { minutesText, ONBOARDING_STEPS, type OnboardingKey } from "~/server/features/onboarding/steps";
+import { minutesText, ONBOARDING_STEPS, STATE_LABEL, type OnboardingKey, type StepState } from "~/server/features/onboarding/steps";
+import { monthFromParam, monthParam } from "~/server/month";
 
-/** 案内の各手順の見出し：何番目か・かかる時間・戻る・とばす */
-export function StepHeader({ step, description, showSkip = true }: { step: OnboardingKey; description: ReactNode; showSkip?: boolean }) {
+/** 案内の各手順の見出し：何番目か・かかる時間・戻る・とばす（済んだ手順には「あとでやる」を出さない） */
+export function StepHeader({ step, description, showSkip = true, state }: { step: OnboardingKey; description: ReactNode; showSkip?: boolean; state?: StepState }) {
   const def = ONBOARDING_STEPS.find((s) => s.key === step)!;
   return (
     <div className="mb-6">
@@ -20,7 +21,8 @@ export function StepHeader({ step, description, showSkip = true }: { step: Onboa
         {def.no}. {def.title}
       </h1>
       <div className="mt-2 text-sm text-muted-foreground">{description}</div>
-      {showSkip && (
+      {state && state !== "todo" && <p className="mt-2 text-sm font-bold">この手順：{STATE_LABEL[state]}</p>}
+      {showSkip && (state === undefined || state === "todo") && (
         <div className="mt-3">
           <MarkButton step={step} mark="skipped" label="この手順はあとでやる" variant="ghost" />
         </div>
@@ -35,7 +37,8 @@ export function NextStepLink({ step }: { step: OnboardingKey }) {
   const next = ONBOARDING_STEPS[i + 1];
   if (!next) return null;
   return (
-    <Link href={next.withMonth ? "/onboarding" : next.path} className="inline-flex min-h-11 items-center text-sm font-bold">
+    // 取り込みは先月（デモは架空のデータがある月）の分を開く
+    <Link href={next.withMonth ? `${next.path}?m=${monthParam(monthFromParam(undefined))}` : next.path} className="inline-flex min-h-11 items-center text-sm font-bold">
       次の手順「{next.title}」へ →
     </Link>
   );

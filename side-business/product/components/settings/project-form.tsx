@@ -105,7 +105,10 @@ export function ProjectForm({
       {initial?.id && overrides > 0 && (
         <p className="text-xs text-muted-foreground">この案件には人ごとの単価が {overrides}件 あります。その人たちは、標準を変えても人ごとの単価のままです。</p>
       )}
-      <Check name="active" defaultChecked={initial?.active ?? true} label="使っている" hint="外すと、取り込みの候補や選ぶところで後ろに回ります。記録は残ります" />
+      {/* 使う・使わないの切り替えは、登録したあとは下のボタンで（ここの古い値で戻さないように） */}
+      {!initial?.id && (
+        <Check name="active" defaultChecked={initial?.active ?? true} label="使っている" hint="外すと、取り込みの候補や選ぶところで後ろに回ります。記録は残ります" />
+      )}
       <ResultLine state={state} />
       <SubmitRow pending={pending} label={submitLabel} />
     </form>

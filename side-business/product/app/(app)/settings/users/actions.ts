@@ -38,17 +38,24 @@ export async function changeRoleAction(_prev: State, form: FormData): Promise<St
 
 export async function setUserDisabledAction(_prev: State, form: FormData): Promise<State> {
   const disabled = form.get("disabled") === "1";
-  return runAction(
+  let hasPassword = true;
+  const res = await runAction(
     async () => {
       const user = await requireUser("owner");
       const id = idOf(form);
       const db = await getDb();
       const { after } = await setUserDisabled(db, user.tenantId, user.id, id, disabled);
+      hasPassword = !!after.passwordHash;
       await audit(db, { tenantId: user.tenantId, userId: user.id, action: disabled ? "user.disable" : "user.enable", entity: "user", entityId: id, detail: { name: after.name, email: after.email } });
       revalidatePath("/", "layout");
     },
     disabled ? "止めました。この方はもうログインできません（記録に名前は残ります）" : "再開しました。前のパスワードでログインできます",
   );
+  // パスワードをまだ決めていない人は、再開しても入れないので、招待し直しを案内する
+  if (res?.ok && !disabled && !hasPassword) {
+    return { ...res, message: "再開しました。この方はパスワードをまだ決めていないので、下の「招待する」からリンクを作って送ってください" };
+  }
+  return res;
 }
 
 export type InviteResult = { url: string; email: string; name: string; expiresAt: string; reactivates: boolean };

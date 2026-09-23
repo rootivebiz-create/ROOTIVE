@@ -18,6 +18,8 @@ export type HomeStepView = {
   /** 段の右に出す短い状態（「未作成」「赤 2 件」など） */
   badge: string;
   lines: string[];
+  /** 行の下に出す、直す画面へのリンク（見張り番の赤い指摘など） */
+  items?: { text: string; href: string | null }[];
   href: string;
   linkLabel: string;
   done: boolean;
@@ -52,6 +54,12 @@ export function jstShort(d: Date): string {
 
 function yen(n: number): string {
   return `${Math.round(n).toLocaleString("ja-JP")}円`;
+}
+
+/** 「木村 誠さん・佐藤 亮さん ほか 2人」（多いときは 3 人まで書く） */
+function namesText(names: string[]): string {
+  const shown = names.slice(0, 3).map((n) => `${n}さん`).join("・");
+  return names.length > 3 ? `${shown} ほか ${names.length - 3}人` : shown;
 }
 
 export function homeView(st: HomeStatus, opts: { canEdit: boolean }): HomeView {
@@ -98,10 +106,12 @@ export function homeView(st: HomeStatus, opts: { canEdit: boolean }): HomeView {
       tone: "red",
       badge: `赤 ${wt.red} 件`,
       lines: [
-        st.closed ? "締めたあとに見つかった指摘です。内容を確かめてください。" : "締めを止める指摘です。直すか、内容を確かめて「確認済み」にしてください。",
-        ...wt.topRed.map((i) => `・${i.title}${i.subjectLabel ? `（${i.subjectLabel}）` : ""}`),
-        ...(wt.red > wt.topRed.length ? [`ほか ${wt.red - wt.topRed.length} 件`] : []),
+        st.closed
+          ? "この月は締めてありますが、赤い指摘が残っています。来月に同じことが起きないよう、内容を確かめてください。"
+          : "締めを止める指摘です。直すか、内容を確かめて「確認済み」にしてください。",
+        ...(wt.red > wt.topRed.length ? [`ほか ${wt.red - wt.topRed.length} 件は、見張り番の画面にあります。`] : []),
       ],
+      items: wt.topRed.map((i) => ({ text: `${i.title}${i.subjectLabel ? `（${i.subjectLabel}）` : ""}`, href: canEdit ? i.href : null })),
       done: st.closed,
     };
   } else {
@@ -148,9 +158,23 @@ export function homeView(st: HomeStatus, opts: { canEdit: boolean }): HomeView {
 
   // ④ 振込
   const trBase = { key: "transfer" as const, no: 4, title: "振込", href: `/transfer${q}`, linkLabel: canEdit ? "振込データへ" : "振込データを見る", current: false };
+  // 振込データに入らない人（口座が無い・形が違う・振込額が 0 円以下）は、別に手当てが要るので必ず書く
+  const noBank = tr.excluded.filter((x) => x.reason !== "not_positive").map((x) => x.name);
+  const notPositive = tr.excluded.filter((x) => x.reason === "not_positive").map((x) => x.name);
+  const excludedLines = statementsReady
+    ? [
+        ...(noBank.length
+          ? [`口座が未登録か、口座の情報に直すところがあるため、振込データに入らない人が ${noBank.length}人います（${namesText(noBank)}）。口座を入れて作り直すか、別に振り込んでください。`]
+          : []),
+        ...(notPositive.length ? [`振込額が 0 円以下のため、振込データに入らない人が ${notPositive.length}人います（${namesText(notPositive)}）。明細を確かめてください。`] : []),
+      ]
+    : [];
   let transferStep: HomeStepView;
   if (st.closed && sm.saved === 0) {
     transferStep = { ...trBase, tone: "gray", badge: "明細なし", lines: ["明細が無いため、振込データはありません。"], done: true };
+  } else if (tr.batches === 0 && statementsReady && tr.includable === 0 && tr.excluded.length > 0) {
+    // 振込データに入れられる人がいない（全員、口座が無い など）。作れないので、止めずに知らせる
+    transferStep = { ...trBase, tone: "yellow", badge: "振り込める人なし", lines: excludedLines, done: true };
   } else if (tr.batches === 0) {
     transferStep = {
       ...trBase,
@@ -158,8 +182,10 @@ export function homeView(st: HomeStatus, opts: { canEdit: boolean }): HomeView {
       badge: statementsReady ? "まだ" : "明細ができてから",
       lines: [
         statementsReady
-          ? `銀行にそのまま出せる振込データ（全銀形式）を作れます。${st.totals.drivers}人・合計 ${yen(st.totals.total)}の見込みです。`
+          ? // 振込データがまだ無いので、入れられる人は全員「まだ入っていない人」
+            `銀行にそのまま出せる振込データ（全銀形式）を作れます。${tr.includable}人・合計 ${yen(tr.notInBatchTotal)}の見込みです。`
           : "明細ができたら、銀行にそのまま出せる振込データ（全銀形式）を作れます。",
+        ...excludedLines,
       ],
       done: false,
     };
@@ -168,22 +194,33 @@ export function homeView(st: HomeStatus, opts: { canEdit: boolean }): HomeView {
       ...trBase,
       tone: "yellow",
       badge: "作り直しが必要",
-      lines: [`作ったあとに明細が変わった振込データが ${tr.changed} 件あります。そのデータは使わずに、作り直してください。`],
+      lines: [`作ったあとに明細が変わった振込データが ${tr.changed} 件あります。そのデータは銀行に出さずに取り消して、作り直してください。`],
+      done: false,
+    };
+  } else if (statementsReady && tr.notInBatch > 0) {
+    transferStep = {
+      ...trBase,
+      tone: "yellow",
+      badge: `残り ${tr.notInBatch}人`,
+      lines: [
+        `${tr.batches} 件・${tr.people}人・合計 ${yen(tr.total)}を作ってあります。`,
+        `まだどの振込データにも入っていない人が ${tr.notInBatch}人（合計 ${yen(tr.notInBatchTotal)}）います。振込データの画面で「まだ入っていない人だけ」を選んで作ってください。`,
+        ...excludedLines,
+      ],
       done: false,
     };
   } else {
-    transferStep = {
-      ...trBase,
-      tone: "green",
-      badge: "作成済み",
-      lines: [
-        `${tr.batches} 件・${tr.people}人・合計 ${yen(tr.total)}`,
-        tr.executed < tr.batches
-          ? `実際に振り込んだ日の記録：${tr.executed} / ${tr.batches} 件。振り込んだら記録してください（支払期日の確かめに使います）。`
-          : "実際に振り込んだ日も記録してあります。",
-      ],
-      done: true,
-    };
+    const lines = [
+      `${tr.batches} 件・${tr.people}人・合計 ${yen(tr.total)}`,
+      tr.executed < tr.batches
+        ? `実際に振り込んだ日の記録：${tr.executed} / ${tr.batches} 件。振り込んだら記録してください（支払期日の確かめに使います）。`
+        : "実際に振り込んだ日も記録してあります。",
+    ];
+    if (tr.changedExecuted > 0) {
+      lines.push(`振り込んだあとに明細が変わった振込データが ${tr.changedExecuted} 件あります。振り込んだ額と明細の額が違うおそれがあるので、振込データの画面で確かめてください。`);
+    }
+    lines.push(...excludedLines);
+    transferStep = { ...trBase, tone: tr.changedExecuted > 0 || excludedLines.length > 0 ? "yellow" : "green", badge: "作成済み", lines, done: true };
   }
 
   // ⑤ 締め
@@ -232,8 +269,16 @@ export function homeView(st: HomeStatus, opts: { canEdit: boolean }): HomeView {
     );
   const transferAction = () =>
     tr.changed > 0
-      ? act("transfer", "振込データを作り直す", `/transfer${q}`, "作ったあとに明細が変わったので、前のデータは使わずに作り直してください。", "振込データを見る")
-      : act("transfer", "振込データを作る", `/transfer${q}`, "銀行のサイトにそのまま出せる振込データ（全銀形式）を作ります。口座が未登録の人は、先に知らせます。", "振込データを見る");
+      ? act("transfer", "振込データを作り直す", `/transfer${q}`, "作ったあとに明細が変わったので、前のデータは銀行に出さずに取り消して、作り直してください。", "振込データを見る")
+      : tr.batches > 0 && tr.notInBatch > 0
+        ? act(
+            "transfer",
+            `残りの人の振込データを作る（${tr.notInBatch}人）`,
+            `/transfer${q}`,
+            "前に作った振込データに入っていない人だけで作ります。同じ人に二重に振り込まないよう、しめ日ラボが見分けます。",
+            "振込データを見る",
+          )
+        : act("transfer", "振込データを作る", `/transfer${q}`, "銀行のサイトにそのまま出せる振込データ（全銀形式）を作ります。口座が未登録の人は、先に知らせます。", "振込データを見る");
 
   if (!st.closed) {
     const first = steps.find((x) => !x.done);
@@ -266,7 +311,7 @@ export function homeView(st: HomeStatus, opts: { canEdit: boolean }): HomeView {
     }
   } else if (sm.saved > 0 && sendNeeded > 0) {
     next = sendAction();
-  } else if (sm.saved > 0 && (tr.batches === 0 || tr.changed > 0)) {
+  } else if (sm.saved > 0 && !transferStep.done) {
     next = transferAction();
   } else if (tr.batches > 0 && tr.executed < tr.batches) {
     next = act("executed", "振り込んだ日を記録する", `/transfer${q}`, "実際に振り込んだ日を記録すると、約束した支払日を守れたかを見張り番が確かめます。", "振込データを見る");

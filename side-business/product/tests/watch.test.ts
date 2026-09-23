@@ -5,7 +5,7 @@ import type { Db } from "~/db/client";
 import * as s from "~/db/schema";
 import { buildStatementDrafts } from "~/server/calc/statement";
 import { runWatch, watchMonth } from "~/server/features/watch";
-import { ackWatchIssue, monthAckDetails, previousAcks, unackWatchIssue } from "~/server/features/watch/acks";
+import { ackWatchIssue, changedSinceAck, monthAckDetails, previousAcks, unackWatchIssue } from "~/server/features/watch/acks";
 import { FEE_SENTENCE } from "~/server/features/watch/rules";
 import { SOURCES } from "~/server/features/watch/sources";
 import type { WatchIssue } from "~/server/features/watch-types";
@@ -83,8 +83,9 @@ describe("見張り番：架空の会社の 2026年10月", () => {
   it("遠藤（D04）：取引条件の記録が無い → 赤（締めを止める）", () => {
     const [i] = find(issues, "terms_missing", ids.D04);
     expect(i).toMatchObject({ severity: "red", subjectLabel: "遠藤 大輔", acked: false, blocksClose: true, basis: "フリーランス法 第3条（取引条件の明示）", sourceUrl: SOURCES.flQa });
-    expect(i.detail).toContain("294,800円");
-    expect(i.fixHref).toBe("/settings/drivers");
+    expect(i.detail).toContain("2026年10月分の支払額は 294,800円です");
+    // 直す画面は、その人の設定を開いた状態
+    expect(i.fixHref).toBe(`/settings/drivers/${ids.D04}`);
     // 明示の記録がある人は出ない
     expect(find(issues, "terms_missing", ids.D01)).toHaveLength(0);
   });
@@ -94,26 +95,41 @@ describe("見張り番：架空の会社の 2026年10月", () => {
     const [i] = find(issues, "deduction_no_agreement", uniform);
     expect(i.severity).toBe("red");
     expect(i.subjectLabel).toBe("制服代（木村 誠）");
-    expect(i.detail).toContain("木村 誠さん・5,000円");
+    expect(i.detail).toContain("2026年10月分 木村 誠さん・5,000円");
+    // 木村さんだけの控除なので、控除のルールを木村さんで絞って開く
+    expect(i.fixHref).toBe(`/settings/rules?m=2026-10&driver=${ids.D07}`);
     expect(i.basis).toContain("第5条");
     // 書面の合意はあるが日付が無いロイヤリティは黄（8 人・241,060 円）
     const royalty = find(issues, "deduction_no_agreement", await ruleId(db, tenantId, "ロイヤリティ"))[0];
     expect(royalty.severity).toBe("yellow");
     expect(royalty.detail).toContain("8人");
     expect(royalty.detail).toContain("241,060円");
+    expect(royalty.fixHref).toBe("/settings/rules?m=2026-10");
   });
 
-  it("上田（D03）の車両修理の負担分：根拠が空 → 黄", () => {
+  it("上田（D03）の車両修理の負担分：根拠が空 → 黄（直す画面はその調整を開く）", async () => {
     const adj = issues.find((i) => i.code === "deduction_no_agreement" && i.subjectLabel === "上田 健・車両修理の負担分");
     expect(adj?.severity).toBe("yellow");
     expect(adj?.detail).toContain("11,000円");
-    expect(adj?.fixHref).toBe("/work?m=2026-10");
+    const [row] = await db.select().from(s.adjustments).where(and(eq(s.adjustments.tenantId, tenantId), eq(s.adjustments.label, "車両修理の負担分")));
+    expect(adj?.subjectId).toBe(`adj:${row.id}`);
+    expect(adj?.fixHref).toBe(`/work?m=2026-10&adj=${row.id}#adjustments`);
+  });
+
+  it("岡田（D05）の人ごとの単価 155 円：合意の日が無い → 黄（人ごとの単価の画面を開く）", async () => {
+    const [o] = await db.select().from(s.rateOverrides).where(eq(s.rateOverrides.tenantId, tenantId));
+    const [i] = find(issues, "rate_changed_without_record", o.id);
+    expect(i.severity).toBe("yellow");
+    // 420 個 × 155 円 = 65,100 円
+    expect(i.detail).toContain("2026年10月分は 420個で 65,100円です");
+    expect(i.fixHref).toBe(`/settings/rates?driver=${o.driverId}&project=${o.projectId}`);
   });
 
   it("木村（D07）：口座が無い → 黄（振込額 34,430 円）", () => {
     const [i] = find(issues, "no_bank", ids.D07);
     expect(i.severity).toBe("yellow");
     expect(i.detail).toContain("34,430円");
+    expect(i.fixHref).toBe(`/settings/drivers/${ids.D07}`);
     expect(find(issues, "no_bank", ids.D01)).toHaveLength(0);
   });
 
@@ -142,7 +158,7 @@ describe("見張り番：架空の会社の 2026年10月", () => {
     expect(find(issues, "fee_deducted")).toHaveLength(0);
     expect(find(issues, "sixty_days")).toHaveLength(0);
     expect(find(issues, "paid_late")).toHaveLength(0);
-    expect(find(issues, "payment_wording")[0]).toMatchObject({ severity: "info", fixHref: "/settings/company" });
+    expect(find(issues, "payment_wording")[0]).toMatchObject({ severity: "info", fixHref: "/settings/company?m=2026-10" });
     expect(find(issues, "toriteki")[0].detail).toBe("資本金と従業員の数を入れると、取適法の対象かどうかの目安を出します。会社の設定から入れられます。");
     expect(find(issues, "statements_stale")[0]).toMatchObject({ severity: "yellow", title: "明細をまだ作っていません" });
   });
@@ -236,7 +252,7 @@ describe("見張り番：架空の会社の 2026年10月", () => {
     expect(await previousAcks(db, otherTenantId, "2026-11-01")).toHaveProperty("size", 0);
   });
 
-  it("締めた 9 月も読める（見るだけ。確認済みにはできない）", async () => {
+  it("締めた 9 月も読める（見るだけ。確認済みにはできない。ただし振込の遅れは締めたあとでもメモを残せる）", async () => {
     const sep = await watchMonth(db, tenantId, DEMO_PREV_MONTH, { today: "2026-10-01" });
     expect(sep.closed).toBe(true);
     expect(find(sep.issues, "terms_missing", ids.D04)[0]).toMatchObject({ severity: "red", blocksClose: true });
@@ -251,6 +267,18 @@ describe("見張り番：架空の会社の 2026年10月", () => {
       ackWatchIssue(db, tenantId, { month: DEMO_PREV_MONTH, code: "terms_missing", subjectId: ids.D04, note: "締めたあとに確認しました" }, null, { today: TODAY }),
     ).rejects.toThrow("締め済み");
     await expect(unackWatchIssue(db, tenantId, { month: DEMO_PREV_MONTH, code: "terms_missing", subjectId: ids.D04 }, null)).rejects.toThrow("締め済み");
+
+    // 支払期日（10/25）を過ぎても振り込んだ日の記録が無い → 締めたあとでも確認済みにできる（振込はふつう締めのあと）
+    const late = await watchMonth(db, tenantId, DEMO_PREV_MONTH, { today: "2026-10-26" });
+    const [unpaid] = find(late.issues, "paid_late", "unpaid");
+    expect(unpaid).toMatchObject({ severity: "yellow", acked: false });
+    expect(unpaid.detail).toContain("2026年10月25日");
+    const acked = await ackWatchIssue(db, tenantId, { month: DEMO_PREV_MONTH, code: "paid_late", subjectId: "unpaid", note: "10/26 に手作業で振り込み済み" }, null, { today: "2026-10-26" });
+    expect(acked.acked).toBe(true);
+    expect(find(await runWatch(db, tenantId, DEMO_PREV_MONTH, { today: "2026-10-26" }), "paid_late", "unpaid")[0].ackNote).toBe("10/26 に手作業で振り込み済み");
+    await unackWatchIssue(db, tenantId, { month: DEMO_PREV_MONTH, code: "paid_late", subjectId: "unpaid" }, null);
+    // 締めた月の明細・稼働の数字は変わらない（写しが無い 9 月は稼働から作った見込みのまま）
+    expect(find(late.issues, "terms_missing", ids.D04)[0].detail).toContain("2026年9月分の支払額は 278,960円です");
   });
 });
 
@@ -384,6 +412,11 @@ describe("見張り番：記録を変えたときの指摘", () => {
     const neg = find(issues, "negative_total", ids.D07)[0];
     expect(neg.severity).toBe("red");
     expect(neg.detail).toContain("マイナス 65,570円");
+    // 内訳は明細の値そのまま：57,000 ＋ 5,700 − 28,270 − 100,000 = −65,570
+    expect(neg.detail).toContain("委託料 57,000円 ＋ 消費税相当額 5,700円 − 控除 28,270円（消費税を含む） − 調整 100,000円");
+    const d07 = buildStatementDrafts(await loadBuildInput(db, tenantId, DEMO_MONTH)).find((d) => d.driverId === ids.D07)!;
+    expect(d07.total).toBe(-65570);
+    expect(d07.subtotal + d07.tax - (d07.deductionTotal + d07.deductionTax) + d07.adjustmentTotal + d07.adjustmentTax).toBe(-65570);
     expect(find(issues, "no_bank", ids.D07)).toHaveLength(0);
     await db.delete(s.adjustments).where(and(eq(s.adjustments.tenantId, tenantId), eq(s.adjustments.label, "事故の負担")));
   });
@@ -407,6 +440,12 @@ describe("見張り番：記録を変えたときの指摘", () => {
     expect(i.severity).toBe("yellow");
     expect(i.detail).toContain("16日前");
     expect(i.basis).toContain("第16条");
+    expect(i.fixHref).toBe(`/settings/drivers/${ids.D08}`);
+    // 予告の記録が無いときは、30 日前の日を書く（10/31 の 30 日前は 10/1。今日 10/31 にはもう過ぎている）
+    await db.update(s.drivers).set({ endNoticedOn: null }).where(eq(s.drivers.id, ids.D08));
+    const [none] = find(await run(), "contract_end", ids.D08);
+    expect(none.title).toBe("委託の終了を伝えた日の記録がありません");
+    expect(none.detail).toContain("終了日の30日前は2026年10月1日で、すでに過ぎています");
     await db.update(s.drivers).set({ endNoticedOn: "2026-09-15" }).where(eq(s.drivers.id, ids.D08));
     expect(find(await run(), "contract_end", ids.D08)).toHaveLength(0);
     // 6 か月に満たない委託は出ない
@@ -415,11 +454,14 @@ describe("見張り番：記録を変えたときの指摘", () => {
     await db.update(s.drivers).set({ startedOn: null, endOn: null, endNoticedOn: null }).where(eq(s.drivers.id, ids.D08));
   });
 
-  it("前月は稼働があった人に今月の稼働が無い → お知らせ", async () => {
+  it("前月は稼働があった人に今月の稼働が無い → お知らせ。まだ誰の稼働も無い月には人ごとに出さない", async () => {
     await db.delete(s.workEntries).where(and(eq(s.workEntries.tenantId, tenantId), eq(s.workEntries.month, DEMO_MONTH), eq(s.workEntries.driverId, ids.D08)));
     const [i] = find(await run(), "work_missing", ids.D08);
     expect(i.severity).toBe("info");
     expect(i.subjectLabel).toBe("佐藤 亮");
+    expect(i.title).toBe("前月は稼働があった方に、この月の稼働がありません");
+    // 11 月はまだ誰の稼働も入っていない（10 月に 7 人いても人ごとには出さない。画面の「稼働がまだありません」の案内だけ）
+    expect(find(await run("2026-11-01", "2026-11-01"), "work_missing")).toHaveLength(0);
   });
 
   it("取適法の目安：資本金 3,000 万円 → 「対象になる可能性」", async () => {
@@ -445,9 +487,46 @@ describe("見張り番：記録を変えたときの指摘", () => {
     expect(i.detail).toContain("150円 から 140円");
     expect(i.detail).toContain("18,000円");
     expect(i.detail).toContain("前月より単価が下がっています。協議した記録を確認してください");
-    expect(i.fixHref).toBe("/settings/drivers");
+    expect(i.fixHref).toBe(`/settings/rates?driver=${ids.D03}&project=${takuhai.id}`);
     // 合意の日がある単価なので「単価を変えた記録」は出ない
     expect(find(issues, "rate_changed_without_record", ids.D03)).toHaveLength(0);
     expectWellFormed(issues);
+  });
+});
+
+describe("見張り番：確認済みにしたあとで中身が変わったら知らせる", () => {
+  it("制服代を確認済みにしたあと 5,000円 → 50,000円 に変わる → 「確かめ直して」（締めは止めない）。書き直すと消える。他社の記録は見ない", async () => {
+    const { db, client } = await createTestDb();
+    const { tenantId } = await seedDemo(db);
+    const { tenantId: otherId } = await seedDemo(db);
+    const uniform = await ruleId(db, tenantId, "制服代");
+    const key = { month: DEMO_MONTH, code: "deduction_no_agreement", subjectId: uniform };
+    await ackWatchIssue(db, tenantId, { ...key, note: "制服の購入の申込書（本人の署名つき）を確認" }, null, { today: TODAY });
+    let issues = await runWatch(db, tenantId, DEMO_MONTH, { today: TODAY });
+    expect(await changedSinceAck(db, tenantId, DEMO_MONTH, issues)).toHaveProperty("size", 0);
+
+    await db.update(s.deductionRules).set({ amount: 50000 }).where(eq(s.deductionRules.id, uniform));
+    issues = await runWatch(db, tenantId, DEMO_MONTH, { today: TODAY });
+    const [i] = find(issues, "deduction_no_agreement", uniform);
+    expect(i.detail).toContain("木村 誠さん・50,000円");
+    // 確認済みのまま（締めは止めない）で、中身が変わったことだけ知らせる
+    expect(i).toMatchObject({ acked: true, blocksClose: false });
+    expect([...(await changedSinceAck(db, tenantId, DEMO_MONTH, issues))]).toEqual([`deduction_no_agreement\u0000${uniform}`]);
+    // 黄の確認済み（ロイヤリティの合意の日）は、取り込みで額が動いても知らせない
+    const royalty = await ruleId(db, tenantId, "ロイヤリティ");
+    await ackWatchIssue(db, tenantId, { month: DEMO_MONTH, code: "deduction_no_agreement", subjectId: royalty, note: "契約書 第8条で合意" }, null, { today: TODAY });
+    await db.update(s.deductionRules).set({ rate: 0.08 }).where(eq(s.deductionRules.id, royalty));
+    issues = await runWatch(db, tenantId, DEMO_MONTH, { today: TODAY });
+    expect(find(issues, "deduction_no_agreement", royalty)[0].acked).toBe(true);
+    expect([...(await changedSinceAck(db, tenantId, DEMO_MONTH, issues))]).toEqual([`deduction_no_agreement\u0000${uniform}`]);
+    // 他社の同じ月の記録は混ざらない
+    const other = await runWatch(db, otherId, DEMO_MONTH, { today: TODAY });
+    expect(await changedSinceAck(db, otherId, DEMO_MONTH, other)).toHaveProperty("size", 0);
+
+    // 確かめ直してメモを書き直す → 知らせは消える
+    await ackWatchIssue(db, tenantId, { ...key, note: "50,000円に変えた申込書（本人の署名つき）を確認" }, null, { today: TODAY });
+    issues = await runWatch(db, tenantId, DEMO_MONTH, { today: TODAY });
+    expect(await changedSinceAck(db, tenantId, DEMO_MONTH, issues)).toHaveProperty("size", 0);
+    await client.close();
   });
 });

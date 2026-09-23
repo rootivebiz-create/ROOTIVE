@@ -56,8 +56,10 @@ export function MappingForm({ software, softwareLabel, accountFields, taxFields,
   const [payableSub, setPayableSub] = useState(payableSubByDriver);
   const set = (name: string) => (v: string) => setValues((prev) => ({ ...prev, [name]: v }));
 
-  const resetToDefaults = () =>
+  const resetToDefaults = () => {
     setValues(Object.fromEntries([...accountFields.map((f) => [`account.${f.key}`, f.defaultValue]), ...taxFields.map((f) => [`tax.${f.key}`, f.defaultValue])]));
+    setPayableSub(false);
+  };
   const undo = () => {
     setValues(initial());
     setPayableSub(payableSubByDriver);
@@ -119,6 +121,7 @@ export function MappingForm({ software, softwareLabel, accountFields, taxFields,
         </p>
       )}
 
+      <p className="text-xs text-muted-foreground">保存すると、次にこの画面を開いたときは「{softwareLabel}」を最初に選んだ状態にします。</p>
       <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
         <Button type="submit" disabled={pending}>
           {pending ? "保存しています…" : "この対応を保存する"}

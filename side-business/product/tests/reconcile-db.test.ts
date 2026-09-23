@@ -7,6 +7,7 @@ import type { Db } from "~/db/client";
 import * as s from "~/db/schema";
 import {
   deleteNotice,
+  GONE_NOTE,
   lineKey,
   findSampleClient,
   importNotice,
@@ -23,6 +24,7 @@ import {
 } from "~/server/features/reconcile";
 import { buildLetter } from "~/server/features/reconcile/letter";
 import { DEMO_MONTH, DEMO_PREV_MONTH, seedDemo } from "~/server/seed-demo";
+import { generateStatements } from "~/server/statements-core";
 import { createTestDb } from "./helpers/db";
 
 const samples = path.join(__dirname, "..", "public", "samples");
@@ -82,8 +84,28 @@ describe("元請の支払通知との突合（デモの A物流・2026年10月�
     expect(view.live.theirTotal).toBe(858800 + 1342000 + 230000);
     expect(view.totals).toMatchObject({ short: 91700, shortCount: 2, over: 0, overCount: 0 });
     expect(view.live.projects.find((p) => p.name === "企業配（日当）")).toMatchObject({ ourQty: 61, theirQty: 61, diff: 0 });
-    // 見本の CSV（待機料つき）は元請の画面から落とした形。デモの元請が見つかる
-    expect((await findSampleClient(db, tenantId))?.name).toBe("A物流（架空）");
+    expect(view.snapshotRates).toBe(false);
+    expect(view.live.zeroRateProjects).toEqual([]);
+    await client.close();
+  });
+
+  it("見本のファイルはデモの会社（架空）だけ。本番の会社では名前の似た元請（JA物流 など）があっても出さない", async () => {
+    const { db, client, tenantId } = await setup();
+    const saved = process.env.DEMO_MODE;
+    delete process.env.DEMO_MODE;
+    try {
+      // デモの印が無い会社：A物流（架空）がいても見本は出さない
+      expect(await findSampleClient(db, tenantId)).toBeNull();
+      const [real] = await db.insert(s.tenants).values({ name: "本番の会社" }).returning();
+      await db.insert(s.clients).values({ tenantId: real.id, name: "JA物流株式会社" });
+      expect(await findSampleClient(db, real.id)).toBeNull();
+      // デモの会社（settings.demo）なら、架空の A物流 に入れる
+      await db.update(s.tenants).set({ settings: { demo: true } }).where(eq(s.tenants.id, tenantId));
+      expect((await findSampleClient(db, tenantId))?.name).toBe("A物流（架空）");
+    } finally {
+      if (saved === undefined) delete process.env.DEMO_MODE;
+      else process.env.DEMO_MODE = saved;
+    }
     await client.close();
   });
 
@@ -166,7 +188,7 @@ describe("元請の支払通知との突合（デモの A物流・2026年10月�
     // 宅配の差は −81,700 → −83,600 に変わったので、了承は未対応に戻す（メモは残す）
     expect(run.reopened).toBe(1);
     const after = await items(db, tenantId, noticeId);
-    expect(after.find((r) => r.label === "宅配（個建て）")).toMatchObject({ id: takuhai.id, status: "open", note: "10/31 電話で確認。10月はこの数で了承", ourQty: 4960, diff: -83600 });
+    expect(after.find((r) => r.label === "宅配（個建て）")).toMatchObject({ id: takuhai.id, status: "open", note: "10/31 電話で確認。10月はこの数で了承", ourQty: 4960, diff: -83600, resolvedAt: null });
 
     // 夜間便は数量と単価の両方が違う → 2 つに分ける。単価の差（−10,000円）は変わらないので「解決」のまま
     const split = after.filter((r) => r.label === "夜間便");
@@ -407,6 +429,167 @@ describe("元請の支払通知との突合（デモの A物流・2026年10月�
     // ほかの会社の差は何も変わっていない
     expect((await items(db, other.tenantId, otherNotice.id)).map((i) => [i.id, i.status])).toEqual(otherItems.map((i) => [i.id, "open"]));
     void a;
+    await client.close();
+  });
+
+  it("締めた月は締めたときの受注単価（明細の写し）で数える。締めたあとで単価を上げても、締めた月に偽の差が出ない", async () => {
+    const { db, client, tenantId, a, P, noticeId, userId } = await setup();
+    const sepClose = and(eq(s.monthCloses.tenantId, tenantId), eq(s.monthCloses.month, DEMO_PREV_MONTH));
+    // 9 月の明細の写しを作ってから締め直す（写しには締めたときの受注単価 190円 が残る）
+    await db.update(s.monthCloses).set({ status: "open" }).where(sepClose);
+    await generateStatements(db, tenantId, DEMO_PREV_MONTH, userId);
+    await db.update(s.monthCloses).set({ status: "closed" }).where(sepClose);
+    // そのあとで宅配の受注単価を 200円 に上げた
+    await db.update(s.projects).set({ billRate: 200 }).where(eq(s.projects.id, P["宅配（個建て）"].id));
+
+    // 9 月（締めた月）：元請の 190円 と、締めたときの 190円 で比べるので差は無い
+    const sep = await importNotice(db, tenantId, userId, {
+      clientId: a.id,
+      month: DEMO_PREV_MONTH,
+      fileName: "9月.csv",
+      bytes: csv("品目,数量,単価,金額\n宅配,5865,190,1114350\n企業配,58,22000,1276000\n夜間便,18,12000,216000\n"),
+      replace: false,
+    });
+    expect(sep.run?.items).toBe(0);
+    const sepView = await loadNoticeView(db, tenantId, sep.noticeId);
+    expect(sepView.snapshotRates).toBe(true);
+    expect(sepView.live.ourTotal).toBe(1114350 + 1276000 + 216000);
+    expect(sepView.display).toEqual([]);
+
+    // 10 月（開いている月）は今の単価 200円：4,950 × 200 = 990,000円 と 通知 4,520 × 190 = 858,800円
+    await runReconcile(db, tenantId, noticeId, userId);
+    const takuhai = (await items(db, tenantId, noticeId)).filter((r) => r.label === "宅配（個建て）").map(pick);
+    expect(takuhai).toEqual([
+      { kind: "price", label: "宅配（個建て）", ourQty: 4520, theirQty: 4520, ourPrice: 200, theirPrice: 190, ourAmount: 904000, theirAmount: 858800, diff: -45200 },
+      { kind: "qty", label: "宅配（個建て）", ourQty: TAKUHAI_OURS, theirQty: 4520, ourPrice: 200, theirPrice: 200, ourAmount: 990000, theirAmount: 904000, diff: -86000 },
+    ]);
+    expect(takuhai.reduce((x, r) => x + r.diff, 0)).toBe(858800 - 990000);
+
+    // レポートも同じ：9 月は 190円、10 月は 200円。B商事の 9 月（通知なし）は写しの単価で 5 件 × 9,000円 ＋ 160 時間 × 2,600円
+    const report = await loadReport(db, tenantId, DEMO_PREV_MONTH, DEMO_MONTH);
+    expect(report.cells.find((c) => c.clientName === "A物流（架空）" && c.month === DEMO_PREV_MONTH)).toMatchObject({ ourTotal: 2606350, short: 0, over: 0 });
+    expect(report.cells.find((c) => c.clientName === "A物流（架空）" && c.month === DEMO_MONTH)).toMatchObject({ ourTotal: 990000 + 1342000 + 240000, short: 131200 + 10000 });
+    expect(report.cells.find((c) => c.clientName === "B商事（架空）" && c.month === DEMO_PREV_MONTH)).toMatchObject({ notice: null, ourTotal: 45000 + 416000 });
+    await client.close();
+  });
+
+  it("扱いの記録：問い合わせた日・片付けた日・取り戻せた額（確定）を残す。「この金額で了承」は理由が必須", async () => {
+    const { db, client, tenantId, a, noticeId, userId } = await setup();
+    await importNotice(db, tenantId, userId, { clientId: a.id, month: DEMO_MONTH, fileName: "見本.csv", bytes: sjis(), replace: true });
+    const rows = await items(db, tenantId, noticeId);
+    const takuhai = rows.find((r) => r.label === "宅配（個建て）")!;
+    const yakan = rows.find((r) => r.label === "夜間便")!;
+    const taiki = rows.find((r) => r.label === "待機料")!;
+    expect([takuhai.diff, yakan.diff, taiki.diff]).toEqual([-81700, -10000, 3000]);
+
+    await expect(setItemStatus(db, tenantId, userId, { itemId: yakan.id, status: "accepted", note: null })).rejects.toThrow("理由");
+    await expect(setItemStatus(db, tenantId, userId, { itemId: yakan.id, status: "accepted", note: "   " })).rejects.toThrow("理由");
+    await expect(setItemStatus(db, tenantId, userId, { itemId: takuhai.id, status: "resolved", note: null, recoveredAmount: -1 })).rejects.toThrow("0 以上");
+
+    expect(await markItemsAsked(db, tenantId, userId, { noticeId, itemIds: [takuhai.id, yakan.id] })).toBe(2);
+    const asked = (await items(db, tenantId, noticeId)).find((r) => r.id === takuhai.id)!;
+    expect(asked.status).toBe("asked");
+    expect(asked.askedAt).toBeInstanceOf(Date);
+
+    // 宅配：11 月分に上乗せと決まった → 解決・取り戻せた額 81,700円
+    await setItemStatus(db, tenantId, userId, { itemId: takuhai.id, status: "resolved", note: "11月分に 430個分を上乗せ", recoveredAmount: 81700 });
+    // 夜間便：理由つきで了承（取り戻せた額は持たない）
+    await setItemStatus(db, tenantId, userId, { itemId: yakan.id, status: "accepted", note: "単価は11月から見直しと合意", recoveredAmount: 10000 });
+    // 待機料（多い可能性）は取り戻す額を持たない
+    await setItemStatus(db, tenantId, userId, { itemId: taiki.id, status: "resolved", note: null, recoveredAmount: 3000 });
+    let after = await items(db, tenantId, noticeId);
+    const t = after.find((r) => r.id === takuhai.id)!;
+    expect(t).toMatchObject({ status: "resolved", recoveredAmount: 81700, note: "11月分に 430個分を上乗せ" });
+    expect(t.askedAt?.getTime()).toBe(asked.askedAt?.getTime());
+    expect(t.resolvedAt).toBeInstanceOf(Date);
+    expect(after.find((r) => r.id === yakan.id)).toMatchObject({ status: "accepted", recoveredAmount: null });
+    expect(after.find((r) => r.id === taiki.id)).toMatchObject({ status: "resolved", recoveredAmount: null });
+
+    // 取り戻せた額（確定）は、見込み（未対応・問い合わせ済み）とは分けて数える
+    const view = await loadNoticeView(db, tenantId, noticeId);
+    expect(view.totals).toMatchObject({ short: 0, over: 0, settledCount: 3, recovered: 81700, recoveredCount: 1 });
+    expect((await listMonth(db, tenantId, DEMO_MONTH)).rows.find((r) => r.clientName === "A物流（架空）")!.notice).toMatchObject({ short: 0, recovered: 81700 });
+    expect((await loadReport(db, tenantId, DEMO_MONTH, DEMO_MONTH)).totals).toMatchObject({ short: 0, recovered: 81700, recoveredCount: 1 });
+
+    // 突き合わせ直しても残る
+    await runReconcile(db, tenantId, noticeId, userId);
+    expect((await items(db, tenantId, noticeId)).find((r) => r.id === takuhai.id)).toMatchObject({ status: "resolved", recoveredAmount: 81700 });
+
+    // 未対応に戻すと、日付と額は外れる
+    await setItemStatus(db, tenantId, userId, { itemId: takuhai.id, status: "open", note: null });
+    after = await items(db, tenantId, noticeId);
+    expect(after.find((r) => r.id === takuhai.id)).toMatchObject({ status: "open", askedAt: null, resolvedAt: null, recoveredAmount: null });
+    await client.close();
+  });
+
+  it("問い合わせたあとで直したお支払通知が届いたら：差は「解決」の記録として残り、取り戻せた額を入れられる", async () => {
+    const { db, client, tenantId, a, noticeId, userId } = await setup();
+    await importNotice(db, tenantId, userId, { clientId: a.id, month: DEMO_MONTH, fileName: "見本.csv", bytes: sjis(), replace: true });
+    const before = await items(db, tenantId, noticeId);
+    const takuhai = before.find((r) => r.label === "宅配（個建て）")!;
+    const yakan = before.find((r) => r.label === "夜間便")!;
+    await markItemsAsked(db, tenantId, userId, { noticeId, itemIds: [takuhai.id, yakan.id] });
+    await setItemStatus(db, tenantId, userId, { itemId: yakan.id, status: "asked", note: "11/2 メールで問い合わせ" });
+
+    // 元請から直したお支払通知（宅配 4,950個・夜間便 12,000円。待機料の行は無い）
+    const fixed = csv("品目,数量,単価,金額\n宅配,4950,190,940500\n企業配,61,22000,1342000\n夜間便,20,12000,240000\n");
+    const res = await importNotice(db, tenantId, userId, { clientId: a.id, month: DEMO_MONTH, fileName: "直し.csv", bytes: fixed, replace: true });
+    // 問い合わせ済みの 2 件は「解決」として残し、未対応だった待機料は消す
+    expect(res.run).toMatchObject({ items: 0, settledByRerun: 2, removed: 1 });
+    const after = await items(db, tenantId, noticeId);
+    expect(after.map((r) => [r.label, r.status, r.diff])).toEqual([
+      ["宅配（個建て）", "resolved", -81700],
+      ["夜間便", "resolved", -10000],
+    ]);
+    expect(after.find((r) => r.id === yakan.id)!.note).toBe(`11/2 メールで問い合わせ\n${GONE_NOTE}`);
+    expect(after.every((r) => r.resolvedAt instanceof Date && r.askedAt instanceof Date)).toBe(true);
+
+    let view = await loadNoticeView(db, tenantId, noticeId);
+    expect(view.stale).toBe(false);
+    expect(view.display.map((i) => [i.label, i.current])).toEqual([
+      ["宅配（個建て）", false],
+      ["夜間便", false],
+    ]);
+    expect(view.totals).toMatchObject({ short: 0, over: 0, settledCount: 2, recovered: 0 });
+
+    // 取り戻せた額を入れる（宅配は 11 月分に上乗せで 81,700円、夜間便は差額 10,000円 が入金）
+    await setItemStatus(db, tenantId, userId, { itemId: takuhai.id, status: "resolved", note: null, recoveredAmount: 81700 });
+    await setItemStatus(db, tenantId, userId, { itemId: yakan.id, status: "resolved", note: "12/10 入金", recoveredAmount: 10000 });
+    view = await loadNoticeView(db, tenantId, noticeId);
+    expect(view.totals).toMatchObject({ recovered: 91700, recoveredCount: 2 });
+    const report = await loadReport(db, tenantId, DEMO_MONTH, DEMO_MONTH);
+    const cell = report.cells.find((c) => c.clientName === "A物流（架空）")!;
+    expect(cell).toMatchObject({ short: 0, settled: 2, recovered: 91700, stale: false });
+    expect(cell.items.map((i) => [i.label, i.current, i.recoveredAmount])).toEqual([
+      ["宅配（個建て）", false, 81700],
+      ["夜間便", false, 10000],
+    ]);
+    // もう一度突き合わせても、記録はそのまま
+    expect(await runReconcile(db, tenantId, noticeId, userId)).toMatchObject({ settledByRerun: 0, removed: 0 });
+    expect((await items(db, tenantId, noticeId)).map((r) => r.recoveredAmount)).toEqual([81700, 10000]);
+    await client.close();
+  });
+
+  it("1 日 1 行の大きなお支払通知（2,400 行）も読み、名前ごとにまとめて突き合わせる", async () => {
+    const { db, client, tenantId, a, P, userId } = await setup();
+    const rows = ["日付,ドライバー,品目,数量,単価,金額"];
+    for (let i = 0; i < 2400; i++) rows.push(`2026/10/${String((i % 31) + 1).padStart(2, "0")},青木 翔太,宅配,2,190,380`);
+    rows.push(",,合計,,,912000");
+    const res = await importNotice(db, tenantId, userId, { clientId: a.id, month: DEMO_MONTH, fileName: "毎日.csv", bytes: csv(rows.join("\n")), replace: true });
+    expect(res).toMatchObject({ lineCount: 2400, problem: null, warnings: [] });
+    const view = await loadNoticeView(db, tenantId, res.noticeId);
+    expect(view.lineGroups).toHaveLength(1);
+    expect(view.lineGroups[0]).toMatchObject({ raw: "宅配", count: 2400, qty: 4800, price: 190, amount: 912000, role: "project" });
+    // 宅配：4,800 個 × 190円 = 912,000円 と 当社 4,950 個 = 940,500円（−28,500円）。企業配・夜間便は通知に無い
+    expect(view.items.map((i) => [i.kind, i.label, i.diff])).toEqual([
+      ["missing", "企業配（日当）", -1342000],
+      ["qty", "宅配（個建て）", -28500],
+      ["missing", "夜間便", -240000],
+    ]);
+    expect(view.live.drivers?.find((d) => d.driverName === "青木 翔太" && d.projectName === "宅配（個建て）")).toMatchObject({ ourQty: 2310, theirQty: 4800 });
+    const lines = await db.select().from(s.paymentNoticeLines).where(eq(s.paymentNoticeLines.noticeId, res.noticeId));
+    expect(lines).toHaveLength(2400);
+    expect(lines.every((l) => l.projectId === P["宅配（個建て）"].id && l.driverId !== null)).toBe(true);
     await client.close();
   });
 

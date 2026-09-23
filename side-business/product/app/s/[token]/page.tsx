@@ -95,7 +95,7 @@ export default async function DriverStatementPage({ params }: { params: Promise<
 
       <section id="questions" className="mt-8 scroll-mt-4">
         <h2 className="text-lg font-bold">質問・会社とのやりとり</h2>
-        <p className="mt-1 text-sm text-muted-foreground">分からないところ・違うと思うところは、ここから会社へ送れます。電話をしなくても大丈夫です。</p>
+        <p className="mt-1 text-sm text-muted-foreground">分からないところ・違うと思うところは、ここから会社へ送れます。電話をかけなくても、文字で届きます。</p>
         {data.threads.length > 0 && (
           <div className="mt-3 space-y-3">
             {data.threads.map((t) => (

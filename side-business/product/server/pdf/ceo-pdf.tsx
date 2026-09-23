@@ -187,7 +187,9 @@ function CeoPage({ sheet, generatedAt }: { sheet: CeoSheet; generatedAt: Date })
 
         <View style={st.box} wrap={false}>
           <T style={st.boxTitle}>元請の支払通知との突合</T>
-          {r.notices === 0 ? (
+          {r.error ? (
+            <T>{r.error}</T>
+          ) : r.notices === 0 ? (
             <T>この月の支払通知はまだ取り込んでいません。</T>
           ) : r.count === 0 ? (
             <T>まだ片付いていない差の記録はありません（支払通知 {r.notices}件）。</T>
@@ -196,11 +198,12 @@ function CeoPage({ sheet, generatedAt }: { sheet: CeoSheet; generatedAt: Date })
               <T style={[st.big, r.net < 0 ? { color: RED } : {}]}>
                 {r.count}件・合計 {signedYen(r.net)}
               </T>
-              {r.shortCount > 0 ? <T>当社の記録より少ない分：{r.shortCount}件・{en(r.short)}</T> : null}
-              {r.overCount > 0 ? <T>当社の記録より多い分：{r.overCount}件・{en(r.over)}</T> : null}
-              <T style={st.small}>未対応と問い合わせ済みの差の合計です。</T>
+              {r.shortCount > 0 ? <T>支払通知が当社の記録より少ない：{r.shortCount}件・{en(r.short)}</T> : null}
+              {r.overCount > 0 ? <T>支払通知が当社の記録より多い：{r.overCount}件・{en(r.over)}</T> : null}
+              <T style={st.small}>未対応と問い合わせ済みの差の合計です（突合の画面と同じ数え方）。</T>
             </View>
           )}
+          {!r.error && r.unread > 0 ? <T style={st.small}>行を読み取れていない支払通知が {r.unread}件あります。突合の画面で列を選び直してください。</T> : null}
         </View>
 
         <View style={st.box} wrap={false}>
@@ -235,9 +238,11 @@ function CeoPage({ sheet, generatedAt }: { sheet: CeoSheet; generatedAt: Date })
               {c.deemed > 0 ? `（ほかに みなし確認 ${c.deemed}人）` : ""}
             </T>
           )}
+          {c.stale ? <T style={st.small}>保存した明細は、今の稼働・設定と違うところがあります。明細を作り直すと、確認の数も変わります。</T> : null}
           <T>
             振込額の合計 <T style={{ fontWeight: 700 }}>{en(sheet.transfer.total)}</T>（{sheet.transfer.people}人）
           </T>
+          {sheet.transfer.notPositive > 0 ? <T style={st.small}>差し引きが 0 円以下で振込の無い方：{sheet.transfer.notPositive}人（控除の中身を確かめてください）</T> : null}
           <T>振込予定日 {dateWithWeekday(sheet.transfer.payDate)}</T>
         </View>
       </View>

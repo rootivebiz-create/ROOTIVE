@@ -12,7 +12,9 @@ export function csvLine(cells: CsvCell[]): string {
   return cells
     .map((c) => {
       if (c === null || c === undefined) return "";
-      const v = typeof c === "number" ? String(c) : c;
+      if (typeof c === "number") return String(c);
+      // 表計算ソフトで式として動かないようにする（= + @ や、数でない - で始まる文字）
+      const v = /^[=+@\t\r]/.test(c) || /^-(?!\d+(\.\d+)?$)/.test(c) ? `'${c}` : c;
       return /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
     })
     .join(",");

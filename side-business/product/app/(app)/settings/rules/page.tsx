@@ -11,11 +11,11 @@ import { getDb } from "~/db/client";
 import { requirePageUser, roleAtLeast } from "~/server/auth";
 import { listDrivers } from "~/server/features/settings/drivers";
 import { rateToPercent, ruleValueText } from "~/server/features/settings/format";
-import { listRules, ruleImpact, usedRuleIds, type RuleListItem } from "~/server/features/settings/rules";
+import { listRules, ruleImpactOfMonth, usedRuleIds, type RuleListItem } from "~/server/features/settings/rules";
 import { DAMAGE_WORDS, FEE_WORDS } from "~/server/features/watch/rules";
 import { SOURCES } from "~/server/features/watch/sources";
 import { monthFromParam, monthLabelJa, monthParam } from "~/server/month";
-import { getTenant, isMonthClosed } from "~/server/repo";
+import { getTenant } from "~/server/repo";
 import { createRuleAction, deleteRuleAction, setRuleActiveAction, updateRuleAction } from "./actions";
 
 export const metadata = { title: "控除のルール" };
@@ -46,19 +46,22 @@ export default async function RulesPage({ searchParams }: { searchParams: Promis
   const month = monthFromParam(sp.m);
   const canEdit = roleAtLeast(user.role, "staff");
   const db = await getDb();
-  const [tenant, { rows: drivers }, rules, impact, used, closed] = await Promise.all([
+  const [tenant, { rows: drivers }, rules, monthImpact, used] = await Promise.all([
     getTenant(db, user.tenantId),
     listDrivers(db, user.tenantId, { status: "all" }),
     listRules(db, user.tenantId),
-    ruleImpact(db, user.tenantId, month),
+    ruleImpactOfMonth(db, user.tenantId, month),
     usedRuleIds(db, user.tenantId),
-    isMonthClosed(db, user.tenantId, month),
   ]);
+  const { closed, byRule: impact } = monthImpact;
+  // 締めた月なのに明細の写しが 1 件も無い（明細を作らずに締めた月など）
+  const closedWithoutCopies = closed && monthImpact.statements === 0;
   const driverFilter = sp.driver && drivers.some((d) => d.id === sp.driver) ? sp.driver : undefined;
   const shown = driverFilter ? rules.filter((r) => r.driverId === null || r.driverId === driverFilter) : rules;
   const rounding = { amount: tenant.amountRounding as Rounding, tax: tenant.taxRounding as Rounding };
   const driverOptions = drivers.map((d) => ({ id: d.id, name: d.name, code: d.code, active: d.active }));
   const notAgreed = rules.filter((r) => r.active && !r.agreedInWriting).length;
+  const others = rules.map((r) => ({ id: r.id, name: r.name, driverId: r.driverId, driverName: r.driverName, active: r.active }));
   const m = monthParam(month);
 
   return (
@@ -75,9 +78,11 @@ export default async function RulesPage({ searchParams }: { searchParams: Promis
         }
       />
       <p className="text-sm text-muted-foreground">
-        {closed
-          ? `金額の欄は、${monthLabelJa(month)}の締めたときの明細で実際に引いた額です。締めた月の明細は、ルールを変えても変わりません。`
-          : `金額の欄は、${monthLabelJa(month)}のいまの稼働で明細を計算したときの当たり方です。まだ締めていない月の明細は、作り直すとルールの変更が反映されます。`}
+        {closedWithoutCopies
+          ? `${monthLabelJa(month)}は締めてありますが、この月の明細の写しがありません。そのため、この月に引いた額はここでは出せません。ほかの月は上の ‹ › で見られます。`
+          : closed
+            ? `金額の欄は、${monthLabelJa(month)}の締めたときの明細で実際に引いた額です。締めた月の明細は、ルールを変えても変わりません。`
+            : `金額の欄は、${monthLabelJa(month)}のいまの稼働で明細を計算したときの当たり方です。まだ締めていない月の明細は、作り直すとルールの変更が反映されます。`}
       </p>
 
       {canEdit && (
@@ -92,6 +97,7 @@ export default async function RulesPage({ searchParams }: { searchParams: Promis
               damageWords={DAMAGE_WORDS.source}
               submitLabel="追加する"
               defaultDriverId={driverFilter}
+              others={others}
             />
           </Expand>
         </Card>
@@ -121,7 +127,10 @@ export default async function RulesPage({ searchParams }: { searchParams: Promis
 
       {shown.length === 0 ? (
         <EmptyState title="控除のルールはまだありません">
-          <p>引くものが無ければ、登録しなくて大丈夫です。今の Excel にロイヤリティや管理費の列があれば、上の「控除を追加」のひな形から登録できます。</p>
+          <p>
+            引くものが無ければ、登録しなくて大丈夫です。
+            {canEdit ? "今の Excel にロイヤリティや管理費の列があれば、上の「控除を追加」のひな形から登録できます。" : "登録は事務・オーナーの方がします。"}
+          </p>
         </EmptyState>
       ) : (
         <ul className="space-y-2">
@@ -153,7 +162,9 @@ export default async function RulesPage({ searchParams }: { searchParams: Promis
                         <span className="text-xs text-muted-foreground">（税抜）</span>
                       </>
                     ) : (
-                      <span className="text-muted-foreground">{closed ? "この月は引いていません" : r.active ? "当たる人はいません" : "使わないので引きません"}</span>
+                      <span className="text-muted-foreground">
+                        {closedWithoutCopies ? "明細の写しが無いので出せません" : closed ? "この月は引いていません" : r.active ? "当たる人はいません" : "使わないので引きません"}
+                      </span>
                     )}
                   </p>
                   {canEdit && (
@@ -166,6 +177,7 @@ export default async function RulesPage({ searchParams }: { searchParams: Promis
                         feeWords={FEE_WORDS.source}
                         damageWords={DAMAGE_WORDS.source}
                         submitLabel="保存"
+                        others={others}
                       />
                       <div className="flex flex-wrap gap-2 border-t border-border pt-3">
                         <ActionButton action={setRuleActiveAction} hidden={{ id: r.id, active: r.active ? "0" : "1" }} label={r.active ? "使わないにする" : "使うように戻す"} />

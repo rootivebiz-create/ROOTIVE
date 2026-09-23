@@ -105,7 +105,7 @@ export function parseProjectRows(input: ProjectRowInput[], clients: ExistingClie
     }
     const client = clientName ? matchClient(clientName, clients) : null;
     if (!clientName) warnings.push("元請が空です。元請ごとの利益や、支払通知との突合に使うので、分かれば入れてください");
-    else if (!client) newClients.set(normalizeName(clientName), clientName);
+    else if (!client && !newClients.has(normalizeName(clientName))) newClients.set(normalizeName(clientName), clientName);
     if (billRate === 0) warnings.push("受注単価が 0 円です。利益の計算に使うので、分かれば入れてください");
     if (billRate !== null && payRate !== null && payRate > billRate && billRate > 0) {
       warnings.push("支払単価が受注単価より高くなっています。入れ違いでないか確かめてください");

@@ -110,8 +110,8 @@ async function activeOwnersExcept(t: Db, tenantId: string, exceptId: string): Pr
 
 /**
  * 招待の前の確かめ。
- * - もう使っている人（止めていない）なら招待しない
- * - 止めている人なら、役割を招待の役割にそろえる（招待を受けると再開になる）
+ * - もう使っている人（止めていない・パスワードを決めてある）なら招待しない
+ * - 止めている人・パスワードをまだ決めていない人なら、役割を招待の役割にそろえる（招待を受けると入れるようになる）
  * - ほかの会社で使われているメールアドレスは使えない（ログインで見分けられないため）
  * - 同じアドレスへの古い招待は無効にする
  */
@@ -121,10 +121,18 @@ export async function prepareInvite(db: Db, tenantId: string, input: InviteInput
   if (sameEmail.some((u) => u.tenantId !== tenantId)) {
     throw new UserError("このメールアドレスでは招待できません（同じアドレスがほかで使われています）。別のメールアドレスをお使いください。");
   }
-  if (here && !here.disabledAt) {
+  if (here && !here.disabledAt && here.passwordHash) {
     throw new UserError(`${here.name}さん（${here.email}）はもう利用者です。役割を変えるときは、一覧の「役割」から変えてください。`);
   }
-  if (here) {
+  if (here && here.role !== input.role) {
+    // 最後のオーナーを、招待し直しで外さない（パスワードをまだ決めていないオーナーだけの会社など）
+    if (here.role === "owner" && !here.disabledAt) {
+      const owners = await db
+        .select({ id: s.users.id })
+        .from(s.users)
+        .where(and(eq(s.users.tenantId, tenantId), eq(s.users.role, "owner"), isNull(s.users.disabledAt), ne(s.users.id, here.id)));
+      if (owners.length === 0) throw new UserError(LAST_OWNER);
+    }
     await db
       .update(s.users)
       .set({ role: input.role })
@@ -134,7 +142,7 @@ export async function prepareInvite(db: Db, tenantId: string, input: InviteInput
     .update(s.invites)
     .set({ expiresAt: now })
     .where(and(eq(s.invites.tenantId, tenantId), eq(s.invites.email, input.email), isNull(s.invites.usedAt), gt(s.invites.expiresAt, now)));
-  return { reactivates: !!here };
+  return { reactivates: !!here?.disabledAt };
 }
 
 /** 招待を取り消す（期限を今にする。記録は残る） */

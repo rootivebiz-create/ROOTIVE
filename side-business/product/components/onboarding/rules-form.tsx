@@ -27,12 +27,12 @@ function templateRows(taken: Set<string>): Row[] {
 }
 
 /** 控除のルール：ひな形から選び、取引条件に書いて合意しているかに印を付ける */
-export function RulesForm({ existing }: { existing: string[] }) {
+export function RulesForm({ existing, nextHref }: { existing: string[]; nextHref: string }) {
   const [round, setRound] = useState(0);
-  return <RulesFormInner key={round} existing={existing} onAgain={() => setRound((n) => n + 1)} />;
+  return <RulesFormInner key={round} existing={existing} nextHref={nextHref} onAgain={() => setRound((n) => n + 1)} />;
 }
 
-function RulesFormInner({ existing, onAgain }: { existing: string[]; onAgain: () => void }) {
+function RulesFormInner({ existing, nextHref, onAgain }: { existing: string[]; nextHref: string; onAgain: () => void }) {
   const taken = new Set(existing);
   const [rows, setRows] = useState<Row[]>(() => templateRows(taken));
   const [asking, setAsking] = useState(false);
@@ -61,7 +61,7 @@ function RulesFormInner({ existing, onAgain }: { existing: string[]; onAgain: ()
     const r = state.data;
     return (
       <div role="status" className="space-y-3 rounded-card border border-success/40 bg-success/10 p-4">
-        <p className="text-lg font-bold text-success">控除のルールを {r.created} 件登録しました</p>
+        <p className="text-lg font-bold text-success">{r.created > 0 ? `控除のルールを ${r.created} 件登録しました` : "新しく登録した控除はありません"}</p>
         {r.skipped.length > 0 && <p className="text-sm">同じ名前のルールがすでにあった {r.skipped.join("、")} は登録していません。</p>}
         {r.notAgreed.length > 0 && (
           <p className="text-sm">
@@ -69,7 +69,7 @@ function RulesFormInner({ existing, onAgain }: { existing: string[]; onAgain: ()
           </p>
         )}
         <div className="flex flex-col gap-2 sm:flex-row">
-          <Link href="/onboarding" className="inline-flex min-h-11 items-center justify-center rounded-lg bg-primary px-4 text-sm font-bold text-primary-foreground no-underline">
+          <Link href={nextHref} className="inline-flex min-h-11 items-center justify-center rounded-lg bg-primary px-4 text-sm font-bold text-primary-foreground no-underline">
             次の手順「先月の Excel を取り込む」へ →
           </Link>
           <Button variant="secondary" onClick={onAgain}>

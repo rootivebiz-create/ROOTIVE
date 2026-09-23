@@ -79,7 +79,7 @@ export default async function OnboardingPage() {
                   <Badge tone={TONE[state]}>{STATE_LABEL[state]}</Badge>
                 </div>
                 <p className="mt-2 text-sm">{def.summary}</p>
-                {note && <p className="mt-1 text-sm text-muted-foreground">{note}（登録済みのデータがあるので、済みにしています）</p>}
+                {note && <p className="mt-1 text-sm text-muted-foreground">{state === "auto" ? `${note}（登録済みのデータがあるので、済みにしています）` : note}</p>}
                 {ownerNote && <p className="mt-1 text-sm text-muted-foreground">会社の基本を保存できるのはオーナーの方です。中身は見られます。</p>}
                 <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-start">
                   <Link href={stepHref(def, lastMonth)} className={buttonClass(state === "todo" ? "primary" : "secondary", "w-full sm:w-auto")}>

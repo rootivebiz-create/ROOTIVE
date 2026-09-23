@@ -13,6 +13,8 @@
  * 消費税の書き方：
  *   inclusive（弥生会計・マネーフォワード）… 金額は税込、そのうちの消費税の額を「税金額」「税額」の列に入れる
  *   separate（汎用 CSV）… 金額は税抜、消費税は「仮払消費税等」「仮受消費税等」の別の行にする
+ *   ただしインボイスの登録が無い方への支払（委託料・上乗せの調整）は、明細の「消費税相当額」と会社が控除できる額が違う
+ *   （経過措置の割合がかかる）ので、税込の額を 1 行にして税額は書かない（割合での計算は会計ソフトの税区分に任せる）
  * 勘定科目と税区分は会社ごとに変えられる（既定の値は「要確認」として見せる）。
  */
 import type { StatementDraft } from "~/server/calc/statement";
@@ -49,7 +51,7 @@ export const SOFTWARE: Record<SoftwareKey, SoftwareInfo> = {
     about: [
       "弥生会計の「仕訳データのインポート」で読み込む形（見出しの行なし・1 行 25 項目・Shift_JIS）です。",
       "ドライバー 1 人を 1 枚の伝票（複数行の仕訳）にしています。",
-      "金額は税込で、そのうちの消費税の額を「税金額」の列に入れています。",
+      "金額は税込で、そのうちの消費税の額を「税金額」の列に入れています。インボイスの登録が無い方への委託料は、経過措置の割合がかかるため、税金額を空けています（取り込んだあと、税額が期待どおりか確かめてください）。",
     ],
   },
   freee: {
@@ -62,6 +64,7 @@ export const SOFTWARE: Record<SoftwareKey, SoftwareInfo> = {
     about: [
       "freee には、弥生会計の形式の仕訳を取り込む機能があります。そのため freee を選んだときも、弥生会計のインポート形式と同じファイルを出します（freee 専用の形ではありません）。",
       "税区分の名前は、弥生会計の名前で書いています。取り込み方は freee のヘルプ（仕訳のインポート）で確かめてください。",
+      "金額は税込で、インボイスの登録が無い方への委託料は税金額を空けています（取り込んだあと、税額が期待どおりか確かめてください）。",
     ],
   },
   mf: {
@@ -73,7 +76,7 @@ export const SOFTWARE: Record<SoftwareKey, SoftwareInfo> = {
     encoding: "utf8bom",
     about: [
       "マネーフォワード クラウド会計の「仕訳帳」の列の並び（見出しの行あり・UTF-8）で出します。",
-      "同じ「取引No」の行が 1 つの仕訳です。金額は税込で、そのうちの消費税の額を「税額」の列に入れています。",
+      "同じ「取引No」の行が 1 つの仕訳です。金額は税込で、そのうちの消費税の額を「税額」の列に入れています。インボイスの登録が無い方への委託料は、経過措置の割合がかかるため、税額を空けています（取り込んだあと、税額が期待どおりか確かめてください）。",
       "マネーフォワードでも、弥生会計の形式の仕訳を取り込めます。こちらの形で読めないときは「弥生会計」を選んで出したファイルもお試しください。",
     ],
   },
@@ -87,6 +90,7 @@ export const SOFTWARE: Record<SoftwareKey, SoftwareInfo> = {
     about: [
       "ほかの会計ソフトや、税理士さんに渡すための CSV（見出しの行あり・UTF-8）です。",
       "金額は税抜で、消費税は「仮払消費税等」「仮受消費税等」の別の行にしています。",
+      "インボイスの登録が無い方への委託料は、消費税相当額を含めた税込の額を 1 行にしています（経過措置でどこまで控除できるかの割合がかかるため、仮払消費税等の行を作りません）。",
     ],
   },
 };
@@ -179,7 +183,7 @@ function defaultTaxLabel(format: FormatKey, key: string): string {
     if (key === "purchase") return "課税仕入10%";
     if (key === "sales") return "課税売上10%";
     if (key === "none") return "対象外";
-    if (exempt) return Number(exempt[1]) === 0 ? "対象外" : `課税仕入10%（経過措置${exempt[1]}%）`;
+    if (exempt) return Number(exempt[1]) === 0 ? "対象外" : `課税仕入10%（経過措置${exempt[1]}%・税込）`;
   }
   return "";
 }
@@ -331,7 +335,24 @@ function pairRow(debit: SideSpec, credit: SideSpec, amount: number, memo: string
   return { debit: { ...c, tax: flip(c.tax) }, credit: { ...d, tax: flip(d.tax) }, amount: -amount, memo };
 }
 
-const names = (list: { name?: string; label?: string }[]) => list.map((x) => x.name ?? x.label ?? "").filter(Boolean).join("・");
+/** 摘要に入れる名前の数の目安（会計ソフトの摘要は長さに上限があるため、多いときは「ほか n 件」にまとめる） */
+export const MEMO_NAMES_MAX = 20;
+
+/** 控除・調整の名前を「・」でつなぐ。長くなるときは入るところまでにして「ほか n 件」 */
+export function memoNames(list: { name?: string; label?: string }[]): string {
+  const all = list.map((x) => x.name ?? x.label ?? "").filter(Boolean);
+  const joined = all.join("・");
+  if (joined.length <= MEMO_NAMES_MAX || all.length <= 1) return joined;
+  const kept: string[] = [];
+  for (const n of all) {
+    if ([...kept, n].join("・").length > MEMO_NAMES_MAX - 6) break;
+    kept.push(n);
+  }
+  if (kept.length === 0) kept.push(all[0]);
+  return `${kept.join("・")}ほか${all.length - kept.length}件`;
+}
+
+const names = memoNames;
 
 /** 1 人ぶんの伝票の行（明細の数字だけを使う。計算し直さない） */
 export function slipRows(d: StatementDraft, m: Mapping, taxMode: SoftwareInfo["taxMode"]): JournalRow[] {
@@ -346,12 +367,17 @@ export function slipRows(d: StatementDraft, m: Mapping, taxMode: SoftwareInfo["t
   const rows: (JournalRow | null)[] = [];
   const push = (debit: SideSpec, credit: SideSpec, amount: number, memo: string) => rows.push(pairRow(debit, credit, amount, memo, m, name));
 
-  // 1. 委託料（消費税を払わない設定の免税の方は、税額を空けてソフトに任せる）
+  // 1. 委託料
+  //   登録のある方：税込の額と、明細の消費税の額（税金額の列・または仮払消費税等の行）
+  //   登録の無い方：明細の「消費税相当額」は、会社が控除できる仕入の消費税とは額が違う（経過措置の割合がかかる）。
+  //     そのため税込の額を 1 行にし、税額は書かない（経過措置の割合での税額は、会計ソフトの税区分の設定に任せる）
   if (taxMode === "inclusive") {
-    push({ role: "outsourcing", taxKey: purchaseKey, tax: d.tax > 0 ? d.tax : null, invoiceKey }, payable, d.subtotal + d.tax, `${prefix} 委託料`);
-  } else {
+    push({ role: "outsourcing", taxKey: purchaseKey, tax: registered && d.tax > 0 ? d.tax : null, invoiceKey }, payable, d.subtotal + d.tax, `${prefix} 委託料`);
+  } else if (registered) {
     push({ role: "outsourcing", taxKey: purchaseKey }, payable, d.subtotal, `${prefix} 委託料`);
     push({ role: "inputTax", taxKey: "none" }, payable, d.tax, `${prefix} 委託料の${taxWord}`);
+  } else {
+    push({ role: "outsourcing", taxKey: purchaseKey }, payable, d.subtotal + d.tax, `${prefix} 委託料`);
   }
 
   // 2. 控除（会社の売上）。消費税のかかるものとかからないものに分ける
@@ -376,10 +402,14 @@ export function slipRows(d: StatementDraft, m: Mapping, taxMode: SoftwareInfo["t
   if (taxedAdj.length > 0) {
     const net = taxedAdj.reduce((a, x) => a + x.amount, 0);
     const memo = `${prefix} ${names(taxedAdj)}`;
+    const gross = net + d.adjustmentTax;
     if (taxMode === "inclusive") {
-      const gross = net + d.adjustmentTax;
-      if (gross >= 0) push({ role: "adjustmentPlusTaxable", taxKey: purchaseKey, tax: d.adjustmentTax, invoiceKey }, payable, gross, memo);
+      // 増やすものは仕入の側（登録の無い方は委託料と同じく税額を書かない）、減らすものは会社の売上の側
+      if (gross >= 0) push({ role: "adjustmentPlusTaxable", taxKey: purchaseKey, tax: registered ? d.adjustmentTax : null, invoiceKey }, payable, gross, memo);
       else push(payable, { role: "adjustmentMinusTaxable", taxKey: "sales", tax: -d.adjustmentTax }, -gross, memo);
+    } else if (gross >= 0 && !registered) {
+      // 登録の無い方への上乗せは、委託料と同じく税込の 1 行
+      push({ role: "adjustmentPlusTaxable", taxKey: purchaseKey }, payable, gross, memo);
     } else {
       if (net >= 0) push({ role: "adjustmentPlusTaxable", taxKey: purchaseKey }, payable, net, memo);
       else push(payable, { role: "adjustmentMinusTaxable", taxKey: "sales" }, -net, memo);
@@ -421,7 +451,11 @@ export function buildSlips(drafts: StatementDraft[], m: Mapping, taxMode: Softwa
   const slips: Slip[] = [];
   for (const d of sortByDriverCode(drafts)) {
     const rows = slipRows(d, m, taxMode);
-    if (rows.length === 0) continue;
+    if (rows.length === 0) {
+      // 仕訳の行が無い人は、振込額も 0 のはず（違えば作らない）
+      if (d.total !== 0) throw new JournalMismatchError(`${d.driver.name}さんの仕訳が作れず、明細の振込額（${d.total}円）と合いません`);
+      continue;
+    }
     const debitTotal = rows.reduce((a, r) => a + r.amount, 0);
     const creditTotal = rows.reduce((a, r) => a + r.amount, 0);
     const payableNet = payableNetOf(rows);

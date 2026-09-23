@@ -39,8 +39,10 @@ export default async function NoticePage({ params, searchParams }: { params: Pro
   const canEdit = roleAtLeast(user.role, "staff");
   let view = await load(user.tenantId, id);
   if (!view) notFound();
-  // まだ一度も突き合わせていない通知（保存した差が無い）は、開いたときに突き合わせる（状態・メモが無いので失うものが無い）
-  if (canEdit && view.stale && view.items.length === 0) {
+  // まだ一度も突き合わせていない通知（保存した差が無い）は、開いたときに突き合わせる（状態・メモが無いので失うものが無い）。
+  // 保存できないデモ（DEMO_READONLY）では書かない
+  const readonlyDemo = process.env.DEMO_MODE === "1" && process.env.DEMO_READONLY === "1";
+  if (canEdit && !readonlyDemo && view.stale && view.items.length === 0) {
     await runReconcile(await getDb(), user.tenantId, id, user.id);
     view = (await load(user.tenantId, id))!;
   }
@@ -50,7 +52,10 @@ export default async function NoticePage({ params, searchParams }: { params: Pro
   const m = monthParam(notice.month);
   const noLines = view.lineGroups.length === 0;
   const unsettled = view.display.filter((i) => isUnsettled(i.status) && i.diff !== 0);
-  const matched = live.projects.filter((p) => p.diff === 0);
+  const currentItems = view.display.filter((i) => i.current);
+  const historyItems = view.display.filter((i) => !i.current);
+  const matched = live.projects.filter((p) => p.diff === 0 || p.roundingOnly);
+  const closingDay = view.client?.closingDay ?? 0;
   const driverDiffs = live.drivers?.filter((d) => d.theirQty === null || Math.abs(d.theirQty - d.ourQty) > 1e-6) ?? [];
   const unknownGroups = view.lineGroups.filter((g) => g.role === "unknown");
   const unknownDrivers = view.driverGroups.filter((g) => !g.driverId && !g.remembered);
@@ -139,7 +144,7 @@ export default async function NoticePage({ params, searchParams }: { params: Pro
           </div>
           <Card className="mt-3">
             <div className="divide-y divide-border">
-              <Pair label="当社の記録（稼働の数量 × 受注単価）">
+              <Pair label={view.snapshotRates ? "当社の記録（稼働の数量 × 締めたときの受注単価）" : "当社の記録（稼働の数量 × 受注単価）"}>
                 <Money value={live.ourTotal} />
               </Pair>
               <Pair label="お支払通知（突き合わせの対象）">
@@ -158,9 +163,15 @@ export default async function NoticePage({ params, searchParams }: { params: Pro
                   <DiffAmount value={totals.settledNet} />
                 </Pair>
               )}
+              {totals.recoveredCount > 0 && (
+                <Pair label={`取り戻せた額（解決にして額を入れた ${totals.recoveredCount}件。確定したお金）`}>
+                  <Money value={totals.recovered} className="font-bold text-success" />
+                </Pair>
+              )}
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
               差は、当社の記録とお支払通知の「記録の違い」です。払われていないと決まったものではありません。どちらが正しいかは、元請に確かめてください。
+              {view.snapshotRates && " この月は締めてあるので、受注単価は締めたときの明細の写しの単価を使っています。"}
             </p>
           </Card>
         </>
@@ -190,8 +201,29 @@ export default async function NoticePage({ params, searchParams }: { params: Pro
         </Section>
       )}
 
-      {!noLines && (live.chargeWarnings.length > 0 || unknownGroups.length > 0 || (view.batch?.warnings.length ?? 0) > 0) && (
+      {!noLines && (live.chargeWarnings.length > 0 || unknownGroups.length > 0 || (view.batch?.warnings.length ?? 0) > 0 || live.zeroRateProjects.length > 0 || closingDay !== 0) && (
         <div className="mt-4 space-y-2">
+          {live.zeroRateProjects.length > 0 && (
+            <p className="rounded-lg border border-danger/40 bg-danger/10 p-3 text-sm">
+              受注単価が 0 円の案件があります（{live.zeroRateProjects.map((p) => p.name).join("・")}）。当社の記録が 0 円になるため、この案件の差は正しくありません。
+              {canEdit ? (
+                <>
+                  {" "}
+                  <Link href="/settings" className="font-bold">
+                    設定
+                  </Link>
+                  で元請からもらう単価（税抜）を入れてから、「今の記録で突き合わせ直す」を押してください。
+                </>
+              ) : (
+                " 事務の方に、設定で受注単価を入れてもらってください。"
+              )}
+            </p>
+          )}
+          {closingDay !== 0 && (
+            <p className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm">
+              {clientName}の締め日は毎月{closingDay}日です。当社の記録は暦の月（1日〜末日）の稼働で数えているため、締めの期間の違いで差が出ることがあります。差が大きいときは、期間の違いでないか先に確かめてください。
+            </p>
+          )}
           {view.batch?.warnings.map((w) => (
             <p key={w} className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm">
               {w}
@@ -216,10 +248,10 @@ export default async function NoticePage({ params, searchParams }: { params: Pro
 
       {!noLines && (
         <Section
-          title={`違いの一覧（${view.display.length}件）`}
+          title={`違いの一覧（${currentItems.length}件）`}
           description="マイナスは、お支払通知が当社の記録より少ないもの（受け取りが少ない可能性）。扱いとメモを残しておくと、来月以降も同じ差の記録が続きます。"
         >
-          {view.display.length === 0 ? (
+          {currentItems.length === 0 ? (
             <Card className="border-success/40">
               <p className="font-bold text-success">当社の記録とお支払通知の金額は、案件ごとに一致しました</p>
               <p className="mt-1 text-sm text-muted-foreground">
@@ -228,7 +260,7 @@ export default async function NoticePage({ params, searchParams }: { params: Pro
             </Card>
           ) : (
             <ul className="space-y-3">
-              {view.display.map((it) => (
+              {currentItems.map((it) => (
                 <li key={it.id ?? it.key}>
                   <ItemCard item={it} canEdit={canEdit && !view.stale} />
                 </li>
@@ -238,13 +270,31 @@ export default async function NoticePage({ params, searchParams }: { params: Pro
         </Section>
       )}
 
+      {!noLines && historyItems.length > 0 && (
+        <Section
+          title={`片付いた差の記録（${historyItems.length}件）`}
+          description="問い合わせたあとで直ったお支払通知が届いたなど、今の突き合わせには出てこない差です。取り戻せた額を残しておくと、レポートの「取り戻せた額（確定）」に入ります。"
+        >
+          <ul className="space-y-3">
+            {historyItems.map((it) => (
+              <li key={it.id ?? it.key}>
+                <ItemCard item={it} canEdit={canEdit && !view.stale} />
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
+
       {matched.length > 0 && (
         <Section title={`一致した案件（${matched.length}件）`}>
           <ul className="space-y-2">
             {matched.map((p) => (
               <li key={p.projectId} className="flex flex-wrap items-baseline justify-between gap-2 rounded-lg border border-border bg-card px-4 py-3">
                 <span className="font-bold">{p.name}</span>
-                <span className="num text-sm text-muted-foreground">{formulaText(p.ourQty, p.ourPrice, p.ourAmount, p.unit)}</span>
+                <span className="num text-sm text-muted-foreground">
+                  {formulaText(p.ourQty, p.ourPrice, p.ourAmount, p.unit)}
+                  {p.roundingOnly && `（お支払通知は ${amountText(p.theirAmount)}。端数の扱いの違い ${amountText(p.diff)} は差に数えていません）`}
+                </span>
               </li>
             ))}
           </ul>

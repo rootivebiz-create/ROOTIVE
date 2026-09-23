@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { startTransition, useActionState, useMemo, useState, type FormEvent } from "react";
-import { Button } from "@/components/ui";
+import { Button, TableWrap } from "@/components/ui";
 import {
   createDriversAction,
   previewDriversAction,
@@ -12,12 +12,12 @@ import {
 import { Badge } from "~/components/page";
 import type { DriverPreviewRow } from "~/server/features/onboarding/drivers-parse";
 
-/** 貼り付けの見本（見出しつき・タブ区切り）。見出しが無いときも、この順で読む */
-const EXAMPLE = [
-  ["氏名", "フリガナ", "番号", "登録番号", "銀行コード", "支店コード", "口座番号", "口座名義"].join("\t"),
-  ["山田 太郎", "ヤマダ タロウ", "101", "T1234567890123", "0001", "001", "1234567", "ヤマダ タロウ"].join("\t"),
-  ["佐々木 花子", "ササキ ハナコ", "102", "", "0005", "123", "7654321", "ササキ ハナコ"].join("\t"),
-].join("\n");
+/**
+ * 名簿の形の見本（見せるだけ。枠には入れない：見本の人を本当に登録してしまわないように）。
+ * 見出しが無いときも、この列の順で読む。
+ */
+const EXAMPLE_HEADER = ["氏名", "フリガナ", "番号", "登録番号", "銀行コード", "支店コード", "口座番号", "口座名義"];
+const EXAMPLE_ROW = ["山田 太郎", "ヤマダ タロウ", "101", "T と 13 桁", "0001", "001", "1234567", "ヤマダ タロウ"];
 
 const STATUS: Record<DriverPreviewRow["status"], { label: string; tone: "green" | "gray" | "red" }> = {
   new: { label: "登録できます", tone: "green" },
@@ -66,7 +66,7 @@ function RowCard({ row, checked, onToggle }: { row: DriverPreviewRow; checked: b
             </>
           )}
           <dt className="text-muted-foreground">インボイス</dt>
-          <dd className="num">{d.registrationNo ? `登録済み ${d.registrationNo}` : "未登録（登録番号なし）"}</dd>
+          <dd className="num break-all">{d.registrationNo ? `登録番号あり ${d.registrationNo}` : "登録番号なし"}</dd>
           <dt className="text-muted-foreground">口座</dt>
           <dd className="num break-all">
             {d.bank ? `${d.bank.bankCode}-${d.bank.branchCode} ${d.bank.accountType === "checking" ? "当座" : "普通"} ${d.bank.accountNumber} ${d.bank.holderKana}` : "入れません"}
@@ -138,7 +138,7 @@ function DriversImportForm({ onAgain }: { onAgain: () => void }) {
     const r = created.data;
     return (
       <div role="status" className="space-y-3 rounded-card border border-success/40 bg-success/10 p-4">
-        <p className="text-lg font-bold text-success">{r.created}人を登録しました</p>
+        <p className="text-lg font-bold text-success">{r.created > 0 ? `${r.created}人を登録しました` : "新しく登録した人はいません"}</p>
         {r.skipped.length > 0 && <p className="text-sm">すでにいた {r.skipped.length}人（{r.skipped.join("、")}）は登録していません。</p>}
         {r.rejected.length > 0 && (
           <div className="text-sm">
@@ -183,16 +183,13 @@ function DriversImportForm({ onAgain }: { onAgain: () => void }) {
             placeholder={"氏名\tフリガナ\t番号\t登録番号\t銀行コード\t支店コード\t口座番号\t口座名義\n山田 太郎\tヤマダ タロウ\t101\tT1234567890123\t0001\t001\t1234567\tヤマダ タロウ"}
             className="mt-2 block w-full rounded-lg border border-border bg-card p-3 font-mono text-sm text-foreground focus:border-foreground"
           />
-          <div className="mt-2 flex flex-wrap gap-2">
-            <Button variant="ghost" onClick={() => setPaste(EXAMPLE)}>
-              見本を入れてみる
-            </Button>
-            {paste && (
+          {paste && (
+            <div className="mt-2">
               <Button variant="ghost" onClick={() => setPaste("")}>
                 枠を空にする
               </Button>
-            )}
-          </div>
+            </div>
+          )}
         </div>
         <div>
           <p className="font-bold">または、ファイルを選ぶ（CSV・Excel）</p>
@@ -215,6 +212,29 @@ function DriversImportForm({ onAgain }: { onAgain: () => void }) {
             見出しが無いときは「氏名・フリガナ・番号・登録番号・銀行コード・支店コード・口座番号・口座名義」の順として読みます。
           </p>
           <p className="mt-2">全角の数字・ハイフン入りの番号・先頭の 0 が消えた銀行コード（1 → 0001）も読めます。</p>
+          <p className="mt-2 font-bold">見本（この形でなくても読めます）</p>
+          <TableWrap>
+            <table className="mt-1 min-w-[560px] text-xs">
+              <thead>
+                <tr>
+                  {EXAMPLE_HEADER.map((h) => (
+                    <th key={h} className="border border-border bg-card px-2 py-1 text-left font-bold">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  {EXAMPLE_ROW.map((c, i) => (
+                    <td key={i} className="border border-border px-2 py-1">
+                      {c}
+                    </td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          </TableWrap>
         </details>
         <ErrorLine text={preview && !preview.ok ? preview.error : undefined} />
         <Button type="submit" disabled={previewing || (!paste.trim() && !fileName)} className="w-full sm:w-auto">

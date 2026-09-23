@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useActionState, useState, type FormEvent, type ReactNode } from "react";
+import { startTransition, useActionState, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Button, Field } from "@/components/ui";
 import { cx } from "@/lib/cx";
 import type { ActionResult } from "~/server/action";
@@ -174,6 +174,10 @@ export function ActionButton({
 }) {
   const { state, pending, onSubmit } = useFormAction(action);
   const [asking, setAsking] = useState(false);
+  // うまくいったら確かめの枠を閉じる（同じ場所に次の操作のボタンが出たとき、確かめが開いたままにならないように）
+  useEffect(() => {
+    if (state?.ok) setAsking(false);
+  }, [state]);
   return (
     <form onSubmit={onSubmit} className="min-w-0">
       {Object.entries(hidden).map(([k, v]) => (

@@ -8,6 +8,7 @@ import {
   deadlineHint,
   deemedNote,
   FEE_BEARER_WARNING,
+  isStandardNote,
   payRuleSentence,
   readNumber,
   ROUNDING_CHOICES,
@@ -112,7 +113,7 @@ export function CompanyForm({ action, initial, canEdit, today, month, periodWord
             label="インボイスに登録していない（免税の）方にも、消費税相当額を払う"
             hint={
               <>
-                チェックすると、登録していない方にも委託料の10%を「消費税相当額」として明細に載せて払います。取引条件を変えるときは、相手と話し合って決めることが求められます。{" "}
+                チェックすると、登録していない方にも委託料の10%を「消費税相当額」として明細に載せて払います。変えるときは、相手との話し合いの記録を残し、公取委の Q&A の確認をおすすめします。{" "}
                 <SourceLink href={sources.exemptQa}>公取委「免税事業者との取引」Q&A</SourceLink>
               </>
             }
@@ -173,6 +174,11 @@ export function CompanyForm({ action, initial, canEdit, today, month, periodWord
           <p className="text-sm text-muted-foreground">
             例：{jpMonth(month)}分の明細に書く支払日は <span className="font-bold text-foreground">{jpDate(payDate)}</span> です。
           </p>
+          {closingDay !== 0 && (
+            <Callout tone="gray">
+              {closingDay}日締めのときは、前の月の{closingDay}日の翌日から、その月の{closingDay}日までの稼働を「その月の分」として取り込んでください。明細の「対象期間」の欄は、いまは月の1日〜末日で表示されるので、明細を送る前に表示をご確認ください。
+            </Callout>
+          )}
           {hint.status === "error" ? (
             <Callout tone="red">{hint.text}</Callout>
           ) : (
@@ -274,17 +280,20 @@ export function CompanyForm({ action, initial, canEdit, today, month, periodWord
               className="block min-h-11 w-full rounded-lg border border-border bg-card px-3 py-2 text-base"
             />
           </F>
-          {noteMismatch && (
-            <Callout tone="yellow">
-              注記の日数（{noteDays}日）と、確認とみなすまでの日数（{dayCount}日）が違います。どちらかにそろえてください。
-            </Callout>
-          )}
+          {noteMismatch &&
+            (isStandardNote(note) ? (
+              <p className="text-xs text-muted-foreground">保存すると、注記の日数も {dayCount}日 に直します。</p>
+            ) : (
+              <Callout tone="yellow">
+                注記の日数（{noteDays}日）と、確認とみなすまでの日数（{dayCount}日）が違います。どちらかにそろえてください。
+              </Callout>
+            ))}
         </Section>
 
         <Section title="振込依頼人（全銀の振込データ）" description="銀行と契約した「総合振込」の情報です。振込データを作るときに使います。">
           <div className="grid gap-3 sm:grid-cols-2">
             <F label="依頼人コード（10 桁）" error={fe.requesterCode} hint="銀行から知らされる番号">
-              <NumberInput name="requesterCode" defaultValue={initial.requester.code} inputMode="numeric" className="text-left" />
+              <Input name="requesterCode" defaultValue={initial.requester.code} inputMode="numeric" autoComplete="off" className="num" />
             </F>
             <F label="依頼人名（カナ）" error={fe.requesterName}>
               <Input name="requesterName" value={reqName} onChange={(e) => setReqName(e.currentTarget.value)} placeholder="例：ｻﾝﾌﾟﾙｳﾝｿｳ(ｶ" />
@@ -293,13 +302,13 @@ export function CompanyForm({ action, initial, canEdit, today, month, periodWord
           <KanaPreview value={reqName} />
           <div className="grid gap-3 sm:grid-cols-2">
             <F label="金融機関コード（4 桁）" error={fe.requesterBankCode}>
-              <NumberInput name="requesterBankCode" defaultValue={initial.requester.bankCode} inputMode="numeric" className="text-left" />
+              <Input name="requesterBankCode" defaultValue={initial.requester.bankCode} inputMode="numeric" autoComplete="off" className="num" />
             </F>
             <F label="金融機関名（カナ）" error={fe.requesterBankName}>
               <Input name="requesterBankName" value={reqBank} onChange={(e) => setReqBank(e.currentTarget.value)} />
             </F>
             <F label="支店コード（3 桁）" error={fe.requesterBranchCode}>
-              <NumberInput name="requesterBranchCode" defaultValue={initial.requester.branchCode} inputMode="numeric" className="text-left" />
+              <Input name="requesterBranchCode" defaultValue={initial.requester.branchCode} inputMode="numeric" autoComplete="off" className="num" />
             </F>
             <F label="支店名（カナ）" error={fe.requesterBranchName}>
               <Input name="requesterBranchName" value={reqBranch} onChange={(e) => setReqBranch(e.currentTarget.value)} />
@@ -311,7 +320,7 @@ export function CompanyForm({ action, initial, canEdit, today, month, periodWord
               </Select>
             </F>
             <F label="口座番号（7 桁まで）" error={fe.requesterAccountNumber}>
-              <NumberInput name="requesterAccountNumber" defaultValue={initial.requester.accountNumber} inputMode="numeric" className="text-left" />
+              <Input name="requesterAccountNumber" defaultValue={initial.requester.accountNumber} inputMode="numeric" autoComplete="off" className="num" />
             </F>
           </div>
           <KanaPreview value={reqBank} label="金融機関名" />

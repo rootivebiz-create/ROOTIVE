@@ -40,7 +40,8 @@ export async function createDriverAction(_prev: State, form: FormData): Promise<
 }
 
 export async function updateDriverAction(_prev: State, form: FormData): Promise<State> {
-  return runAction(async () => {
+  let next = "";
+  const res = await runAction(async () => {
     const user = await requireUser("staff");
     const id = idOf(form);
     const input = driverSchema.parse(formObject(form));
@@ -48,7 +49,11 @@ export async function updateDriverAction(_prev: State, form: FormData): Promise<
     const { after, changed } = await updateDriver(db, user.tenantId, id, input);
     await audit(db, { tenantId: user.tenantId, userId: user.id, action: "driver.update", entity: "driver", entityId: id, detail: { name: after.name, changed } });
     revalidatePath("/", "layout");
-  }, "保存しました。まだ締めていない月の明細は、作り直すと反映されます");
+    next = `/settings/drivers/${id}?saved=updated`;
+  });
+  // 読み直して、保存した形（T 付きの番号・7 桁の口座番号・半角のカナ）を入力欄に出す
+  if (res?.ok) redirect(next);
+  return res;
 }
 
 export async function setDriverActiveAction(_prev: State, form: FormData): Promise<State> {

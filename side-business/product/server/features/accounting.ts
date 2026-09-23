@@ -7,6 +7,7 @@ import { audit } from "~/server/audit";
 import { csvText, encodeSjis, utf8WithBom } from "~/server/download";
 import { loadMonthDrafts } from "~/server/features/profit";
 import { getTenant } from "~/server/repo";
+import { statementsStatus } from "~/server/statements-core";
 import { deductibleRateForExempt, monthEnd } from "@/lib/payroll/tax";
 import {
   ACCOUNT_FIELDS,
@@ -20,6 +21,8 @@ import {
   JournalMismatchError,
   labelProblem,
   paymentRecords,
+  ratePercent,
+  sortByDriverCode,
   resolveMapping,
   taxFieldsFor,
   taxKeyLabel,
@@ -72,8 +75,13 @@ export type AccountingView = {
   totals: { account: string; debit: number; credit: number }[];
   /** Shift_JIS にできない文字（弥生会計の形式のとき） */
   unmappable: string[];
-  /** 免税の方に消費税相当額を払わない設定で、税額を空けた人がいる */
+  /** 税額の欄を空けて出す人（インボイスの登録が無い方。税込の額で出すソフトのとき） */
   blankTaxDrivers: string[];
+  /**
+   * まだ締めていない月で、保存した明細（ドライバーに送った明細）と今の計算が違う人。
+   * 仕訳は今の計算から作るので、送った明細と合わなくなる（明細を作り直してから出すよう案内する）
+   */
+  statementGap: string[];
   error: string | null;
 };
 
@@ -131,6 +139,16 @@ export async function loadAccountingView(db: Db, tenantId: string, month: string
     unmappable = encodeSjis(chars).unmappable;
   }
 
+  // 送った明細と今の計算が違う人（締めた月は写しから作るので見ない）
+  const statementGap: string[] = [];
+  if (!md.closed && md.drafts.length > 0) {
+    const st = await statementsStatus(db, tenantId, month);
+    if (st.saved > 0 && !st.upToDate) {
+      const nameOf = new Map(md.drafts.map((d) => [d.driverId, d.driver.name]));
+      for (const id of [...st.stale, ...st.missing, ...st.orphan]) statementGap.push(nameOf.get(id) ?? "稼働が無くなった方");
+    }
+  }
+
   return {
     software: soft,
     savedSoftware: raw.software ?? null,
@@ -148,7 +166,11 @@ export async function loadAccountingView(db: Db, tenantId: string, month: string
     check: { slips: slips.length, drivers: md.drafts.length, debit, credit, payableNet, transferTotal, ok: !error && debit === credit && payableNet === transferTotal },
     totals: accountTotals(slips),
     unmappable,
-    blankTaxDrivers: info.taxMode === "inclusive" ? md.drafts.filter((d) => !d.driver.invoiceRegistered && d.subtotal > 0 && d.tax === 0).map((d) => d.driver.name) : [],
+    blankTaxDrivers:
+      info.taxMode === "inclusive" && ratePercent(deductibleRate) < 100
+        ? sortByDriverCode(md.drafts.filter((d) => !d.driver.invoiceRegistered && d.subtotal > 0)).map((d) => d.driver.name)
+        : [],
+    statementGap,
     error,
   };
 }

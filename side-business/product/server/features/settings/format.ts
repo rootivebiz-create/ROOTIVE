@@ -35,6 +35,15 @@ export function readNumber(value: string | null | undefined): number | null {
   return Number(s);
 }
 
+/** 名前を比べるための形（全角と半角・大文字と小文字・空白の違いを無視する） */
+export function looseKey(value: string): string {
+  return value
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[ぁ-ゖ]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) + 0x60))
+    .replace(/[\s　]/g, "");
+}
+
 /** 画面の「10（%）」→ 保存する率 0.1（小数 4 桁まで。浮動小数の誤差を消す） */
 export function percentToRate(percent: number): number {
   return Math.round(percent * 100) / 10000;
@@ -97,6 +106,11 @@ export const RATE_CHANGE_HINT = "単価を変えたら取引条件の変更を�
 /** 明細の注記（何日以内に連絡が無ければ確認とみなすか）。空のときに明細へ入る文と同じ形 */
 export function deemedNote(days: number): string {
   return `記載内容に誤りがある場合は、受け取りから${days}日以内にご連絡ください。ご連絡がない場合は、内容を確認いただいたものとします。`;
+}
+
+/** 決まった形の注記（日数だけ違う）か。そうなら、保存のときに日数を設定に合わせる */
+export function isStandardNote(text: string): boolean {
+  return /^記載内容に誤りがある場合は、受け取りから\d+日以内にご連絡ください。ご連絡がない場合は、内容を確認いただいたものとします。$/.test(text.trim());
 }
 
 // ---------------------------------------------------------------- 支払日

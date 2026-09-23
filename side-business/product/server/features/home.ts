@@ -6,7 +6,7 @@ import { UserError } from "~/server/action";
 import { buildStatementDrafts, payDateFor, profitOf, type StatementDraft } from "~/server/calc/statement";
 import { loadOnboarding } from "~/server/features/onboarding";
 import { deemedDaysOf, statementStatus } from "~/server/features/statements/status";
-import { listTransferBatches } from "~/server/features/transfer";
+import { loadTransferPlan } from "~/server/features/transfer";
 import { runWatch as defaultRunWatch } from "~/server/features/watch";
 import type { WatchIssue } from "~/server/features/watch-types";
 import { getTenant, loadBuildInput } from "~/server/repo";
@@ -35,7 +35,7 @@ export async function loadHomeStatus(db: Db, tenantId: string, month: string, de
   const runWatch = deps.runWatch ?? defaultRunWatch;
   const now = deps.now ?? new Date();
 
-  const [closeRows, workRows, [adjCount], batches, saved, transfers, notices, onboarding] = await Promise.all([
+  const [closeRows, workRows, [adjCount], batches, saved, plan, notices, onboarding] = await Promise.all([
     db
       .select()
       .from(s.monthCloses)
@@ -62,7 +62,7 @@ export async function loadHomeStatus(db: Db, tenantId: string, month: string, de
       .where(and(eq(s.importBatches.tenantId, tenantId), eq(s.importBatches.month, month)))
       .orderBy(desc(s.importBatches.createdAt)),
     db.select().from(s.statements).where(and(eq(s.statements.tenantId, tenantId), eq(s.statements.month, month))),
-    listTransferBatches(db, tenantId, month),
+    loadTransferPlan(db, tenantId, month),
     db
       .select({ id: s.paymentNotices.id })
       .from(s.paymentNotices)
@@ -160,8 +160,9 @@ export async function loadHomeStatus(db: Db, tenantId: string, month: string, de
   const nameByStatement = new Map(saved.map((r) => [r.id, readSnapshot(r).driver?.name ?? "（名前なし）"]));
   const openMsgs = msgs.filter((x) => !x.resolvedAt).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
-  // ④ 振込：作ったあとに明細が変わったか（振込データの画面と同じ判定を使う）
-  const changedBatches = transfers.filter((b) => b.changed).length;
+  // ④ 振込：振込データの画面と同じ判定（作ったあとに明細が変わったか・まだ入っていない人・口座の無い人）
+  const transfers = plan.batches;
+  const notInBatch = plan.included.filter((r) => r.inBatches.length === 0);
 
   // 突合：まだ解決していない差（open・asked）
   const noticeIds = notices.map((n) => n.id);
@@ -212,7 +213,12 @@ export async function loadHomeStatus(db: Db, tenantId: string, month: string, de
       people: transfers.reduce((a, b) => a + b.count, 0),
       total: transfers.reduce((a, b) => a + b.total, 0),
       executed: transfers.filter((b) => b.executedOn).length,
-      changed: changedBatches,
+      changed: transfers.filter((b) => b.changed && !b.executedOn).length,
+      changedExecuted: transfers.filter((b) => b.changed && b.executedOn).length,
+      includable: plan.included.length,
+      notInBatch: notInBatch.length,
+      notInBatchTotal: notInBatch.reduce((a, r) => a + r.amount, 0),
+      excluded: plan.excluded.map((r) => ({ name: r.driverName, reason: r.reason })),
       latestTransferDate: transfers[0]?.transferDate ?? null,
     },
     totals: { drivers: money.length, total: money.reduce((a, d) => a + d.total, 0), source: useSaved ? "saved" : "calc" },

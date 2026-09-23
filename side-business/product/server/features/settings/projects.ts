@@ -89,6 +89,7 @@ async function assertClient(db: Db, tenantId: string, clientId: string | null) {
   if (!rows[0]) throw fieldError("clientId", "その元請は見つかりません。選び直してください");
 }
 
+/** 入力欄から変える項目。「使う・使わない」は別のボタン（setProjectActive）だけで変える（画面の古い値で戻さないように） */
 function values(input: ProjectInput) {
   return {
     clientId: input.clientId,
@@ -97,11 +98,10 @@ function values(input: ProjectInput) {
     unit: input.unit,
     billRate: input.billRate,
     payRate: input.payRate,
-    active: input.active,
   };
 }
 
-const KEYS = ["clientId", "name", "aliases", "unit", "billRate", "payRate", "active"] as const;
+const KEYS = ["clientId", "name", "aliases", "unit", "billRate", "payRate"] as const;
 
 export async function createProject(db: Db, tenantId: string, input: ProjectInput): Promise<ProjectRow> {
   await assertClient(db, tenantId, input.clientId);
@@ -110,7 +110,7 @@ export async function createProject(db: Db, tenantId: string, input: ProjectInpu
   if (conflict) throw fieldError(conflict.field, conflict.message);
   const [row] = await db
     .insert(s.projects)
-    .values({ tenantId, ...values(input) })
+    .values({ tenantId, ...values(input), active: input.active })
     .returning();
   return row;
 }

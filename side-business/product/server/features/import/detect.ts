@@ -46,18 +46,48 @@ export function dataRowCount(rows: string[][]): number {
   return dataRows(rows, detectHeaderRow(rows)).length;
 }
 
-/** シートが複数あるときは、データの行がいちばん多いものを選ぶ */
-export function chooseSheet(sheets: { rows: string[][] | null; dataRows?: number }[]): number {
-  let best = 0;
-  let bestCount = -1;
-  sheets.forEach((s, i) => {
-    const n = s.dataRows ?? (s.rows ? dataRowCount(s.rows) : 0);
-    if (n > bestCount) {
-      best = i;
-      bestCount = n;
-    }
-  });
-  return best;
+/**
+ * シートが複数あるときは、データの行がいちばん多いものを選ぶ。
+ * month を渡すと、その月のシート（シート名「10月」「2026年10月」や表題）を先に選ぶ
+ * （月ごとにシートを足していくブックで、行の多い別の月を選ばないように）。
+ */
+export function chooseSheet(sheets: { name?: string; rows: string[][] | null; dataRows?: number }[], month?: string): number {
+  const count = (s: (typeof sheets)[number]) => s.dataRows ?? (s.rows ? dataRowCount(s.rows) : 0);
+  const pick = (idx: number[]) => idx.reduce((best, i) => (count(sheets[i]) > count(sheets[best]) ? i : best), idx[0]);
+  if (month) {
+    const same = sheets.flatMap((s, i) => (count(s) > 0 && sheetMonth(s.name ?? "", s.rows ?? [], month) === month ? [i] : []));
+    if (same.length > 0) return pick(same);
+  }
+  return pick(sheets.map((_, i) => i));
+}
+
+/**
+ * シートの月：シート名（「2026年10月」「10月」「R8.10」）か、表題（上の 5 行の「2026年10月」）から。
+ * 年の無い「10月」は、near（取り込む月）にいちばん近い年にする。分からなければ null
+ */
+export function sheetMonth(name: string, rows: string[][], near: string): string | null {
+  const byName = monthInText(name) ?? monthNoYear(name, near);
+  if (byName) return byName;
+  return monthInText(
+    rows
+      .slice(0, 5)
+      .map((r) => r.join(" "))
+      .join(" "),
+  );
+}
+
+/** 「10月」「10月分」のように年の無い月を、near にいちばん近い年の YYYY-MM-01 に */
+export function monthNoYear(text: string, near: string): string | null {
+  const m = text.normalize("NFKC").match(/(?:^|[^\d])(\d{1,2})\s*月/);
+  if (!m) return null;
+  const mm = Number(m[1]);
+  if (mm < 1 || mm > 12) return null;
+  const ny = Number(near.slice(0, 4));
+  const nm = Number(near.slice(5, 7));
+  let y = ny;
+  if (mm - nm > 6) y = ny - 1;
+  else if (nm - mm > 6) y = ny + 1;
+  return `${y}-${String(mm).padStart(2, "0")}-01`;
 }
 
 // ---------------------------------------------------------------- 日付の見出し（1〜31 日・10/1 など）
@@ -491,23 +521,44 @@ function monthOf(y: number, m: number): string | null {
   return `${y}-${String(m).padStart(2, "0")}-01`;
 }
 
-export type MonthGuess = { month: string; from: "dates" | "title" | "file" };
+/**
+ * 日付のセルを読む。「12/28」のように年の無い日付は、month（YYYY-MM-01）にいちばん近い年にする
+ * （2027年1月分の表にある 12/28 は 2026年12月28日。month の年をそのまま付けると 1 年先になる）
+ */
+export function dateNear(raw: string, month: string): string | null {
+  const year = Number(month.slice(0, 4));
+  const d = parseDateCell(raw, year);
+  if (!d || !/^\d{1,2}[/月]\d{1,2}日?$/.test(raw.normalize("NFKC").trim())) return d;
+  const target = year * 12 + Number(month.slice(5, 7)) - 1;
+  const got = Number(d.slice(0, 4)) * 12 + Number(d.slice(5, 7)) - 1;
+  if (got - target > 6) return parseDateCell(raw, year - 1);
+  if (target - got > 6) return parseDateCell(raw, year + 1);
+  return d;
+}
 
-/** 何月分かを推測する：日付の列 → 表題（見出しより上の行）→ ファイル名 */
-export function suggestMonth(rows: string[][], mapping: WorkMapping, fileName: string): MonthGuess | null {
+export type MonthGuess = { month: string; from: "dates" | "title" | "sheet" | "file" };
+
+/**
+ * 何月分かを推測する：日付の列 → 表題（見出しより上の行）→ シート名 → ファイル名。
+ * シート名の「10月」のように年が無いものは、near（開いていた月）にいちばん近い年にする
+ */
+export function suggestMonth(rows: string[][], mapping: WorkMapping, fileName: string, sheet?: { name: string; near: string }): MonthGuess | null {
   const title = rows
     .slice(0, mapping.headerRow)
     .map((r) => r.join(" "))
     .join(" ");
   const titleMonth = monthInText(title);
   const fileMonth = monthInText(fileName);
-  const fallbackYear = Number((titleMonth ?? fileMonth ?? "").slice(0, 4)) || undefined;
+  const sheetName = sheet ? (monthInText(sheet.name) ?? monthNoYear(sheet.name, sheet.near)) : null;
+  // 年の無い日付（10/31）は、表題・シート名・ファイル名の月にいちばん近い年で読む（どれも無ければ読まない）
+  const near = titleMonth ?? sheetName ?? fileMonth;
 
   const counts = new Map<string, number>();
   const dateCol = mapping.roles.indexOf("date");
   if (dateCol >= 0) {
     for (let i = mapping.headerRow + mapping.headerDepth; i < rows.length; i++) {
-      const d = parseDateCell(rows[i][dateCol] ?? "", fallbackYear);
+      const raw = rows[i][dateCol] ?? "";
+      const d = near ? dateNear(raw, near) : parseDateCell(raw);
       if (d) counts.set(`${d.slice(0, 7)}-01`, (counts.get(`${d.slice(0, 7)}-01`) ?? 0) + 1);
     }
   }
@@ -519,13 +570,21 @@ export function suggestMonth(rows: string[][], mapping: WorkMapping, fileName: s
     if (d?.y && d.m) counts.set(monthOf(d.y, d.m) ?? "", (counts.get(monthOf(d.y, d.m) ?? "") ?? 0) + 1);
   });
   counts.delete("");
+  const stated: MonthGuess | null = titleMonth
+    ? { month: titleMonth, from: "title" }
+    : sheetName
+      ? { month: sheetName, from: "sheet" }
+      : fileMonth
+        ? { month: fileMonth, from: "file" }
+        : null;
   if (counts.size > 0) {
     const [month] = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
+    // 10 日締めの「10月分」（9/11〜10/10）のように、日付の多い月と書いてある月が違っても、
+    // 書いてある月の日付が 1 行でもあれば、書いてある月にする（日付がまったく無ければ、写し忘れた表題とみなして日付に従う）
+    if (stated && stated.month !== month && counts.has(stated.month)) return stated;
     return { month, from: "dates" };
   }
-  if (titleMonth) return { month: titleMonth, from: "title" };
-  if (fileMonth) return { month: fileMonth, from: "file" };
-  return null;
+  return stated;
 }
 
 /** 案件の見出し「宅配（個）」から単位「個」を拾う（新しく登録するときの下書き） */

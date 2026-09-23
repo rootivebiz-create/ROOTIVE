@@ -1,6 +1,6 @@
 /**
  * Excel との比べ合わせ：差の「理由の見当」（純関数。画面からも読む）。
- * 差の額が、明細のどの部品（消費税・控除・調整・源泉徴収）と同じ額かを探す。
+ * 差の額が、明細のどの部品（消費税・控除・調整・源泉徴収）と同じ額か、ある行の数量・単価の違いで説明できるかを探す。
  * 当たっても「可能性」にとどめる（どちらが正しいかは、会社が取引条件と照らして決める）。
  */
 import type { StatementDraft } from "~/server/calc/statement";
@@ -20,9 +20,17 @@ export type DiffParts = {
   total: number;
   /** 端数が出うる箇所の数（明細の行・控除・消費税） */
   roundingPlaces: number;
+  /** 明細の行（数量・単価の違いを探す） */
+  lines: { project: string; unit: string; qty: number; rate: number }[];
+  /** 委託料が 1 円変わると振込額がいくら変わるか（消費税と、率で引く控除を入れた目安） */
+  multiplier: number;
 };
 
 export function partsOf(d: StatementDraft): DiffParts {
+  // 率で引く控除（ロイヤリティなど）は委託料に比例するので、委託料の差がそのまま振込額に響かない
+  const percent = d.deductions.filter((x) => x.how.startsWith("委託料"));
+  const percentShare = percent.reduce((a, x) => a + x.amount + (x.taxable ? x.amount * TAX_RATE : 0), 0);
+  const multiplier = d.subtotal > 0 ? (d.subtotal + d.tax - percentShare) / d.subtotal : 1;
   return {
     subtotal: d.subtotal,
     tax: d.tax,
@@ -36,10 +44,12 @@ export function partsOf(d: StatementDraft): DiffParts {
     withholding: d.withholding?.amount ?? 0,
     total: d.total,
     roundingPlaces: Math.max(1, d.lines.length + d.deductions.length + (d.tax ? 1 : 0) + (d.deductionTax ? 1 : 0) + (d.adjustmentTax ? 1 : 0)),
+    lines: d.lines.map((l) => ({ project: l.project, unit: l.unit, qty: l.qty, rate: l.rate })),
+    multiplier: multiplier > 0 ? multiplier : 1,
   };
 }
 
-export type ExplainKind = "match" | "no_data" | "tax" | "deduction" | "adjustment" | "withholding" | "rounding" | "unknown";
+export type ExplainKind = "match" | "no_data" | "tax" | "deduction" | "adjustment" | "withholding" | "qty" | "price" | "rounding" | "unknown";
 
 export type Explanation = {
   kind: ExplainKind;
@@ -50,6 +60,8 @@ export type Explanation = {
 };
 
 const TAX_RATE = 0.1;
+/** 数量・単価の違いを探すときの許し幅（消費税・控除をそれぞれ丸めるので、数円ずれる） */
+const QTY_TOLERANCE = 3;
 
 function yen(n: number): string {
   return `${Math.round(n).toLocaleString("ja-JP")}円`;
@@ -156,7 +168,39 @@ export function explainDiff(parts: DiffParts | null, diff: number): Explanation[
     });
   }
 
-  // 5. 端数（差が、端数の出る箇所の数より小さい）
+  // 5. 数量・単価（差を「委託料の差」に戻して、ある行の単価か数量で割り切れるか）
+  if (d > QTY_TOLERANCE) {
+    const dsub = d / parts.multiplier;
+    const more = diff > 0 ? "しめ日ラボの方が" : "Excel の方が";
+    const after = (sub: number) =>
+      Math.abs(sub - d) > 0 && parts.multiplier !== 1 ? `（消費税・率で引く控除を入れると ${yen(d)}）` : "";
+    for (const l of parts.lines) {
+      if (!(l.rate * parts.multiplier > QTY_TOLERANCE * 2)) continue;
+      const k = Math.round(dsub / l.rate);
+      if (k >= 1 && Math.abs(k * l.rate * parts.multiplier - d) <= QTY_TOLERANCE) {
+        push({
+          kind: "qty",
+          title: `「${l.project}」の数量`,
+          detail: `${gap}${more}「${l.project}」を ${k.toLocaleString("ja-JP")}${l.unit} 多く数えている可能性があります（${k.toLocaleString("ja-JP")}${l.unit} × ${l.rate.toLocaleString("ja-JP")}円 ＝ ${yen(k * l.rate)}${after(k * l.rate)}）。取り込んだ稼働と Excel の数量を比べてください。`,
+        });
+      }
+    }
+    for (const l of parts.lines) {
+      // 数量が少ない行は、どんな差でも「単価がいくら違う」と言えてしまうので見ない（1 円の違いが許し幅の 2 倍を超える行だけ）
+      if (!(l.rate > 0) || l.qty * parts.multiplier <= QTY_TOLERANCE * 2) continue;
+      const p = Math.round(dsub / l.qty);
+      // 単価の違いは、元の単価の半分までに限る（それより大きい違いは、別の理由のことが多い）
+      if (p >= 1 && p <= l.rate / 2 && Math.abs(p * l.qty * parts.multiplier - d) <= QTY_TOLERANCE) {
+        push({
+          kind: "price",
+          title: `「${l.project}」の単価`,
+          detail: `${gap}${more}「${l.project}」の単価が 1${l.unit}あたり ${yen(p)} 高い可能性があります（${l.qty.toLocaleString("ja-JP")}${l.unit} × ${yen(p)} ＝ ${yen(p * l.qty)}${after(p * l.qty)}）。ドライバーごとの単価や、単価を変えた月を確かめてください。`,
+        });
+      }
+    }
+  }
+
+  // 6. 端数（差が、端数の出る箇所の数より小さい）
   if (d <= parts.roundingPlaces) {
     push({
       kind: "rounding",
@@ -169,19 +213,47 @@ export function explainDiff(parts: DiffParts | null, diff: number): Explanation[
     out.push({
       kind: "unknown",
       title: "内訳を確かめてください",
-      detail: `${gap}消費税・控除・調整・源泉徴収のどれとも同じ額ではありません。下の内訳を Excel の計算と 1 行ずつ比べてください（数量・単価の違いのことが多いです）。`,
+      detail: `${gap}消費税・控除・調整・源泉徴収・数量・単価のどれとも合いません。下の内訳を Excel の計算と 1 行ずつ比べてください。`,
     });
   }
   return out;
 }
 
-export type ParallelSummary = { compared: number; matched: number; different: number; sentence: string };
+export type ParallelSummary = {
+  /** Excel の額を入れた人 */
+  compared: number;
+  matched: number;
+  different: number;
+  /** 差があって、理由のメモがまだ無い人 */
+  unexplained: number;
+  /** 差の合計（しめ日ラボ − Excel）と、その内訳 */
+  diffTotal: number;
+  /** しめ日ラボの方が多い人の差の合計 */
+  oursHigher: number;
+  /** Excel の方が多い人の差の合計（正の数） */
+  excelHigher: number;
+  /** 比べた人が全員「一致」か「理由のメモあり」 */
+  allExplained: boolean;
+  sentence: string;
+};
 
-/** 「8人中 6人が一致」（Excel の額を入れた人だけを数える） */
-export function parallelSummary(rows: { excelTotal: number | null; diff: number | null }[]): ParallelSummary {
-  const compared = rows.filter((r) => r.excelTotal !== null).length;
-  const matched = rows.filter((r) => r.excelTotal !== null && r.diff === 0).length;
-  const different = compared - matched;
-  const sentence = compared === 0 ? "まだ比べていません" : `${compared}人中 ${matched}人が一致`;
-  return { compared, matched, different, sentence };
+/** 「8人中 6人が一致」（Excel の額を入れた人だけ数える） */
+export function parallelSummary(rows: { excelTotal: number | null; diff: number | null; note?: string | null }[]): ParallelSummary {
+  const compared = rows.filter((r) => r.excelTotal !== null && r.diff !== null);
+  const matched = compared.filter((r) => r.diff === 0).length;
+  const diffs = compared.filter((r) => r.diff !== 0);
+  const unexplained = diffs.filter((r) => !r.note?.trim()).length;
+  const oursHigher = diffs.filter((r) => r.diff! > 0).reduce((a, r) => a + r.diff!, 0);
+  const excelHigher = diffs.filter((r) => r.diff! < 0).reduce((a, r) => a - r.diff!, 0);
+  return {
+    compared: compared.length,
+    matched,
+    different: diffs.length,
+    unexplained,
+    diffTotal: oursHigher - excelHigher,
+    oursHigher,
+    excelHigher,
+    allExplained: compared.length > 0 && unexplained === 0,
+    sentence: compared.length === 0 ? "まだ比べていません" : `${compared.length}人中 ${matched}人が一致`,
+  };
 }

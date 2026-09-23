@@ -21,11 +21,21 @@ import { Badge, Notice, PageHeader } from "~/components/page";
 import { getDb } from "~/db/client";
 import { requirePageUser, roleAtLeast } from "~/server/auth";
 import { baseName, colLetter, dayOfHeader, unitHint } from "~/server/features/import/detect";
-import type { NameGroup } from "~/server/features/import/resolve";
+import { registrableDrivers, type NameGroup } from "~/server/features/import/resolve";
 import { columnSamples, isApplyMode, listClients, loadDraftView, type DraftView } from "~/server/features/import/service";
 import { APPLY_MODE_LABEL, layoutOf, ROLE_LABEL, type ApplyMode, type ColumnRole } from "~/server/features/import/types";
 import { monthLabelJa, monthParam } from "~/server/month";
-import { applyAction, discardAction, headerRowAction, mappingAction, monthAction, resolveAction, selectSheetAction, undoAction } from "../actions";
+import {
+  applyAction,
+  discardAction,
+  headerRowAction,
+  mappingAction,
+  monthAction,
+  registerAllDriversAction,
+  resolveAction,
+  selectSheetAction,
+  undoAction,
+} from "../actions";
 
 export const metadata = { title: "取り込みの確認" };
 
@@ -48,6 +58,7 @@ const ENCODING: Record<string, string> = { xlsx: "Excel", "utf-8": "CSV（UTF-8�
 const MONTH_FROM: Record<string, string> = {
   dates: "ファイルの日付から",
   title: "表の題名から",
+  sheet: "シートの名前から",
   file: "ファイル名から",
   page: "開いていた月",
   user: "選んだ月",
@@ -84,7 +95,7 @@ export default async function ImportBatchPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ mode?: string; done?: string }>;
+  searchParams: Promise<{ mode?: string; done?: string; mapping?: string }>;
 }) {
   const user = await requirePageUser("viewer");
   const { id } = await params;
@@ -128,14 +139,18 @@ export default async function ImportBatchPage({
         <Notice tone="ok">取り消しました。この取り込みで入れた稼働を消し、入れ替えた前の分は元に戻しました。</Notice>
       )}
 
-      {batch.status === "draft" ? <DraftBody view={view} canEdit={canEdit} tenantId={user.tenantId} /> : <DoneBody view={view} canEdit={canEdit} />}
+      {batch.status === "draft" ? (
+        <DraftBody view={view} canEdit={canEdit} tenantId={user.tenantId} openMapping={sp.mapping === "1"} />
+      ) : (
+        <DoneBody view={view} canEdit={canEdit} />
+      )}
     </div>
   );
 }
 
 // ---------------------------------------------------------------- 確認中
 
-async function DraftBody({ view, canEdit, tenantId }: { view: DraftView; canEdit: boolean; tenantId: string }) {
+async function DraftBody({ view, canEdit, tenantId, openMapping }: { view: DraftView; canEdit: boolean; tenantId: string; openMapping: boolean }) {
   const { batch, summary, computed, preview } = view;
   const m = monthParam(batch.month);
   const rows = computed.rows;
@@ -147,6 +162,10 @@ async function DraftBody({ view, canEdit, tenantId }: { view: DraftView; canEdit
     needsAnswer(x.g),
   );
   const matched = [...res.drivers, ...res.projects].filter((g) => g.match && !g.needsCheck && !g.skipped);
+  // 選ぶ（または「合っている」を押す）必要がある名前の数
+  const toAnswer = open.filter((x) => !x.g.skipped).length;
+  // 台帳に無い人（初めての月など）：まとめて登録できる名前
+  const newDrivers = problem ? [] : registrableDrivers(res);
   const clients = canEdit && open.length > 0 ? await listClients(await getDb(), tenantId) : [];
   const samples = rows.length ? columnSamples(rows, mapping) : [];
   const columns: MappingColumn[] = computed.header.map((h, i) => ({
@@ -176,7 +195,7 @@ async function DraftBody({ view, canEdit, tenantId }: { view: DraftView; canEdit
             {problem
               ? "・ 名前の確認（読み方のあと）"
               : res.unresolvedRecords > 0
-                ? `✕ 名前を選んでください（${open.filter((x) => !x.g.match && !x.g.skipped).length} 件）`
+                ? `✕ 名前を選んでください（${toAnswer} 件）`
                 : "✓ 名前はすべて台帳に当たりました"}
           </li>
           <li>
@@ -188,8 +207,9 @@ async function DraftBody({ view, canEdit, tenantId }: { view: DraftView; canEdit
           </li>
           <li>{view.closed ? `✕ ${monthLabelJa(batch.month)}は締め済み` : `✓ ${monthLabelJa(batch.month)}分に書き込み`}</li>
           {ready && option && option.duplicates.length > 0 && <li>✕ 今ある稼働と重なる所が {option.duplicates.length} 件（5 で入れ替え方を選んでください）</li>}
+          {!problem && res.codeConflicts.length > 0 && <li>△ 番号と名前が合わない行があります（3 を見てください）</li>}
         </ul>
-        {ready && !view.closed && (
+        {ready && !view.closed && canEdit && (
           <a href="#apply" className={buttonClass("accent", "mt-3")}>
             反映へ進む ↓
           </a>
@@ -204,7 +224,14 @@ async function DraftBody({ view, canEdit, tenantId }: { view: DraftView; canEdit
         </p>
         {summary.sheets.length > 1 && (
           <div>
-            <p className="text-sm font-bold">シート（データの行がいちばん多いものを選んでいます）</p>
+            <p className="text-sm font-bold">
+              シート
+              {summary.sheetFrom === "month"
+                ? "（開いていた月のシートを選んでいます）"
+                : summary.sheetFrom === "user"
+                  ? "（選び直したシート）"
+                  : "（データの行がいちばん多いものを選んでいます）"}
+            </p>
             <div className="mt-2 flex flex-wrap gap-2">
               {summary.sheets.map((sh, i) =>
                 i === summary.sheetIndex || !canEdit ? (
@@ -262,7 +289,15 @@ async function DraftBody({ view, canEdit, tenantId }: { view: DraftView; canEdit
         {summary.mappingFrom === "profile" && !problem && (
           <p className="rounded-lg border border-success/40 bg-success/10 p-3 text-sm text-success">
             <b>前回と同じ形のファイルなので、前回の読み方で読みました。</b>
-            {canEdit && "変えるときは、下の「読み方を変える」から。"}
+            {canEdit && (
+              <>
+                {"（"}
+                <Link href={`/import/${batch.id}?mapping=1#mapping`} scroll={false} className="inline-block min-h-11 py-2 font-bold">
+                  読み方を変える
+                </Link>
+                {"）"}
+              </>
+            )}
           </p>
         )}
         {rows.length > 0 && (
@@ -283,7 +318,7 @@ async function DraftBody({ view, canEdit, tenantId }: { view: DraftView; canEdit
         )}
         {problem && <Notice tone="error">{problem}</Notice>}
         {rows.length > 0 && (
-          <details open={!!problem}>
+          <details id="mapping" open={!!problem || openMapping}>
             <summary className="min-h-11 cursor-pointer py-2 text-sm font-bold">
               {canEdit ? "表の最初の行を見る・読み方を変える" : "表の最初の行を見る"}
             </summary>
@@ -336,7 +371,7 @@ async function DraftBody({ view, canEdit, tenantId }: { view: DraftView; canEdit
         title="名前の確認"
         aside={
           res.unresolvedRecords > 0 ? (
-            <Badge tone="red">{open.filter((x) => !x.g.match && !x.g.skipped).length} 件を選んでください</Badge>
+            <Badge tone="red">{toAnswer} 件を選んでください</Badge>
           ) : problem ? null : (
             <Badge tone="green">OK</Badge>
           )
@@ -348,7 +383,39 @@ async function DraftBody({ view, canEdit, tenantId }: { view: DraftView; canEdit
           <>
             {open.length > 0 ? (
               <>
-                <p className="text-sm">台帳に当たらなかった名前です。選ぶと、その書き方を覚えて、来月からは聞きません。</p>
+                <p className="text-sm">
+                  台帳に当たらなかった名前と、名前の一部だけが同じで念のため確かめたい名前です。選ぶと、その書き方を覚えて、来月からは聞きません。
+                </p>
+                {canEdit && newDrivers.length >= 2 && (
+                  <div className="rounded-lg border border-border bg-muted/40 p-3 text-sm">
+                    <p className="font-bold">台帳に無い人が {newDrivers.length} 人います</p>
+                    <p className="mt-1 text-muted-foreground">
+                      {newDrivers
+                        .slice(0, 12)
+                        .map((g) => baseName(g.raw))
+                        .join("、")}
+                      {newDrivers.length > 12 && ` ほか ${newDrivers.length - 12} 人`}
+                    </p>
+                    <p className="mt-1">
+                      みなさん新しい方なら、まとめて台帳に登録できます。今いる方の書き間違いが混じっていれば、先にその方だけ下で選んでください。
+                    </p>
+                    <ActionForm
+                      action={registerAllDriversAction}
+                      submit={`${newDrivers.length} 人をまとめて登録する`}
+                      className="mt-2"
+                      confirm={
+                        <>
+                          次の {newDrivers.length} 人を、ファイルの書き方の名前で台帳に登録します：
+                          {newDrivers.map((g) => baseName(g.raw)).join("、")}。口座・インボイスの登録番号などは、あとで台帳から入れます。
+                        </>
+                      }
+                      confirmSubmit="登録する"
+                      pendingText="登録しています…"
+                    >
+                      <input type="hidden" name="batchId" value={batch.id} />
+                    </ActionForm>
+                  </div>
+                )}
                 {canEdit ? (
                   <ul className="divide-y divide-border rounded-card border border-border">
                     {open.map(({ kind, g }) => (
@@ -367,10 +434,11 @@ async function DraftBody({ view, canEdit, tenantId }: { view: DraftView; canEdit
                           needsCheck: g.needsCheck,
                           skipped: g.skipped,
                           candidates: g.candidates,
+                          codes: g.codes,
                         }}
                         all={kind === "driver" ? allDrivers : allProjects}
                         clients={clients}
-                        defaults={{ name: baseName(g.raw), unit: unitHint(g.raw) ?? "個" }}
+                        defaults={{ name: kind === "driver" && g.nameless ? "" : baseName(g.raw), unit: unitHint(g.raw) ?? "個" }}
                       />
                     ))}
                   </ul>
@@ -389,6 +457,22 @@ async function DraftBody({ view, canEdit, tenantId }: { view: DraftView; canEdit
                 名前はすべて台帳に当たりました（ドライバー {new Set(res.drivers.map((g) => g.match?.id)).size} 人・案件{" "}
                 {mapping.fixedProjectId ? 1 : new Set(res.projects.map((g) => g.match?.id)).size} 件）。
               </p>
+            )}
+            {res.codeConflicts.length > 0 && (
+              <div className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm">
+                <p className="font-bold">番号と名前が、台帳の別の人を指している行があります（番号で当てています）</p>
+                <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                  {res.codeConflicts.slice(0, 10).map((c) => (
+                    <li key={`${c.code}|${c.fileName}`}>
+                      番号「{c.code}」は台帳では{c.codeName}さんですが、名前は「{c.fileName}」（台帳の{c.nameMatch}さん）です（{c.rows}行）
+                    </li>
+                  ))}
+                  {res.codeConflicts.length > 10 && <li>ほか {res.codeConflicts.length - 10} 件</li>}
+                </ul>
+                <p className="mt-1">
+                  別の人に払ってしまわないよう、Excel の番号と名前を確かめてください。番号が違っていたら、直したファイルを置き直してください。
+                </p>
+              </div>
             )}
             {summary.learned.length > 0 && (
               <div className="rounded-lg border border-success/40 bg-success/10 p-3 text-sm">

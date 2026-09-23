@@ -9,7 +9,7 @@ import { monthFromParam } from "~/server/month";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** 確認の記録（CSV・UTF-8 BOM）：月・ドライバー・版・ハッシュ・振込額・送付・初めて開いた日時・確認 */
+/** 確認の記録（CSV・UTF-8 BOM）：月・ドライバー・版・ハッシュ・振込額・送付・開いた日時（今の中身を初めて）・確認 */
 export async function GET(req: Request) {
   let user: SessionUser;
   try {

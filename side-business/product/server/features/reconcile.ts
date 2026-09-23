@@ -9,6 +9,7 @@ import { audit } from "~/server/audit";
 import { matchName, normalizeName, similarity, type Candidate } from "~/server/names";
 import { getTenant } from "~/server/repo";
 import { monthParam, shiftMonth } from "~/server/month";
+import { readSnapshot } from "~/server/statements-core";
 import { detectHeaderRow, headerSignature, readTable, TableReadError } from "~/server/tabular";
 import { roundYen } from "@/lib/payroll/money";
 import type { Rounding } from "@/lib/payroll/types";
@@ -35,6 +36,7 @@ export { lineKey };
  * - 列の対応と、行の当て方（案件・追加の料金・対象外）は mapping_profiles（kind='payment_notice'、名前＝元請名）に覚える
  * - 上げたファイルの中身（文字の表）は import_batches（kind='payment_notice'）の summary に残し、列を選び直せるようにする
  * - 差は reconciliation_items に保存する。作り直しても、同じ鍵（種類＋案件＋名前）の状態とメモは残す
+ * - 当社の記録の受注単価は、締めた月なら明細の写し（締めたときの単価）、開いている月なら今の案件の単価
  */
 
 export const MAX_NOTICE_FILE_BYTES = 5 * 1024 * 1024;
@@ -159,6 +161,34 @@ async function latestBatch(db: Db, tenantId: string, noticeId: string) {
   return rows[0] ?? null;
 }
 
+/**
+ * 締めた月の受注単価（明細の写しに残っている、締めたときの単価）。月 → 案件 → 単価。
+ * 締めたあとで案件の単価を上げ下げしても、締めた月の「当社の記録」は変わらないようにする（利益の画面と同じ考え方）。
+ * 写しが無い月（明細を作らずに締めた月）は入れない（今の単価で数える）
+ */
+async function closedBillRates(db: Db, tenantId: string, months: string[]): Promise<Map<string, Map<string, number>>> {
+  const out = new Map<string, Map<string, number>>();
+  if (months.length === 0) return out;
+  const closes = await db
+    .select({ month: s.monthCloses.month })
+    .from(s.monthCloses)
+    .where(and(eq(s.monthCloses.tenantId, tenantId), eq(s.monthCloses.status, "closed"), inArray(s.monthCloses.month, months)));
+  if (closes.length === 0) return out;
+  const rows = await db
+    .select({ month: s.statements.month, snapshot: s.statements.snapshot })
+    .from(s.statements)
+    .where(and(eq(s.statements.tenantId, tenantId), inArray(s.statements.month, closes.map((c) => c.month))));
+  for (const r of rows) {
+    const draft = readSnapshot(r);
+    const rates = out.get(r.month) ?? new Map<string, number>();
+    for (const l of draft.lines ?? []) {
+      if (l.projectId && typeof l.billRate === "number" && Number.isFinite(l.billRate) && !rates.has(l.projectId)) rates.set(l.projectId, l.billRate);
+    }
+    out.set(r.month, rates);
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------- 行の当て方
 
 type ProjectRef = { id: string; name: string; clientId: string | null; aliases: string[]; active: boolean; unit: string; billRate: number };
@@ -221,16 +251,19 @@ type NoticeContext = {
   tenant: Awaited<ReturnType<typeof getTenant>>;
   notice: typeof s.paymentNotices.$inferSelect;
   client: typeof s.clients.$inferSelect | null;
+  /** billRate は、締めた月なら締めたときの単価に置き換えてある */
   projects: ProjectRef[];
   drivers: DriverRef[];
   work: { projectId: string; driverId: string; qty: number }[];
   lines: (typeof s.paymentNoticeLines.$inferSelect)[];
   profile: ProfileRow | null;
+  /** 締めた月の写しの単価を使った案件の数（0 なら今の単価） */
+  snapshotRates: number;
 };
 
 async function loadContext(db: Db, tenantId: string, noticeId: string): Promise<NoticeContext> {
   const notice = await getNotice(db, tenantId, noticeId);
-  const [tenant, clientRows, projects, drivers, work, lines] = await Promise.all([
+  const [tenant, clientRows, projects, drivers, work, lines, closedRates] = await Promise.all([
     getTenant(db, tenantId),
     notice.clientId ? db.select().from(s.clients).where(and(eq(s.clients.tenantId, tenantId), eq(s.clients.id, notice.clientId))) : Promise.resolve([]),
     db.select().from(s.projects).where(eq(s.projects.tenantId, tenantId)).orderBy(asc(s.projects.name)),
@@ -243,18 +276,21 @@ async function loadContext(db: Db, tenantId: string, noticeId: string): Promise<
       .select()
       .from(s.paymentNoticeLines)
       .where(and(eq(s.paymentNoticeLines.tenantId, tenantId), eq(s.paymentNoticeLines.noticeId, noticeId))),
+    closedBillRates(db, tenantId, [notice.month]),
   ]);
   const client = clientRows[0] ?? null;
   const profile = await findProfile(db, tenantId, client);
+  const rates = closedRates.get(notice.month) ?? new Map<string, number>();
   return {
     tenant,
     notice,
     client,
-    projects: projects.map((p) => ({ id: p.id, name: p.name, clientId: p.clientId, aliases: p.aliases, active: p.active, unit: p.unit, billRate: p.billRate })),
+    projects: projects.map((p) => ({ id: p.id, name: p.name, clientId: p.clientId, aliases: p.aliases, active: p.active, unit: p.unit, billRate: rates.get(p.id) ?? p.billRate })),
     drivers: drivers.map((d) => ({ id: d.id, name: d.name, code: d.code, kana: d.kana, aliases: d.aliases, active: d.active })),
     work,
     lines,
     profile,
+    snapshotRates: rates.size,
   };
 }
 
@@ -271,10 +307,23 @@ type ResolvedLine = (typeof s.paymentNoticeLines.$inferSelect) & { role: LineRol
  */
 function resolveAll(ctx: Pick<NoticeContext, "lines" | "profile" | "notice" | "projects" | "drivers">): ResolvedLine[] {
   const { lineMap, driverMap } = profileOptions(ctx.profile);
+  // 同じ名前の行は同じ当て方になるので、名前ごとに 1 回だけ照合する（1 行ずつの明細でも重くしない）
+  const lineCache = new Map<string, { projectId: string | null; role: LineRole }>();
+  const driverCache = new Map<string, string | null>();
   return ctx.lines.map((l) => {
-    const { projectId, role } = resolveLine(l, lineMap, ctx.notice.clientId, ctx.projects);
-    const driverId = resolveDriver(l.rawDriver, l.driverId, driverMap, ctx.drivers);
-    return { ...l, projectId, driverId, role };
+    const lk = `${l.rawProject}\u0000${l.projectId ?? ""}`;
+    let hit = lineCache.get(lk);
+    if (!hit) {
+      hit = resolveLine(l, lineMap, ctx.notice.clientId, ctx.projects);
+      lineCache.set(lk, hit);
+    }
+    const dk = `${l.rawDriver ?? ""}\u0000${l.driverId ?? ""}`;
+    let driverId = driverCache.get(dk);
+    if (driverId === undefined) {
+      driverId = resolveDriver(l.rawDriver, l.driverId, driverMap, ctx.drivers);
+      driverCache.set(dk, driverId);
+    }
+    return { ...l, projectId: hit.projectId, driverId, role: hit.role };
   });
 }
 
@@ -293,19 +342,29 @@ function compareFromContext(ctx: NoticeContext, resolved: ResolvedLine[]): Compa
   });
 }
 
-/** 行を案件・ドライバーに当て直し（覚えた当て方 → 名前の照合）、変わった行だけ保存する */
+/** 行を案件・ドライバーに当て直し（覚えた当て方 → 名前の照合）、変わった行だけ保存する（当て先ごとにまとめて書く） */
 async function autoMatch(db: Db, tenantId: string, ctx: NoticeContext): Promise<{ changed: number; resolved: ResolvedLine[] }> {
   const resolved = resolveAll(ctx);
-  let changed = 0;
+  const byTarget = new Map<string, { projectId: string | null; driverId: string | null; ids: string[] }>();
   for (let i = 0; i < resolved.length; i++) {
     const before = ctx.lines[i];
     const after = resolved[i];
     if (before.projectId === after.projectId && before.driverId === after.driverId) continue;
-    await db
-      .update(s.paymentNoticeLines)
-      .set({ projectId: after.projectId, driverId: after.driverId })
-      .where(and(eq(s.paymentNoticeLines.id, after.id), eq(s.paymentNoticeLines.tenantId, tenantId)));
-    changed++;
+    const k = `${after.projectId ?? ""}|${after.driverId ?? ""}`;
+    const g = byTarget.get(k) ?? { projectId: after.projectId, driverId: after.driverId, ids: [] };
+    g.ids.push(after.id);
+    byTarget.set(k, g);
+  }
+  let changed = 0;
+  for (const g of byTarget.values()) {
+    for (let i = 0; i < g.ids.length; i += 1000) {
+      const ids = g.ids.slice(i, i + 1000);
+      await db
+        .update(s.paymentNoticeLines)
+        .set({ projectId: g.projectId, driverId: g.driverId })
+        .where(and(eq(s.paymentNoticeLines.tenantId, tenantId), inArray(s.paymentNoticeLines.id, ids)));
+      changed += ids.length;
+    }
   }
   ctx.lines = resolved;
   return { changed, resolved };
@@ -313,21 +372,49 @@ async function autoMatch(db: Db, tenantId: string, ctx: NoticeContext): Promise<
 
 // ---------------------------------------------------------------- 突き合わせ（保存）
 
-export type RunResult = { skipped: boolean; items: number; created: number; updated: number; removed: number; reopened: number; matchedLines: number };
+export type RunResult = {
+  skipped: boolean;
+  items: number;
+  created: number;
+  updated: number;
+  removed: number;
+  reopened: number;
+  /** 問い合わせ済みの差が、突き合わせ直したら無くなった（直したお支払通知が届いた など）→ 「解決」にして残した数 */
+  settledByRerun: number;
+  matchedLines: number;
+};
+
+/** 問い合わせ済みの差が、突き合わせ直して無くなったときにメモへ足す言葉 */
+export const GONE_NOTE = "突き合わせ直したら、この差は無くなりました（直したお支払通知か、当社の記録の直しによるもの）。";
+
+/** 保存した差が「今の突き合わせには出てこない、片付いた記録」か（履歴として残す） */
+function isSettledHistory(row: { status: string }, liveKeys: Set<string>, key: string): boolean {
+  return !isUnsettled(row.status) && !liveKeys.has(key);
+}
 
 /**
  * 突き合わせて reconciliation_items を作り直す。
  * 同じ鍵（種類＋案件＋名前）の差は、状態とメモを残す。ただし「解決」「了承」にした差の金額が変わったら「未対応」に戻す。
+ * 今回の突き合わせに出てこなくなった差は：
+ *   - 未対応のものは消す（扱いを決めていないので失うものが無い。メモがあれば操作の記録に残す）
+ *   - 問い合わせ済みのものは「解決」にして残す（直したお支払通知が届いた、がいちばん多い。取り戻せた額をあとで入れられる）
+ *   - 解決・了承のものは、そのまま履歴として残す（取り戻せたお金の記録を消さない）
  * お支払通知に行が 1 つも無いとき（列が分からなかったとき）は、差を作らない（今ある状態も消さない）。
  */
 export async function runReconcile(db: Db, tenantId: string, noticeId: string, userId?: string | null): Promise<RunResult> {
   const ctx = await loadContext(db, tenantId, noticeId);
   const { changed: matchedLines, resolved } = await autoMatch(db, tenantId, ctx);
-  if (ctx.lines.length === 0) return { skipped: true, items: 0, created: 0, updated: 0, removed: 0, reopened: 0, matchedLines };
+  if (ctx.lines.length === 0) return { skipped: true, items: 0, created: 0, updated: 0, removed: 0, reopened: 0, settledByRerun: 0, matchedLines };
   const result = compareFromContext(ctx, resolved);
-  const out: RunResult = { skipped: false, items: result.items.length, created: 0, updated: 0, removed: 0, reopened: 0, matchedLines };
+  const out: RunResult = { skipped: false, items: result.items.length, created: 0, updated: 0, removed: 0, reopened: 0, settledByRerun: 0, matchedLines };
 
   await db.transaction(async (tx) => {
+    // 同じ通知を 2 つの画面から同時に突き合わせても、差が二重にできないように、通知の行を押さえてから読む
+    await tx
+      .select({ id: s.paymentNotices.id })
+      .from(s.paymentNotices)
+      .where(and(eq(s.paymentNotices.tenantId, tenantId), eq(s.paymentNotices.id, noticeId)))
+      .for("update");
     const existing = await tx
       .select()
       .from(s.reconciliationItems)
@@ -366,11 +453,22 @@ export async function runReconcile(db: Db, tenantId: string, noticeId: string, u
       if (reopen) out.reopened++;
       await tx
         .update(s.reconciliationItems)
-        .set({ ...values, ...(reopen ? { status: "open" } : {}) })
+        // 未対応に戻すときは、片付けた日も外す（取り戻せた額は、決め直すときの参考に残す）
+        .set({ ...values, ...(reopen ? { status: "open", resolvedAt: null } : {}) })
         .where(and(eq(s.reconciliationItems.id, prev.id), eq(s.reconciliationItems.tenantId, tenantId)));
       out.updated++;
     }
-    const removed = [...drop, ...existing.filter((e) => !seen.has(itemKey(e.kind, e.projectId, e.label)) && !drop.includes(e))];
+    const vanished = existing.filter((e) => !seen.has(itemKey(e.kind, e.projectId, e.label)) && !drop.includes(e));
+    const keep = vanished.filter((e) => e.status !== "open");
+    for (const e of keep) {
+      if (e.status !== "asked") continue;
+      await tx
+        .update(s.reconciliationItems)
+        .set({ status: "resolved", resolvedAt: new Date(), note: e.note ? `${e.note}\n${GONE_NOTE}` : GONE_NOTE })
+        .where(and(eq(s.reconciliationItems.id, e.id), eq(s.reconciliationItems.tenantId, tenantId)));
+      out.settledByRerun++;
+    }
+    const removed = [...drop, ...vanished.filter((e) => e.status === "open")];
     for (const e of removed) {
       await tx.delete(s.reconciliationItems).where(and(eq(s.reconciliationItems.id, e.id), eq(s.reconciliationItems.tenantId, tenantId)));
     }
@@ -383,7 +481,7 @@ export async function runReconcile(db: Db, tenantId: string, noticeId: string, u
         action: "reconcile.item_removed",
         entity: "payment_notice",
         entityId: noticeId,
-        detail: { items: removed.map((e) => ({ kind: e.kind, label: e.label, diff: e.diff, status: e.status, note: e.note })) },
+        detail: { items: removed.map((e) => ({ kind: e.kind, label: e.label, diff: e.diff, status: e.status, note: e.note, recoveredAmount: e.recoveredAmount })) },
       });
     }
   });
@@ -447,17 +545,21 @@ export async function importNotice(db: Db, tenantId: string, userId: string | nu
     throw new UserError("読み取れる行がありませんでした。見出しの下に品目と金額（または数量と単価）が並んでいるか確かめてください");
   }
 
-  const existing = await db
-    .select()
-    .from(s.paymentNotices)
-    .where(and(eq(s.paymentNotices.tenantId, tenantId), eq(s.paymentNotices.clientId, client.id), eq(s.paymentNotices.month, input.month)))
-    .limit(1);
-  const prev = existing[0];
-  if (prev && !input.replace) {
-    throw new UserError(
-      `${client.name}の${input.month.slice(0, 4)}年${Number(input.month.slice(5, 7))}月分のお支払通知は、すでに上げてあります（${prev.fileName}）。上げ直すときは「すでにあれば入れ替える」にチェックを入れてください。問い合わせの状態とメモは残ります。`,
+  const findExisting = async (q: Db) =>
+    (
+      await q
+        .select()
+        .from(s.paymentNotices)
+        .where(and(eq(s.paymentNotices.tenantId, tenantId), eq(s.paymentNotices.clientId, client.id), eq(s.paymentNotices.month, input.month)))
+        .orderBy(asc(s.paymentNotices.createdAt))
+        .limit(1)
+    )[0];
+  const alreadyError = (fileName: string) =>
+    new UserError(
+      `${client.name}の${input.month.slice(0, 4)}年${Number(input.month.slice(5, 7))}月分のお支払通知は、すでに上げてあります（${fileName}）。上げ直すときは「すでにあれば入れ替える」にチェックを入れてください。問い合わせの状態とメモは残ります。`,
     );
-  }
+  const found = await findExisting(db);
+  if (found && !input.replace) throw alreadyError(found.fileName);
 
   const summary: NoticeBatchSummary = {
     noticeId: "",
@@ -482,7 +584,11 @@ export async function importNotice(db: Db, tenantId: string, userId: string | nu
   };
   const lines = parsed?.lines ?? [];
 
-  const noticeId = await db.transaction(async (tx) => {
+  const { noticeId, prev } = await db.transaction(async (tx) => {
+    // 同じ元請・同じ月のお支払通知は 1 通だけ。同時に 2 回上げても 2 通にならないように、その組み合わせを押さえてから確かめ直す
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`payment_notice:${tenantId}:${client.id}:${input.month}`}, 0))`);
+    const prev = await findExisting(tx as unknown as Db);
+    if (prev && !input.replace) throw alreadyError(prev.fileName);
     let id: string;
     if (prev) {
       id = prev.id;
@@ -514,7 +620,7 @@ export async function importNotice(db: Db, tenantId: string, userId: string | nu
       summary: { ...summary, noticeId: id } as unknown as Record<string, unknown>,
       createdBy: userId,
     });
-    return id;
+    return { noticeId: id, prev: prev ?? null };
   });
 
   if (!pick.problem) {
@@ -545,8 +651,14 @@ async function insertLines(db: Db, tenantId: string, noticeId: string, lines: Pa
   }
 }
 
-/** 見本（架空の A物流 の 10 月分）を入れる先の元請。無ければ null */
+/**
+ * 見本（架空の A物流 の 10 月分）を入れる先の元請。デモの会社（架空）だけ。無ければ null。
+ * 本番の会社では出さない（見本は同じ月の通知を入れ替えるので、名前の似た実在の元請（例：「JA物流」）の通知を消さないように）
+ */
 export async function findSampleClient(db: Db, tenantId: string): Promise<{ id: string; name: string } | null> {
+  const tenant = await getTenant(db, tenantId);
+  const isDemo = tenant.settings?.demo === true || process.env.DEMO_MODE === "1";
+  if (!isDemo) return null;
   const clients = await db.select().from(s.clients).where(eq(s.clients.tenantId, tenantId));
   const hit = matchName("A物流", clients.map((c) => ({ id: c.id, name: c.name, aliases: c.aliases })));
   return hit ? { id: hit.id, name: hit.name } : null;
@@ -728,10 +840,16 @@ export async function setDriverMapping(db: Db, tenantId: string, userId: string 
 
 // ---------------------------------------------------------------- 入金の記録・状態・削除
 
+function isRealDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const d = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === value;
+}
+
 export async function updateNoticeMeta(db: Db, tenantId: string, userId: string | null, input: { noticeId: string; paidOn: string | null; feeDeducted: number }): Promise<void> {
   const notice = await getNotice(db, tenantId, input.noticeId);
-  if (input.paidOn !== null && !/^\d{4}-\d{2}-\d{2}$/.test(input.paidOn)) throw new UserError("入金日の形が正しくありません");
-  if (!Number.isInteger(input.feeDeducted) || input.feeDeducted < 0) throw new UserError("差し引かれた手数料は 0 以上の円で入れてください");
+  if (input.paidOn !== null && !isRealDate(input.paidOn)) throw new UserError("入金日の形が正しくありません（例：2026-12-25）");
+  if (!Number.isInteger(input.feeDeducted) || input.feeDeducted < 0 || input.feeDeducted > 2_000_000_000) throw new UserError("差し引かれた手数料は 0 以上の円で入れてください");
   await db
     .update(s.paymentNotices)
     .set({ paidOn: input.paidOn, feeDeducted: input.feeDeducted })
@@ -739,7 +857,20 @@ export async function updateNoticeMeta(db: Db, tenantId: string, userId: string 
   await audit(db, { tenantId, userId, action: "reconcile.notice_meta", entity: "payment_notice", entityId: notice.id, detail: { paidOn: input.paidOn, feeDeducted: input.feeDeducted } });
 }
 
-export async function setItemStatus(db: Db, tenantId: string, userId: string | null, input: { itemId: string; status: ItemStatus; note: string | null }): Promise<{ noticeId: string }> {
+export type ItemStatusInput = {
+  itemId: string;
+  status: ItemStatus;
+  note: string | null;
+  /** 「解決」のとき：取り戻せた額（入金された・次の支払に上乗せされると決まった額）。わからなければ null */
+  recoveredAmount?: number | null;
+};
+
+/**
+ * 差の扱いを変える。問い合わせた日・片付けた日を残す（「返事待ち n 日」と、取り戻せたお金の記録に使う）。
+ * - 「この金額で了承」は理由のメモが必須（あとで「なぜ受け入れたか」を説明できるように）
+ * - 取り戻せた額は「解決」で、受け取りが少ない可能性の差（マイナス）のときだけ残す
+ */
+export async function setItemStatus(db: Db, tenantId: string, userId: string | null, input: ItemStatusInput): Promise<{ noticeId: string }> {
   const rows = await db
     .select()
     .from(s.reconciliationItems)
@@ -747,21 +878,48 @@ export async function setItemStatus(db: Db, tenantId: string, userId: string | n
     .limit(1);
   const item = rows[0];
   if (!item) throw new UserError("その差が見つかりません。突き合わせ直したため消えたかもしれません。画面を読み込み直してください");
+  const note = input.note?.trim() ? input.note.trim() : null;
+  if (input.status === "accepted" && !note) {
+    throw new UserError("「この金額で了承」にするときは、理由をメモに残してください（例：11/5 先方と電話。10月分はこの数で合意）");
+  }
+  const recovered = input.recoveredAmount ?? null;
+  if (recovered !== null && (!Number.isInteger(recovered) || recovered < 0 || recovered > 2_000_000_000)) {
+    throw new UserError("取り戻せた額は 0 以上の円で入れてください");
+  }
+  const now = new Date();
+  const same = item.status === input.status;
+  const values: Partial<typeof s.reconciliationItems.$inferInsert> = { status: input.status, note };
+  if (input.status === "open") {
+    Object.assign(values, { askedAt: null, resolvedAt: null });
+  } else if (input.status === "asked") {
+    Object.assign(values, { askedAt: item.askedAt ?? now, resolvedAt: null });
+  } else {
+    Object.assign(values, { resolvedAt: same && item.resolvedAt ? item.resolvedAt : now });
+  }
+  // 取り戻せた額：解決のときは入れた値（空なら前の値を消す）。ほかの扱いに変えたら外す
+  values.recoveredAmount = input.status === "resolved" && item.diff < 0 ? recovered : null;
   await db
     .update(s.reconciliationItems)
-    .set({ status: input.status, note: input.note })
+    .set(values)
     .where(and(eq(s.reconciliationItems.id, item.id), eq(s.reconciliationItems.tenantId, tenantId)));
-  await audit(db, { tenantId, userId, action: "reconcile.item_status", entity: "reconciliation_item", entityId: item.id, detail: { from: item.status, to: input.status, note: input.note, label: item.label, diff: item.diff } });
+  await audit(db, {
+    tenantId,
+    userId,
+    action: "reconcile.item_status",
+    entity: "reconciliation_item",
+    entityId: item.id,
+    detail: { from: item.status, to: input.status, note, recoveredAmount: values.recoveredAmount ?? null, label: item.label, diff: item.diff },
+  });
   return { noticeId: item.noticeId };
 }
 
-/** 問い合わせ文から：選んだ差のうち「未対応」を「問い合わせ済み」にする */
+/** 問い合わせ文から：選んだ差のうち「未対応」を「問い合わせ済み」にする（問い合わせた日を残す） */
 export async function markItemsAsked(db: Db, tenantId: string, userId: string | null, input: { noticeId: string; itemIds: string[] }): Promise<number> {
   await getNotice(db, tenantId, input.noticeId);
   if (input.itemIds.length === 0) return 0;
   const updated = await db
     .update(s.reconciliationItems)
-    .set({ status: "asked" })
+    .set({ status: "asked", askedAt: new Date(), resolvedAt: null })
     .where(
       and(
         eq(s.reconciliationItems.tenantId, tenantId),
@@ -799,7 +957,7 @@ export async function deleteNotice(db: Db, tenantId: string, userId: string | nu
       month: notice.month,
       fileName: notice.fileName,
       total: notice.total,
-      items: items.map((i) => ({ kind: i.kind, label: i.label, diff: i.diff, status: i.status, note: i.note })),
+      items: items.map((i) => ({ kind: i.kind, label: i.label, diff: i.diff, status: i.status, note: i.note, recoveredAmount: i.recoveredAmount })),
     },
   });
   return { month: notice.month };
@@ -829,6 +987,12 @@ export type ItemView = {
   split: boolean;
   mixedPrices: boolean;
   confirmedExtra: boolean;
+  /** 問い合わせた日時・片付けた日時・取り戻せた額（保存した差だけ） */
+  askedAt: Date | null;
+  resolvedAt: Date | null;
+  recoveredAmount: number | null;
+  /** 今の突き合わせにも出ている差か（false は、片付いたあとで差が無くなった履歴） */
+  current: boolean;
 };
 
 export type LineGroupView = {
@@ -852,8 +1016,11 @@ export type DriverGroupView = { key: string; raw: string; count: number; driverI
 
 export type NoticeView = {
   notice: typeof s.paymentNotices.$inferSelect;
-  client: { id: string; name: string } | null;
+  /** closingDay：元請の締め日（0＝月末）。月末でなければ、暦の月で比べている旨を出す */
+  client: { id: string; name: string; closingDay: number } | null;
   tenantName: string;
+  /** 締めた月で、明細の写しの受注単価（締めたときの単価）を使った */
+  snapshotRates: boolean;
   /** 保存した差（状態とメモを変えられる） */
   items: ItemView[];
   /**
@@ -863,7 +1030,8 @@ export type NoticeView = {
   display: ItemView[];
   live: CompareResult;
   stale: boolean;
-  totals: ReturnType<typeof sumDiffs> & { settledCount: number; settledNet: number };
+  /** recovered：「解決」にした差で、取り戻せた額として入れた合計（確定。見込みの差とは足さない） */
+  totals: ReturnType<typeof sumDiffs> & { settledCount: number; settledNet: number; recovered: number; recoveredCount: number };
   facts: ReceivingFact[];
   lineGroups: LineGroupView[];
   driverGroups: DriverGroupView[];
@@ -916,7 +1084,17 @@ function toItemView(row: typeof s.reconciliationItems.$inferSelect, live: Map<st
     split,
     mixedPrices: l?.mixedPrices ?? false,
     confirmedExtra: l?.confirmedExtra ?? false,
+    askedAt: row.askedAt,
+    resolvedAt: row.resolvedAt,
+    recoveredAmount: row.recoveredAmount,
+    current: live.has(key),
   };
+}
+
+/** 取り戻せた額の合計（「解決」にした差だけ。確定したお金） */
+function recoveredOf(list: { status: string; recoveredAmount: number | null }[]): { recovered: number; recoveredCount: number } {
+  const done = list.filter((i) => i.status === "resolved" && i.recoveredAmount !== null && i.recoveredAmount > 0);
+  return { recovered: done.reduce((a, i) => a + (i.recoveredAmount ?? 0), 0), recoveredCount: done.length };
 }
 
 /** 当たらなかった品目に近い案件（名前の 2 文字ずつの重なりが 4 割以上。その元請の案件を少し優先） */
@@ -958,25 +1136,42 @@ export async function loadNoticeView(db: Db, tenantId: string, noticeId: string)
       if (!v.unit && r.projectId) v.unit = units.get(r.projectId) ?? null;
       return v;
     })
-    .sort((a, b) => Number(a.kind === "extra") - Number(b.kind === "extra") || a.label.localeCompare(b.label, "ja") || KIND_ORDER[a.kind] - KIND_ORDER[b.kind]);
+    .sort(
+      (a, b) =>
+        Number(!a.current) - Number(!b.current) ||
+        Number(a.kind === "extra") - Number(b.kind === "extra") ||
+        a.label.localeCompare(b.label, "ja") ||
+        KIND_ORDER[a.kind] - KIND_ORDER[b.kind],
+    );
 
-  const persisted = new Set(rows.map((r) => `${itemKey(r.kind, r.projectId, r.label)}=${r.diff}`));
-  const current = new Set(live.items.map((i) => `${i.key}=${i.diff}`));
-  const stale = ctx.lines.length > 0 && (persisted.size !== current.size || [...current].some((k) => !persisted.has(k)));
+  // 保存した結果が今の記録と同じか：今の差がすべて同じ額で保存されていて、保存した未対応・問い合わせ済みの差が今もある
+  // （片付いたあとで差が無くなった履歴は、今の突き合わせに出なくてよい）
+  const liveKeys = new Set(live.items.map((i) => i.key));
+  const rowKeys = rows.map((r) => itemKey(r.kind, r.projectId, r.label));
+  const persistedByKey = new Map(rows.map((r, i) => [rowKeys[i], r]));
+  const stale =
+    ctx.lines.length > 0 &&
+    (live.items.some((i) => persistedByKey.get(i.key)?.diff !== i.diff) ||
+      rows.some((r, i) => !liveKeys.has(rowKeys[i]) && !isSettledHistory(r, liveKeys, rowKeys[i])) ||
+      new Set(rowKeys).size !== rowKeys.length);
 
   const savedByKey = new Map(items.map((i) => [i.key, i]));
-  const display: ItemView[] = stale
-    ? live.items.map((l) => {
-        const saved = savedByKey.get(l.key);
-        return {
-          ...l,
-          id: null,
-          status: saved?.status ?? "open",
-          note: saved?.note ?? null,
-          driverName: l.driverId ? (driverNames.get(l.driverId) ?? null) : null,
-        };
-      })
-    : items;
+  const liveDisplay = live.items.map((l): ItemView => {
+    const saved = savedByKey.get(l.key);
+    return {
+      ...l,
+      id: null,
+      status: saved?.status ?? "open",
+      note: saved?.note ?? null,
+      driverName: l.driverId ? (driverNames.get(l.driverId) ?? null) : null,
+      askedAt: saved?.askedAt ?? null,
+      resolvedAt: saved?.resolvedAt ?? null,
+      recoveredAmount: saved?.recoveredAmount ?? null,
+      current: true,
+    };
+  });
+  // 古いときは今の記録で出した差を並べ、片付いた履歴はそのまま後ろに付ける
+  const display: ItemView[] = stale ? [...liveDisplay, ...items.filter((i) => !i.current && !isUnsettled(i.status))] : items;
   const unsettled = display.filter((i) => isUnsettled(i.status));
   const settled = display.filter((i) => !isUnsettled(i.status));
 
@@ -984,7 +1179,9 @@ export async function loadNoticeView(db: Db, tenantId: string, noticeId: string)
   const groups = new Map<string, ResolvedLine[]>();
   for (const l of resolved) {
     const k = lineKey(l.rawProject);
-    groups.set(k, [...(groups.get(k) ?? []), l]);
+    const arr = groups.get(k);
+    if (arr) arr.push(l);
+    else groups.set(k, [l]);
   }
   const lineGroups: LineGroupView[] = [...groups.entries()].map(([key, ls]) => {
     const first = ls[0];
@@ -1014,7 +1211,9 @@ export async function loadNoticeView(db: Db, tenantId: string, noticeId: string)
   for (const l of resolved) {
     if (!l.rawDriver?.trim()) continue;
     const k = lineKey(l.rawDriver);
-    dgroups.set(k, [...(dgroups.get(k) ?? []), l]);
+    const arr = dgroups.get(k);
+    if (arr) arr.push(l);
+    else dgroups.set(k, [l]);
   }
   const driverGroups: DriverGroupView[] = [...dgroups.entries()]
     .map(([key, ls]) => ({
@@ -1030,13 +1229,14 @@ export async function loadNoticeView(db: Db, tenantId: string, noticeId: string)
   const bs = batch ? (batch.summary as unknown as NoticeBatchSummary) : null;
   return {
     notice: ctx.notice,
-    client: ctx.client ? { id: ctx.client.id, name: ctx.client.name } : null,
+    client: ctx.client ? { id: ctx.client.id, name: ctx.client.name, closingDay: ctx.client.closingDay } : null,
     tenantName: ctx.tenant.name,
+    snapshotRates: ctx.snapshotRates > 0,
     items,
     display,
     live,
     stale,
-    totals: { ...sumDiffs(unsettled), settledCount: settled.length, settledNet: settled.reduce((a, i) => a + i.diff, 0) },
+    totals: { ...sumDiffs(unsettled), settledCount: settled.length, settledNet: settled.reduce((a, i) => a + i.diff, 0), ...recoveredOf(display) },
     facts: receivingFacts({ month: ctx.notice.month, paidOn: ctx.notice.paidOn, feeDeducted: ctx.notice.feeDeducted }),
     lineGroups,
     driverGroups,
@@ -1094,6 +1294,10 @@ export type MonthClientRow = {
     openCount: number;
     askedCount: number;
     settledCount: number;
+    /** 取り戻せた額（確定）の合計 */
+    recovered: number;
+    /** 受注単価が 0 円の案件の名前（当社の記録が出ない） */
+    zeroRate: string[];
     /** 保存した差と、今の記録で出した差が違う（突き合わせ直すとよい） */
     stale: boolean;
   } | null;
@@ -1124,6 +1328,8 @@ export async function listMonth(db: Db, tenantId: string, month: string): Promis
           openCount: c.open,
           askedCount: c.asked,
           settledCount: c.settled,
+          recovered: c.recovered,
+          zeroRate: c.zeroRate,
           stale: c.stale,
         }
       : null,
@@ -1133,7 +1339,15 @@ export async function listMonth(db: Db, tenantId: string, month: string): Promis
 
 // ---------------------------------------------------------------- 突合レポート（何か月分か）
 
-export type ReportItem = CompareItem & { status: ItemStatus; note: string | null };
+export type ReportItem = CompareItem & {
+  status: ItemStatus;
+  note: string | null;
+  askedAt: Date | null;
+  resolvedAt: Date | null;
+  recoveredAmount: number | null;
+  /** 今の突き合わせにも出ている差か（false は、片付いたあとで差が無くなった履歴） */
+  current: boolean;
+};
 
 export type ReportCell = {
   clientId: string | null;
@@ -1162,6 +1376,11 @@ export type ReportCell = {
   open: number;
   asked: number;
   settled: number;
+  /** 取り戻せた額（「解決」にして額を入れた差の合計。確定） */
+  recovered: number;
+  recoveredCount: number;
+  /** 受注単価が 0 円の案件の名前 */
+  zeroRate: string[];
   facts: ReceivingFact[];
   stale: boolean;
 };
@@ -1173,7 +1392,7 @@ export type Report = {
   to: string;
   months: string[];
   cells: ReportCell[];
-  totals: { short: number; shortCount: number; over: number; overCount: number; notices: number; missingNotices: number };
+  totals: { short: number; shortCount: number; over: number; overCount: number; notices: number; missingNotices: number; recovered: number; recoveredCount: number };
 };
 
 /** from・to は YYYY-MM-01。長すぎる期間は 12 か月までにする */
@@ -1192,7 +1411,7 @@ export async function loadReport(db: Db, tenantId: string, from: string, to: str
   const months: string[] = [];
   for (let m = from; m <= to && months.length < 12; m = shiftMonth(m, 1)) months.push(m);
 
-  const [tenant, clients, projects, drivers, work, notices, profiles] = await Promise.all([
+  const [tenant, clients, projects, drivers, work, notices, profiles, closedRates] = await Promise.all([
     getTenant(db, tenantId),
     db.select().from(s.clients).where(eq(s.clients.tenantId, tenantId)).orderBy(asc(s.clients.name)),
     db.select().from(s.projects).where(eq(s.projects.tenantId, tenantId)),
@@ -1206,6 +1425,7 @@ export async function loadReport(db: Db, tenantId: string, from: string, to: str
       .from(s.paymentNotices)
       .where(and(eq(s.paymentNotices.tenantId, tenantId), gte(s.paymentNotices.month, from), lte(s.paymentNotices.month, to))),
     db.select().from(s.mappingProfiles).where(and(eq(s.mappingProfiles.tenantId, tenantId), eq(s.mappingProfiles.kind, "payment_notice"))),
+    closedBillRates(db, tenantId, months),
   ]);
   const ids = notices.map((n) => n.id);
   const [lines, stored] = ids.length
@@ -1216,7 +1436,11 @@ export async function loadReport(db: Db, tenantId: string, from: string, to: str
     : [[], []];
   const rounding = tenant.amountRounding as Rounding;
   const projectRefs: ProjectRef[] = projects.map((p) => ({ id: p.id, name: p.name, clientId: p.clientId, aliases: p.aliases, active: p.active, unit: p.unit, billRate: p.billRate }));
-  const cmpProjects = projects.map((p) => ({ id: p.id, name: p.name, clientId: p.clientId, unit: p.unit, billRate: p.billRate }));
+  // 締めた月は、締めたときの受注単価（明細の写し）で数える
+  const cmpProjectsFor = (month: string) => {
+    const rates = closedRates.get(month);
+    return projects.map((p) => ({ id: p.id, name: p.name, clientId: p.clientId, unit: p.unit, billRate: rates?.get(p.id) ?? p.billRate }));
+  };
 
   const lineMapFor = (clientId: string | null): Record<string, LineTarget> => {
     if (!clientId) return {};
@@ -1229,39 +1453,124 @@ export async function loadReport(db: Db, tenantId: string, from: string, to: str
   const clientList: { id: string | null; name: string }[] = [...clients.map((c) => ({ id: c.id as string | null, name: c.name }))];
   if (notices.some((n) => !n.clientId || !clients.some((c) => c.id === n.clientId))) clientList.push({ id: null, name: "（元請が削除されています）" });
 
+  const workByMonth = new Map<string, typeof work>();
+  for (const w of work) {
+    const arr = workByMonth.get(w.month);
+    if (arr) arr.push(w);
+    else workByMonth.set(w.month, [w]);
+  }
+  const linesByNotice = new Map<string, typeof lines>();
+  for (const l of lines) {
+    const arr = linesByNotice.get(l.noticeId);
+    if (arr) arr.push(l);
+    else linesByNotice.set(l.noticeId, [l]);
+  }
+
   for (const c of clientList) {
     for (const month of months) {
-      const monthWork = work.filter((w) => w.month === month);
+      const monthWork = workByMonth.get(month) ?? [];
+      const cmpProjects = cmpProjectsFor(month);
       const notice = notices.find((n) => n.month === month && (c.id ? n.clientId === c.id : !n.clientId || !clients.some((x) => x.id === n.clientId)));
       const qty = new Map<string, number>();
       for (const w of monthWork) if (w.qty > 0) qty.set(w.projectId, (qty.get(w.projectId) ?? 0) + w.qty);
-      const own = projects.filter((p) => c.id && p.clientId === c.id && (qty.get(p.id) ?? 0) > 0);
+      const own = cmpProjects.filter((p) => c.id && p.clientId === c.id && (qty.get(p.id) ?? 0) > 0);
+      const ownTotal = () => own.reduce((a, p) => a + roundYen((qty.get(p.id) ?? 0) * p.billRate, rounding), 0);
       if (!notice) {
-        const ourTotal = own.reduce((a, p) => a + roundYen((qty.get(p.id) ?? 0) * p.billRate, rounding), 0);
+        const ourTotal = ownTotal();
         if (ourTotal === 0 && !opts.includeEmpty) continue;
-        cells.push({ clientId: c.id, clientName: c.name, month, ourTotal, projectsWithWork: own.length, notice: null, items: [], short: 0, shortCount: 0, over: 0, overCount: 0, open: 0, asked: 0, settled: 0, facts: [], stale: false });
+        cells.push({
+          clientId: c.id,
+          clientName: c.name,
+          month,
+          ourTotal,
+          projectsWithWork: own.length,
+          notice: null,
+          items: [],
+          short: 0,
+          shortCount: 0,
+          over: 0,
+          overCount: 0,
+          open: 0,
+          asked: 0,
+          settled: 0,
+          recovered: 0,
+          recoveredCount: 0,
+          zeroRate: own.filter((p) => !(p.billRate > 0)).map((p) => p.name),
+          facts: [],
+          stale: false,
+        });
         continue;
       }
       const lineMap = lineMapFor(notice.clientId);
-      const nLines: CmpLine[] = lines
-        .filter((l) => l.noticeId === notice.id)
-        .map((l) => {
-          // まだ突き合わせていない通知も、突き合わせたときと同じ当て方で数える（DB には書かない）
-          const { projectId, role } = resolveLine(l, lineMap, notice.clientId, projectRefs);
-          return { id: l.id, rawProject: l.rawProject, rawDriver: l.rawDriver, projectId, driverId: l.driverId, qty: l.qty, unitPrice: l.unitPrice, amount: l.amount, role };
-        });
+      const cache = new Map<string, { projectId: string | null; role: LineRole }>();
+      const nLines: CmpLine[] = (linesByNotice.get(notice.id) ?? []).map((l) => {
+        // まだ突き合わせていない通知も、突き合わせたときと同じ当て方で数える（DB には書かない。同じ名前は 1 回だけ照合）
+        const ck = `${l.rawProject}\u0000${l.projectId ?? ""}`;
+        let hit = cache.get(ck);
+        if (!hit) {
+          hit = resolveLine(l, lineMap, notice.clientId, projectRefs);
+          cache.set(ck, hit);
+        }
+        return { id: l.id, rawProject: l.rawProject, rawDriver: l.rawDriver, projectId: hit.projectId, driverId: l.driverId, qty: l.qty, unitPrice: l.unitPrice, amount: l.amount, role: hit.role };
+      });
       const result = compareNotice({ clientId: notice.clientId, projects: cmpProjects, drivers, work: monthWork, lines: nLines, rounding });
       const saved = stored.filter((i) => i.noticeId === notice.id);
-      const savedByKey = new Map(saved.map((i) => [itemKey(i.kind, i.projectId, i.label), i]));
-      const items: ReportItem[] = nLines.length === 0 ? [] : result.items.map((it) => ({ ...it, status: (savedByKey.get(it.key)?.status as ItemStatus) ?? "open", note: savedByKey.get(it.key)?.note ?? null }));
+      const savedKeys = saved.map((i) => itemKey(i.kind, i.projectId, i.label));
+      const savedByKey = new Map(saved.map((i, n) => [savedKeys[n], i]));
+      const liveKeys = new Set(result.items.map((it) => it.key));
+      const liveItems: ReportItem[] = result.items.map((it) => {
+        const sv = savedByKey.get(it.key);
+        return {
+          ...it,
+          status: (sv?.status as ItemStatus) ?? "open",
+          note: sv?.note ?? null,
+          askedAt: sv?.askedAt ?? null,
+          resolvedAt: sv?.resolvedAt ?? null,
+          recoveredAmount: sv?.recoveredAmount ?? null,
+          current: true,
+        };
+      });
+      // 片付いたあとで差が無くなった履歴（直したお支払通知が届いた など）も、取り戻せたお金の記録として載せる
+      const history: ReportItem[] = saved
+        .filter((sv, n) => isSettledHistory(sv, liveKeys, savedKeys[n]))
+        .map((sv) => ({
+          key: itemKey(sv.kind, sv.projectId, sv.label),
+          kind: sv.kind as ItemKind,
+          projectId: sv.projectId,
+          driverId: sv.driverId,
+          label: sv.label,
+          unit: sv.projectId ? (projects.find((p) => p.id === sv.projectId)?.unit ?? null) : null,
+          ourQty: sv.ourQty,
+          theirQty: sv.theirQty,
+          ourPrice: sv.ourPrice,
+          theirPrice: sv.theirPrice,
+          ourAmount: sv.ourAmount,
+          theirAmount: sv.theirAmount,
+          diff: sv.diff,
+          split: false,
+          mixedPrices: false,
+          confirmedExtra: false,
+          status: sv.status as ItemStatus,
+          note: sv.note,
+          askedAt: sv.askedAt,
+          resolvedAt: sv.resolvedAt,
+          recoveredAmount: sv.recoveredAmount,
+          current: false,
+        }));
+      const items: ReportItem[] = nLines.length === 0 ? [] : [...liveItems, ...history];
       const unsettled = items.filter((i) => isUnsettled(i.status));
       const d = sumDiffs(unsettled);
-      const stale = nLines.length > 0 && (saved.length !== result.items.length || result.items.some((it) => savedByKey.get(it.key)?.diff !== it.diff));
+      const rec = recoveredOf(items);
+      const stale =
+        nLines.length > 0 &&
+        (result.items.some((it) => savedByKey.get(it.key)?.diff !== it.diff) ||
+          saved.some((sv, n) => !liveKeys.has(savedKeys[n]) && isUnsettled(sv.status)) ||
+          new Set(savedKeys).size !== savedKeys.length);
       cells.push({
         clientId: c.id,
         clientName: c.name,
         month,
-        ourTotal: nLines.length ? result.ourTotal : own.reduce((a, p) => a + roundYen((qty.get(p.id) ?? 0) * p.billRate, rounding), 0),
+        ourTotal: nLines.length ? result.ourTotal : ownTotal(),
         projectsWithWork: own.length,
         notice: {
           id: notice.id,
@@ -1281,6 +1590,9 @@ export async function loadReport(db: Db, tenantId: string, from: string, to: str
         open: items.filter((i) => i.status === "open").length,
         asked: items.filter((i) => i.status === "asked").length,
         settled: items.filter((i) => !isUnsettled(i.status)).length,
+        recovered: rec.recovered,
+        recoveredCount: rec.recoveredCount,
+        zeroRate: nLines.length ? result.zeroRateProjects.map((p) => p.name) : own.filter((p) => !(p.billRate > 0)).map((p) => p.name),
         facts: receivingFacts({ month, paidOn: notice.paidOn, feeDeducted: notice.feeDeducted }),
         stale,
       });
@@ -1301,6 +1613,8 @@ export async function loadReport(db: Db, tenantId: string, from: string, to: str
       overCount: withNotice.reduce((a, x) => a + x.overCount, 0),
       notices: withNotice.length,
       missingNotices: cells.filter((x) => !x.notice).length,
+      recovered: withNotice.reduce((a, x) => a + x.recovered, 0),
+      recoveredCount: withNotice.reduce((a, x) => a + x.recoveredCount, 0),
     },
   };
 }

@@ -271,6 +271,18 @@ export function DuplicateList({ rows, total }: { rows: DuplicateRow[]; total: nu
   );
 }
 
+/** 列の番号 → Excel の列の名前（0 → A、26 → AA） */
+function letterOf(index: number): string {
+  let n = index + 1;
+  let out = "";
+  while (n > 0) {
+    const r = (n - 1) % 26;
+    out = String.fromCharCode(65 + r) + out;
+    n = Math.floor((n - 1) / 26);
+  }
+  return out;
+}
+
 /** 表の最初の数行（どう読んだかを、列の役目つきで見せる） */
 export function SheetPreview({
   rows,
@@ -287,11 +299,12 @@ export function SheetPreview({
 }) {
   const start = Math.max(0, headerRow - 1);
   const end = Math.min(rows.length, headerRow + headerDepth + limit);
+  // 日付が横に並ぶ表（31 日＋名前の列）も最後まで見えるように、64 列まで出す（横にスクロール）
   const width = Math.min(
     rows.slice(start, end).reduce((w, r) => Math.max(w, r.length), 0),
-    26,
+    64,
   );
-  const letters = Array.from({ length: width }, (_, i) => String.fromCharCode(65 + i));
+  const letters = Array.from({ length: width }, (_, i) => letterOf(i));
   return (
     <TableWrap>
       <table className="w-full min-w-max border-collapse text-xs">

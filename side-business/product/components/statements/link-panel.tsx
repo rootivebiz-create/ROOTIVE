@@ -108,9 +108,9 @@ export function LinkPanel({
         </p>
       )}
 
-      <details className="rounded-lg border border-border p-3 text-sm">
-        <summary className="cursor-pointer font-bold">送る文面を見る</summary>
-        <p className="mt-2 whitespace-pre-wrap break-words text-muted-foreground">{message}</p>
+      <details className="rounded-lg border border-border px-3 text-sm">
+        <summary className="cursor-pointer py-3 font-bold">送る文面を見る</summary>
+        <p className="whitespace-pre-wrap break-words pb-3 text-muted-foreground">{message}</p>
       </details>
 
       {note && <Notice tone={note.tone}>{note.text}</Notice>}

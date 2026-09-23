@@ -2,6 +2,8 @@ import { defineConfig } from "vitest/config";
 import path from "node:path";
 
 export default defineConfig({
+  // .tsx の画面を試験で描くとき、React を import しなくても動く書き方（automatic）にする
+  esbuild: { jsx: "automatic" },
   resolve: {
     alias: [
       { find: /^@\/lib\/(.*)$/, replacement: path.resolve(__dirname, "../lib/$1") },

@@ -4,7 +4,7 @@ import { jpToday } from "@/lib/format";
 import { PrintButton } from "~/components/parallel/print-button";
 import { getDb } from "~/db/client";
 import { requirePageUser } from "~/server/auth";
-import { loadParallel } from "~/server/features/parallel";
+import { goLiveMonth, loadParallel, parallelHistory } from "~/server/features/parallel";
 import { monthFromParam, monthLabelJa, monthParam } from "~/server/month";
 import { getTenant } from "~/server/repo";
 
@@ -28,7 +28,8 @@ export default async function ParallelReportPage({ searchParams }: { searchParam
   const month = monthFromParam((await searchParams).m);
   const m = monthParam(month);
   const db = await getDb();
-  const [v, tenant] = await Promise.all([loadParallel(db, user.tenantId, month), getTenant(db, user.tenantId)]);
+  const [v, tenant, golive] = await Promise.all([loadParallel(db, user.tenantId, month), getTenant(db, user.tenantId), goLiveMonth(db, user.tenantId)]);
+  const history = await parallelHistory(db, user.tenantId, month, 3, v);
   const compared = v.rows.filter((r) => r.excelTotal !== null);
   const notCompared = v.rows.filter((r) => r.excelTotal === null);
   const oursTotal = compared.reduce((a, r) => a + (r.ours ?? 0), 0);
@@ -61,7 +62,21 @@ export default async function ParallelReportPage({ searchParams }: { searchParam
               比べた {compared.length}人の振込額の合計：しめ日ラボ <Money value={oursTotal} />・Excel <Money value={excelTotal} />・差 <Money value={oursTotal - excelTotal} />
             </p>
           )}
+          {v.summary.different > 0 && (
+            <p className="text-sm">
+              差のある {v.summary.different}人：しめ日ラボの方が多い <Money value={v.summary.oursHigher} />／Excel の方が多い <Money value={v.summary.excelHigher} />
+              {v.summary.unexplained > 0 ? `（理由のメモがまだ無い人 ${v.summary.unexplained}人）` : "（全員に理由のメモあり）"}
+            </p>
+          )}
           {notCompared.length > 0 && <p className="text-sm text-muted-foreground">Excel の額が入っていない人：{notCompared.map((r) => r.name).join("、")}</p>}
+          <p className="text-sm">
+            直近 3 か月：
+            {history.months
+              .map((h) => `${monthLabelJa(h.month)}分 ${h.state === "ok" ? "一致・説明済み" : h.state === "diff" ? `${h.compared}人中 ${h.matched}人が一致` : "比べていません"}`)
+              .join("／")}
+            。続けて一致（または説明済み）の月は {history.streak} か月です。
+          </p>
+          {golive && <p className="text-sm font-bold">{monthLabelJa(golive)}分から、しめ日ラボで締めています。</p>}
         </section>
 
         {compared.length === 0 ? (
@@ -108,7 +123,7 @@ export default async function ParallelReportPage({ searchParams }: { searchParam
           <p className="font-bold">これからの進め方</p>
           <p>2〜3 か月、しめ日ラボと Excel の両方で締めて、差が 0 になったら Excel をやめてください。差が出た月は、どちらの計算に合わせるかを取引条件をもとに決めて、メモに残しておくと、あとで経緯が分かります。</p>
           <p className="text-xs text-muted-foreground">
-            「理由の見当」は、差の額が明細の部品（消費税・控除・調整・源泉徴収・端数）と同じ額かを探したものです。同じ額でも別の理由のことがあります。しめ日ラボの額は
+            「理由の見当」は、差の額が明細の部品（消費税・控除・調整・源泉徴収・端数）と同じ額か、ある行の数量・単価の違いで説明できるかを探したものです。当てはまっても別の理由のことがあります。しめ日ラボの額は
             {v.closed ? "締めた月の明細" : "保存した明細（無ければ今の稼働から出した見込み）"}です。
           </p>
         </section>

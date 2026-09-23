@@ -50,10 +50,13 @@ export default async function DriverPage({ params, searchParams }: { params: Pro
           ))}
         </div>
         {sp.saved === "created" && <Notice tone="ok">登録しました。口座・登録番号・取引条件の日付は、あとから足しても大丈夫です。</Notice>}
+        {sp.saved === "updated" && <Notice tone="ok">保存しました。まだ締めていない月の明細は、作り直すと反映されます。</Notice>}
       </div>
 
       {canEdit ? (
         <DriverForm
+          // 保存するたびに作り直す（保存した形の値を入力欄に出すため）
+          key={d.updatedAt.getTime()}
           action={updateDriverAction}
           initial={toDriverInitial(d)}
           submitLabel="保存"

@@ -76,8 +76,8 @@ export function normalizeAccountType(raw: string | null | undefined): { value: "
 /** 振込データに使えるカナか（漢字などが混ざっていないか） */
 export function kanaProblem(raw: string, label: string): string | null {
   const { value, invalid } = toZenginKana(raw);
-  if (!value) return `${label}が空です`;
   if (invalid.length) return `${label}はカナで入れてください（使えない文字：${[...new Set(invalid)].join("")}）`;
+  if (!value) return `${label}が空です`;
   return null;
 }
 

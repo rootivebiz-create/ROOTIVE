@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Input, NumberInput, Select } from "@/components/ui";
 import type { Rounding } from "@/lib/payroll/types";
-import { FEE_BEARER_WARNING, NO_AGREEMENT_WARNING, percentToRate, readNumber, rulePreview } from "~/server/features/settings/format";
+import { FEE_BEARER_WARNING, looseKey, NO_AGREEMENT_WARNING, percentToRate, readNumber, rulePreview } from "~/server/features/settings/format";
 import { Callout, Check, Choice, F, ResultLine, SubmitRow, useFormAction, type FormAction } from "./form-kit";
 
 export type RuleKind = "percent" | "fixed" | "per_unit";
@@ -60,9 +60,12 @@ export function RuleForm({
   damageWords,
   submitLabel,
   defaultDriverId,
+  others = [],
 }: {
   action: FormAction;
   initial?: RuleInitial;
+  /** 登録済みの控除（同じ名前の重なりを知らせる） */
+  others?: { id: string; name: string; driverId: string | null; driverName: string | null; active: boolean }[];
   drivers: { id: string; name: string; code: string | null; active: boolean }[];
   rounding: { amount: Rounding; tax: Rounding };
   /** 振込手数料・事故の負担に見える名前（正規表現の文字） */
@@ -82,7 +85,7 @@ export function RuleForm({
 
   const fee = useMemo(() => new RegExp(feeWords), [feeWords]);
   const damage = useMemo(() => new RegExp(damageWords), [damageWords]);
-  const n = readNumber(v.value);
+  const n = readNumber(v.kind === "percent" ? v.value.normalize("NFKC").replace(/%/g, "") : v.value);
   const valid = n !== null && !Number.isNaN(n) && n > 0;
   const preview = valid
     ? rulePreview(
@@ -96,6 +99,15 @@ export function RuleForm({
         rounding,
       )
     : null;
+  // 同じ名前の控除との重なり（全員の控除と、この人だけの控除は両方が引かれる）
+  const key = looseKey(v.name);
+  // 登録済みのものは、いまの「使う・使わない」（画面の外のボタンで変わる）で見る
+  const active = initial?.id ? initial.active : v.active;
+  const sameName = key && active ? others.filter((o) => o.id !== initial?.id && o.active && looseKey(o.name) === key) : [];
+  const scope = v.driverId || null;
+  const duplicate = sameName.find((o) => o.driverId === scope);
+  const globalOverlap = scope ? sameName.find((o) => o.driverId === null) : undefined;
+  const personalOverlap = scope ? [] : sameName.filter((o) => o.driverId !== null);
   const valueLabel = v.kind === "percent" ? "率（%）" : v.kind === "per_unit" ? "1 数量あたりの額（円）" : "毎月の額（円）";
 
   return (
@@ -135,6 +147,15 @@ export function RuleForm({
           </Select>
         </F>
       </div>
+      {duplicate && <Callout tone="red">同じ名前の控除「{duplicate.name}」（{scope ? "この人だけ" : "全員"}）がすでにあります。二重に引かれないよう、そちらを直してください。</Callout>}
+      {globalOverlap && (
+        <Callout tone="yellow">全員に当てる「{globalOverlap.name}」も、この人に当たります。両方が引かれるので、合わせた額が取引条件どおりか確かめてください。</Callout>
+      )}
+      {personalOverlap.length > 0 && (
+        <Callout tone="yellow">
+          「{v.name}」は、{personalOverlap.map((o) => o.driverName ?? "（不明）").join("・")}さんにこの人だけの控除もあります。その人たちには両方が引かれます。
+        </Callout>
+      )}
       {fee.test(v.name) && <Callout tone="red">{FEE_BEARER_WARNING}振込手数料は控除のルールにせず、会社の負担にする設定の確認をおすすめします。</Callout>}
       {damage.test(v.name) && <Callout tone="yellow">事故・破損などの負担を差し引くときは、その都度の根拠（事故の報告・合意書など）を残してください。</Callout>}
       <div>
@@ -181,7 +202,8 @@ export function RuleForm({
         </div>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        <Check name="active" checked={v.active} onChange={(c) => set("active", c)} label="使う" hint="外すと、これからの明細で引きません。記録は残ります" />
+        {/* 使う・使わないの切り替えは、登録したあとは下のボタンで（ここの古い値で戻さないように） */}
+        {!initial?.id && <Check name="active" checked={v.active} onChange={(c) => set("active", c)} label="使う" hint="外すと、これからの明細で引きません。記録は残ります" />}
         <F label="明細での並び順（任意）" error={fe.sort} hint="小さい数ほど上。空なら 0">
           <NumberInput name="sort" value={v.sort} onChange={(e) => set("sort", e.currentTarget.value)} inputMode="numeric" className="max-w-32" />
         </F>

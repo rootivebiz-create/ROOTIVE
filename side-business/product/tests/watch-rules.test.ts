@@ -23,9 +23,11 @@ import {
   statementsStale,
   termsMissing,
   toriteki,
+  totalBreakdown,
   workMissing,
 } from "~/server/features/watch/rules";
-import { SOURCES, viewerCanOpen } from "~/server/features/watch/sources";
+import { ackAllowed } from "~/server/features/watch/acks";
+import { FIX, fixLink, SOURCES } from "~/server/features/watch/sources";
 import { countIssues, groupBySeverity } from "~/server/features/watch/summary";
 import type { WatchContext, WatchDriver } from "~/server/features/watch/types";
 import type { WatchIssue } from "~/server/features/watch-types";
@@ -154,7 +156,7 @@ describe("60日（2か月）：サイトの道具と同じ判定", () => {
   it("末締め・翌月25日払い → 出ない。20日締め・翌月末払い → 黄。3か月後払い → 赤", () => {
     expect(sixtyDays(ctx())).toHaveLength(0);
     const caution = sixtyDays(ctx({ tenant: { ...TENANT, closingDay: 20, payDay: 0 } }));
-    expect(caution[0]).toMatchObject({ code: "sixty_days", severity: "yellow", subjectId: "tenant", fixHref: "/settings/company", sourceUrl: SOURCES.flGuidelines });
+    expect(caution[0]).toMatchObject({ code: "sixty_days", severity: "yellow", subjectId: "tenant", fixHref: "/settings/company?m=2026-10", sourceUrl: SOURCES.flGuidelines });
     expect(caution[0].detail).toContain("毎月20日締め・翌月末日払い");
     const ng = sixtyDays(ctx({ tenant: { ...TENANT, payMonthOffset: 3, payDay: 5 } }));
     expect(ng[0].severity).toBe("red");
@@ -225,6 +227,20 @@ describe("支払期日の文言・支払の遅れ", () => {
     // 振込額 0 以下の人は数えない
     expect(paidLate(ctx({ drivers: [d1], statements: [{ ...st, total: 0 }], today: "2026-12-01" }))).toHaveLength(0);
   });
+
+  it("支払期日が土曜で、月曜に振り込んだ → 赤（2日後）。休みの日だったことも書く（扱いは取引条件しだいなので判定はしない）", () => {
+    const d1 = driver("d1", "青木 翔太");
+    const st = { id: "s1", driverId: "d1", total: 357555, payDate: "2026-11-28" };
+    const b = { id: "b1", fileName: "振込.txt", transferDate: "2026-11-30", executedOn: "2026-11-30", statementIds: ["s1"] };
+    const [r] = paidLate(ctx({ drivers: [d1], statements: [st], batches: [b], today: "2026-12-01" }));
+    expect(r).toMatchObject({ severity: "red", subjectId: "b1", fixHref: "/transfer?m=2026-10" });
+    expect(r.detail).toContain("2026年11月30日で、明細の支払期日（2026年11月28日）より 2日後です");
+    expect(r.detail).toContain("青木 翔太（1人・合計 357,555円）");
+    expect(r.detail).toContain("明細の支払期日（2026年11月28日）は銀行の休みの日です");
+    // 平日の支払期日なら、休みの日のことは書かない
+    const [w] = paidLate(ctx({ drivers: [d1], statements: [{ ...st, payDate: "2026-11-25" }], batches: [b], today: "2026-12-01" }));
+    expect(w.detail).not.toContain("銀行の休みの日");
+  });
 });
 
 describe("差し引き", () => {
@@ -257,6 +273,11 @@ describe("差し引き", () => {
     const [plus] = deductionNoAgreement(ctx({ drivers: [d1], adjustments: [{ ...ok, label: "事故の見舞金", amount: 5000, basis: null, agreedInWriting: false }] }));
     expect(plus.severity).toBe("yellow");
     expect(plus.detail).not.toContain("減額");
+    // 払う側の調整なので「負担」とは書かない。直す画面はその調整を開く
+    expect(plus.title).toBe("事故・破損などに関わる支払の根拠が入っていません");
+    expect(plus.fixHref).toBe("/work?m=2026-10&adj=a1#adjustments");
+    // 0 円の調整は明細に出ないので、指摘もしない
+    expect(deductionNoAgreement(ctx({ drivers: [d1], adjustments: [{ ...ok, label: "事故の弁償", amount: 0, basis: null, agreedInWriting: false }] }))).toHaveLength(0);
   });
 
   it("単価：前月より上がった・同じ → 出ない。前月に無い案件 → 出ない", () => {
@@ -266,7 +287,9 @@ describe("差し引き", () => {
     expect(rateDown(ctx({ drafts: drafts(OCT, [d1], [["d1", "p2", 20]]), prevDrafts: prev }))).toHaveLength(0);
     const [down] = rateDown(ctx({ drafts: drafts(OCT, [d1], work, { overrides: [{ driverId: "d1", projectId: "p1", payRate: 145 }] }), prevDrafts: prev }));
     expect(down.detail).toContain("約 5,000円");
-    expect(down.fixHref).toBe("/settings/projects");
+    // 人ごとの単価ではなく案件の標準の単価が下がった → 案件の設定を名前で絞って開く
+    expect(down.fixHref).toBe(FIX.projects("宅配"));
+    expect(down.fixHref).toBe("/settings/projects?q=%E5%AE%85%E9%85%8D");
   });
 });
 
@@ -353,11 +376,43 @@ describe("数字のおかしなところ", () => {
     expect(statementsStale(ctx({ statementsStatus: { saved: 0, missing: 0, stale: 0, orphan: 0, upToDate: false } }))).toHaveLength(0);
   });
 
-  it("稼働の入れ忘れ：止めた人・前の月に終えた人 → 出ない", () => {
+  it("振込額がマイナス：内訳（委託料 ＋ 消費税 − 控除 ± 調整 − 源泉徴収）は明細の値のまま、足すと振込額になる", () => {
+    const writer = driver("d1", "青木 翔太");
+    const d = drafts(OCT, [writer], [["d1", "p1", 10]], {
+      drivers: [{ id: "d1", name: "青木 翔太", code: "D1", invoiceRegistered: true, registrationNo: "T1234567890123", isCorporation: false, withholdingCategory: "ko1", active: true }],
+      rules: [rule({ id: "r1", name: "管理費", amount: 1000 })],
+      adjustments: [{ driverId: "d1", label: "事故の弁償", amount: -5000, taxable: false, agreedInWriting: true }],
+    });
+    const x = d[0];
+    // 1,500 ＋ 150 −（1,000 ＋ 100）− 5,000 − 源泉
+    expect(x.subtotal).toBe(1500);
+    expect(x.withholding?.amount).toBeGreaterThan(0);
+    const w = x.withholding!.amount;
+    expect(x.total).toBe(1500 + 150 - 1100 - 5000 - w);
+    const [i] = negativeTotal(ctx({ drafts: d }));
+    expect(i.severity).toBe("red");
+    expect(i.detail).toContain(`2026年10月分の振込額が マイナス ${(-x.total).toLocaleString("ja-JP")}円です`);
+    expect(i.detail).toContain(`委託料 1,500円 ＋ 消費税 150円 − 控除 1,100円（消費税を含む） − 調整 5,000円 − 源泉徴収 ${w.toLocaleString("ja-JP")}円`);
+    expect(totalBreakdown({ ...x, tax: 0, deductionTotal: 0, deductionTax: 0, adjustmentTotal: 0, adjustmentTax: 0, withholding: null })).toBe("委託料 1,500円");
+  });
+
+  it("終了の予告の記録が無い → 30 日前の日を書く（まだ先なら「です」、過ぎていれば「すでに過ぎています」）", () => {
+    const d = driver("d1", "青木 翔太", { startedOn: "2026-01-01", endOn: "2026-12-31" });
+    const [before] = contractEnd(ctx({ drivers: [d], today: "2026-10-31" }));
+    expect(before.detail).toContain("終了日の30日前は2026年12月1日です");
+    const [after] = contractEnd(ctx({ drivers: [d], today: "2026-12-02" }));
+    expect(after.detail).toContain("終了日の30日前は2026年12月1日で、すでに過ぎています");
+    expect(after.fixHref).toBe("/settings/drivers/d1");
+  });
+
+  it("稼働の入れ忘れ：止めた人・前の月に終えた人 → 出ない。まだ誰の稼働も無い月 → 人ごとには出さない", () => {
     const prev = drafts(SEP, [d1], [["d1", "p1", 100]]);
-    expect(workMissing(ctx({ drivers: [d1], prevDrafts: prev }))).toHaveLength(1);
-    expect(workMissing(ctx({ drivers: [{ ...d1, active: false }], prevDrafts: prev }))).toHaveLength(0);
-    expect(workMissing(ctx({ drivers: [{ ...d1, endOn: "2026-09-30" }], prevDrafts: prev }))).toHaveLength(0);
+    const d2 = driver("d2", "上田 健");
+    expect(workMissing(ctx({ drivers: [d1, d2], prevDrafts: prev }))).toHaveLength(0);
+    expect(workMissing(ctx({ drivers: [d1, d2], prevDrafts: prev, drafts: drafts(OCT, [d2], [["d2", "p1", 5]]) }))).toHaveLength(1);
+    const cur = drafts(OCT, [d2], [["d2", "p1", 5]]);
+    expect(workMissing(ctx({ drivers: [{ ...d1, active: false }, d2], prevDrafts: prev, drafts: cur }))).toHaveLength(0);
+    expect(workMissing(ctx({ drivers: [{ ...d1, endOn: "2026-09-30" }, d2], prevDrafts: prev, drafts: cur }))).toHaveLength(0);
   });
 });
 
@@ -431,10 +486,26 @@ describe("まとめ・並べ方・文面", () => {
     expect(groups.red.at(-1)!.acked).toBe(true);
   });
 
-  it("閲覧の人が開ける直す画面は、稼働・明細などだけ（設定・振込は開けない）", () => {
-    expect(viewerCanOpen("/work?m=2026-10")).toBe(true);
-    expect(viewerCanOpen("/statements?m=2026-10")).toBe(true);
-    expect(viewerCanOpen("/settings/drivers")).toBe(false);
-    expect(viewerCanOpen("/transfer?m=2026-10")).toBe(false);
+  it("直す画面のリンク：直せない人には「見る」（閲覧の人・会社の設定を変えられない事務・締めた月の稼働と明細）", () => {
+    const open = { closed: false };
+    expect(fixLink(FIX.driver("d1"), { role: "staff", ...open })).toMatchObject({ href: "/settings/drivers/d1", text: "直す（ドライバーの設定）", canFix: true, note: null });
+    expect(fixLink(FIX.driver("d1"), { role: "viewer", ...open })).toMatchObject({ text: "見る（ドライバーの設定）", canFix: false, note: "直すのは事務・オーナーの方です。" });
+    expect(fixLink(FIX.company("2026-10"), { role: "staff", ...open })).toMatchObject({ text: "見る（会社の設定）", canFix: false });
+    expect(fixLink(FIX.company("2026-10"), { role: "owner", ...open })).toMatchObject({ text: "直す（会社の設定）", canFix: true });
+    expect(fixLink(FIX.rates("d1", "p1"), { role: "staff", ...open }).text).toBe("直す（人ごとの単価）");
+    expect(fixLink(FIX.rules("2026-10", "d1"), { role: "staff", ...open }).text).toBe("直す（控除のルール）");
+    expect(fixLink(FIX.adjustment("2026-10", "a1"), { role: "owner", closed: true })).toMatchObject({ text: "見る（稼働と調整）", canFix: false });
+    // 振込の記録は締めたあとに入れるので、締めた月でも「直す」
+    expect(fixLink(FIX.transfer("2026-10"), { role: "staff", closed: true })).toMatchObject({ text: "直す（振込データ）", canFix: true });
+    // 画面の場所の形（id は URL に安全な形で入れる）
+    expect(FIX.rules("2026-10")).toBe("/settings/rules?m=2026-10");
+    expect(FIX.adjustment("2026-10", "a b")).toBe("/work?m=2026-10&adj=a%20b#adjustments");
+  });
+
+  it("締めた月に確認済みにできるのは、締めたあとの振込の記録から出る指摘だけ", () => {
+    expect(ackAllowed("terms_missing", false)).toBe(true);
+    expect(ackAllowed("terms_missing", true)).toBe(false);
+    expect(ackAllowed("deduction_no_agreement", true)).toBe(false);
+    expect(ackAllowed("paid_late", true)).toBe(true);
   });
 });

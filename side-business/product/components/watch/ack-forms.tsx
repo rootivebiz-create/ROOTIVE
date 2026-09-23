@@ -36,7 +36,23 @@ function Hidden({ k }: { k: Key }) {
  * 「確認済みにする」：何を確かめたかのメモを書いて付ける。
  * ふだんは畳んでおき（スマホで場所を取らない）、開くとメモの欄が出る。前の月のメモがあれば下書きに入れる。
  */
-export function AckForm({ k, minLength, red, draftNote }: { k: Key; minLength: number; red: boolean; draftNote?: string | null }) {
+export function AckForm({
+  k,
+  minLength,
+  red,
+  draftNote,
+  label = "確認済みにする",
+  draftHint = "前の月のメモを下書きに入れています。今月も同じか確かめてから保存してください。",
+}: {
+  k: Key;
+  minLength: number;
+  red: boolean;
+  draftNote?: string | null;
+  /** 開く前の見出し（確かめ直すときは「確かめ直してメモを書き直す」） */
+  label?: string;
+  /** 下書きを入れたときのひとこと */
+  draftHint?: string;
+}) {
   const [state, action, pending] = useActionState(ackWatchAction, undefined);
   const noteId = useId();
   // フォームの送信後に React が欄を空に戻すので、書いたメモは手元で持つ（失敗しても消えない）
@@ -44,7 +60,7 @@ export function AckForm({ k, minLength, red, draftNote }: { k: Key; minLength: n
   return (
     <details className="group rounded-lg border border-border" open={state !== undefined && !state.ok ? true : undefined}>
       <summary className="flex min-h-11 cursor-pointer list-none items-center justify-center gap-2 rounded-lg px-4 text-sm font-bold hover:bg-muted [&::-webkit-details-marker]:hidden">
-        確認済みにする
+        {label}
         <span aria-hidden className="text-muted-foreground group-open:rotate-180">
           ▾
         </span>
@@ -72,7 +88,7 @@ export function AckForm({ k, minLength, red, draftNote }: { k: Key; minLength: n
             : "確認済みにすると、この月の一覧で「確認済み」になります。"}
           メモと、誰がいつ付けたかは記録に残ります。
         </p>
-        {draftNote && <p className="text-xs text-muted-foreground">前の月のメモを下書きに入れています。今月も同じか確かめてから保存してください。</p>}
+        {draftNote && <p className="text-xs text-muted-foreground">{draftHint}</p>}
         <Result state={state} />
         <p className="text-xs text-muted-foreground" aria-live="polite">
           いま {note.trim().length} 文字

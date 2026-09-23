@@ -478,19 +478,24 @@ export const parallelChecks = pgTable(
 
 // ---------------------------------------------------------------- 元請の支払通知と突合
 
-export const paymentNotices = pgTable("payment_notices", {
-  id: id(),
-  tenantId: tenantId(),
-  clientId: uuid("client_id").references(() => clients.id, { onDelete: "set null" }),
-  month: date("month", { mode: "string" }).notNull(),
-  fileName: text("file_name").notNull(),
-  total: integer("total").notNull().default(0),
-  /** 元請から入金された日（受け取る側の 60 日の確認に使う） */
-  paidOn: date("paid_on", { mode: "string" }),
-  /** 振込手数料などで差し引かれた額（受け取る側の確認に使う） */
-  feeDeducted: integer("fee_deducted").notNull().default(0),
-  createdAt: createdAt(),
-});
+export const paymentNotices = pgTable(
+  "payment_notices",
+  {
+    id: id(),
+    tenantId: tenantId(),
+    clientId: uuid("client_id").references(() => clients.id, { onDelete: "set null" }),
+    month: date("month", { mode: "string" }).notNull(),
+    fileName: text("file_name").notNull(),
+    total: integer("total").notNull().default(0),
+    /** 元請から入金された日（受け取る側の 60 日の確認に使う） */
+    paidOn: date("paid_on", { mode: "string" }),
+    /** 振込手数料などで差し引かれた額（受け取る側の確認に使う） */
+    feeDeducted: integer("fee_deducted").notNull().default(0),
+    createdAt: createdAt(),
+  },
+  // 同じ元請・同じ月のお支払通知は 1 通だけ（取り込み直しは入れ替え）
+  (t) => [uniqueIndex("payment_notices_unique").on(t.tenantId, t.clientId, t.month)],
+);
 
 export const paymentNoticeLines = pgTable("payment_notice_lines", {
   id: id(),

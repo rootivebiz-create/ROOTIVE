@@ -10,7 +10,7 @@ import { z } from "zod";
 import { WITHHOLDING_CATEGORY_ORDER, type WithholdingCategory } from "@/lib/engine/withholding";
 import { toZenginKana } from "@/lib/payroll/zengin";
 import { isDateString, validateDeadlineInput } from "@/lib/tools/torihiki-joken";
-import { percentToRate, rateToPercent, readNumber, toDayOfMonth, toHalfNumber, toPayMonthOffset } from "./format";
+import { looseKey, percentToRate, rateToPercent, readNumber, toDayOfMonth, toHalfNumber, toPayMonthOffset } from "./format";
 
 // ---------------------------------------------------------------- 小さな部品
 
@@ -18,7 +18,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const REG_NO_RE = /^T\d{13}$/;
 
-export { percentToRate, rateToPercent, readNumber, toHalfNumber };
+export { looseKey, percentToRate, rateToPercent, readNumber, toHalfNumber };
 
 /** 登録番号をそろえる（全角・空白・ハイフンを外し、数字 13 桁なら T を付ける） */
 export function normalizeRegNo(value: string): string {
@@ -44,15 +44,6 @@ export function splitAliases(value: string, name = ""): string[] {
     out.push(a);
   }
   return out;
-}
-
-/** 名前を比べるための形（全角と半角・大文字と小文字・空白の違いを無視する） */
-export function looseKey(value: string): string {
-  return value
-    .normalize("NFKC")
-    .toLowerCase()
-    .replace(/[ぁ-ゖ]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) + 0x60))
-    .replace(/[\s　]/g, "");
 }
 
 const text = (label: string, max: number) =>
@@ -234,7 +225,8 @@ export const companySchema = z
       requesterBranchCode: v.requesterBranchCode,
       requesterAccountNumber: v.requesterAccountNumber,
     };
-    const filled = Object.values(parts).some((x) => !!x);
+    // 金融機関名・支店名だけを入れた場合も「入れ始めた」とみなす（黙って捨てないように）
+    const filled = Object.values(parts).some((x) => !!x) || !!v.requesterBankName || !!v.requesterBranchName;
     if (filled) {
       const labels: Record<string, string> = {
         requesterCode: "依頼人コード",
@@ -294,7 +286,8 @@ export const driverSchema = z
     phone: z
       .string()
       .optional()
-      .transform((v) => (v ?? "").normalize("NFKC").trim())
+      // 「090ー1234ー5678」（長音）や全角のハイフンも「-」にそろえる
+      .transform((v) => (v ?? "").normalize("NFKC").replace(/[ー−‐―]/g, "-").trim())
       .refine((v) => v === "" || /^[0-9+\-() ]{6,20}$/.test(v), "電話番号は数字とハイフンで入れてください（例：090-1234-5678）")
       .transform((v) => (v ? v : null)),
     invoiceRegistered: checkbox,
@@ -408,7 +401,8 @@ export const ruleSchema = z
     sort: optionalNumber("並び順", { min: 0, max: 9999 }).transform((v) => v ?? 0),
   })
   .transform((v, ctx) => {
-    const n = readNumber(v.value);
+    // 率は「10%」「１０％」と書いても読む（% を外す）
+    const n = readNumber(v.kind === "percent" ? v.value.normalize("NFKC").replace(/%/g, "") : v.value);
     const base = { ...v, rate: null as number | null, amount: null as number | null };
     if (n === null) {
       ctx.addIssue({ code: "custom", path: ["value"], message: v.kind === "percent" ? "率を入れてください（例：10）" : "金額を入れてください" });

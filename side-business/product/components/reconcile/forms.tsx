@@ -111,28 +111,60 @@ export function RerunButton({ noticeId, label = "今の記録で突き合わせ�
 
 // ---------------------------------------------------------------- 差の状態とメモ
 
-export function ItemStatusForm({ itemId, status, note }: { itemId: string; status: ItemStatus; note: string | null }) {
+export function ItemStatusForm({
+  itemId,
+  status,
+  note,
+  diff,
+  recoveredAmount,
+  statuses = ITEM_STATUSES,
+}: {
+  itemId: string;
+  status: ItemStatus;
+  note: string | null;
+  /** 差（マイナス＝受け取りが少ない可能性）。取り戻せた額の欄は、マイナスのときだけ出す */
+  diff: number;
+  recoveredAmount: number | null;
+  /** 選べる扱い（片付いた記録は「解決」「了承」だけ） */
+  statuses?: readonly ItemStatus[];
+}) {
   const [state, action, pending] = useActionState(setItemStatusAction, undefined);
+  const [chosen, setChosen] = useState<ItemStatus>(status);
+  const showRecovered = chosen === "resolved" && diff < 0;
+  const noteRequired = chosen === "accepted";
   return (
     <form action={action} className="mt-3 space-y-2 border-t border-border pt-3">
       <input type="hidden" name="itemId" value={itemId} />
       <div className="grid gap-3 sm:grid-cols-[12rem_1fr_auto] sm:items-end">
         <Field label="扱い">
-          <Select name="status" defaultValue={status}>
-            {ITEM_STATUSES.map((s) => (
+          <Select name="status" value={chosen} onChange={(e) => setChosen(e.target.value as ItemStatus)}>
+            {statuses.map((s) => (
               <option key={s} value={s}>
                 {STATUS_LABEL[s]}
               </option>
             ))}
           </Select>
         </Field>
-        <Field label="メモ">
-          <Input name="note" defaultValue={note ?? ""} maxLength={500} placeholder="例：10/31 メールで問い合わせ" />
+        <Field label={noteRequired ? "メモ（了承した理由・必須）" : "メモ"}>
+          <Input
+            name="note"
+            defaultValue={note ?? ""}
+            maxLength={500}
+            required={noteRequired}
+            placeholder={noteRequired ? "例：11/5 先方と電話。10月分はこの数で合意" : "例：10/31 メールで問い合わせ"}
+          />
         </Field>
         <Button type="submit" variant="secondary" disabled={pending}>
           {pending ? "保存中…" : "保存"}
         </Button>
       </div>
+      {showRecovered && (
+        <div className="sm:max-w-xs">
+          <Field label="取り戻せた額（円・任意）" hint="入金された額、または次の支払に上乗せされると決まった額。当社の記録の誤りだったときは 0。入れた額だけを「取り戻せたお金」として集計します">
+            <NumberInput name="recoveredAmount" defaultValue={recoveredAmount !== null ? String(recoveredAmount) : ""} placeholder={`例：${Math.abs(diff)}`} />
+          </Field>
+        </div>
+      )}
       <FormMessage state={state} />
     </form>
   );

@@ -6,12 +6,16 @@
 import { payRuleLabel, paymentDeadlineCheck, type DayOfMonth, type PayMonthOffset } from "@/lib/tools/torihiki-joken";
 import { normalizeRegistrationNo } from "./normalize";
 
-/** lib（invoice-cost・payroll）と同じ 2 つ。原則課税のときだけ、免税の方への支払で差し引けない消費税が出る */
-export type TaxMethod = "general" | "simplified";
+/**
+ * 設定の画面（会社）と同じ 3 つ。原則課税のときだけ、免税の方への支払で差し引けない消費税が出る。
+ * 設定で「免税」にしてある会社が、ここで保存して原則課税に変わってしまわないよう、3 つとも選べるようにする。
+ */
+export type TaxMethod = "general" | "simplified" | "exempt";
 
 export const TAX_METHODS: { value: TaxMethod; label: string; hint: string }[] = [
   { value: "general", label: "原則課税（本則課税）", hint: "仕入の消費税を差し引いて納める方法。免税の方への支払で、差し引けない消費税が出ます" },
   { value: "simplified", label: "簡易課税・2割特例", hint: "売上の消費税から納める額を出す方法。免税の方への支払による負担は計算しません" },
+  { value: "exempt", label: "免税（会社が消費税を納めていない）", hint: "免税の方への支払による負担は計算しません" },
 ];
 
 export const CLOSING_CHOICES = [0, 5, 10, 15, 20, 25] as const;

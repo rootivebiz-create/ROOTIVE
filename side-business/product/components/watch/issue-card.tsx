@@ -3,7 +3,7 @@ import { Card, buttonClass } from "@/components/ui";
 import { Badge } from "~/components/page";
 import { AckForm, UnackForm } from "~/components/watch/ack-forms";
 import type { WatchIssue } from "~/server/features/watch-types";
-import { fixLabel, viewerCanOpen } from "~/server/features/watch/sources";
+import { fixLink } from "~/server/features/watch/sources";
 
 export const SEVERITY_LABEL = { red: "赤", yellow: "黄", info: "お知らせ" } as const;
 const SEVERITY_TONE = { red: "red", yellow: "yellow", info: "gray" } as const;
@@ -21,29 +21,34 @@ export type AckView = { note: string | null; byName: string | null; at: Date };
 
 /**
  * 見張り番の指摘 1 件：見出し・対象・記録から分かること・根拠と出典・直す画面・確認済みの印。
- * 確認済みにする／外すのは、事務・オーナーで、まだ締めていない月だけ。
+ * 確認済みにする／外すのは事務・オーナーで、まだ締めていない月（振込の遅れは締めたあとも）。
+ * 直す画面へのリンクは、直せない人（閲覧の人・会社の設定を変えられない事務・締めた月）には「見る」と出す。
  */
 export function IssueCard({
   issue,
   month,
+  role,
+  closed,
   canAck,
-  canOpenFix,
   ackMinLength,
   ack,
+  changedSinceAck = false,
   previous,
 }: {
   issue: WatchIssue;
   month: string;
+  role: "owner" | "staff" | "viewer";
+  closed: boolean;
   canAck: boolean;
-  /** 直す画面を開ける役割か（閲覧の人は設定・振込を開けない） */
-  canOpenFix: boolean;
   ackMinLength: number;
   ack?: AckView | null;
+  /** 確認済みにしたあとで、中身（数字・日付・人）が変わったか */
+  changedSinceAck?: boolean;
   previous?: { month: string; note: string | null } | null;
 }) {
   const k = { month, code: issue.code, subjectId: issue.subjectId };
   const red = issue.severity === "red";
-  const fixOpen = issue.fixHref && (canOpenFix || viewerCanOpen(issue.fixHref));
+  const fix = issue.fixHref ? fixLink(issue.fixHref, { role, closed }) : null;
   return (
     <li>
       <Card className={issue.acked ? "opacity-90" : CARD_BORDER[issue.severity]}>
@@ -76,6 +81,11 @@ export function IssueCard({
                 {jst.format(ack.at)}
               </p>
             )}
+            {changedSinceAck && (
+              <p className="mt-2 rounded-md border border-warning/40 bg-warning/10 p-2 text-xs font-bold text-warning">
+                確認済みにしたあとで、この指摘の中身（数字・日付・人）が変わりました。もう一度確かめて、メモを書き直してください。
+              </p>
+            )}
           </div>
         )}
         {!issue.acked && previous && (
@@ -85,15 +95,29 @@ export function IssueCard({
         )}
 
         <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-start">
-          {fixOpen && (
-            <Link href={issue.fixHref!} className={buttonClass(issue.acked ? "secondary" : "primary", "w-full sm:w-auto")}>
-              直す（{fixLabel(issue.fixHref!)}）
-            </Link>
+          {fix && (
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
+              <Link href={fix.href} className={buttonClass(fix.canFix && !issue.acked ? "primary" : "secondary", "w-full sm:w-auto")}>
+                {fix.text}
+              </Link>
+              {fix.note && <p className="text-xs text-muted-foreground sm:max-w-xs">{fix.note}</p>}
+            </div>
           )}
-          {issue.fixHref && !fixOpen && <p className="text-xs text-muted-foreground sm:self-center">直すのは事務・オーナーの方です。</p>}
           {canAck && !issue.acked && (
             <div className="w-full sm:min-w-72 sm:flex-1">
               <AckForm k={k} minLength={ackMinLength} red={red} draftNote={previous?.note} />
+            </div>
+          )}
+          {canAck && issue.acked && changedSinceAck && (
+            <div className="w-full sm:min-w-72 sm:flex-1">
+              <AckForm
+                k={k}
+                minLength={ackMinLength}
+                red={red}
+                draftNote={issue.ackNote}
+                label="確かめ直してメモを書き直す"
+                draftHint="いまのメモを下書きに入れています。変わった中身を確かめてから保存してください。"
+              />
             </div>
           )}
           {canAck && issue.acked && <UnackForm k={k} red={red} />}

@@ -11,14 +11,14 @@ export function AppShell({ user, children, demo }: { user: SessionUser; children
   return (
     <div className="min-h-dvh">
       {demo && (
-        <div className="bg-accent px-4 py-2 text-center text-sm font-bold text-accent-foreground">
+        <div className="no-print bg-accent px-4 py-2 text-center text-sm font-bold text-accent-foreground">
           デモです（架空の会社・架空のデータ）。あなた専用なので自由に触ってください。24 時間で消えます。{" "}
           <a href="/demo/start" className="underline">
             最初からやり直す
           </a>
         </div>
       )}
-      <header className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur">
+      <header className="no-print sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4">
           <Link href="/" className="flex items-center gap-2 font-bold text-foreground no-underline">
             <span aria-hidden className="inline-flex h-7 min-w-10 items-center justify-center rounded-md border-2 border-plate-foreground bg-plate px-1.5 text-sm leading-none text-plate-foreground">
@@ -39,7 +39,7 @@ export function AppShell({ user, children, demo }: { user: SessionUser; children
             )}
           </div>
         </div>
-        <nav aria-label="メニュー" className="border-t border-border md:hidden">
+        <nav aria-label="メニュー" className="no-print border-t border-border md:hidden">
           <ul className="flex gap-1 overflow-x-auto px-2 py-1 text-sm">
             {items.map((n) => (
               <li key={n.href}>
@@ -52,7 +52,7 @@ export function AppShell({ user, children, demo }: { user: SessionUser; children
         </nav>
       </header>
       <div className="mx-auto flex max-w-6xl gap-6 px-4">
-        <nav aria-label="メニュー" className="hidden w-48 shrink-0 py-6 md:block">
+        <nav aria-label="メニュー" className="no-print hidden w-48 shrink-0 py-6 md:block">
           <ul className="sticky top-20 space-y-1 text-sm">
             {items.map((n) => (
               <li key={n.href}>

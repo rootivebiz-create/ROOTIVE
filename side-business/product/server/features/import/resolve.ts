@@ -25,6 +25,10 @@ export type NameGroup = {
   skipped: boolean;
   inactive: boolean;
   candidates: { id: string; name: string }[];
+  /** ドライバー：この名前の行にあった番号（台帳に無い番号。新しく登録するときの下書き） */
+  codes: string[];
+  /** ドライバー：名前の欄が空で、番号だけの行（番号を名前として登録しないように） */
+  nameless: boolean;
 };
 
 export type ResolvedRecord = RawRecord & { driverId: string; projectId: string };
@@ -40,6 +44,8 @@ export type Resolution = {
   skippedQty: number;
   /** 「すべて同じ案件」の案件が台帳に無い */
   fixedProjectMissing: boolean;
+  /** 番号と名前が別の人を指している行（番号で当てている。念のため確かめてもらう） */
+  codeConflicts: { code: string; codeName: string; fileName: string; nameMatch: string; rows: number }[];
 };
 
 /** 近い候補（文字の重なりがあるものだけ、近い順に 5 つまで） */
@@ -87,6 +93,8 @@ export function resolveRecords(records: RawRecord[], known: Known, fixedProjectI
         skipped,
         inactive,
         candidates: [],
+        codes: [],
+        nameless: false,
       };
       map.set(key, g);
     }
@@ -100,6 +108,7 @@ export function resolveRecords(records: RawRecord[], known: Known, fixedProjectI
   let unresolvedRecords = 0;
   let skippedRecords = 0;
   let skippedQty = 0;
+  const conflicts = new Map<string, Resolution["codeConflicts"][number]>();
 
   for (const r of records) {
     // ドライバー：番号が台帳にあれば番号で、無ければ名前で
@@ -110,13 +119,25 @@ export function resolveRecords(records: RawRecord[], known: Known, fixedProjectI
     if (coded) {
       dMatch = { id: coded.id, name: coded.name, how: "code", score: 0.97 };
       dKey = `code:${looseCode(r.code)}`;
+      // 名前もあって、それが台帳の別の人に当たるときは、番号か名前の打ち間違いのおそれ（別の人に払わないように知らせる）
+      if (r.driver) {
+        const nk = nameKey(r.driver);
+        if (!driverCache.has(nk)) driverCache.set(nk, matchName(r.driver, known.drivers));
+        const byName = driverCache.get(nk);
+        if (byName && byName.how !== "partial" && byName.id !== coded.id) {
+          const ck = `${dKey}|${nk}`;
+          const c = conflicts.get(ck) ?? { code: r.code, codeName: coded.name, fileName: r.driver, nameMatch: byName.name, rows: 0 };
+          c.rows++;
+          conflicts.set(ck, c);
+        }
+      }
     } else {
       dKey = nameKey(driverRaw);
       if (!driverCache.has(dKey)) driverCache.set(dKey, matchName(driverRaw, known.drivers));
       dMatch = driverCache.get(dKey) ?? null;
     }
     const dSkipped = skipDrivers.has(dKey);
-    group(
+    const dg = group(
       driverGroups,
       dKey,
       coded ? `${driverRaw}${r.driver && r.code ? `（${r.code}）` : ""}` : driverRaw,
@@ -125,6 +146,10 @@ export function resolveRecords(records: RawRecord[], known: Known, fixedProjectI
       dSkipped,
       dMatch ? activeDriver.get(dMatch.id) === false : false,
     );
+    if (!coded) {
+      if (r.code && !dg.codes.includes(r.code)) dg.codes.push(r.code);
+      if (!r.driver) dg.nameless = true;
+    }
 
     // 案件：すべて同じ案件か、名前で
     let pMatch: MatchResult | null = null;
@@ -144,7 +169,9 @@ export function resolveRecords(records: RawRecord[], known: Known, fixedProjectI
       skippedQty += r.qty;
       continue;
     }
-    if (!dMatch || !pMatch) {
+    // 名前の一部だけで当たったもの（「青木 翔太郎」→「青木 翔太」など）は、別の人・別の案件のおそれがあるので、
+    // 「合っている」を押してもらうまで反映しない（押すと別名として覚え、来月からは聞かない）
+    if (!dMatch || !pMatch || dMatch.how === "partial" || pMatch.how === "partial") {
       unresolvedRecords++;
       continue;
     }
@@ -168,7 +195,13 @@ export function resolveRecords(records: RawRecord[], known: Known, fixedProjectI
     skippedRecords,
     skippedQty: Math.round(skippedQty * 1e4) / 1e4,
     fixedProjectMissing: !!fixedProjectId && !fixed,
+    codeConflicts: [...conflicts.values()],
   };
+}
+
+/** まとめて新しく登録できるドライバーの名前（台帳に当たらず、候補も選ばれておらず、名前の欄があるもの） */
+export function registrableDrivers(res: Resolution): NameGroup[] {
+  return res.drivers.filter((g) => !g.match && !g.skipped && !g.nameless);
 }
 
 // ---------------------------------------------------------------- 合計

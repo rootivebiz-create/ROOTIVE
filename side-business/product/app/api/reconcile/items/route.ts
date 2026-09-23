@@ -8,6 +8,17 @@ import { monthFromParam, monthLabelJa, monthParam } from "~/server/month";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * 文字の欄が「=」「+」「-」「@」などで始まると、Excel が式として動かしてしまう。
+ * 品目の名前は元請のファイルから来るので、先頭に「'」を付けて文字として開かせる（数の欄はそのまま）
+ */
+function safeText(value: string | null | undefined): string {
+  const v = value ?? "";
+  return /^[=+\-@\t\r]/.test(v) ? `'${v}` : v;
+}
+
+const dateCell = (d: Date | null) => (d ? d.toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" }) : "");
+
 /** 突合の差の一覧（CSV・UTF-8 BOM 付き）。?from=YYYY-MM&to=YYYY-MM（12 か月まで） */
 export async function GET(request: Request): Promise<Response> {
   let user;
@@ -23,21 +34,38 @@ export async function GET(request: Request): Promise<Response> {
   const report = await loadReport(db, user.tenantId, from, to);
 
   const rows: CsvCell[][] = [
-    ["元請", "月", "種類", "内容", "当社の数量", "当社の単価", "当社の金額", "お支払通知の数量", "お支払通知の単価", "お支払通知の金額", "差（お支払通知−当社）", "扱い", "メモ"],
+    [
+      "元請",
+      "月",
+      "種類",
+      "内容",
+      "当社の数量",
+      "当社の単価",
+      "当社の金額",
+      "お支払通知の数量",
+      "お支払通知の単価",
+      "お支払通知の金額",
+      "差（お支払通知−当社）",
+      "扱い",
+      "問い合わせた日",
+      "片付けた日",
+      "取り戻せた額",
+      "メモ",
+    ],
   ];
   let count = 0;
   for (const c of report.cells) {
     if (!c.notice) {
-      rows.push([c.clientName, monthLabelJa(c.month), "お支払通知なし", "", "", "", c.ourTotal, "", "", "", "", "", ""]);
+      rows.push([safeText(c.clientName), monthLabelJa(c.month), "お支払通知なし", "", "", "", c.ourTotal, "", "", "", "", "", "", "", "", ""]);
       continue;
     }
     for (const it of c.items) {
       count++;
       rows.push([
-        c.clientName,
+        safeText(c.clientName),
         monthLabelJa(c.month),
         KIND_LABEL[it.kind] + (it.split ? "（分けて計算）" : ""),
-        it.label,
+        safeText(it.label),
         it.ourQty,
         it.ourPrice,
         it.ourAmount,
@@ -46,7 +74,10 @@ export async function GET(request: Request): Promise<Response> {
         it.theirAmount,
         it.diff,
         STATUS_LABEL[it.status],
-        it.note ?? "",
+        it.status === "open" ? "" : dateCell(it.askedAt),
+        it.status === "resolved" || it.status === "accepted" ? dateCell(it.resolvedAt) : "",
+        it.status === "resolved" ? it.recoveredAmount : null,
+        safeText(it.note),
       ]);
     }
   }

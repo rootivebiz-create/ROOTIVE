@@ -17,6 +17,8 @@ import {
   resolveMapping,
   saveAccountingSettings,
   slipRows,
+  memoNames,
+  MEMO_NAMES_MAX,
   yayoiFlag,
   type Slip,
 } from "~/server/features/accounting";
@@ -110,7 +112,37 @@ describe("仕訳の組み立て", () => {
     // 登録の無い上田さんは経過措置 70% の税区分、修理代の負担分は 雑収入
     const ueda = slips.find((x) => x.driverName === "上田 健")!;
     expect(ueda.rows[0].debit.taxLabel).toBe("課対仕入込10%区分70%");
+    // 登録の無い方：委託料 276,000 ＋ 消費税相当額 27,600 を税込の 1 行。税金額は空ける（経過措置の割合がかかるため）
+    expect(ueda.rows[0]).toMatchObject({ amount: 303_600, debit: { account: "外注費", tax: null } });
+    expect(ueda.rows[1]).toMatchObject({ amount: 42_600 + 4_260, credit: { account: "売上高", tax: 4_260 } });
     expect(ueda.rows.at(-1)).toMatchObject({ amount: 11_000, debit: { account: "未払金" }, credit: { account: "雑収入", taxLabel: "対象外" } });
+    expect(ueda.payableNet).toBe(303_600 - 46_860 - 11_000);
+  });
+
+  it("汎用 CSV でも、登録の無い方の委託料は税込の 1 行（仮払消費税等の行を作らない）", async () => {
+    const { slips } = await demoSlips("generic");
+    const ueda = slips.find((x) => x.driverName === "上田 健")!;
+    expect(ueda.rows.map((r) => [r.debit.account, r.credit.account, r.amount])).toEqual([
+      ["外注費", "未払金", 303_600],
+      ["未払金", "売上高", 42_600],
+      ["未払金", "仮受消費税等", 4_260],
+      ["未払金", "雑収入", 11_000],
+    ]);
+    expect(ueda.rows[0].debit.taxLabel).toBe("課税仕入10%（経過措置70%・税込）");
+    expect(ueda.payableNet).toBe(245_740);
+    // 税込の形の画面では、税額を空ける人を知らせる
+    const view = await loadAccountingView(db, tenantId, DEMO_MONTH, "yayoi");
+    expect(view.blankTaxDrivers).toEqual(["上田 健", "遠藤 大輔", "木村 誠"]);
+    expect((await loadAccountingView(db, tenantId, DEMO_MONTH, "generic")).blankTaxDrivers).toEqual([]);
+  });
+
+  it("摘要の名前は長くなりすぎないようにまとめる", () => {
+    expect(memoNames([{ name: "ロイヤリティ" }, { name: "管理費" }, { name: "車両リース" }])).toBe("ロイヤリティ・管理費・車両リース");
+    const many = [{ name: "ロイヤリティ" }, { name: "管理費" }, { name: "車両リース" }, { name: "保険料" }, { name: "制服代" }];
+    const short = memoNames(many);
+    expect(short).toBe("ロイヤリティ・管理費ほか3件");
+    expect(short.length).toBeLessThanOrEqual(MEMO_NAMES_MAX);
+    expect(memoNames([{ label: "とても長い名前の控除の項目その一" }, { label: "とても長い名前の控除の項目その二" }])).toBe("とても長い名前の控除の項目その一ほか1件");
   });
 
   it("汎用 CSV は税抜で、消費税を別の行（仮払消費税等・仮受消費税等）にする", async () => {
@@ -170,11 +202,28 @@ describe("仕訳の組み立て", () => {
     // マイナスの控除（返金）は借方と貸方を入れ替えて、プラスの額で書く
     const rows = slipRows(draft, resolveMapping({}, "generic"), "separate");
     expect(rows.find((r) => r.memo.includes("保険の返金"))).toMatchObject({ amount: 3_000, debit: { account: "立替金" }, credit: { account: "未払金" } });
-    expect(rows.find((r) => r.memo.includes("追加の作業") && !r.memo.endsWith("消費税"))).toMatchObject({ amount: 2_000, debit: { account: "外注費" }, credit: { account: "未払金" } });
+    // 登録の無い方への上乗せ（消費税の対象の調整）は、委託料と同じく税込の 1 行
+    expect(rows.filter((r) => r.memo.includes("追加の作業"))).toMatchObject([{ amount: 2_200, debit: { account: "外注費" }, credit: { account: "未払金" } }]);
     expect(rows.find((r) => r.memo.includes("事故の負担"))).toMatchObject({ amount: 4_000, debit: { account: "未払金" }, credit: { account: "雑収入" } });
     expect(rows.every((r) => r.amount > 0)).toBe(true);
-    // 登録の無い方への委託料は、この月の経過措置（70%）の税区分
-    expect(rows[0].debit.taxLabel).toBe("課税仕入10%（経過措置70%）");
+    // 登録の無い方への委託料は、この月の経過措置（70%）の税区分で、税込の 1 行
+    expect(rows[0]).toMatchObject({ amount: 110_000, debit: { account: "外注費", taxLabel: "課税仕入10%（経過措置70%・税込）" } });
+    expect(rows.some((r) => r.debit.account === "仮払消費税等")).toBe(false);
+
+    // 登録のある方なら、消費税は別の行（仮払消費税等）
+    const registered: StatementDraft = { ...draft, driver: { ...draft.driver, invoiceRegistered: true, registrationNo: "T1111111111111" }, taxLabel: "消費税" };
+    const regRows = slipRows(registered, resolveMapping({}, "generic"), "separate");
+    expect(regRows.slice(0, 2).map((r) => [r.debit.account, r.amount])).toEqual([["外注費", 100_000], ["仮払消費税等", 10_000]]);
+    expect(regRows.filter((r) => r.memo.includes("追加の作業")).map((r) => [r.debit.account, r.amount])).toEqual([["外注費", 2_000], ["仮払消費税等", 200]]);
+    const [regSlip] = buildSlips([registered], resolveMapping({}, "generic"), "separate");
+    expect(regSlip.payableNet).toBe(registered.total);
+    // 弥生（税込）：登録のある方は税金額つき、登録の無い方は空ける
+    const yRows = slipRows(registered, resolveMapping({}, "yayoi"), "inclusive");
+    expect(yRows[0]).toMatchObject({ amount: 110_000, debit: { tax: 10_000 } });
+    expect(yRows.find((r) => r.memo.includes("追加の作業"))).toMatchObject({ amount: 2_200, debit: { tax: 200 } });
+    const yExempt = slipRows(draft, resolveMapping({}, "yayoi"), "inclusive");
+    expect(yExempt[0]).toMatchObject({ amount: 110_000, debit: { tax: null, taxLabel: "課対仕入込10%区分70%" } });
+    expect(yExempt.find((r) => r.memo.includes("追加の作業"))).toMatchObject({ amount: 2_200, debit: { tax: null } });
   });
 
   it("明細と合わない数字なら作らない", () => {
@@ -260,6 +309,8 @@ describe("マネーフォワードと汎用 CSV", () => {
     expect(aoki[0].slice(0, 10)).toEqual(["1", "2026/10/31", "外注費", "", "", "青木 翔太", "課税仕入 10%", "適格", "411950", "37450"]);
     const ueda = rows.find((r) => r[18] === "上田 健 2026年10月分 委託料")!;
     expect(ueda[7]).toBe("70%控除");
+    // 登録の無い方の税額の列は空ける
+    expect([ueda[8], ueda[9]]).toEqual(["303600", ""]);
   });
 
   it("汎用 CSV の見出しと、支払一覧", async () => {
@@ -352,6 +403,26 @@ describe("締めた月", () => {
     for (const slip of view.slips) expect(slip.payableNet).toBe(saved.find((x) => x.driverId === slip.driverId)!.total);
     expect(view.check).toMatchObject({ ok: true, slips: 8 });
     expect(view.check.payableNet).toBe(saved.reduce((a, x) => a + x.total, 0));
+    await c2.close();
+  });
+
+  it("締める前の月で、送った明細と今の計算が違う人を知らせる", async () => {
+    const { db: db2, client: c2 } = await createTestDb();
+    const { tenantId: t } = await seedDemo(db2);
+    // 明細を作る前は知らせない（まだ送っていない）
+    expect((await loadAccountingView(db2, t, DEMO_MONTH, "yayoi")).statementGap).toEqual([]);
+    await generateStatements(db2, t, DEMO_MONTH);
+    expect((await loadAccountingView(db2, t, DEMO_MONTH, "yayoi")).statementGap).toEqual([]);
+    // 明細を作ったあとで、青木さんの立替を 3,300 → 5,500 円に直す
+    await db2.update(s.adjustments).set({ amount: 5_500 }).where(and(eq(s.adjustments.tenantId, t), eq(s.adjustments.label, "駐車場代の立替")));
+    const view = await loadAccountingView(db2, t, DEMO_MONTH, "yayoi");
+    expect(view.statementGap).toEqual(["青木 翔太"]);
+    // 仕訳は今の計算から（振込額 357,555 → 359,755）
+    expect(view.slips.find((x) => x.driverName === "青木 翔太")!.payableNet).toBe(359_755);
+    expect(view.check.ok).toBe(true);
+    // ほかの会社には出ない
+    const { tenantId: other } = await seedDemo(db2);
+    expect((await loadAccountingView(db2, other, DEMO_MONTH, "yayoi")).statementGap).toEqual([]);
     await c2.close();
   });
 

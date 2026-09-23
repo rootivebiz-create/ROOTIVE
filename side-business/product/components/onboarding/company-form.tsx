@@ -22,6 +22,11 @@ export type CompanyInitial = {
   paymentTermsText: string | null;
 };
 
+/** 項目の下の誤り（赤）。Field の hint は灰色なので、誤りは別に出す */
+function FieldError({ text }: { text?: string }) {
+  return text ? <p className="mt-1 text-sm text-danger">{text}</p> : null;
+}
+
 function withCurrent(choices: readonly number[], current: number): number[] {
   return choices.includes(current) ? [...choices] : [...choices, current].sort((a, b) => (a === 0 ? 99 : a) - (b === 0 ? 99 : b));
 }
@@ -52,33 +57,42 @@ export function CompanyForm({ initial, today }: { initial: CompanyInitial; today
       <fieldset className="space-y-3">
         <legend className="text-lg font-bold">ドライバーへの支払の締め日と支払日</legend>
         <div className="grid gap-3 sm:grid-cols-3">
-          <Field label="締め日" hint={fe.closingDay}>
-            <Select name="closingDay" value={closingDay} onChange={(e) => setClosingDay(e.target.value)}>
-              {withCurrent(CLOSING_CHOICES, Number(initial.closingDay)).map((d) => (
-                <option key={d} value={d}>
-                  {dayText(d)}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="支払う月" hint={fe.payMonthOffset}>
-            <Select name="payMonthOffset" value={offset} onChange={(e) => setOffset(e.target.value)}>
-              {[0, 1, 2].map((o) => (
-                <option key={o} value={o}>
-                  {OFFSET_LABEL[o]}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="支払日" hint={fe.payDay}>
-            <Select name="payDay" value={payDay} onChange={(e) => setPayDay(e.target.value)}>
-              {withCurrent(PAY_DAY_CHOICES, Number(initial.payDay)).map((d) => (
-                <option key={d} value={d}>
-                  {dayText(d)}
-                </option>
-              ))}
-            </Select>
-          </Field>
+          <div>
+            <Field label="締め日">
+              <Select name="closingDay" value={closingDay} onChange={(e) => setClosingDay(e.target.value)}>
+                {withCurrent(CLOSING_CHOICES, Number(initial.closingDay)).map((d) => (
+                  <option key={d} value={d}>
+                    {dayText(d)}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <FieldError text={fe.closingDay} />
+          </div>
+          <div>
+            <Field label="支払う月">
+              <Select name="payMonthOffset" value={offset} onChange={(e) => setOffset(e.target.value)}>
+                {[0, 1, 2].map((o) => (
+                  <option key={o} value={o}>
+                    {OFFSET_LABEL[o]}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <FieldError text={fe.payMonthOffset} />
+          </div>
+          <div>
+            <Field label="支払日">
+              <Select name="payDay" value={payDay} onChange={(e) => setPayDay(e.target.value)}>
+                {withCurrent(PAY_DAY_CHOICES, Number(initial.payDay)).map((d) => (
+                  <option key={d} value={d}>
+                    {dayText(d)}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <FieldError text={fe.payDay} />
+          </div>
         </div>
         <p className="text-sm">
           いまの設定：<span className="font-bold">{rule}</span>
@@ -100,9 +114,12 @@ export function CompanyForm({ initial, today }: { initial: CompanyInitial; today
             )}
           </p>
         )}
-        <Field label="取引条件（契約書）に書いてある支払期日の文言（任意）" hint={fe.paymentTermsText ?? "書いてあるとおりに写してください。見張り番が「期間で書いていないか」などを確かめます。"}>
-          <Input name="paymentTermsText" value={terms} onChange={(e) => setTerms(e.target.value)} placeholder={`例：${rule}`} maxLength={200} />
-        </Field>
+        <div>
+          <Field label="取引条件（契約書）に書いてある支払期日の文言（任意）" hint="書いてあるとおりに写してください。見張り番が「期間で書いていないか」などを確かめます。">
+            <Input name="paymentTermsText" value={terms} onChange={(e) => setTerms(e.target.value)} placeholder={`例：${rule}`} maxLength={200} />
+          </Field>
+          <FieldError text={fe.paymentTermsText} />
+        </div>
         {!terms && (
           <Button variant="ghost" onClick={() => setTerms(rule)} className="w-full sm:w-auto">
             「{rule}」と入れる
@@ -129,7 +146,7 @@ export function CompanyForm({ initial, today }: { initial: CompanyInitial; today
         ))}
         {fee === "driver" && (
           <p className="text-sm">
-            振込手数料をドライバーの負担にすると、報酬の減額にあたるおそれがあります（合意があっても）。会社の負担にする設定の確認をおすすめします（
+            振込手数料をドライバーの負担にして振込額から差し引くと、報酬の減額にあたるおそれがあります（取適法の対象になる取引では、合意があっても）。取引条件と、会社の負担にする設定の確認をおすすめします（
             <a href={SOURCES.toriteki} target="_blank" rel="noopener noreferrer">
               公正取引委員会 取適法リーフレット
             </a>
@@ -140,9 +157,20 @@ export function CompanyForm({ initial, today }: { initial: CompanyInitial; today
 
       <fieldset className="space-y-3">
         <legend className="text-lg font-bold">インボイスと消費税</legend>
-        <Field label="会社の登録番号（T と 13 桁。登録していなければ空のまま）" hint={fe.registrationNo ?? "明細（仕入明細書）に載ります。全角・ハイフン入りでも読めます。"}>
-          <Input name="registrationNo" value={regNo} onChange={(e) => setRegNo(e.target.value)} placeholder="T1234567890123" autoComplete="off" inputMode="text" />
-        </Field>
+        <div>
+          <Field label="会社の登録番号（T と 13 桁。登録していなければ空のまま）" hint="明細（仕入明細書）に載ります。全角・ハイフン入りでも読めます。">
+            <Input
+              name="registrationNo"
+              value={regNo}
+              onChange={(e) => setRegNo(e.target.value)}
+              placeholder="T と 13 桁の数字"
+              autoComplete="off"
+              inputMode="text"
+              aria-invalid={fe.registrationNo ? true : undefined}
+            />
+          </Field>
+          <FieldError text={fe.registrationNo} />
+        </div>
         <p className="text-xs text-muted-foreground">
           番号が合っているかは{" "}
           <a href={SOURCES.registry} target="_blank" rel="noopener noreferrer">

@@ -6,6 +6,7 @@ import { NextStepLink, StepHeader } from "~/components/onboarding/step-header";
 import { getDb } from "~/db/client";
 import * as s from "~/db/schema";
 import { requirePageUser } from "~/server/auth";
+import { loadOnboarding } from "~/server/features/onboarding";
 
 export const metadata = { title: "最初の設定：元請と案件" };
 
@@ -13,12 +14,13 @@ export const metadata = { title: "最初の設定：元請と案件" };
 export default async function OnboardingProjectsPage() {
   const user = await requirePageUser("staff");
   const db = await getDb();
-  const [clients, projects] = await Promise.all([
+  const [clients, projects, progress] = await Promise.all([
     db.select({ id: s.clients.id, name: s.clients.name }).from(s.clients).where(eq(s.clients.tenantId, user.tenantId)),
     db
       .select({ name: s.projects.name, clientId: s.projects.clientId, unit: s.projects.unit, billRate: s.projects.billRate, payRate: s.projects.payRate })
       .from(s.projects)
       .where(eq(s.projects.tenantId, user.tenantId)),
+    loadOnboarding(db, user.tenantId),
   ]);
   const clientName = new Map(clients.map((c) => [c.id, c.name]));
   const groups = new Map<string, typeof projects>();
@@ -31,6 +33,7 @@ export default async function OnboardingProjectsPage() {
     <div className="mx-auto max-w-4xl">
       <StepHeader
         step="projects"
+        state={progress.steps.find((x) => x.def.key === "projects")?.state}
         description={
           <>
             元請（荷主）ごとの仕事の種類と、標準の単価です。受注単価は利益と元請との突合に、支払単価は明細に使います（どちらも税抜）。

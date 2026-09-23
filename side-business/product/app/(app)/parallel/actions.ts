@@ -8,11 +8,13 @@ import { runAction, UserError, type ActionResult } from "~/server/action";
 import { requireUser } from "~/server/auth";
 import {
   clearParallelChecks,
+  goLive,
   MAX_EXCEL_TOTAL,
   MAX_PARALLEL_FILE_BYTES,
   readParallelFile,
   readParallelPaste,
   saveParallelChecks,
+  undoGoLive,
   type AmountTable,
 } from "~/server/features/parallel";
 
@@ -131,4 +133,29 @@ export async function clearParallelAction(_prev: ClearParallelState, form: FormD
     refresh();
     return n;
   }, "この月の Excel の額を消しました。");
+}
+
+export type GoLiveState = ActionResult | undefined;
+
+/** 「Excel をやめて、しめ日ラボで締める」を記録する（オーナーが決める） */
+export async function goLiveAction(_prev: GoLiveState, form: FormData): Promise<GoLiveState> {
+  return runAction(async () => {
+    const user = await requireUser("owner");
+    const month = monthSchema.parse(text(form, "month"));
+    const db = await getDb();
+    await goLive(db, user.tenantId, month, user.id);
+    refresh();
+    return undefined;
+  }, "切り替えを記録しました。これからは、しめ日ラボで締めてください。");
+}
+
+/** 切り替えの記録を取り消す（Excel との並行に戻す） */
+export async function undoGoLiveAction(_prev: GoLiveState, _form: FormData): Promise<GoLiveState> {
+  return runAction(async () => {
+    const user = await requireUser("owner");
+    const db = await getDb();
+    await undoGoLive(db, user.tenantId, user.id);
+    refresh();
+    return undefined;
+  }, "切り替えの記録を取り消しました。");
 }

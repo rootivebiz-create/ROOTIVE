@@ -33,7 +33,13 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         basePath="/"
         description={st.closed ? "この月は締めてあります。残っている作業があれば、下に出します。" : `${user.name}さん、上から順に進めれば終わります。`}
       />
-      <NextCard view={view} month={month} payDate={st.payDate} today={todayJst()} />
+      <NextCard
+        view={view}
+        month={month}
+        payDate={st.payDate}
+        today={todayJst()}
+        paid={st.transfer.batches > 0 && st.transfer.executed === st.transfer.batches && st.transfer.notInBatch === 0}
+      />
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
         <section aria-labelledby="steps-heading" className="lg:col-span-2">
           <h2 id="steps-heading" className="mb-3 text-lg font-bold">
@@ -41,8 +47,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           </h2>
           <StepList steps={view.steps} />
         </section>
-        <aside aria-label="今月のまとめ">
-          <h2 className="mb-3 text-lg font-bold">今月のまとめ</h2>
+        <aside aria-label="この月のまとめ">
+          <h2 className="mb-3 text-lg font-bold">この月のまとめ</h2>
           <SideCards st={st} otherQuestions={Math.max(0, allQuestions - st.questions.count)} />
         </aside>
       </div>

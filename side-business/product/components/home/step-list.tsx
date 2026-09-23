@@ -35,6 +35,20 @@ export function StepList({ steps }: { steps: HomeStepView[] }) {
                 </li>
               ))}
             </ul>
+            {s.items && s.items.length > 0 && (
+              <ul className="mt-2 space-y-1 text-sm">
+                {s.items.map((it, i) => (
+                  <li key={i} className="rounded-lg border border-border p-2">
+                    <span className="block break-words">{it.text}</span>
+                    {it.href && (
+                      <Link href={it.href} className="inline-flex min-h-11 items-center">
+                        直す画面を開く →
+                      </Link>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
             <Link href={s.href} className="mt-1 inline-flex min-h-11 items-center text-sm">
               {s.linkLabel} →
             </Link>

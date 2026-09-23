@@ -8,7 +8,7 @@ import { PrintButton } from "~/components/reconcile/forms";
 import { getDb } from "~/db/client";
 import { requirePageUser } from "~/server/auth";
 import { loadReport, reportRange, type ReportCell } from "~/server/features/reconcile";
-import { formulaText, KIND_LABEL, STATUS_LABEL, STATUS_TONE } from "~/server/features/reconcile/labels";
+import { amountText, formulaText, KIND_LABEL, STATUS_LABEL, STATUS_TONE, WAIT_ALERT_DAYS, waitingDays } from "~/server/features/reconcile/labels";
 import { monthFromParam, monthLabelJa, monthParam } from "~/server/month";
 
 export const metadata: Metadata = { title: "元請の支払通知の突合レポート" };
@@ -35,7 +35,9 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
   const period = from === to ? monthLabelJa(from) : `${monthLabelJa(from)}〜${monthLabelJa(to)}`;
   const withNotice = report.cells.filter((c) => c.notice);
   const missing = report.cells.filter((c) => !c.notice);
-  const detailed = withNotice.filter((c) => c.items.length > 0 || c.facts.length > 0);
+  const detailed = withNotice.filter((c) => c.items.length > 0 || c.facts.length > 0 || c.zeroRate.length > 0);
+  const now = new Date();
+  const dateText = (d: Date) => d.toLocaleDateString("ja-JP", { timeZone: "Asia/Tokyo" });
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -104,6 +106,16 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
           <p className="text-xs text-muted-foreground">{missing.length > 0 ? `お支払通知の無い月 ${missing.length}件` : "記録のある月はすべて突き合わせ済み"}</p>
         </Card>
       </div>
+      {report.totals.recoveredCount > 0 && (
+        <Card className="report-card mt-3">
+          <p className="text-sm">
+            取り戻せた額（確定）：<Money value={report.totals.recovered} className="font-bold" />
+            <span className="ml-1 text-xs text-muted-foreground">
+              （「解決」にして額を入れた {report.totals.recoveredCount}件の合計。上の「可能性」の額とは足していません）
+            </span>
+          </p>
+        </Card>
+      )}
 
       <section className="report-card mt-6">
         <h2 className="text-lg font-bold">元請 × 月のまとめ</h2>
@@ -144,6 +156,9 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
             )}
           </h2>
           {c.stale && <p className="mt-1 text-xs text-warning">※ 保存してある突き合わせの結果と、今の記録が違います。ここでは今の記録で計算しています（結果の画面で「突き合わせ直す」を押すと、そろいます）。</p>}
+          {c.zeroRate.length > 0 && (
+            <p className="mt-1 text-xs text-danger">※ 受注単価が 0 円の案件があります（{c.zeroRate.join("・")}）。この案件の当社の記録は 0 円で数えているため、差は正しくありません。</p>
+          )}
           {c.items.length > 0 && (
             <TableWrap>
               <table className="report-table mt-2 w-full min-w-[40rem] text-sm">
@@ -165,6 +180,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
                         <span className="text-xs text-muted-foreground">
                           {KIND_LABEL[it.kind]}
                           {it.split ? "（数量と単価に分けて計算）" : ""}
+                          {!it.current ? "（今は差なし・片付いた記録）" : ""}
                         </span>
                       </td>
                       <td className="num py-2 pr-2">{it.kind === "extra" ? "対応する案件なし" : formulaText(it.ourQty, it.ourPrice, it.ourAmount, it.unit)}</td>
@@ -174,6 +190,12 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
                       </td>
                       <td className="py-2">
                         <Badge tone={STATUS_TONE[it.status]}>{STATUS_LABEL[it.status]}</Badge>
+                        {it.status === "asked" && it.askedAt && (
+                          <p className={`mt-1 text-xs ${(waitingDays(it.status, it.askedAt, now) ?? 0) >= WAIT_ALERT_DAYS ? "font-bold text-warning" : ""}`}>
+                            {dateText(it.askedAt)} に問い合わせ（{waitingDays(it.status, it.askedAt, now)}日）
+                          </p>
+                        )}
+                        {it.status === "resolved" && it.recoveredAmount !== null && <p className="mt-1 text-xs">取り戻せた額 {amountText(it.recoveredAmount)}</p>}
                         {it.note && <p className="mt-1 text-xs">{it.note}</p>}
                       </td>
                     </tr>
@@ -211,7 +233,8 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
 
       <footer className="mt-8 border-t border-border pt-3 text-xs text-muted-foreground">
         <p>
-          当社の記録は、しめ日ラボに入っている稼働の数量と、案件の受注単価（税抜）から計算しています。お支払通知の金額は、取り込んだファイルの税抜の金額です（消費税・振込手数料の行は除いています）。
+          当社の記録は、しめ日ラボに入っている稼働の数量と、案件の受注単価（税抜。締めた月は締めたときの明細の写しの単価）から計算しています。お支払通知の金額は、取り込んだファイルの税抜の金額です（消費税・振込手数料の行は除いています）。
+          数量も単価も同じで、端数の扱いだけで 1 円ほど違うものは、差に数えていません。
           数量と単価の両方が違う差は、数量の差（当社の単価で計算）と単価の差（お支払通知の数量で計算）に分けて出しています。2 つを足すと差の全体になります。
         </p>
         <p className="mt-1">しめ日ラボで作成</p>

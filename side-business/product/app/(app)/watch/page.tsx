@@ -5,7 +5,7 @@ import { IssueCard, SEVERITY_LABEL } from "~/components/watch/issue-card";
 import { getDb } from "~/db/client";
 import { requirePageUser, roleAtLeast } from "~/server/auth";
 import { ackKey, watchMonth, type WatchMonth } from "~/server/features/watch";
-import { ackNoteMin, monthAckDetails, previousAcks, type AckDetail, type PreviousAck } from "~/server/features/watch/acks";
+import { ackAllowed, ackNoteMin, changedSinceAck, monthAckDetails, previousAcks, type AckDetail, type PreviousAck } from "~/server/features/watch/acks";
 import { RULES } from "~/server/features/watch/rules";
 import { SOURCES, WATCH_RULES_AS_OF } from "~/server/features/watch/sources";
 import { countIssues, groupBySeverity } from "~/server/features/watch/summary";
@@ -16,8 +16,12 @@ export const metadata = { title: "見張り番" };
 
 const FOOTER = "見張り番は、記録から分かることをお知らせするものです。法令に合っているかの判断は、弁護士・税理士などにご確認ください。";
 
-const SECTION: Record<WatchSeverity, { heading: string; lead: string }> = {
-  red: { heading: "赤：締める前に直すか、確かめる", lead: "残っている間は締められません。直すか、内容を確かめて「確認済み」にしてください。" },
+const SECTION: Record<WatchSeverity, { heading: string; lead: string; closedLead?: string }> = {
+  red: {
+    heading: "赤：締める前に直すか、確かめる",
+    lead: "残っている間は締められません。直すか、内容を確かめて「確認済み」にしてください。",
+    closedLead: "締めたあとの記録（振り込んだ日など）や、締めたときの明細から見えることです。内容を確かめて、次の月に生かしてください。",
+  },
   yellow: { heading: "黄：確認をおすすめします", lead: "締めは止めません。払う前に一度見ておくと安心です。" },
   info: { heading: "お知らせ", lead: "知っておくと役に立つことです。" },
 };
@@ -34,8 +38,10 @@ export default async function WatchPage({ searchParams }: { searchParams: Promis
   let result: WatchMonth | null = null;
   let acks = new Map<string, AckDetail>();
   let previous = new Map<string, PreviousAck>();
+  let changed = new Set<string>();
   try {
     [result, acks, previous] = await Promise.all([watchMonth(db, user.tenantId, month), monthAckDetails(db, user.tenantId, month), previousAcks(db, user.tenantId, month)]);
+    changed = await changedSinceAck(db, user.tenantId, month, result.issues);
   } catch (error) {
     console.error("watch page failed", error instanceof Error ? error.message : error);
   }
@@ -62,7 +68,6 @@ export default async function WatchPage({ searchParams }: { searchParams: Promis
   const { issues, closed, hasWork } = result;
   const counts = countIssues(issues);
   const groups = groupBySeverity(issues);
-  const canAck = canEdit && !closed;
 
   return (
     <div className="space-y-8">
@@ -70,14 +75,14 @@ export default async function WatchPage({ searchParams }: { searchParams: Promis
 
       {closed && (
         <Notice tone="info">
-          {label}は締め済みです。見るだけで、確認済みの印は変えられません。締めたあとに入れた記録（振り込んだ日など）から出た指摘は、内容を確かめて、次の月の締めに生かしてください。
+          {label}は締め済みです。見るだけで、確認済みの印は変えられません。ただし「支払期日より後に振り込んだ」など、締めたあとに入れた振込の記録から出た指摘は、事情をメモに残して確認済みにできます。
         </Notice>
       )}
       {!canEdit && <Notice tone="info">確認済みにするのは、事務・オーナーの方です。この画面では、指摘と確認済みのメモを見られます。</Notice>}
 
-      <Summary counts={counts} closed={closed} m={m} canEdit={canEdit} />
+      <Summary counts={counts} closed={closed} m={m} canEdit={canEdit} changed={changed.size} />
 
-      {!hasWork && (
+      {!hasWork && !closed && (
         <EmptyState title={`${label}の稼働がまだありません`}>
           <p>Excel を取り込むと、ドライバーごとの取引条件・控除・口座などを確かめます。いまは会社の設定から分かることだけを出しています。</p>
           <Link href={canEdit ? `/import?m=${m}` : `/work?m=${m}`} className={buttonClass("secondary", "mt-3")}>
@@ -96,9 +101,9 @@ export default async function WatchPage({ searchParams }: { searchParams: Promis
             <section key={sev} aria-labelledby={`watch-${sev}`} className="space-y-3">
               <div>
                 <h2 id={`watch-${sev}`} className={`text-lg font-bold ${sev === "red" ? "text-danger" : ""}`}>
-                  {SECTION[sev].heading}（{groups[sev].length} 件）
+                  {closed && sev === "red" ? "赤：記録から見えること" : SECTION[sev].heading}（{groups[sev].length} 件）
                 </h2>
-                <p className="text-sm text-muted-foreground">{SECTION[sev].lead}</p>
+                <p className="text-sm text-muted-foreground">{closed ? (SECTION[sev].closedLead ?? SECTION[sev].lead) : SECTION[sev].lead}</p>
               </div>
               <ul className="space-y-3">
                 {groups[sev].map((i) => {
@@ -108,10 +113,12 @@ export default async function WatchPage({ searchParams }: { searchParams: Promis
                       key={key}
                       issue={i}
                       month={month}
-                      canAck={canAck}
-                      canOpenFix={canEdit}
+                      role={user.role}
+                      closed={closed}
+                      canAck={canEdit && ackAllowed(i.code, closed)}
                       ackMinLength={ackNoteMin(i.severity)}
                       ack={acks.get(key) ?? null}
+                      changedSinceAck={changed.has(key)}
                       previous={previous.get(key) ?? null}
                     />
                   );
@@ -128,7 +135,7 @@ export default async function WatchPage({ searchParams }: { searchParams: Promis
   );
 }
 
-function Summary({ counts, closed, m, canEdit }: { counts: ReturnType<typeof countIssues>; closed: boolean; m: string; canEdit: boolean }) {
+function Summary({ counts, closed, m, canEdit, changed }: { counts: ReturnType<typeof countIssues>; closed: boolean; m: string; canEdit: boolean; changed: number }) {
   const tiles = [
     { key: "red", label: SEVERITY_LABEL.red, value: counts.redOpen, sub: counts.redAcked ? `確認済み ${counts.redAcked}` : null, cls: counts.redOpen ? "border-danger/40 bg-danger/10 text-danger" : "border-border" },
     { key: "yellow", label: SEVERITY_LABEL.yellow, value: counts.yellowOpen, sub: counts.yellowAcked ? `確認済み ${counts.yellowAcked}` : null, cls: counts.yellowOpen ? "border-warning/40 bg-warning/10 text-warning" : "border-border" },
@@ -137,7 +144,11 @@ function Summary({ counts, closed, m, canEdit }: { counts: ReturnType<typeof cou
   return (
     <section aria-label="指摘の件数" className="space-y-3">
       <Card className={counts.redOpen ? "border-danger/60" : "border-success/40"}>
-        {counts.redOpen ? (
+        {closed ? (
+          <p className={`font-bold ${counts.redOpen ? "text-danger" : "text-success"}`}>
+            {counts.redOpen ? `まだ確認していない赤い指摘が ${counts.redOpen} 件あります` : "まだ確認していない赤い指摘はありません"}
+          </p>
+        ) : counts.redOpen ? (
           <p className="font-bold text-danger">締めを止める指摘が {counts.redOpen} 件あります</p>
         ) : (
           <p className="font-bold text-success">締めを止める指摘はありません</p>
@@ -149,6 +160,11 @@ function Summary({ counts, closed, m, canEdit }: { counts: ReturnType<typeof cou
               ? "直す画面で直すか、内容を確かめて「確認済み」にすると、締められるようになります。"
               : "黄色とお知らせは、締めを止めません。"}
         </p>
+        {changed > 0 && (
+          <p className="mt-2 rounded-lg border border-warning/40 bg-warning/10 p-2 text-sm text-warning">
+            確認済みにしたあとで中身（数字・日付・人）が変わった赤い指摘が {changed} 件あります。もう一度確かめてください。
+          </p>
+        )}
         <ul className="mt-3 grid grid-cols-3 gap-2">
           {tiles.map((t) => (
             <li key={t.key} className={`rounded-lg border p-2 text-center ${t.cls}`}>

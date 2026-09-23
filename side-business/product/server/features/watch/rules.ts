@@ -3,7 +3,7 @@
  *
  * 決まり：
  * - 記録から分かること（日付・金額・名前）と「〜のおそれがあります」「確認をおすすめします」までを書く。
- *   適法・違反の判定、税や法律の結論、ドライバーの報酬を下げる話は書かない。
+ *   法令に合っているかの判定、税や法律の結論、ドライバーの報酬を下げる話は書かない。
  * - 60 日の数え方は @/lib/tools/torihiki-joken、経過措置の割合は @/lib/payroll/tax を使う（日付の計算を自前で持たない）。
  * - 金額は明細（StatementDraft）の値をそのまま使う。独自の丸めを書かない。
  */
@@ -17,6 +17,7 @@ import {
   adjustForBankHoliday,
   dayInMonth,
   dayLabel,
+  isBankHoliday,
   paymentDeadlineCheck,
   payRuleLabel,
   type DayOfMonth,
@@ -85,6 +86,8 @@ function driverName(ctx: WatchContext, driverId: string, fallback?: string): str
 }
 
 const monthQuery = (ctx: WatchContext) => ctx.month.slice(0, 7);
+/** 「2026年10月分」（締めた月を開いても「今月」と書かない） */
+const monthOf = (ctx: WatchContext) => `${jpMonth(ctx.month)}分`;
 
 // ---------------------------------------------------------------- 1. 取引条件の明示
 
@@ -103,9 +106,9 @@ export function termsMissing(ctx: WatchContext): IssueDraft[] {
       subjectLabel: drv.name,
       basis: BASIS.terms,
       sourceUrl: SOURCES.flQa,
-      fixHref: FIX.drivers,
+      fixHref: FIX.driver(d.driverId),
     };
-    const pay = `今月の支払額は ${signedYen(d.total)}です。`;
+    const pay = `${monthOf(ctx)}の支払額は ${signedYen(d.total)}です。`;
     const first = drv.termsFirstIssuedOn;
     if (!first) {
       out.push({
@@ -183,10 +186,10 @@ export function rateChangedWithoutRecord(ctx: WatchContext): IssueDraft[] {
       title: "単価を変えた記録に、合意の日付がありません",
       detail:
         `「${line.project}」の単価 ${rateText(line.rate)}（1${line.unit}あたり）は ${jpDate(o.updatedOn)} に登録・変更したもので、取引条件を最後に明示した日（${jpDate(latest)}）より後です。` +
-        `この単価で合意した日の記録がありません。合意した日を入れるか、変えた条件を明示した記録を残すことをおすすめします。今月は ${qtyText(line.qty, line.unit)}で ${yenText(line.amount)}です。`,
+        `この単価で合意した日の記録がありません。合意した日を入れるか、変えた条件を明示した記録を残すことをおすすめします。${monthOf(ctx)}は ${qtyText(line.qty, line.unit)}で ${yenText(line.amount)}です。`,
       basis: BASIS.terms,
       sourceUrl: SOURCES.flQa,
-      fixHref: FIX.drivers,
+      fixHref: FIX.rates(o.driverId, o.projectId),
     });
   }
   return out;
@@ -196,7 +199,7 @@ export function rateChangedWithoutRecord(ctx: WatchContext): IssueDraft[] {
 
 export function paymentWording(ctx: WatchContext): IssueDraft[] {
   const text = (ctx.tenant.settings.paymentTermsText ?? "").trim();
-  const base = { code: "payment_wording", subjectId: "tenant", subjectLabel: "取引条件の支払期日の文言", basis: BASIS.payDate, sourceUrl: SOURCES.flQa, fixHref: FIX.company };
+  const base = { code: "payment_wording", subjectId: "tenant", subjectLabel: "取引条件の支払期日の文言", basis: BASIS.payDate, sourceUrl: SOURCES.flQa, fixHref: FIX.company(monthQuery(ctx)) };
   if (!text) {
     return [
       {
@@ -289,7 +292,7 @@ export function sixtyDays(ctx: WatchContext): IssueDraft[] {
   const dl = payDeadlineFor(ctx.month, ctx.tenant, payDate);
   if (!dl || dl.status === "ok") return [];
   const shifted = dl.payDateActual !== dl.payDate ? `（銀行の休みの日のため、前の営業日の${jpDate(dl.payDateActual)}として数えています）` : "";
-  const base = { code: "sixty_days", subjectId: "tenant", subjectLabel: "会社の支払日の設定", basis: BASIS.payDate, sourceUrl: SOURCES.flGuidelines, fixHref: FIX.company };
+  const base = { code: "sixty_days", subjectId: "tenant", subjectLabel: "会社の支払日の設定", basis: BASIS.payDate, sourceUrl: SOURCES.flGuidelines, fixHref: FIX.company(monthQuery(ctx)) };
   // 締めた月の写しの支払日が今の設定と違うときは、設定の名前を書かない（写しの日で数える）
   const setting = dl.payDate === payDateFor(ctx.month, ctx.tenant) ? `（${dl.ruleLabel}）` : "（明細に書いた支払日）";
   const head = `${jpMonth(ctx.month)}分（${jpDate(dl.periodStart)}〜${jpDate(dl.periodEnd)}）の支払日は${jpDate(dl.payDate)}${setting}${shifted}です。`;
@@ -338,6 +341,11 @@ export function paidLate(ctx: WatchContext): IssueDraft[] {
     if (!late.length) continue;
     const payDates = [...new Set(late.map((x) => x.payDate))].sort();
     const maxDays = Math.max(...late.map((x) => x.days));
+    // 支払期日が銀行の休みの日（土日・年末年始）なら、そのことも書く（事実だけ。扱いは取引条件しだい）
+    const holidays = payDates.filter((d) => isBankHoliday(d));
+    const holidayNote = holidays.length
+      ? `明細の支払期日（${holidays.map(jpDate).join("・")}）は銀行の休みの日です。休みの日にあたるときの扱いを、取引条件にどう書いているかも確かめてください。`
+      : "";
     out.push({
       code: "paid_late",
       severity: "red",
@@ -347,6 +355,7 @@ export function paidLate(ctx: WatchContext): IssueDraft[] {
       detail:
         `振り込んだ日の記録は${jpDate(b.executedOn)}で、明細の支払期日（${payDates.map(jpDate).join("・")}）より ${maxDays}日後です。` +
         `対象：${nameList(late.map((x) => x.name))}（${late.length}人・合計 ${yenText(late.reduce((a, x) => a + x.total, 0))}）。` +
+        holidayNote +
         "振り込んだ日の記録が正しいか確かめてください。記録どおりなら、遅れた事情とドライバーへの連絡を「確認済み」のメモに残すことをおすすめします。",
       basis: BASIS.payDate,
       sourceUrl: SOURCES.flQa,
@@ -413,7 +422,7 @@ export function feeDeducted(ctx: WatchContext): IssueDraft[] {
       subjectLabel: "会社の設定（振込手数料）",
       title: "振込手数料をドライバーの負担にする設定です",
       detail: `会社の設定で、振込手数料を「ドライバーの負担」にしています。${FEE_SENTENCE}会社の負担にする設定の確認をおすすめします。`,
-      fixHref: FIX.company,
+      fixHref: FIX.company(monthQuery(ctx)),
     });
   }
   const applied = appliedDeductions(ctx.drafts);
@@ -430,8 +439,8 @@ export function feeDeducted(ctx: WatchContext): IssueDraft[] {
       title: "振込手数料を報酬から差し引く控除があります",
       detail:
         `控除「${r.name}」で、振込手数料にあたる額を報酬から差し引いています` +
-        `${a ? `（今月 ${peopleText(a.items)}）` : "（有効なルールです）"}。${FEE_SENTENCE}`,
-      fixHref: FIX.rules,
+        `${a ? `（${monthOf(ctx)} ${peopleText(a.items)}）` : "（有効なルールです）"}。${FEE_SENTENCE}`,
+      fixHref: FIX.rules(monthQuery(ctx), r.driverId),
     });
   }
   // ルールが消えていても、明細に残っている分は出す
@@ -442,8 +451,8 @@ export function feeDeducted(ctx: WatchContext): IssueDraft[] {
       subjectId: ruleId,
       subjectLabel: `控除「${a.name}」`,
       title: "振込手数料を報酬から差し引く控除があります",
-      detail: `控除「${a.name}」で、振込手数料にあたる額を報酬から差し引いています（今月 ${peopleText(a.items)}）。${FEE_SENTENCE}`,
-      fixHref: FIX.rules,
+      detail: `控除「${a.name}」で、振込手数料にあたる額を報酬から差し引いています（${monthOf(ctx)} ${peopleText(a.items)}）。${FEE_SENTENCE}`,
+      fixHref: FIX.rules(monthQuery(ctx)),
     });
   }
   for (const a of ctx.adjustments) {
@@ -455,7 +464,7 @@ export function feeDeducted(ctx: WatchContext): IssueDraft[] {
       subjectLabel: `${name}・${a.label}`,
       title: "振込手数料を報酬から差し引く調整があります",
       detail: `調整「${a.label}」で ${yenText(-a.amount)} を${name}さんの報酬から差し引いています。${FEE_SENTENCE}`,
-      fixHref: FIX.work(monthQuery(ctx)),
+      fixHref: FIX.adjustment(monthQuery(ctx), a.id),
     });
   }
   return out;
@@ -470,7 +479,8 @@ export function deductionNoAgreement(ctx: WatchContext): IssueDraft[] {
     const name = rule?.name ?? a.name;
     // 振込手数料は fee_deducted が必ず出す（同じものを二重に出さない）
     if (FEE_WORDS.test(name)) continue;
-    const who = peopleText(a.items);
+    const who = `${monthOf(ctx)} ${peopleText(a.items)}`;
+    const fixHref = FIX.rules(monthQuery(ctx), rule?.driverId ?? null);
     const subjectLabel = a.items.length === 1 ? `${name}（${a.items[0].name}）` : `${name}（${a.items.length}人）`;
     const agreed = rule ? rule.agreedInWriting : a.agreedInWriting;
     if (!agreed) {
@@ -481,9 +491,10 @@ export function deductionNoAgreement(ctx: WatchContext): IssueDraft[] {
         subjectLabel,
         title: "書面で合意した記録が無い控除があります",
         detail:
-          `控除「${name}」を報酬から差し引いています（今月 ${who}）。書面で合意した記録が見つかりません。` +
-          "合意の無い差し引きは、報酬の減額にあたるおそれがあります。合意した書面があれば、控除のルールに「書面で合意している」と合意した日を入れてください。",
-        fixHref: FIX.rules,
+          `控除「${name}」を報酬から差し引いています（${who}）。書面で合意した記録が見つかりません。` +
+          "合意の無い差し引きは、報酬の減額にあたるおそれがあります。合意した書面があれば、控除のルールに「書面で合意している」と合意した日を入れてください。" +
+          "書面が見つからないときは、払う前に、差し引いてよいものかを確かめることをおすすめします。",
+        fixHref,
       });
     } else if (rule && !rule.agreedOn) {
       out.push({
@@ -493,9 +504,9 @@ export function deductionNoAgreement(ctx: WatchContext): IssueDraft[] {
         subjectLabel,
         title: "控除の合意の日付がありません",
         detail:
-          `控除「${name}」（今月 ${who}）は「書面で合意している」になっていますが、合意した日の記録がありません。` +
+          `控除「${name}」（${who}）は「書面で合意している」になっていますが、合意した日の記録がありません。` +
           "合意がこの月の仕事より前か確かめられるよう、合意した日を入れることをおすすめします。",
-        fixHref: FIX.rules,
+        fixHref,
       });
     } else if (rule?.agreedOn && rule.agreedOn > ctx.month) {
       out.push({
@@ -505,15 +516,16 @@ export function deductionNoAgreement(ctx: WatchContext): IssueDraft[] {
         subjectLabel,
         title: "控除の合意が、この月の途中です",
         detail:
-          `控除「${name}」（今月 ${who}）の合意した日（${jpDate(rule.agreedOn)}）が、この月の初日（${jpDate(ctx.month)}）より後です。` +
+          `控除「${name}」（${who}）の合意した日（${jpDate(rule.agreedOn)}）が、この月の初日（${jpDate(ctx.month)}）より後です。` +
           "合意より前の仕事の分まで差し引くと、報酬の減額にあたるおそれがあります。差し引く範囲の確認をおすすめします。",
-        fixHref: FIX.rules,
+        fixHref,
       });
     }
   }
 
   for (const a of ctx.adjustments) {
-    if (a.amount < 0 && FEE_WORDS.test(a.label)) continue;
+    // 0 円の調整は明細に出ない。振込手数料の差し引きは fee_deducted が出す
+    if (a.amount === 0 || (a.amount < 0 && FEE_WORDS.test(a.label))) continue;
     const damage = DAMAGE_WORDS.test(a.label);
     const noBasis = !a.basis?.trim();
     const reasons: string[] = [];
@@ -527,12 +539,17 @@ export function deductionNoAgreement(ctx: WatchContext): IssueDraft[] {
       severity: "yellow",
       subjectId: `adj:${a.id}`,
       subjectLabel: `${name}・${a.label}`,
-      title: damage && noBasis ? "事故・破損などの負担の根拠が入っていません" : "差し引きの合意・根拠の記録が足りません",
+      title:
+        damage && noBasis
+          ? a.amount < 0
+            ? "事故・破損などの負担の根拠が入っていません"
+            : "事故・破損などに関わる支払の根拠が入っていません"
+          : "差し引きの合意・根拠の記録が足りません",
       detail:
         `調整「${a.label}」（${name}さん・${what}）について、${reasons.join("。")}。` +
-        (damage ? "事故や破損などの負担を扱うときは、どんな出来事で、なぜその額なのかの記録を残すことをおすすめします。" : "") +
+        (damage ? "事故や破損などを扱うときは、どんな出来事で、なぜその額なのかの記録を残すことをおすすめします。" : "") +
         (a.amount < 0 ? "根拠の無い差し引きは、報酬の減額にあたるおそれがあります。" : ""),
-      fixHref: FIX.work(monthQuery(ctx)),
+      fixHref: FIX.adjustment(monthQuery(ctx), a.id),
     });
   }
   return out;
@@ -557,11 +574,11 @@ export function rateDown(ctx: WatchContext): IssueDraft[] {
         subjectLabel: `${d.driver.name}・${line.project}`,
         title: "前月より単価が下がっています",
         detail:
-          `「${line.project}」の単価が、前月の ${rateText(pl.rate)} から ${rateText(line.rate)} になっています（1${line.unit}あたり ${rateText(diff)}。今月の ${qtyText(line.qty, line.unit)}で約 ${yenText(effect)}）。` +
+          `「${line.project}」の単価が、前月の ${rateText(pl.rate)} から ${rateText(line.rate)} になっています（1${line.unit}あたり ${rateText(diff)}。${monthOf(ctx)}の ${qtyText(line.qty, line.unit)}で約 ${yenText(effect)}）。` +
           "前月より単価が下がっています。協議した記録を確認してください。",
         basis: BASIS.rateDown,
         sourceUrl: SOURCES.flGuidelines,
-        fixHref: overrides.has(`${d.driverId}:${line.projectId}`) ? FIX.drivers : FIX.projects,
+        fixHref: overrides.has(`${d.driverId}:${line.projectId}`) ? FIX.rates(d.driverId, line.projectId) : FIX.projects(line.project),
       });
     }
   }
@@ -575,7 +592,15 @@ export function toriteki(ctx: WatchContext): IssueDraft[] {
   const employees = toNumber(ctx.tenant.settings.employees);
   const hasCap = capitalYen !== null;
   const hasEmp = employees !== null;
-  const base = { code: "toriteki", severity: "info" as const, subjectId: "tenant", subjectLabel: "会社の資本金・従業員の数", basis: BASIS.toriteki, sourceUrl: SOURCES.toritekiOverview, fixHref: FIX.company };
+  const base = {
+    code: "toriteki",
+    severity: "info" as const,
+    subjectId: "tenant",
+    subjectLabel: "会社の資本金・従業員の数",
+    basis: BASIS.toriteki,
+    sourceUrl: SOURCES.toritekiOverview,
+    fixHref: FIX.company(monthQuery(ctx)),
+  };
   const over = (capitalYen !== null && capitalYen > TORITEKI_CAPITAL_YEN) || (employees !== null && employees > TORITEKI_EMPLOYEES);
   if (over) {
     const facts = [capitalYen !== null ? `資本金 ${yenText(capitalYen)}` : null, employees !== null ? `常時使用する従業員 ${employees.toLocaleString("ja-JP")}人` : null]
@@ -631,7 +656,7 @@ export function invoiceNumber(ctx: WatchContext): IssueDraft[] {
           "登録のある方への明細（仕入明細書）には、相手の登録番号を書くことになっています。公表サイトで確かめて、ドライバーの設定で直してください。",
         basis: BASIS.invoiceNumber,
         sourceUrl: SOURCES.purchaseStatement,
-        fixHref: FIX.drivers,
+        fixHref: FIX.driver(drv.id),
       });
       continue;
     }
@@ -650,7 +675,7 @@ export function invoiceNumber(ctx: WatchContext): IssueDraft[] {
         "登録が取り消されていないかを公表サイトで確かめ、確かめた日をドライバーの設定に入れることをおすすめします。",
       basis: BASIS.invoiceRegistry,
       sourceUrl: SOURCES.invoiceRegistry,
-      fixHref: FIX.drivers,
+      fixHref: stale.length === 1 ? FIX.driver(stale[0].id) : FIX.drivers,
     });
   }
   return out;
@@ -699,6 +724,8 @@ export function contractEnd(ctx: WatchContext): IssueDraft[] {
     const noticed = drv.endNoticedOn;
     const days = noticed ? daysBetween(noticed, end) : null;
     if (days !== null && days >= 30) continue;
+    // 予告の目安の日（終了日の 30 日前）
+    const noticeBy = addDays(end, -30);
     out.push({
       code: "contract_end",
       severity: "yellow",
@@ -707,11 +734,13 @@ export function contractEnd(ctx: WatchContext): IssueDraft[] {
       title: noticed ? "委託の終了の予告が、30日前より後です" : "委託の終了を伝えた日の記録がありません",
       detail:
         `委託の終了日は${jpDate(end)}で、${jpDate(start)}から6か月以上続いた委託です。` +
-        (noticed ? `終了を伝えた日の記録は${jpDate(noticed)}で、終了日の ${days}日前です。` : "終了を伝えた日の記録がありません。") +
+        (noticed
+          ? `終了を伝えた日の記録は${jpDate(noticed)}で、終了日の ${days}日前です。`
+          : `終了を伝えた日の記録がありません（終了日の30日前は${jpDate(noticeBy)}${ctx.today > noticeBy ? "で、すでに過ぎています" : "です"}）。`) +
         "6か月以上続いた委託を終える（更新しない）ときは、少なくとも30日前までに予告することが求められています（例外があります）。予告した日の記録の確認をおすすめします。",
       basis: BASIS.endNotice,
       sourceUrl: SOURCES.mhlwFl,
-      fixHref: FIX.drivers,
+      fixHref: FIX.driver(drv.id),
     });
   }
   return out;
@@ -755,10 +784,23 @@ export function noBank(ctx: WatchContext): IssueDraft[] {
       detail:
         `振込額は ${yenText(d.total)}ですが、${empty ? "口座が登録されていません" : `口座の情報に直すところがあります（${problems.join("・")}）`}。` +
         "このままでは全銀の振込データに入りません。ドライバーの設定で口座を入れてください。",
-      fixHref: FIX.drivers,
+      fixHref: FIX.driver(drv.id),
     });
   }
   return out;
+}
+
+/** 明細の振込額の内訳（委託料 ＋ 消費税 − 控除 ± 調整 − 源泉徴収 ＝ 振込額。明細の値をそのまま並べる） */
+export function totalBreakdown(d: StatementDraft): string {
+  const parts = [`委託料 ${yenText(d.subtotal)}`];
+  if (d.tax) parts.push(`＋ ${d.taxLabel ?? "消費税"} ${yenText(d.tax)}`);
+  const deducted = d.deductionTotal + d.deductionTax;
+  if (deducted) parts.push(`− 控除 ${yenText(deducted)}${d.deductionTax ? "（消費税を含む）" : ""}`);
+  const adjusted = d.adjustmentTotal + d.adjustmentTax;
+  if (adjusted) parts.push(`${adjusted < 0 ? "−" : "＋"} 調整 ${yenText(Math.abs(adjusted))}`);
+  const withheld = d.withholding?.amount ?? 0;
+  if (withheld) parts.push(`− 源泉徴収 ${yenText(withheld)}`);
+  return parts.join(" ");
 }
 
 export function negativeTotal(ctx: WatchContext): IssueDraft[] {
@@ -771,8 +813,8 @@ export function negativeTotal(ctx: WatchContext): IssueDraft[] {
       subjectLabel: d.driver.name,
       title: "振込額がマイナスです",
       detail:
-        `振込額が ${signedYen(d.total)}です（委託料 ${yenText(d.subtotal)}・控除 ${yenText(d.deductionTotal + d.deductionTax)}（消費税を含む）・調整 ${signedYen(d.adjustmentTotal + d.adjustmentTax)}）。` +
-        "このままでは振り込めません。控除と調整の中身を確かめてください。",
+        `${monthOf(ctx)}の振込額が ${signedYen(d.total)}です（${totalBreakdown(d)}）。` +
+        "このままでは振り込めません。控除と調整の中身と金額を確かめてください。",
       fixHref: FIX.work(monthQuery(ctx)),
     }));
 }
@@ -842,6 +884,8 @@ export function statementsStale(ctx: WatchContext): IssueDraft[] {
 
 export function workMissing(ctx: WatchContext): IssueDraft[] {
   const worked = new Set(ctx.drafts.filter((d) => d.hasWork).map((d) => d.driverId));
+  // まだ誰の稼働も入っていない月は、人ごとには出さない（画面の「稼働がまだありません」の案内で足りる）
+  if (worked.size === 0) return [];
   const prevWorked = new Set(ctx.prevDrafts.filter((d) => d.hasWork).map((d) => d.driverId));
   const out: IssueDraft[] = [];
   for (const drv of ctx.drivers) {
@@ -853,7 +897,7 @@ export function workMissing(ctx: WatchContext): IssueDraft[] {
       severity: "info",
       subjectId: drv.id,
       subjectLabel: drv.name,
-      title: "前月は稼働があった方に、今月の稼働がありません",
+      title: "前月は稼働があった方に、この月の稼働がありません",
       detail: `${drv.name}さんは前月に稼働がありましたが、${jpMonth(ctx.month)}の稼働がまだ入っていません。取り込みの漏れや名前の取り違えが無いか確かめてください。`,
       fixHref: FIX.work(monthQuery(ctx)),
     });
@@ -885,7 +929,7 @@ export const RULES: { fn: RuleFn; doc: RuleDoc }[] = [
   { fn: invoiceNumber, doc: { code: "invoice_number", severities: ["yellow", "info"], label: "登録番号", what: `登録番号の形（T＋13桁）と、公表サイトで確かめた日（${REGISTRATION_CHECK_DAYS}日以内）`, basis: BASIS.invoiceNumber, sourceUrl: SOURCES.invoiceRegistry } },
   { fn: invoiceBurden, doc: { code: "invoice_burden", severities: ["info"], label: "経過措置の負担", what: "インボイスの登録が無い方への支払で、会社が控除できない消費税の見込みと、次の段階", basis: BASIS.transitional, sourceUrl: SOURCES.invoiceTransitional } },
   { fn: toriteki, doc: { code: "toriteki", severities: ["info"], label: "取適法の目安", what: "資本金・従業員の数から、取適法の対象になる可能性があるかの目安", basis: BASIS.toriteki, sourceUrl: SOURCES.toritekiOverview } },
-  { fn: workMissing, doc: { code: "work_missing", severities: ["info"], label: "稼働の入れ忘れ", what: "前月に稼働があった人に、今月の稼働が入っているか" } },
+  { fn: workMissing, doc: { code: "work_missing", severities: ["info"], label: "稼働の入れ忘れ", what: "前月に稼働があった人に、その月の稼働が入っているか" } },
 ];
 
 const SEVERITY_RANK: Record<WatchSeverity, number> = { red: 0, yellow: 1, info: 2 };

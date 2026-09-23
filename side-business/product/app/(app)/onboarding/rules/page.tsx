@@ -5,8 +5,9 @@ import { NextStepLink, StepHeader } from "~/components/onboarding/step-header";
 import { Badge } from "~/components/page";
 import { getDb } from "~/db/client";
 import { requirePageUser } from "~/server/auth";
-import { listRuleNames } from "~/server/features/onboarding";
+import { listRuleNames, loadOnboarding } from "~/server/features/onboarding";
 import { ruleValueText, type RuleKind } from "~/server/features/onboarding/rules";
+import { monthFromParam, monthParam } from "~/server/month";
 
 export const metadata = { title: "最初の設定：控除のルール" };
 
@@ -14,12 +15,13 @@ export const metadata = { title: "最初の設定：控除のルール" };
 export default async function OnboardingRulesPage() {
   const user = await requirePageUser("staff");
   const db = await getDb();
-  const rules = await listRuleNames(db, user.tenantId);
+  const [rules, progress] = await Promise.all([listRuleNames(db, user.tenantId), loadOnboarding(db, user.tenantId)]);
 
   return (
     <div className="mx-auto max-w-3xl">
       <StepHeader
         step="rules"
+        state={progress.steps.find((x) => x.def.key === "rules")?.state}
         description={
           <>
             毎月の支払から引いているもの（ロイヤリティ・管理費など）を、今の取引条件のとおりに入れてください。
@@ -43,7 +45,7 @@ export default async function OnboardingRulesPage() {
           </ul>
         </Card>
       )}
-      <RulesForm existing={rules.filter((r) => r.forAll).map((r) => r.name)} />
+      <RulesForm existing={rules.filter((r) => r.forAll).map((r) => r.name)} nextHref={`/import?m=${monthParam(monthFromParam(undefined))}`} />
       <div className="mt-8 space-y-2 text-sm text-muted-foreground">
         <p>
           根拠：取引条件に書いていない控除は、フリーランス法 第5条（報酬の減額の禁止）にあたるおそれがあります（

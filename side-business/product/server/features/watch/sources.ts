@@ -51,32 +51,65 @@ export const BASIS = {
   transitional: "インボイス制度の経過措置（免税事業者などからの仕入れ）",
 } as const;
 
-/** 直す画面（設定の画面の場所は、ここだけで決める） */
+/**
+ * 直す画面（設定の画面の場所は、ここだけで決める）。
+ * できるだけ「その人・その控除・その調整」を開いた状態で飛べるようにする（m は YYYY-MM）。
+ */
 export const FIX = {
-  company: "/settings/company",
+  company: (m: string) => `/settings/company?m=${m}`,
+  /** ドライバーの一覧（何人かまとめての指摘） */
   drivers: "/settings/drivers",
-  rules: "/settings/rules",
-  projects: "/settings/projects",
+  /** そのドライバーの設定（取引条件の日付・口座・登録番号・終了日） */
+  driver: (driverId: string) => `/settings/drivers/${encodeURIComponent(driverId)}`,
+  /** 人ごとの単価（合意した日もここで入れる） */
+  rates: (driverId: string, projectId: string) => `/settings/rates?driver=${encodeURIComponent(driverId)}&project=${encodeURIComponent(projectId)}`,
+  /** 控除のルール（その月の金額つき。1 人だけの控除ならその人で絞る） */
+  rules: (m: string, driverId?: string | null) => `/settings/rules?m=${m}${driverId ? `&driver=${encodeURIComponent(driverId)}` : ""}`,
+  /** 案件の標準の単価（名前で絞る） */
+  projects: (name?: string) => `/settings/projects${name ? `?q=${encodeURIComponent(name.slice(0, 50))}` : ""}`,
   work: (m: string) => `/work?m=${m}`,
+  /** その調整を直す欄を開いた稼働の画面 */
+  adjustment: (m: string, adjustmentId: string) => `/work?m=${m}&adj=${encodeURIComponent(adjustmentId)}#adjustments`,
   statements: (m: string) => `/statements?m=${m}`,
   transfer: (m: string) => `/transfer?m=${m}`,
 } as const;
-
-/** 閲覧の人（viewer）でも開ける画面か（設定・振込は事務・オーナーだけ） */
-export function viewerCanOpen(href: string): boolean {
-  return /^\/(work|statements|watch|close|reconcile|profit|parallel)(\?|$|\/)/.test(href);
-}
 
 /** 直す画面の名前（ボタンに「直す（ドライバーの設定）」と出す） */
 export function fixLabel(href: string): string {
   const names: [RegExp, string][] = [
     [/^\/settings\/company/, "会社の設定"],
     [/^\/settings\/drivers/, "ドライバーの設定"],
+    [/^\/settings\/rates/, "人ごとの単価"],
     [/^\/settings\/rules/, "控除のルール"],
     [/^\/settings\/projects/, "案件の設定"],
     [/^\/work/, "稼働と調整"],
     [/^\/statements/, "支払明細"],
     [/^\/transfer/, "振込データ"],
   ];
-  return names.find(([re]) => re.test(href))?.[1] ?? "直す画面";
+  return names.find(([re]) => re.test(href))?.[1] ?? "記録の画面";
+}
+
+export type FixLink = {
+  href: string;
+  /** 「直す（ドライバーの設定）」または「見る（会社の設定）」 */
+  text: string;
+  /** 直せない人へのひとこと（無ければ null） */
+  note: string | null;
+  /** その人がその画面で直せるか */
+  canFix: boolean;
+};
+
+/**
+ * 直す画面へのリンクを、見る人の役割と月の状態に合わせる。
+ * どの画面も閲覧の人は開けるので、隠さずに「見る」にする（直せない人に「直す」と書かない）。
+ */
+export function fixLink(href: string, who: { role: "owner" | "staff" | "viewer"; closed: boolean }): FixLink {
+  const name = fixLabel(href);
+  const view = (note: string | null): FixLink => ({ href, text: `見る（${name}）`, note, canFix: false });
+  if (who.role === "viewer") return view("直すのは事務・オーナーの方です。");
+  if (/^\/settings\/company/.test(href) && who.role !== "owner") return view("会社の設定を変えられるのはオーナーです。オーナーに頼んでください。");
+  if (who.closed && /^\/(work|statements)(\?|$|\/)/.test(href)) {
+    return view("締めた月の稼働と明細は変えられません。直すときは、オーナーが締めを外してからにします。");
+  }
+  return { href, text: `直す（${name}）`, note: null, canFix: true };
 }

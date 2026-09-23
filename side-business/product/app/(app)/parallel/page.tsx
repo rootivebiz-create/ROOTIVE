@@ -1,28 +1,32 @@
 import Link from "next/link";
-import { Card, buttonClass } from "@/components/ui";
-import { EmptyState, Notice, PageHeader } from "~/components/page";
+import { Card, Money, buttonClass } from "@/components/ui";
+import { Badge, EmptyState, Notice, PageHeader } from "~/components/page";
+import { GoLiveButton, UndoGoLiveButton } from "~/components/parallel/go-live";
 import { ParallelEditor } from "~/components/parallel/parallel-editor";
 import { ResultList } from "~/components/parallel/result-list";
 import { getDb } from "~/db/client";
 import { requirePageUser, roleAtLeast } from "~/server/auth";
-import { loadParallel } from "~/server/features/parallel";
+import { goLiveMonth, loadParallel, parallelHistory } from "~/server/features/parallel";
 import { monthFromParam, monthLabelJa, monthParam } from "~/server/month";
 
 export const metadata = { title: "Excel と比べる" };
 
 /**
  * 並行運用の比べ合わせ：しめ日ラボの振込額と、今の Excel の振込額をドライバーごとに並べる。
- * 差があれば、消費税・控除・調整・源泉徴収・端数のどれと同じ額かを探して、理由の見当を出す。
+ * 差があれば、消費税・控除・調整・源泉徴収・数量・単価・端数のどれで説明できるかを探して、理由の見当を出す。
  */
 export default async function ParallelPage({ searchParams }: { searchParams: Promise<{ m?: string }> }) {
   const user = await requirePageUser("viewer");
   const month = monthFromParam((await searchParams).m);
   const m = monthParam(month);
   const db = await getDb();
-  const v = await loadParallel(db, user.tenantId, month);
+  const [v, golive] = await Promise.all([loadParallel(db, user.tenantId, month), goLiveMonth(db, user.tenantId)]);
+  const history = await parallelHistory(db, user.tenantId, month, 3, v);
   const canEdit = roleAtLeast(user.role, "staff");
+  const isOwner = user.role === "owner";
   const staleCount = v.rows.filter((r) => r.stale).length;
   const draftCount = v.rows.filter((r) => r.source === "draft").length;
+  const notEntered = v.rows.filter((r) => r.excelTotal === null).length;
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -40,9 +44,13 @@ export default async function ParallelPage({ searchParams }: { searchParams: Pro
         }
       />
 
-      <Notice tone="info">
-        2〜3 か月、しめ日ラボと Excel の両方で締めて、差が 0 になったら Excel をやめてください。差が出たときは、どちらに合わせるかを決めてから直します（会社の取引条件が基準です）。
-      </Notice>
+      {golive ? (
+        <Notice tone="ok">{monthLabelJa(golive)}分から、しめ日ラボで締めています。Excel と比べる画面は、これからも使えます。</Notice>
+      ) : (
+        <Notice tone="info">
+          2〜3 か月、しめ日ラボと Excel の両方で締めて、差が 0 になったら Excel をやめてください。差が出たときは、どちらに合わせるかを決めてから直します（会社の取引条件が基準です）。
+        </Notice>
+      )}
 
       {v.rows.length === 0 && !canEdit ? (
         <div className="mt-6">
@@ -55,9 +63,21 @@ export default async function ParallelPage({ searchParams }: { searchParams: Pro
           <Card className="mt-6">
             <p className="text-sm font-bold text-muted-foreground">{monthLabelJa(month)}分</p>
             <p className="mt-1 text-2xl font-bold">{v.summary.sentence}</p>
+            {v.rows.length > 0 && notEntered > 0 && (
+              <p className="mt-1 text-sm text-muted-foreground">
+                {v.rows.length}人のうち、Excel の額をまだ入れていない人が {notEntered}人います{canEdit ? "（下の表に入れるか、貼り付けてください）" : ""}。
+              </p>
+            )}
             {v.summary.compared > 0 && (
               <p className="mt-1 text-sm">
                 {v.summary.different > 0 ? `差がある人が ${v.summary.different}人います。下の「理由の見当」を見て、Excel の計算と比べてください。` : "比べた人は、全員 Excel と同じです。"}
+              </p>
+            )}
+            {v.summary.different > 0 && (
+              <p className="mt-1 text-sm">
+                差の合計（しめ日ラボ − Excel）<Money value={v.summary.diffTotal} className="font-bold" />：しめ日ラボの方が多い <Money value={v.summary.oursHigher} />／Excel の方が多い{" "}
+                <Money value={v.summary.excelHigher} />
+                {v.summary.unexplained > 0 ? `。理由のメモがまだ無い人 ${v.summary.unexplained}人` : "。差のある人には、全員理由のメモがあります"}
               </p>
             )}
             {v.rows.length === 0 && (
@@ -106,8 +126,50 @@ export default async function ParallelPage({ searchParams }: { searchParams: Pro
         </>
       )}
 
+      <section aria-labelledby="golive-heading" className="mt-8 space-y-3">
+        <h2 id="golive-heading" className="text-lg font-bold">
+          Excel をやめる目安
+        </h2>
+        <Card>
+          <ul className="space-y-1 text-sm">
+            {history.months.map((h) => (
+              <li key={h.month} className="flex flex-wrap items-center gap-2">
+                <span className="min-w-24">{monthLabelJa(h.month)}分</span>
+                {h.state === "ok" ? (
+                  <Badge tone="green">一致・説明済み（{h.compared}人）</Badge>
+                ) : h.state === "diff" ? (
+                  <Badge tone="yellow">
+                    {h.compared}人中 {h.matched}人が一致
+                  </Badge>
+                ) : (
+                  <Badge>比べていません</Badge>
+                )}
+                <Link href={`/parallel?m=${monthParam(h.month)}`} className="inline-flex min-h-11 items-center text-xs">
+                  開く
+                </Link>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-sm">
+            この月から続けて一致（または差の理由を説明済み）の月：<span className="font-bold">{history.streak} か月</span>
+            {history.streak >= 2 ? "。目安の 2〜3 か月に届いています。" : "。2〜3 か月続いたら、Excel をやめる目安です。"}
+          </p>
+          <div className="mt-3">
+            {golive ? (
+              isOwner ? (
+                <UndoGoLiveButton />
+              ) : null
+            ) : isOwner ? (
+              <GoLiveButton month={month} monthLabel={monthLabelJa(month)} ready={v.summary.allExplained} streak={history.streak} />
+            ) : (
+              <p className="text-sm text-muted-foreground">Excel をやめるかは、オーナーの方が決めます（この画面から記録できます）。</p>
+            )}
+          </div>
+        </Card>
+      </section>
+
       <div className="mt-8 space-y-1 text-xs text-muted-foreground">
-        <p>「理由の見当」は、差の額が明細のどの部品（消費税・控除・調整・源泉徴収・端数）と同じ額かを探したものです。同じ額でも、ほかの理由のことがあります。</p>
+        <p>「理由の見当」は、差の額が明細のどの部品（消費税・控除・調整・源泉徴収・端数）と同じ額か、ある行の数量・単価の違いで説明できるかを探したものです。当てはまっても、ほかの理由のことがあります。</p>
         <p>どちらの計算に合わせるかは、取引条件をもとに会社で決めてください。消費税の扱いは、顧問の税理士さんに確かめると安心です。</p>
       </div>
     </div>
