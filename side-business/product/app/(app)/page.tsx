@@ -1,37 +1,51 @@
-import Link from "next/link";
-import { Card } from "@/components/ui";
+import { NextCard } from "~/components/home/next-card";
+import { OnboardingBanner } from "~/components/home/onboarding-banner";
+import { SideCards } from "~/components/home/side-cards";
+import { StepList } from "~/components/home/step-list";
+import { PageHeader } from "~/components/page";
 import { getDb } from "~/db/client";
-import { requirePageUser } from "~/server/auth";
-import { monthFromParam, monthLabelJa } from "~/server/month";
+import { requirePageUser, roleAtLeast } from "~/server/auth";
+import { homeView, loadHomeStatus, unresolvedQuestionCount } from "~/server/features/home";
+import { monthFromParam } from "~/server/month";
 
-/** 今月の締め：流れの順に、どこまで済んだかを見せる（各段の中身は機能ごとの画面で） */
+export const metadata = { title: "今月の締め" };
+
+/** 今日（日本時間）の YYYY-MM-DD */
+function todayJst(now = new Date()): string {
+  return new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Tokyo" }).format(now);
+}
+
+/** ホーム：今月の締めの 5 つの段と、いちばん大きな「次にやること」 */
 export default async function HomePage({ searchParams }: { searchParams: Promise<{ m?: string }> }) {
   const user = await requirePageUser("viewer");
   const month = monthFromParam((await searchParams).m);
-  await getDb();
-  const steps = [
-    { href: "/import", title: "1. 取り込む", body: "今の Excel をそのまま上げる" },
-    { href: "/watch", title: "2. 見張り番を見る", body: "フリーランス法・インボイス・おかしな数字" },
-    { href: "/statements", title: "3. 明細を作って送る", body: "ドライバーはスマホで確認" },
-    { href: "/transfer", title: "4. 振込データ", body: "銀行にそのまま出せる" },
-    { href: "/close", title: "5. 締める", body: "締めたら書き換えられない" },
-  ];
+  const db = await getDb();
+  const [st, allQuestions] = await Promise.all([loadHomeStatus(db, user.tenantId, month), unresolvedQuestionCount(db, user.tenantId)]);
+  const canEdit = roleAtLeast(user.role, "staff");
+  const view = homeView(st, { canEdit });
+
   return (
     <div>
-      <h1 className="text-2xl font-bold">{monthLabelJa(month)}の締め</h1>
-      <p className="mt-1 text-sm text-muted-foreground">{user.name}さん、上から順に進めれば終わります。</p>
-      <ol className="mt-6 grid gap-3 sm:grid-cols-2">
-        {steps.map((s) => (
-          <li key={s.href}>
-            <Link href={`${s.href}?m=${month.slice(0, 7)}`} className="block no-underline">
-              <Card className="h-full hover:border-foreground">
-                <p className="font-bold text-foreground">{s.title}</p>
-                <p className="mt-1 text-sm text-muted-foreground">{s.body}</p>
-              </Card>
-            </Link>
-          </li>
-        ))}
-      </ol>
+      {canEdit && <OnboardingBanner progress={st.onboarding} />}
+      <PageHeader
+        title={view.title}
+        month={month}
+        basePath="/"
+        description={st.closed ? "この月は締めてあります。残っている作業があれば、下に出します。" : `${user.name}さん、上から順に進めれば終わります。`}
+      />
+      <NextCard view={view} month={month} payDate={st.payDate} today={todayJst()} />
+      <div className="mt-6 grid gap-6 lg:grid-cols-3">
+        <section aria-labelledby="steps-heading" className="lg:col-span-2">
+          <h2 id="steps-heading" className="mb-3 text-lg font-bold">
+            締めの流れ
+          </h2>
+          <StepList steps={view.steps} />
+        </section>
+        <aside aria-label="今月のまとめ">
+          <h2 className="mb-3 text-lg font-bold">今月のまとめ</h2>
+          <SideCards st={st} otherQuestions={Math.max(0, allQuestions - st.questions.count)} />
+        </aside>
+      </div>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, inArray, sql } from "drizzle-orm";
 import type { Db } from "~/db/client";
 import * as s from "~/db/schema";
 import { UserError } from "~/server/action";
@@ -196,6 +196,24 @@ export function transferCsvName(fileName: string): string {
   return fileName.replace(/^振込_/, "振込一覧_").replace(/\.txt$/, ".csv");
 }
 
+/**
+ * 振込データを作ったあとに、入れた明細の中身が変わったか（明細の版が作ったあとに足されたか）。
+ * 人数と合計だけだと「Aさん +1,000円・Bさん −1,000円」を見落とすため、版で見る。
+ * 時刻の比べ合わせは DB の中で行う（JS の日時はミリ秒までなので、同じミリ秒の前後を取り違えない）。
+ * 1 つの表だけの select では drizzle が列名に表の名前を付けないため、ここは表の名前を書いて区別する。
+ */
+const versionChangedSql = sql<boolean>`exists (
+  select 1 from "statement_versions" sv
+  where sv."tenant_id" = "transfer_batches"."tenant_id"
+    and sv."statement_id" = any("transfer_batches"."statement_ids")
+    and sv."created_at" > "transfer_batches"."created_at"
+)`.mapWith(Boolean);
+
+/** 表計算ソフトで式として読まれないように（名前が「=」「+」「@」で始まるときは頭に ' を付ける） */
+function csvSafe(value: string): string {
+  return /^[=+@\t\r]/.test(value) ? `'${value}` : value;
+}
+
 // ---------------------------------------------------------------- 読む
 
 /** この月の明細と口座を読み、振込データに入る人・入らない人に分ける */
@@ -257,8 +275,9 @@ export async function loadTransferPlan(db: Db, tenantId: string, month: string):
       version: st.version,
       bank,
       holderHalf: toZenginKana(bank.holderKana).value,
+      // 人で見る（明細が消えて作り直され、id が変わっていても、前のデータに入っていたと分かるように）
       inBatches: batches
-        .filter((b) => b.statementIds.includes(st.id))
+        .filter((b) => b.driverIds.includes(st.driverId))
         .map((b) => ({ id: b.id, fileName: b.fileName, executedOn: b.executedOn })),
     });
   }
@@ -282,28 +301,37 @@ export async function loadTransferPlan(db: Db, tenantId: string, month: string):
     included,
     excluded,
     total: included.reduce((a, r) => a + r.amount, 0),
-    batches: batches.map(({ statementIds: _ids, ...b }) => b),
+    batches: batches.map(({ statementIds: _ids, driverIds: _drivers, ...b }) => b),
   };
 }
 
-type BatchWithIds = BatchView & { statementIds: string[] };
+type BatchWithIds = BatchView & {
+  statementIds: string[];
+  /** 入っている人（明細が消えていても、版の記録から分かる） */
+  driverIds: string[];
+};
 
 /** この月の振込データの一覧（新しい順）。作ったあとに明細が変わったかも見る */
 export async function listTransferBatches(db: Db, tenantId: string, month: string): Promise<BatchWithIds[]> {
-  const [batches, users, statements] = await Promise.all([
+  const [batches, users, statements, versions] = await Promise.all([
     db
-      .select()
+      .select({ ...getTableColumns(s.transferBatches), versionChanged: versionChangedSql })
       .from(s.transferBatches)
       .where(and(eq(s.transferBatches.tenantId, tenantId), eq(s.transferBatches.month, month)))
       .orderBy(desc(s.transferBatches.createdAt)),
     db.select({ id: s.users.id, name: s.users.name }).from(s.users).where(eq(s.users.tenantId, tenantId)),
     db
-      .select({ id: s.statements.id, total: s.statements.total })
+      .select({ id: s.statements.id, total: s.statements.total, driverId: s.statements.driverId })
       .from(s.statements)
       .where(and(eq(s.statements.tenantId, tenantId), eq(s.statements.month, month))),
+    db
+      .selectDistinct({ statementId: s.statementVersions.statementId, driverId: s.statementVersions.driverId })
+      .from(s.statementVersions)
+      .where(and(eq(s.statementVersions.tenantId, tenantId), eq(s.statementVersions.month, month))),
   ]);
   const userName = new Map(users.map((u) => [u.id, u.name]));
   const totalById = new Map(statements.map((st) => [st.id, st.total]));
+  const driverOf = new Map<string, string>([...versions.map((v) => [v.statementId, v.driverId] as const), ...statements.map((st) => [st.id, st.driverId] as const)]);
   return batches.map((b) => {
     const current = b.statementIds.map((id) => totalById.get(id)).filter((t): t is number => t !== undefined);
     const currentTotal = current.reduce((a, t) => a + t, 0);
@@ -317,10 +345,11 @@ export async function listTransferBatches(db: Db, tenantId: string, month: strin
       fileName: b.fileName,
       createdAt: b.createdAt,
       createdByName: b.createdBy ? userName.get(b.createdBy) ?? null : null,
-      changed: current.length !== b.count || currentTotal !== b.total,
+      changed: b.versionChanged || current.length !== b.count || currentTotal !== b.total,
       currentCount: current.length,
       currentTotal,
       statementIds: b.statementIds,
+      driverIds: [...new Set(b.statementIds.map((id) => driverOf.get(id)).filter((d): d is string => d !== undefined))],
     };
   });
 }
@@ -337,7 +366,33 @@ export type CreateTransferInput = {
 
 export type CreatedBatch = typeof s.transferBatches.$inferSelect & { excluded: ExcludedRow[] };
 
+/**
+ * 振込データを 1 件作って記録する。
+ * 同じ会社で同時に 2 回押されても二重に作らないよう、会社の行に鍵をかけてから読み直して作る
+ * （締めの処理も同じ鍵を使うので、締めている途中の明細で作ることもない）。
+ */
 export async function createTransferBatch(
+  db: Db,
+  tenantId: string,
+  month: string,
+  input: CreateTransferInput,
+  userId?: string | null,
+): Promise<CreatedBatch> {
+  assertMonth(month);
+  return db.transaction(async (tx) => {
+    const t = tx as unknown as Db;
+    await lockTenant(t, tenantId);
+    return createTransferBatchLocked(t, tenantId, month, input, userId);
+  });
+}
+
+/** 会社の行に鍵をかける（トランザクションの中で。振込データを作る・締めるを 1 つずつにする） */
+export async function lockTenant(db: Db, tenantId: string): Promise<void> {
+  const rows = await db.select({ id: s.tenants.id }).from(s.tenants).where(eq(s.tenants.id, tenantId)).for("no key update");
+  if (!rows[0]) throw new Error("会社が見つかりません");
+}
+
+async function createTransferBatchLocked(
   db: Db,
   tenantId: string,
   month: string,
@@ -361,10 +416,19 @@ export async function createTransferBatch(
   let rows = plan.included;
   if (input.scope === "remaining") {
     rows = rows.filter((r) => r.inBatches.length === 0);
-  } else if (earlier.length > 0 && !input.replaceConfirmed) {
-    throw new UserError(
-      `この月の振込データはすでに ${earlier.length} 件あります。同じ人に二重に振り込まないよう、「まだ入っていない人だけ」を選ぶか、前のデータを銀行に出していないことを確かめてから作ってください。`,
-    );
+  } else if (earlier.length > 0) {
+    // 振り込んだ日が入っているデータがあるなら、全員ぶんは必ず二重になる
+    const executed = earlier.filter((b) => b.executedOn);
+    if (executed.length) {
+      throw new UserError(
+        `振り込んだ日が記録されている振込データ（${executed.map((b) => b.fileName).join("、")}）があるため、全員ぶんは作れません（二重の振込になります）。「まだ振込データに入っていない人だけ」を選んでください。振り込んだ日の記録が間違いなら、先にその日付を消してください。`,
+      );
+    }
+    if (!input.replaceConfirmed) {
+      throw new UserError(
+        `この月の振込データはすでに ${earlier.length} 件あります。同じ人に二重に振り込まないよう、「まだ入っていない人だけ」を選ぶか、前のデータを銀行に出していないことを確かめてから作ってください。`,
+      );
+    }
   }
   if (rows.length === 0) {
     throw new UserError(
@@ -420,10 +484,12 @@ export async function createTransferBatch(
 
 type BatchLine = { row: TransferRow; transfer: Transfer };
 
-async function getBatch(db: Db, tenantId: string, batchId: string) {
+type StoredBatch = typeof s.transferBatches.$inferSelect & { versionChanged: boolean };
+
+async function getBatch(db: Db, tenantId: string, batchId: string): Promise<StoredBatch> {
   if (!isUuid(batchId)) throw new UserError("振込データが見つかりません");
   const rows = await db
-    .select()
+    .select({ ...getTableColumns(s.transferBatches), versionChanged: versionChangedSql })
     .from(s.transferBatches)
     .where(and(eq(s.transferBatches.id, batchId), eq(s.transferBatches.tenantId, tenantId)))
     .limit(1);
@@ -433,21 +499,24 @@ async function getBatch(db: Db, tenantId: string, batchId: string) {
 }
 
 /** 振込データに入れた明細を今の状態で読み直し、作ったときの人数・合計と同じか確かめる */
-async function loadBatchLines(db: Db, tenantId: string, batch: typeof s.transferBatches.$inferSelect): Promise<BatchLine[]> {
+async function loadBatchLines(db: Db, tenantId: string, batch: StoredBatch): Promise<BatchLine[]> {
   const ids = batch.statementIds;
   const statements = ids.length
     ? await db
         .select()
         .from(s.statements)
-        .where(and(eq(s.statements.tenantId, tenantId), inArray(s.statements.id, ids)))
+        .where(and(eq(s.statements.tenantId, tenantId), eq(s.statements.month, batch.month), inArray(s.statements.id, ids)))
     : [];
   const drivers = await db.select().from(s.drivers).where(eq(s.drivers.tenantId, tenantId)).orderBy(asc(s.drivers.code));
   const driverById = new Map(drivers.map((d) => [d.id, d]));
 
   const total = statements.reduce((a, st) => a + st.total, 0);
-  if (statements.length !== batch.count || total !== batch.total) {
+  if (batch.versionChanged || statements.length !== batch.count || total !== batch.total) {
+    const now = `いま：${statements.length}人・${total.toLocaleString("ja-JP")}円`;
     throw new UserError(
-      `この振込データを作ったあとに明細が変わりました（作ったとき：${batch.count}人・${batch.total.toLocaleString("ja-JP")}円／いま：${statements.length}人・${total.toLocaleString("ja-JP")}円）。この振込データは取り消して、作り直してください。`,
+      `この振込データを作ったあとに明細が変わりました（作ったとき：${batch.count}人・${batch.total.toLocaleString("ja-JP")}円／${now}${
+        batch.versionChanged && total === batch.total ? "。合計は同じでも、人ごとの額が変わっています" : ""
+      }）。この振込データは取り消して、作り直してください。`,
     );
   }
 
@@ -483,7 +552,7 @@ async function loadBatchLines(db: Db, tenantId: string, batch: typeof s.transfer
   return lines;
 }
 
-export type ZenginFile = { fileName: string; bytes: Uint8Array; records: string[]; batch: typeof s.transferBatches.$inferSelect };
+export type ZenginFile = { fileName: string; bytes: Uint8Array; records: string[]; batch: StoredBatch };
 
 /** 全銀の振込データ（Shift_JIS・120 桁・CRLF）を作る。会社で絞り、他社の振込データは読めない */
 export async function buildTransferFile(db: Db, tenantId: string, batchId: string): Promise<ZenginFile> {
@@ -510,14 +579,14 @@ export async function buildTransferCsv(
   db: Db,
   tenantId: string,
   batchId: string,
-): Promise<{ fileName: string; text: string; batch: typeof s.transferBatches.$inferSelect }> {
+): Promise<{ fileName: string; text: string; batch: StoredBatch }> {
   const batch = await getBatch(db, tenantId, batchId);
   const lines = await loadBatchLines(db, tenantId, batch);
   const rows: (string | number)[][] = [
     ["ドライバー番号", "ドライバー", "金融機関コード", "金融機関名", "支店コード", "支店名", "預金種目", "口座番号", "口座名義（カナ）", "振込額", "振込指定日"],
     ...lines.map(({ row }) => [
-      row.driverCode ?? "",
-      row.driverName,
+      csvSafe(row.driverCode ?? ""),
+      csvSafe(row.driverName),
       row.bank.bankCode,
       row.bank.bankNameKana,
       row.bank.branchCode,

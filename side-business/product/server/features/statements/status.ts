@@ -46,6 +46,8 @@ export type StatementStatus = {
   tone: Tone;
   /** 送ったあとで中身が変わり、新しい中身をまだ送っていない */
   needsResend: boolean;
+  /** 今の中身をドライバーが開いた（前の中身を開いただけなら false） */
+  viewedCurrent: boolean;
   /** 解決していない質問の数 */
   openQuestions: number;
   /** 事務がまだ読んでいない質問の数 */
@@ -77,6 +79,8 @@ export function statementStatus(input: StatusInput, now: Date, deemedAfterDays: 
   // 今の中身を送ったか（送ったあとで作り直して中身が変わったら、送り直しが要る）
   const sentCurrent = !!sentAt && sentAt.getTime() >= input.updatedAt.getTime();
   const needsResend = !!sentAt && !sentCurrent;
+  // 前の中身を開いただけなら「開封」にしない（作り直したあとで開けば、開いた日時が今の中身のものになる）
+  const viewedCurrent = !!input.viewedAt && input.viewedAt.getTime() >= input.updatedAt.getTime();
 
   let deemedDays: number | null = null;
   if (sentAt && sentCurrent) {
@@ -89,7 +93,7 @@ export function statementStatus(input: StatusInput, now: Date, deemedAfterDays: 
   if (current.length > 0) key = "confirmed";
   else if (deemedDays !== null) key = "deemed";
   else if (older.length > 0) key = "changed";
-  else if (input.viewedAt) key = "viewed";
+  else if (viewedCurrent) key = "viewed";
   else if (sentAt) key = "sent";
   else key = "unsent";
 
@@ -102,6 +106,7 @@ export function statementStatus(input: StatusInput, now: Date, deemedAfterDays: 
     label,
     tone: STATUS_TONE[key],
     needsResend: needsResend && key !== "confirmed",
+    viewedCurrent,
     openQuestions,
     unread,
     deemedDays,

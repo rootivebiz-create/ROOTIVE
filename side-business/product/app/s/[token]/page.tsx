@@ -37,7 +37,7 @@ export default async function DriverStatementPage({ params }: { params: Promise<
       <div className="space-y-3">
         {staffPreview && (
           <p role="status" className="rounded-lg border border-border bg-muted p-3 text-sm">
-            会社の方としてログインしたまま開いています。開いた記録はつけません。「内容を確認しました」と質問は、ドライバーご本人だけが送れます。
+            会社の方としてログインしたまま開いています。開いた記録はつけません。「内容を確認しました」と質問は、ドライバーご本人だけが送れます（ご本人が会社の方でもあるときは、ログアウトしてから開き直してください）。
           </p>
         )}
         {data.confirmedOlder && (
@@ -46,6 +46,18 @@ export default async function DriverStatementPage({ params }: { params: Promise<
             <span className="mt-1 block text-sm font-normal text-foreground">
               前の版（版 {data.confirmedOlder.version}）は {data.confirmedOlder.at} に確認いただいています。いまの明細は版 {v.version} です。
             </span>
+            {data.changes.length > 0 && (
+              <span className="mt-2 block text-sm font-normal text-foreground">
+                <span className="block font-bold">変わったところ</span>
+                <span className="mt-1 block space-y-1">
+                  {data.changes.map((c, i) => (
+                    <span key={i} className="block break-words">
+                      ・{c}
+                    </span>
+                  ))}
+                </span>
+              </span>
+            )}
           </p>
         )}
         {data.unreadReplies > 0 && (

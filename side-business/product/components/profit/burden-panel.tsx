@@ -74,7 +74,7 @@ export function BurdenPanel({ future, month }: { future: FutureBurden; month: st
                 <tbody>
                   {future.steps.map((s) => (
                     <tr key={s.from} className={`border-b border-border ${s.isCurrent ? "bg-muted font-bold" : ""}`}>
-                      <th scope="row" className="whitespace-nowrap px-2 py-2 text-left font-[inherit]">
+                      <th scope="row" className={`whitespace-nowrap px-2 py-2 text-left ${s.isCurrent ? "font-bold" : "font-normal"}`}>
                         {s.label}
                         {s.isCurrent && (
                           <span className="ml-1">

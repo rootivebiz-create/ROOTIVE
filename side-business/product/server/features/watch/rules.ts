@@ -290,7 +290,9 @@ export function sixtyDays(ctx: WatchContext): IssueDraft[] {
   if (!dl || dl.status === "ok") return [];
   const shifted = dl.payDateActual !== dl.payDate ? `（銀行の休みの日のため、前の営業日の${jpDate(dl.payDateActual)}として数えています）` : "";
   const base = { code: "sixty_days", subjectId: "tenant", subjectLabel: "会社の支払日の設定", basis: BASIS.payDate, sourceUrl: SOURCES.flGuidelines, fixHref: FIX.company };
-  const head = `${dl.ruleLabel}では、${jpMonth(ctx.month)}分（${jpDate(dl.periodStart)}〜${jpDate(dl.periodEnd)}）の支払日が${jpDate(dl.payDate)}${shifted}です。`;
+  // 締めた月の写しの支払日が今の設定と違うときは、設定の名前を書かない（写しの日で数える）
+  const setting = dl.payDate === payDateFor(ctx.month, ctx.tenant) ? `（${dl.ruleLabel}）` : "（明細に書いた支払日）";
+  const head = `${jpMonth(ctx.month)}分（${jpDate(dl.periodStart)}〜${jpDate(dl.periodEnd)}）の支払日は${jpDate(dl.payDate)}${setting}${shifted}です。`;
   if (dl.status === "ng") {
     return [
       {
@@ -569,13 +571,16 @@ export function rateDown(ctx: WatchContext): IssueDraft[] {
 // ---------------------------------------------------------------- 8. 取適法の目安
 
 export function toriteki(ctx: WatchContext): IssueDraft[] {
-  const { capitalYen, employees } = ctx.tenant.settings;
-  const hasCap = typeof capitalYen === "number" && Number.isFinite(capitalYen) && capitalYen >= 0;
-  const hasEmp = typeof employees === "number" && Number.isFinite(employees) && employees >= 0;
+  const capitalYen = toNumber(ctx.tenant.settings.capitalYen);
+  const employees = toNumber(ctx.tenant.settings.employees);
+  const hasCap = capitalYen !== null;
+  const hasEmp = employees !== null;
   const base = { code: "toriteki", severity: "info" as const, subjectId: "tenant", subjectLabel: "会社の資本金・従業員の数", basis: BASIS.toriteki, sourceUrl: SOURCES.toritekiOverview, fixHref: FIX.company };
-  const over = (hasCap && capitalYen > TORITEKI_CAPITAL_YEN) || (hasEmp && employees > TORITEKI_EMPLOYEES);
+  const over = (capitalYen !== null && capitalYen > TORITEKI_CAPITAL_YEN) || (employees !== null && employees > TORITEKI_EMPLOYEES);
   if (over) {
-    const facts = [hasCap ? `資本金 ${yenText(capitalYen)}` : null, hasEmp ? `常時使用する従業員 ${employees.toLocaleString("ja-JP")}人` : null].filter(Boolean).join("・");
+    const facts = [capitalYen !== null ? `資本金 ${yenText(capitalYen)}` : null, employees !== null ? `常時使用する従業員 ${employees.toLocaleString("ja-JP")}人` : null]
+      .filter(Boolean)
+      .join("・");
     return [
       {
         ...base,
@@ -596,6 +601,12 @@ export function toriteki(ctx: WatchContext): IssueDraft[] {
     ];
   }
   return [];
+}
+
+/** 設定の数（文字で入っていても読む。空・読めないものは null） */
+function toNumber(v: unknown): number | null {
+  const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v.replace(/[,，\s]/g, "")) : NaN;
+  return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
 // ---------------------------------------------------------------- 9. インボイス

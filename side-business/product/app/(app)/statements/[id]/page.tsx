@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Card, Money, TableWrap, buttonClass } from "@/components/ui";
+import { jpDate } from "@/lib/format";
 import { Notice } from "~/components/page";
 import { LinkPanel } from "~/components/statements/link-panel";
 import { StatementView } from "~/components/statements/statement-view";
@@ -11,6 +12,8 @@ import { requirePageUser, roleAtLeast } from "~/server/auth";
 import { getStatementDetail, listMonthStatements, markQuestionsRead, staffLinkToken } from "~/server/features/statements";
 import { requestOrigin } from "~/server/features/statements/request";
 import { jpDateTime, jpMonthLabel, shareLinks, shareMessage, shareSubject } from "~/server/features/statements/view";
+
+const NTA_QA_URL = "https://www.nta.go.jp/taxes/shiraberu/zeimokubetsu/shohi/keigenzeiritsu/pdf/qa/113-3.pdf";
 import { monthParam } from "~/server/month";
 import { isMonthClosed } from "~/server/repo";
 
@@ -73,12 +76,38 @@ export default async function StatementDetailPage({ params }: { params: Promise<
         </Notice>
       )}
       {detail.status.key === "deemed" && (
-        <Notice tone="info">
-          送ってから {detail.status.deemedDays}日たち、質問はありません。明細の注記（連絡が無ければ確認とみなす）に沿って「みなし確認」と表示しています。扱いは会社と税理士でお決めください。
-        </Notice>
+        <div className="space-y-2 rounded-lg border border-border bg-muted p-3 text-sm" role="status">
+          <p>
+            送ってから {detail.status.deemedDays}日たち、質問はありません。明細の注記（連絡が無ければ確認とみなす）に沿って「みなし確認」と表示しています。扱いは会社と税理士でお決めください。
+          </p>
+          <p className="text-muted-foreground">
+            {detail.terms?.deemedClause
+              ? `取引条件の記録（版 ${detail.terms.version}・${jpDate(detail.terms.issuedOn)}）に、この扱いの条項があります。`
+              : "取引条件の記録に、この扱い（連絡が無ければ確認とみなす）の条項が見つかりません。"}
+            国税庁のインボイス Q&A（問86）は、この方法について相手方の了承を得ることにふれています。了承の記録があるか、確認をおすすめします。
+            <a href={NTA_QA_URL} target="_blank" rel="noopener noreferrer" className="ml-1">
+              国税庁 インボイス Q&A
+            </a>
+          </p>
+        </div>
       )}
       {detail.status.needsResend && detail.status.key !== "changed" && (
         <Notice tone="info">送ったあとで中身が変わりました。新しい中身はまだ送っていません。リンクはそのまま使えるので、もう一度送ってください。</Notice>
+      )}
+      {detail.changes && (
+        <Card>
+          <h2 className="font-bold">
+            {detail.changes.fromConfirmed ? `確認済みの版 ${detail.changes.fromVersion} から変わったところ` : `前の版（版 ${detail.changes.fromVersion}）から変わったところ`}
+          </h2>
+          <ul className="mt-2 space-y-1 text-sm">
+            {detail.changes.items.map((c, i) => (
+              <li key={i} className="break-words">
+                ・{c}
+              </li>
+            ))}
+          </ul>
+          {detail.changes.fromConfirmed && <p className="mt-2 text-xs text-muted-foreground">ドライバーのページにも、同じ内容を「変わったところ」として出しています。</p>}
+        </Card>
       )}
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
@@ -99,7 +128,13 @@ export default async function StatementDetailPage({ params }: { params: Promise<
               <dt className="text-muted-foreground">送付</dt>
               <dd>{detail.sentAtText ?? "まだ送っていません"}</dd>
               <dt className="text-muted-foreground">開封</dt>
-              <dd>{detail.viewedAtText ?? "まだ開かれていません"}</dd>
+              <dd>
+                {!detail.viewedAtText
+                  ? "まだ開かれていません"
+                  : detail.status.viewedCurrent
+                    ? detail.viewedAtText
+                    : `前の中身を ${detail.viewedAtText} に開いています（今の中身はまだ）`}
+              </dd>
               <dt className="text-muted-foreground">確認</dt>
               <dd>{detail.status.confirmedAt ? `${jpDateTime(detail.status.confirmedAt)}（版 ${st.version}）` : "今の版はまだ確認されていません"}</dd>
             </dl>

@@ -3,7 +3,7 @@ import { Card, buttonClass } from "@/components/ui";
 import { Badge } from "~/components/page";
 import { AckForm, UnackForm } from "~/components/watch/ack-forms";
 import type { WatchIssue } from "~/server/features/watch-types";
-import { viewerCanOpen } from "~/server/features/watch/sources";
+import { fixLabel, viewerCanOpen } from "~/server/features/watch/sources";
 
 export const SEVERITY_LABEL = { red: "赤", yellow: "黄", info: "お知らせ" } as const;
 const SEVERITY_TONE = { red: "red", yellow: "yellow", info: "gray" } as const;
@@ -87,7 +87,7 @@ export function IssueCard({
         <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-start">
           {fixOpen && (
             <Link href={issue.fixHref!} className={buttonClass(issue.acked ? "secondary" : "primary", "w-full sm:w-auto")}>
-              直す画面へ
+              直す（{fixLabel(issue.fixHref!)}）
             </Link>
           )}
           {issue.fixHref && !fixOpen && <p className="text-xs text-muted-foreground sm:self-center">直すのは事務・オーナーの方です。</p>}

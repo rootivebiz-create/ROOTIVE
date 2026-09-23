@@ -3,12 +3,13 @@ import type { ReactElement } from "react";
 import { renderToString } from "react-dom/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { PGlite } from "@electric-sql/pglite";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { Db } from "~/db/client";
 import * as s from "~/db/schema";
 import type { SessionUser } from "~/server/auth";
-import { closeMonth } from "~/server/features/close";
+import { closeMonth, reopenMonth } from "~/server/features/close";
 import { createTransferBatch } from "~/server/features/transfer";
+import { runWatch } from "~/server/features/watch";
 import { DEMO_MONTH, seedDemo } from "~/server/seed-demo";
 import { generateStatements } from "~/server/statements-core";
 import { createTestDb } from "./helpers/db";
@@ -77,7 +78,9 @@ describe("締め・振込の画面", () => {
     expect(html).toContain("振込データを作る（7人・2,171,664円）");
     expect(html).toContain("木村 誠");
     expect(html).toContain("口座が未登録です");
-    expect(html).toContain("/settings/drivers");
+    // 口座を入れる画面へ、その人のページに直接つなぐ
+    const [d07] = await state.db!.select().from(s.drivers).where(and(eq(s.drivers.tenantId, tenantId), eq(s.drivers.code, "D07")));
+    expect(html).toContain(`/settings/drivers/${d07.id}`);
     expect(html).toContain("ｱｵｷ ｼﾖｳﾀ");
     expect(html).not.toContain("振込手数料はドライバーの負担");
   });
@@ -107,13 +110,26 @@ describe("締め・振込の画面", () => {
     await db.update(s.tenants).set({ settings: t.settings }).where(eq(s.tenants.id, tenantId));
   });
 
-  it("締め：6 つの確かめと、締めるボタン（事務）", async () => {
+  it("締め：6 つの確かめ。見張り番の赤が残っている間は締められず、確認済みにすると締めるボタンが出る（事務）", async () => {
     as("staff");
     const { default: ClosePage } = await import("~/app/(app)/close/page");
-    const html = await render(ClosePage);
+    let html = await render(ClosePage);
     for (const title of ["稼働が入っている", "明細が最新", "見張り番の赤い指摘", "Excel との比べ合わせ", "振込データ（参考）", "ドライバーの確認"]) expect(html).toContain(title);
     // タグを外した文字で確かめる
-    expect(html.replace(/<[^>]+>/g, "")).toContain("稼働 11 件（8人）・調整 2 件");
+    const text = html.replace(/<[^>]+>/g, "");
+    expect(text).toContain("稼働 11 件（8人）・調整 2 件");
+    expect(text).toContain("1 件・7人・今の明細で合計 2,171,664円（振り込んだ日の記録 0 件）");
+    // 架空の会社の 10 月は、見張り番の赤（取引条件の明示の記録・合意の記録が無い控除）がある
+    const red = (await runWatch(state.db!, tenantId, DEMO_MONTH)).filter((i) => i.severity === "red" && !i.acked);
+    expect(red.length).toBeGreaterThan(0);
+    expect(html).toContain("まだ締められません");
+    expect(html).toContain(`見張り番の赤い指摘が ${red.length} 件あります`);
+    expect(html).not.toContain("2026年10月を締める…");
+
+    // 内容を確かめて「確認済み」にすると締められる
+    await state.db!.insert(s.watchAcks).values(red.map((i) => ({ tenantId, month: DEMO_MONTH, code: i.code, subjectId: i.subjectId, note: "内容を確かめた" })));
+    html = await render(ClosePage);
+    expect(html).not.toContain("まだ締められません");
     expect(html).toContain("2026年10月を締める…");
     expect(html).toContain("2026年10月の操作の記録");
     expect(html).toContain("振込データを作った");
@@ -131,5 +147,15 @@ describe("締め・振込の画面", () => {
     as("owner");
     html = await render(ClosePage);
     expect(html).toContain("締めを外す理由");
+  });
+
+  it("締め：外したあとは、外した理由を見せる", async () => {
+    const owner = users.find((u) => u.role === "owner")!;
+    await reopenMonth(state.db!, tenantId, DEMO_MONTH, { id: owner.id, role: "owner" }, "スポット便の入れ漏れ");
+    as("staff");
+    const { default: ClosePage } = await import("~/app/(app)/close/page");
+    const html = await render(ClosePage);
+    expect(html).toContain("締めを外しています（理由：スポット便の入れ漏れ）");
+    expect(html).toContain("2026年10月を締める…");
   });
 });

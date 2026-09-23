@@ -66,3 +66,17 @@ export const FIX = {
 export function viewerCanOpen(href: string): boolean {
   return /^\/(work|statements|watch|close|reconcile|profit|parallel)(\?|$|\/)/.test(href);
 }
+
+/** 直す画面の名前（ボタンに「直す（ドライバーの設定）」と出す） */
+export function fixLabel(href: string): string {
+  const names: [RegExp, string][] = [
+    [/^\/settings\/company/, "会社の設定"],
+    [/^\/settings\/drivers/, "ドライバーの設定"],
+    [/^\/settings\/rules/, "控除のルール"],
+    [/^\/settings\/projects/, "案件の設定"],
+    [/^\/work/, "稼働と調整"],
+    [/^\/statements/, "支払明細"],
+    [/^\/transfer/, "振込データ"],
+  ];
+  return names.find(([re]) => re.test(href))?.[1] ?? "直す画面";
+}

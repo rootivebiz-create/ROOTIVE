@@ -4,6 +4,7 @@ import type { PGlite } from "@electric-sql/pglite";
 import type { Db } from "~/db/client";
 import * as s from "~/db/schema";
 import { auditLabel, auditSummary, closeMonth, loadCloseChecklist, monthAuditLog, reopenMonth } from "~/server/features/close";
+import { createTransferBatch } from "~/server/features/transfer";
 import type { WatchIssue } from "~/server/features/watch-types";
 import { pgErrorMessage } from "~/server/db-errors";
 import { isMonthClosed } from "~/server/repo";
@@ -156,6 +157,12 @@ describe("月の締め", () => {
     const [mc] = await db.select().from(s.monthCloses).where(and(eq(s.monthCloses.tenantId, tenantId), eq(s.monthCloses.month, DEMO_MONTH)));
     expect(mc.status).toBe("open");
     expect(mc.reopenedAt).toBeInstanceOf(Date);
+    // 理由は締めの行にも残す（画面で「外した理由」を見せる）
+    expect(mc.reopenReason).toBe("稼働の入れ漏れがあったため");
+    expect((await loadCloseChecklist(db, tenantId, DEMO_MONTH, { runWatch: async () => [] })).reopenReason).toBe("稼働の入れ漏れがあったため");
+    // 2 回目は外すものがない
+    await expect(reopenMonth(db, tenantId, DEMO_MONTH, { id: ownerId, role: "owner" }, "もう一度外そうとする")).rejects.toThrow("締めていません");
+    expect(await db.select().from(s.auditLog).where(and(eq(s.auditLog.tenantId, tenantId), eq(s.auditLog.action, "month.reopen")))).toHaveLength(1);
 
     // 外したあとは直せる → 明細の版が上がる
     const d01 = (await db.select().from(s.drivers).where(and(eq(s.drivers.tenantId, tenantId), eq(s.drivers.code, "D01"))))[0];
@@ -188,6 +195,35 @@ describe("月の締め", () => {
     expect(log.length).toBeLessThanOrEqual(50);
     // 9 月の記録には 10 月のものが混ざらない
     expect((await monthAuditLog(db, tenantId, DEMO_PREV_MONTH)).some((r) => r.action === "month.reopen")).toBe(false);
+  });
+
+  it("⑤ 振込データ：同じ人は 1 回だけ数え、入っていない人（D07・口座なし）を数える", async () => {
+    // 10 月は締めてある（青木 +1,200円のあと）。口座の無い木村（34,430円）は入らない
+    const first = await createTransferBatch(db, tenantId, DEMO_MONTH, { transferDate: "2026-11-25", scope: "all" }, staffId);
+    expect(first).toMatchObject({ count: 7, total: OCTOBER_TOTAL + 1200 - 34430 });
+    let c = await loadCloseChecklist(db, tenantId, DEMO_MONTH, { runWatch: async () => [] });
+    expect(c.transfer).toEqual({ batches: 1, people: 7, total: OCTOBER_TOTAL + 1200 - 34430, executed: 0, changed: 0, notIncluded: 1 });
+
+    // 前のデータを使わずに全員ぶんを作り直しても、人数・合計は二重にならない
+    await createTransferBatch(db, tenantId, DEMO_MONTH, { transferDate: "2026-11-24", scope: "all", replaceConfirmed: true }, staffId);
+    c = await loadCloseChecklist(db, tenantId, DEMO_MONTH, { runWatch: async () => [] });
+    expect(c.transfer).toMatchObject({ batches: 2, people: 7, total: OCTOBER_TOTAL + 1200 - 34430, notIncluded: 1 });
+  });
+
+  it("同時に 2 回「締める」を押しても、締めるのは 1 回だけ", async () => {
+    const results = await Promise.allSettled([
+      closeMonth(db, otherTenantId, DEMO_MONTH, null, { runWatch: async () => [] }),
+      closeMonth(db, otherTenantId, DEMO_MONTH, null, { runWatch: async () => [] }),
+    ]);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect(String((results.find((r) => r.status === "rejected") as PromiseRejectedResult).reason?.message)).toContain("締め");
+    expect(await isMonthClosed(db, otherTenantId, DEMO_MONTH)).toBe(true);
+    expect(await db.select().from(s.auditLog).where(and(eq(s.auditLog.tenantId, otherTenantId), eq(s.auditLog.action, "month.close")))).toHaveLength(1);
+    const statements = await db.select().from(s.statements).where(and(eq(s.statements.tenantId, otherTenantId), eq(s.statements.month, DEMO_MONTH)));
+    expect(statements.reduce((a, r) => a + r.total, 0)).toBe(OCTOBER_TOTAL);
+    // 締めた会社の明細（+1,200円）は他社に混ざらない
+    const mine = await db.select().from(s.statements).where(and(eq(s.statements.tenantId, tenantId), eq(s.statements.month, DEMO_MONTH)));
+    expect(mine.reduce((a, r) => a + r.total, 0)).toBe(OCTOBER_TOTAL + 1200);
   });
 
   it("稼働も調整も無い月は締めない", async () => {

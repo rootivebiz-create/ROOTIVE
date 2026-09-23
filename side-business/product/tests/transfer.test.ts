@@ -212,6 +212,10 @@ describe("振込データ（全銀）", () => {
     await expect(setTransferExecutedOn(db, tenantId, batch.id, "2026/11/25")).rejects.toThrow("正しい日付");
     // 振り込んだ日が入っているものは取り消せない
     await expect(deleteTransferBatch(db, tenantId, batch.id)).rejects.toThrow("取り消せません");
+    // 振り込んだ記録があるなら、確認の印があっても「全員ぶん」は作らない（必ず二重になる）
+    await expect(
+      createTransferBatch(db, tenantId, DEMO_MONTH, { transferDate: "2026-11-25", scope: "all", replaceConfirmed: true }),
+    ).rejects.toThrow("振り込んだ日が記録されている振込データ");
     // 締めた月でもファイルは作れる（明細は変わらない）
     const file = await buildTransferFile(db, tenantId, batch.id);
     expect(file.records).toHaveLength(10);
@@ -242,6 +246,17 @@ describe("振込データ（全銀）", () => {
     expect(plan.blockReason).toContain("保存された明細がありません");
   });
 
+  it("他社の明細・口座・振込データは混ざらない", async () => {
+    const mine = await loadTransferPlan(db, tenantId, DEMO_MONTH);
+    const other = await loadTransferPlan(db, otherTenantId, DEMO_MONTH);
+    expect(other.closed).toBe(false);
+    expect(mine.batches.every((b) => !other.batches.some((o) => o.id === b.id))).toBe(true);
+    // 他社の明細・口座は混ざらない（人の数は 8 人のまま）
+    expect(other.included.length + other.excluded.length).toBe(8);
+    expect(new Set(other.included.map((r) => r.statementId)).size).toBe(other.included.length);
+    expect(other.included.some((r) => mine.included.some((m) => m.statementId === r.statementId))).toBe(false);
+  });
+
   it("振込依頼人の設定が足りないと、足りないところを日本語で返す", () => {
     expect(readRequester({}).problems).toEqual(
       expect.arrayContaining(["振込依頼人コードは 10 桁の数字です", "金融機関コードは 4 桁の数字です", "依頼人名（カナ）がありません"]),
@@ -251,5 +266,107 @@ describe("振込データ（全銀）", () => {
     });
     expect(ok.problems).toEqual([]);
     expect(ok.requester?.code).toBe("1234567890");
+  });
+});
+
+describe("振込データ：作ったあとの変化と、同時の操作", () => {
+  let db: Db;
+  let client: PGlite;
+  let tenantId: string;
+
+  beforeAll(async () => {
+    ({ db, client } = await createTestDb());
+    ({ tenantId } = await seedDemo(db));
+    await generateStatements(db, tenantId, DEMO_MONTH);
+  });
+  afterAll(async () => client.close());
+
+  it("同時に 2 回押しても、振込データは 1 件だけ（2 回目は二重の注意で断る）", async () => {
+    const results = await Promise.allSettled([
+      createTransferBatch(db, tenantId, DEMO_MONTH, { transferDate: "2026-11-25", scope: "all" }),
+      createTransferBatch(db, tenantId, DEMO_MONTH, { transferDate: "2026-11-25", scope: "all" }),
+    ]);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    const rejected = results.find((r) => r.status === "rejected") as PromiseRejectedResult;
+    expect(String(rejected.reason?.message)).toContain("二重");
+    const batches = await db.select().from(s.transferBatches).where(eq(s.transferBatches.tenantId, tenantId));
+    expect(batches).toHaveLength(1);
+    expect(batches[0]).toMatchObject({ count: 7, total: 2171664 });
+  });
+
+  it("合計が同じでも、人ごとの額が変われば「変わった」と分かり、ダウンロードを止める", async () => {
+    const [batch] = await db.select().from(s.transferBatches).where(eq(s.transferBatches.tenantId, tenantId));
+    const d01 = await driverId(db, tenantId, "D01");
+    const d02 = await driverId(db, tenantId, "D02");
+    // 青木 +1,000円・井上 −1,000円（合計は 2,171,664円のまま）
+    await db.insert(s.adjustments).values([
+      { tenantId, month: DEMO_MONTH, driverId: d01, label: "高速代の立替", amount: 1000, agreedInWriting: true },
+      { tenantId, month: DEMO_MONTH, driverId: d02, label: "前払い分の精算", amount: -1000, agreedInWriting: true },
+    ]);
+    await generateStatements(db, tenantId, DEMO_MONTH);
+
+    const plan = await loadTransferPlan(db, tenantId, DEMO_MONTH);
+    expect(plan.included.find((r) => r.driverCode === "D01")?.amount).toBe(357555 + 1000);
+    expect(plan.included.find((r) => r.driverCode === "D02")?.amount).toBe(357720 - 1000);
+    expect(plan.total).toBe(2171664);
+    expect(plan.batches[0]).toMatchObject({ id: batch.id, changed: true, total: 2171664, currentTotal: 2171664, currentCount: 7 });
+    await expect(buildTransferFile(db, tenantId, batch.id)).rejects.toThrow("人ごとの額が変わっています");
+    await expect(buildTransferCsv(db, tenantId, batch.id)).rejects.toThrow("作ったあとに明細が変わりました");
+
+    // 取り消して作り直すと、今の額でファイルができる
+    await deleteTransferBatch(db, tenantId, batch.id);
+    const again = await createTransferBatch(db, tenantId, DEMO_MONTH, { transferDate: "2026-11-25", scope: "all" });
+    expect(again.fileName).toBe("振込_2026年10月分_20261125.txt");
+    const file = await buildTransferFile(db, tenantId, again.id);
+    expect(file.records[1].slice(80, 90)).toBe("0000358555");
+    expect(file.records[2].slice(80, 90)).toBe("0000356720");
+    expect(file.records[8].slice(7, 19)).toBe(String(2171664).padStart(12, "0"));
+    expect((await loadTransferPlan(db, tenantId, DEMO_MONTH)).batches[0].changed).toBe(false);
+  });
+
+  it("明細が消えて作り直され id が変わっても、前の振込データに入っている人として扱う（二重に振り込まない）", async () => {
+    const d06 = await driverId(db, tenantId, "D06");
+    const mine = and(eq(s.workEntries.tenantId, tenantId), eq(s.workEntries.month, DEMO_MONTH), eq(s.workEntries.driverId, d06));
+    const work = await db.select().from(s.workEntries).where(mine);
+    const [before] = await db.select().from(s.statements).where(and(eq(s.statements.tenantId, tenantId), eq(s.statements.driverId, d06)));
+    // 取り込みを元に戻した → 明細を作り直した（加藤の明細は消える）→ もう一度取り込んだ、の流れ
+    await db.delete(s.workEntries).where(mine);
+    await generateStatements(db, tenantId, DEMO_MONTH);
+    await db.insert(s.workEntries).values(work.map(({ id: _id, ...w }) => w));
+    await generateStatements(db, tenantId, DEMO_MONTH);
+    const [after] = await db.select().from(s.statements).where(and(eq(s.statements.tenantId, tenantId), eq(s.statements.driverId, d06)));
+    expect(after.id).not.toBe(before.id);
+
+    const plan = await loadTransferPlan(db, tenantId, DEMO_MONTH);
+    const row = plan.included.find((r) => r.driverCode === "D06")!;
+    expect(row.amount).toBe(171600);
+    expect(row.inBatches).toHaveLength(1);
+    expect(plan.batches[0].changed).toBe(true);
+    // 「まだの人だけ」に加藤を入れない
+    await expect(createTransferBatch(db, tenantId, DEMO_MONTH, { transferDate: "2026-11-25", scope: "remaining" })).rejects.toThrow("いません");
+
+    // 取り消して作り直す
+    await deleteTransferBatch(db, tenantId, plan.batches[0].id);
+    const again = await createTransferBatch(db, tenantId, DEMO_MONTH, { transferDate: "2026-11-25", scope: "all" });
+    expect(again).toMatchObject({ count: 7, total: 2171664 });
+    expect(again.statementIds).toContain(after.id);
+  });
+
+  it("明細を作り直しても中身が同じなら「変わった」にしない（締めたときも同じ）", async () => {
+    await generateStatements(db, tenantId, DEMO_MONTH);
+    await closeMonth(db, tenantId, DEMO_MONTH, null, noWatch);
+    const plan = await loadTransferPlan(db, tenantId, DEMO_MONTH);
+    expect(plan.closed).toBe(true);
+    expect(plan.batches[0].changed).toBe(false);
+    expect((await buildTransferFile(db, tenantId, plan.batches[0].id)).records).toHaveLength(10);
+  });
+
+  it("CSV は、名前が「=」で始まっても式として読まれない", async () => {
+    const d05 = await driverId(db, tenantId, "D05");
+    await db.update(s.drivers).set({ name: "=1+2 岡田" }).where(and(eq(s.drivers.id, d05), eq(s.drivers.tenantId, tenantId)));
+    const [batch] = await db.select().from(s.transferBatches).where(eq(s.transferBatches.tenantId, tenantId));
+    const csv = await buildTransferCsv(db, tenantId, batch.id);
+    expect(csv.text).toContain(",'=1+2 岡田,");
+    expect(csv.text).not.toContain(",=1+2");
   });
 });

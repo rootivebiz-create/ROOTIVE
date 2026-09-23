@@ -84,7 +84,7 @@ export function TrendChart({ points, month }: { points: TrendPoint[]; month: str
           <tbody>
             {[...points].reverse().map((p) => (
               <tr key={p.month} className={`border-b border-border ${p.month === month ? "font-bold" : ""}`}>
-                <th scope="row" className="py-1.5 text-left font-[inherit]">
+                <th scope="row" className={`py-1.5 text-left ${p.month === month ? "font-bold" : "font-normal"}`}>
                   {monthLabelJa(p.month)}
                   {p.closed && <span className="block text-xs font-normal text-muted-foreground">締め済み</span>}
                 </th>

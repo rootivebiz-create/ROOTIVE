@@ -8,6 +8,8 @@ import {
   qtyText,
   summaryRows,
   taxBreakdown,
+  totalNote,
+  unitPriceText,
   type DriverStatementView,
   type MaskedAccount,
 } from "~/server/features/statements/view";
@@ -37,12 +39,14 @@ export function StatementView({
 }) {
   const tb = taxBreakdown(v);
   const rows = summaryRows(v);
+  const zeroNote = totalNote(v.total);
   return (
     <article className="space-y-4" aria-label={v.title}>
       {/* いちばん上：いつ・いくら */}
       <section className="rounded-card border-2 border-foreground bg-card p-4">
         <p className="text-sm text-muted-foreground">{jpMonthLabel(v.month)}分のお振込額</p>
-        <p className="num mt-1 text-4xl font-bold leading-tight tracking-tight">{en(v.total)}</p>
+        <p className={`num mt-1 break-all text-4xl font-bold leading-tight tracking-tight ${v.total < 0 ? "text-danger" : ""}`}>{en(v.total)}</p>
+        {zeroNote && <p className="mt-1 text-sm font-bold">{zeroNote}</p>}
         <p className="mt-2 text-base">
           振込予定日 <strong className="whitespace-nowrap">{jpDateWithWeekday(v.payDate)}</strong>
         </p>
@@ -101,7 +105,7 @@ export function StatementView({
                     {l.client && <p className="text-xs text-muted-foreground">{l.client}</p>}
                     <p className="num mt-1 text-sm">
                       {qtyText(l.qty)}
-                      {l.unit} × {en(l.rate)}
+                      {l.unit} × {unitPriceText(l.rate)}
                     </p>
                   </div>
                   <Yen value={l.amount} className="text-base font-bold" />

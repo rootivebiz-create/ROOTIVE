@@ -77,8 +77,8 @@ function ExcludedList({ rows, m }: { rows: ExcludedRow[]; m: string }) {
                 明細を確かめる →
               </Link>
             ) : (
-              <Link href="/settings/drivers" className="inline-flex min-h-11 items-center text-sm">
-                ドライバーの設定で口座を{r.reason === "no_bank" ? "入れる" : "直す"} →
+              <Link href={`/settings/drivers/${r.driverId}`} className="inline-flex min-h-11 items-center text-sm">
+                {r.driverName}さんの設定で口座を{r.reason === "no_bank" ? "入れる" : "直す"} →
               </Link>
             )}
           </p>
@@ -271,10 +271,12 @@ export default async function TransferPage({ searchParams }: { searchParams: Pro
 
               <Card>
                 <CreateTransferForm
+                  key={month}
                   month={month}
                   defaultDate={plan.defaultTransferDate}
                   promisedPayDate={plan.promisedPayDate}
                   earlierBatches={plan.batches.length}
+                  executedBatches={plan.batches.filter((b) => b.executedOn).length}
                   all={{ count: plan.included.length, total: plan.total }}
                   remaining={{ count: remaining.length, total: remaining.reduce((a, r) => a + r.amount, 0) }}
                   zenginReady={zenginReady}

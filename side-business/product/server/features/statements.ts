@@ -1,10 +1,11 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 import type { Db } from "~/db/client";
 import * as s from "~/db/schema";
 import { UserError } from "~/server/action";
 import { audit } from "~/server/audit";
+import { describeChanges } from "~/server/features/statements/diff";
 import { deemedDaysOf, countStatuses, statementStatus, type StatementStatus, type StatusCounts } from "~/server/features/statements/status";
 import { cleanBody, groupThreads, type Thread } from "~/server/features/statements/threads";
 import {
@@ -193,6 +194,58 @@ export function sumItems(items: Pick<StatementListItem, keyof MonthTotals>[]): M
   return t;
 }
 
+// ---------------------------------------------------------------- 前の版との違い
+
+/** 保存してある前の版を、ドライバーに見せる形で読む（無ければ null。会社で絞る） */
+export async function versionView(db: Db, tenantId: string, statementId: string, version: number): Promise<DriverStatementView | null> {
+  if (!isUuid(statementId) || !Number.isInteger(version) || version < 1) return null;
+  const rows = await db
+    .select({ snapshot: s.statementVersions.snapshot, hash: s.statementVersions.hash, version: s.statementVersions.version })
+    .from(s.statementVersions)
+    .where(and(eq(s.statementVersions.tenantId, tenantId), eq(s.statementVersions.statementId, statementId), eq(s.statementVersions.version, version)))
+    .limit(1);
+  const row = rows[0];
+  return row ? toDriverView(readSnapshot(row), row) : null;
+}
+
+export type VersionChanges = {
+  /** 比べた前の版 */
+  fromVersion: number;
+  /** その版をドライバーが確認していたか */
+  fromConfirmed: boolean;
+  items: string[];
+};
+
+/**
+ * 今の版と、比べるべき前の版の違い。確認した前の版があればそれと、無ければ 1 つ前の版と比べる。
+ * 版が 1 つしか無い・前の版の写しが無いときは null。
+ */
+export async function changesSince(
+  db: Db,
+  tenantId: string,
+  st: Pick<StatementRow, "id" | "version">,
+  current: DriverStatementView,
+  lastConfirmedVersion: number | null,
+): Promise<VersionChanges | null> {
+  const confirmedOlder = lastConfirmedVersion !== null && lastConfirmedVersion < st.version ? lastConfirmedVersion : null;
+  const from = confirmedOlder ?? (st.version > 1 ? st.version - 1 : null);
+  if (from === null) return null;
+  const before = await versionView(db, tenantId, st.id, from);
+  if (!before) return null;
+  return { fromVersion: from, fromConfirmed: confirmedOlder !== null, items: describeChanges(before, current) };
+}
+
+/** その人の取引条件の記録（いちばん新しい版）に「みなし確認」の条項があるか。記録が無ければ null */
+export async function deemedClauseOf(db: Db, tenantId: string, driverId: string): Promise<{ version: number; issuedOn: string; deemedClause: boolean } | null> {
+  const rows = await db
+    .select({ version: s.termsRecords.version, issuedOn: s.termsRecords.issuedOn, deemedClause: s.termsRecords.deemedClause })
+    .from(s.termsRecords)
+    .where(and(eq(s.termsRecords.tenantId, tenantId), eq(s.termsRecords.driverId, driverId)))
+    .orderBy(desc(s.termsRecords.version))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
 // ---------------------------------------------------------------- 1 件の中身
 
 export type ConfirmationView = { at: string; version: number; hashShort: string; total: number; ipShort: string | null; device: string | null; current: boolean };
@@ -209,6 +262,10 @@ export type StatementDetail = {
   viewedAtText: string | null;
   updatedAtText: string;
   deemedDays: number;
+  /** 前の版（確認した版があればその版）からの違い */
+  changes: VersionChanges | null;
+  /** 取引条件の記録の「みなし確認」の条項（記録が無ければ null） */
+  terms: { version: number; issuedOn: string; deemedClause: boolean } | null;
 };
 
 /** 端末の目安（UA の全文は出さない） */
@@ -252,6 +309,7 @@ export async function getStatementDetail(db: Db, tenantId: string, id: string, n
   const driverMsgs = messages.filter((m) => m.author === "driver");
   const status = statusOf(st, confs, driverMsgs.map((m) => ({ ...m, statementId: st.id })), now, deemedDays);
   const driver = driverRows[0];
+  const [changes, terms] = await Promise.all([changesSince(db, tenantId, st, view, status.lastConfirmedVersion), deemedClauseOf(db, tenantId, st.driverId)]);
 
   return {
     statement: st,
@@ -278,6 +336,8 @@ export async function getStatementDetail(db: Db, tenantId: string, id: string, n
     viewedAtText: st.viewedAt ? jpDateTime(st.viewedAt) : null,
     updatedAtText: jpDateTime(st.updatedAt),
     deemedDays,
+    changes,
+    terms,
   };
 }
 
@@ -296,10 +356,12 @@ export function staffLinkToken(st: Pick<StatementRow, "id" | "linkNonce">, now =
 export async function markStatementSent(db: Db, tenantId: string, id: string, userId: string | null, channel: SendChannel, now = new Date()) {
   const st = await requireStatement(db, tenantId, id);
   const refresh = !st.sentAt || st.sentAt.getTime() < st.updatedAt.getTime();
+  // 作った直後に送ると、DB とアプリの時計のわずかなずれで「送ったあとで変わった」に見えることがあるので、作った時刻より前にしない
+  const sentAt = new Date(Math.max(now.getTime(), st.updatedAt.getTime()));
   if (refresh) {
     await db
       .update(s.statements)
-      .set({ sentAt: now })
+      .set({ sentAt })
       .where(and(eq(s.statements.id, st.id), eq(s.statements.tenantId, tenantId)));
   }
   await audit(db, {
@@ -310,7 +372,7 @@ export async function markStatementSent(db: Db, tenantId: string, id: string, us
     entityId: st.id,
     detail: { channel, month: st.month, driverId: st.driverId, version: st.version, recorded: refresh },
   });
-  return { sentAt: refresh ? now : st.sentAt };
+  return { sentAt: refresh ? sentAt : st.sentAt };
 }
 
 /** リンクを作り直す：今までのリンクはすべて使えなくなる。送った・開いた記録は外す（確認の記録は残す） */
@@ -462,7 +524,7 @@ export const CONFIRMATION_CSV_HEADER = [
   "振込額（今）",
   "状態",
   "送付日時",
-  "初めて開いた日時",
+  "開いた日時（今の中身を初めて）",
   "確認日時",
   "確認した版",
   "確認したハッシュ",
@@ -484,7 +546,8 @@ export async function confirmationRecordRows(db: Db, tenantId: string, month: st
   const label = month.slice(0, 7);
   for (const item of list.items) {
     const st = byId.get(item.id)!;
-    const base = [label, item.code ?? "", item.name, st.version, st.hash, st.total, item.status.label, item.sentAtText ?? "", item.viewedAtText ?? ""];
+    const viewed = item.viewedAtText ? (item.status.viewedCurrent ? item.viewedAtText : `前の中身を ${item.viewedAtText} に開いた（今の中身はまだ）`) : "";
+    const base = [label, item.code ?? "", item.name, st.version, st.hash, st.total, item.status.label, item.sentAtText ?? "", viewed];
     const mine = confs.filter((c) => c.statementId === st.id);
     if (mine.length === 0) out.push([...base, "", "", "", "", "", ""]);
     for (const c of mine) {

@@ -5,6 +5,7 @@
  *   写しをそのまま広げない（受注の単価・売上・会社の負担が画面や PDF に紛れ込まないように）。
  * - 画面（会社・ドライバー）と PDF は、どちらもこの形とここの行の並びだけを使う（数字がそろう）。
  */
+import { num } from "@/lib/engine/types";
 import { WITHHOLDING_CATEGORIES, type WithholdingCategory } from "@/lib/engine/withholding";
 import { TAX_RATE, type StatementDraft } from "~/server/calc/statement";
 
@@ -117,6 +118,13 @@ export function summaryRows(v: DriverStatementView): SummaryRow[] {
   if (v.adjustmentTax !== 0) rows.push({ key: "adjustmentTax", label: `調整の消費税（${v.taxRatePercent}%）`, amount: v.adjustmentTax });
   if (v.withholding) rows.push({ key: "withholding", label: v.withholding.label, amount: -v.withholding.amount, hint: v.withholding.formula });
   return rows;
+}
+
+/** 振込額が 0 円・マイナスのときの一言（振込は無い。どう精算するかは会社が決めるので、決めつけない） */
+export function totalNote(total: number): string | null {
+  if (total === 0) return "この月のお振込はありません（差し引きが 0 円です）。";
+  if (total < 0) return "差し引きがマイナスのため、この月のお振込はありません。精算のしかたは会社にご確認ください。";
+  return null;
 }
 
 /** 税率ごとの合計（仕入明細書の記載事項：税率ごとに合計した対価の額・適用税率・消費税額） */
@@ -236,7 +244,12 @@ export function jpMonthLabel(month: string): string {
   return `${y}年${m}月`;
 }
 
-/** 数量の見せ方（小数は 2 桁まで） */
+/** 数量の見せ方（保存と同じ小数 4 桁まで。丸めて見せると、数量 × 単価が金額と合わなく見える） */
 export function qtyText(value: number): string {
-  return new Intl.NumberFormat("ja-JP", { maximumFractionDigits: 2 }).format(value);
+  return num(value);
+}
+
+/** 単価の見せ方（152.5 → 152.5円。円に丸めない：金額は丸める前の単価 × 数量で計算している） */
+export function unitPriceText(value: number): string {
+  return `${value < 0 ? "−" : ""}${num(Math.abs(value))}円`;
 }

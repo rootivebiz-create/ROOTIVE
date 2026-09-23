@@ -119,7 +119,11 @@ export default async function StatementsPage({ searchParams }: { searchParams: P
 
         {!hasStatements ? (
           <EmptyState title="この月の明細はまだありません">
-            {canEdit ? "上の「明細を作る」を押すと、稼働と控除のルールから 1 人ずつ明細ができます。" : "事務の方が明細を作ると、ここに並びます。"}
+            {closed
+              ? "この月は明細を作らないまま締められています。明細を作るには、オーナーが「締め」の画面で締めを解除してから作ってください。"
+              : canEdit
+                ? "上の「明細を作る」を押すと、稼働と控除のルールから 1 人ずつ明細ができます。"
+                : "事務の方が明細を作ると、ここに並びます。"}
           </EmptyState>
         ) : (
           <>
@@ -133,7 +137,11 @@ export default async function StatementsPage({ searchParams }: { searchParams: P
                 )}
               </div>
               <p className="text-xs text-muted-foreground">
-                「みなし確認」は、送ってから {list.deemedDays}日たっても質問が無い明細です。明細の注記（連絡が無ければ確認とみなす）に沿った状態の表示で、扱いは会社と税理士でお決めください。
+                「みなし確認」は、送ってから {list.deemedDays}日たっても質問が無い明細です。明細の注記（連絡が無ければ確認とみなす）に沿った状態の表示で、扱いは会社と税理士でお決めください（
+                <a href="https://www.nta.go.jp/taxes/shiraberu/zeimokubetsu/shohi/keigenzeiritsu/pdf/qa/113-3.pdf" target="_blank" rel="noopener noreferrer">
+                  国税庁 インボイス Q&A 問86
+                </a>
+                ）。
               </p>
               <nav aria-label="状態で絞る" className="mt-3 flex flex-wrap gap-2">
                 {FILTERS.map((f) => {
@@ -286,7 +294,7 @@ export default async function StatementsPage({ searchParams }: { searchParams: P
 function SubTimes({ item }: { item: StatementListItem }) {
   const parts = [
     item.sentAtText ? `送付 ${item.sentAtText}` : null,
-    item.viewedAtText ? `開封 ${item.viewedAtText}` : null,
+    item.viewedAtText ? (item.status.viewedCurrent ? `開封 ${item.viewedAtText}` : `前の中身を開封 ${item.viewedAtText}`) : null,
     item.confirmedAtText ? `確認 ${item.confirmedAtText}` : null,
   ].filter(Boolean);
   if (parts.length === 0) return null;

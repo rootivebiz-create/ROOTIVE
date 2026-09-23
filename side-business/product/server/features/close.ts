@@ -6,6 +6,7 @@ import type { Role } from "~/server/auth";
 import { UserError } from "~/server/action";
 import { audit } from "~/server/audit";
 import { buildStatementDrafts } from "~/server/calc/statement";
+import { listTransferBatches, lockTenant } from "~/server/features/transfer";
 import { runWatch as defaultRunWatch } from "~/server/features/watch";
 import type { WatchIssue } from "~/server/features/watch-types";
 import { getTenant, isMonthClosed, loadBuildInput } from "~/server/repo";
@@ -40,6 +41,8 @@ export type CloseChecklist = {
   closedAt: Date | null;
   closedByName: string | null;
   reopenedAt: Date | null;
+  /** 最後に締めを外したときの理由 */
+  reopenReason: string | null;
   /** ① 稼働 */
   work: { entries: number; drivers: number; adjustments: number };
   /** ② 明細（締めた月は見ない） */
@@ -48,8 +51,11 @@ export type CloseChecklist = {
   watch: { blocking: WatchIssue[]; redAcked: number; yellow: number; error: string | null };
   /** ④ Excel との比べ合わせ（差があるもの） */
   parallel: { rows: number; diffs: { driverId: string; driverName: string; excelTotal: number; ourTotal: number; diff: number }[] };
-  /** ⑤ 振込データ */
-  transfer: { batches: number; people: number; total: number; executed: number };
+  /**
+   * ⑤ 振込データ。people・total は、どれかの振込データに入っている明細（同じ人は 1 回だけ数える）の今の振込額。
+   * changed は作ったあとに明細が変わったもの、notIncluded は振込額が 1 円以上なのにどの振込データにも入っていない人。
+   */
+  transfer: { batches: number; people: number; total: number; executed: number; changed: number; notIncluded: number };
   /** ⑥ ドライバーの確認（今の版を確認した人） */
   confirm: { statements: number; confirmed: number; sent: number };
   /** 締めたときの明細（開いている月は今の稼働から作った見込み、締めた月は保存した明細） */
@@ -79,10 +85,7 @@ export async function loadCloseChecklist(db: Db, tenantId: string, month: string
       .where(and(eq(s.adjustments.tenantId, tenantId), eq(s.adjustments.month, month))),
     db.select().from(s.statements).where(and(eq(s.statements.tenantId, tenantId), eq(s.statements.month, month))),
     db.select().from(s.parallelChecks).where(and(eq(s.parallelChecks.tenantId, tenantId), eq(s.parallelChecks.month, month))),
-    db
-      .select()
-      .from(s.transferBatches)
-      .where(and(eq(s.transferBatches.tenantId, tenantId), eq(s.transferBatches.month, month))),
+    listTransferBatches(db, tenantId, month),
     db.select({ id: s.users.id, name: s.users.name }).from(s.users).where(eq(s.users.tenantId, tenantId)),
     db.select({ id: s.drivers.id, name: s.drivers.name }).from(s.drivers).where(eq(s.drivers.tenantId, tenantId)),
   ]);
@@ -168,6 +171,10 @@ export async function loadCloseChecklist(db: Db, tenantId: string, month: string
     confirmed = new Set(conf.filter((c) => versionById.get(c.statementId) === c.version).map((c) => c.statementId)).size;
   }
 
+  // ⑤ 振込データ：人で数える（同じ人を二重に数えない。明細が作り直されて id が変わっていても入っていると分かる）
+  const inAnyBatch = new Set(batches.flatMap((b) => b.driverIds));
+  const covered = saved.filter((r) => inAnyBatch.has(r.driverId));
+
   const blockers: string[] = [];
   if (closed) blockers.push("この月はすでに締めてあります");
   else {
@@ -182,15 +189,18 @@ export async function loadCloseChecklist(db: Db, tenantId: string, month: string
     closedAt: mc?.closedAt ?? null,
     closedByName: mc?.closedBy ? userName.get(mc.closedBy) ?? null : null,
     reopenedAt: mc?.reopenedAt ?? null,
+    reopenReason: mc?.reopenReason ?? null,
     work: { entries: workRows.length, drivers: new Set(workRows.map((w) => w.driverId)).size, adjustments: adjRows[0]?.n ?? 0 },
     statements,
     watch,
     parallel: { rows: parallelRows.length, diffs },
     transfer: {
       batches: batches.length,
-      people: batches.reduce((a, b) => a + b.count, 0),
-      total: batches.reduce((a, b) => a + b.total, 0),
+      people: covered.length,
+      total: covered.reduce((a, r) => a + r.total, 0),
       executed: batches.filter((b) => b.executedOn).length,
+      changed: batches.filter((b) => b.changed).length,
+      notIncluded: batches.length ? saved.filter((r) => r.total > 0 && !inAnyBatch.has(r.driverId)).length : 0,
     },
     confirm: { statements: saved.length, confirmed, sent: saved.filter((r) => r.sentAt).length },
     totals,
@@ -244,6 +254,9 @@ export async function closeMonth(db: Db, tenantId: string, month: string, userId
 
   const result = await db.transaction(async (tx) => {
     const t = tx as unknown as Db;
+    // 同じ会社の「締める」「振込データを作る」を 1 つずつにする（2 回押されても二重に締めない）
+    await lockTenant(t, tenantId);
+    if (await isMonthClosed(t, tenantId, month)) throw new UserError("この月はすでに締めてあります");
     const generated = await generateStatements(t, tenantId, month, userId);
     // 作り直しのあいだに稼働が変わっていないか
     const st = await statementsStatus(t, tenantId, month);
@@ -343,10 +356,13 @@ export async function reopenMonth(
     .where(and(eq(s.transferBatches.tenantId, tenantId), eq(s.transferBatches.month, month), isNotNull(s.transferBatches.executedOn)));
 
   const now = new Date();
-  await db
+  // 締めてある行だけを外す（同時に 2 回押されても、記録は 1 回だけ）
+  const updated = await db
     .update(s.monthCloses)
-    .set({ status: "open", reopenedAt: now })
-    .where(and(eq(s.monthCloses.tenantId, tenantId), eq(s.monthCloses.month, month)));
+    .set({ status: "open", reopenedAt: now, reopenReason: why })
+    .where(and(eq(s.monthCloses.tenantId, tenantId), eq(s.monthCloses.month, month), eq(s.monthCloses.status, "closed")))
+    .returning({ month: s.monthCloses.month });
+  if (updated.length === 0) throw new UserError("この月は締めていません（ほかの人がすでに外したかもしれません。画面を開き直してください）");
   await audit(db, {
     tenantId,
     userId: user.id,
@@ -423,14 +439,27 @@ const ACTION_LABELS: Record<string, string> = {
   "watch.unack": "見張り番の確認済みを外した",
   "import.apply": "Excel の取り込みを反映した",
   "import.discard": "取り込みを取り消した",
+  "import.undo": "取り込みを元に戻した",
   "import.upload": "Excel を取り込んだ",
+  "import.month": "取り込む月を選んだ",
+  "import.sheet": "取り込むシートを選んだ",
+  "import.header": "見出しの行を選んだ",
+  "import.mapping": "取り込む列の対応を決めた",
+  "work.add": "稼働を足した",
   "work.create": "稼働を足した",
   "work.update": "稼働を直した",
   "work.delete": "稼働を消した",
+  "adjustment.add": "調整を足した",
   "adjustment.create": "調整を足した",
   "adjustment.update": "調整を直した",
   "adjustment.delete": "調整を消した",
   "parallel.save": "Excel の振込額を入れた",
+  "parallel.clear": "Excel の振込額を消した",
+  "export.ceo_pdf": "社長の 1 枚（PDF）を出した",
+  "export.statement_pdf": "明細の PDF を出した",
+  "export.statements_pdf": "明細の PDF をまとめて出した",
+  "export.statement_confirmations": "確認の記録（CSV）を出した",
+  "export.reconcile_items": "突合の差の一覧を出した",
   "reconcile.run": "元請の支払通知と突き合わせた",
   "reconcile.update": "突合の差の扱いを変えた",
   "reconcile.item_status": "突合の差の扱いを変えた",
@@ -493,6 +522,13 @@ export function auditSummary(action: string, detail: Record<string, unknown>): s
       return typeof d.executedOn === "string" ? `振り込んだ日：${d.executedOn}` : "振り込んだ日を消した";
     case "transfer.download":
       return d.format === "csv" ? "振込の一覧（CSV）" : "全銀の振込データ";
+    case "work.add":
+    case "work.update":
+    case "work.delete":
+    case "adjustment.add":
+    case "adjustment.update":
+    case "adjustment.delete":
+      return [typeof d.driver === "string" ? `${d.driver}さん` : null, typeof d.label === "string" ? d.label : null, yenOf(d.amount)].filter(Boolean).join("・") || null;
     default:
       return null;
   }

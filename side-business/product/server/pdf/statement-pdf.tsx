@@ -5,7 +5,17 @@ import { Document, Page, StyleSheet, Text, View, renderToBuffer } from "@react-p
 import { en } from "@/lib/engine/types";
 import { jpDate } from "@/lib/format";
 import type { PdfSource } from "~/server/features/statements";
-import { jpDateTime, jpDateWithWeekday, jpMonthLabel, qtyText, summaryRows, taxBreakdown, type DriverStatementView } from "~/server/features/statements/view";
+import {
+  jpDateTime,
+  jpDateWithWeekday,
+  jpMonthLabel,
+  qtyText,
+  summaryRows,
+  taxBreakdown,
+  totalNote,
+  unitPriceText,
+  type DriverStatementView,
+} from "~/server/features/statements/view";
 import { PDF_FONT, registerPdfFonts } from "~/server/pdf/fonts";
 
 /**
@@ -104,6 +114,7 @@ function StatementPages({ source, generatedAt }: { source: PdfSource; generatedA
         <Text style={st.totalLabel}>お振込額</Text>
         <Text style={st.totalValue}>{money(v.total)}</Text>
       </View>
+      {totalNote(v.total) ? <Text style={{ marginTop: 4, fontWeight: 700 }}>{totalNote(v.total)}</Text> : null}
 
       <Text style={st.h2}>委託料の内容</Text>
       <View style={st.headRow}>
@@ -126,7 +137,7 @@ function StatementPages({ source, generatedAt }: { source: PdfSource; generatedA
             </View>
             <Text style={st.cQty}>{qtyText(l.qty)}</Text>
             <Text style={st.cUnit}>{l.unit}</Text>
-            <Text style={st.cRate}>{money(l.rate)}</Text>
+            <Text style={st.cRate}>{unitPriceText(l.rate)}</Text>
             <Text style={st.cAmount}>{money(l.amount)}</Text>
           </View>
         ))

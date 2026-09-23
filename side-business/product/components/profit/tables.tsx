@@ -37,7 +37,7 @@ function Bridge({ totals, span }: { totals: ProfitTotals; span: number }) {
     <>
       {rows.map((r, i) => (
         <tr key={i} className={r.strong ? "border-t-2 border-foreground font-bold" : "border-t border-border"}>
-          <th scope="row" colSpan={span} className="sticky left-0 z-10 bg-card px-2 py-2 text-left text-sm font-[inherit]">
+          <th scope="row" colSpan={span} className={`sticky left-0 z-10 bg-card px-2 py-2 text-left text-sm ${r.strong ? "font-bold" : "font-normal"}`}>
             {r.label}
           </th>
           <td className={td}>
@@ -53,7 +53,7 @@ function Bridge({ totals, span }: { totals: ProfitTotals; span: number }) {
 export function ProjectTable({ rows, totals }: { rows: ProjectProfit[]; totals: ProfitTotals }) {
   return (
     <TableWrap>
-      <table className="w-full min-w-[36rem] border-collapse text-sm">
+      <table className="w-full min-w-[36rem] border-collapse bg-card text-sm">
         <caption className="sr-only">案件ごとの利益</caption>
         <thead>
           <tr className="border-b border-border">
@@ -135,7 +135,7 @@ export function ProjectTable({ rows, totals }: { rows: ProjectProfit[]; totals: 
 export function ClientTable({ rows, totals }: { rows: ClientProfit[]; totals: ProfitTotals }) {
   return (
     <TableWrap>
-      <table className="w-full min-w-[32rem] border-collapse text-sm">
+      <table className="w-full min-w-[32rem] border-collapse bg-card text-sm">
         <caption className="sr-only">元請ごとの利益</caption>
         <thead>
           <tr className="border-b border-border">
@@ -208,7 +208,7 @@ export function ClientTable({ rows, totals }: { rows: ClientProfit[]; totals: Pr
 export function DriverTable({ rows, totals }: { rows: DriverProfit[]; totals: ProfitTotals }) {
   return (
     <TableWrap>
-      <table className="w-full min-w-[42rem] border-collapse text-sm">
+      <table className="w-full min-w-[42rem] border-collapse bg-card text-sm">
         <caption className="sr-only">ドライバーごとの会社の利益</caption>
         <thead>
           <tr className="border-b border-border">

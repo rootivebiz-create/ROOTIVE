@@ -1,12 +1,12 @@
 import "server-only";
-import { and, asc, eq, gte, isNull, lte } from "drizzle-orm";
+import { and, asc, eq, gte, isNull, lt, lte, or } from "drizzle-orm";
 import type { Db } from "~/db/client";
 import * as s from "~/db/schema";
 import { UserError } from "~/server/action";
 import { audit } from "~/server/audit";
 import { csvText, type CsvCell } from "~/server/download";
 import type { PdfSource, StatementRow } from "~/server/features/statements";
-import { deviceHint } from "~/server/features/statements";
+import { changesSince, deviceHint } from "~/server/features/statements";
 import { cleanBody, groupThreads, type Thread } from "~/server/features/statements/threads";
 import {
   isLineKeyOf,
@@ -32,6 +32,7 @@ import { verifyStatementLink } from "~/server/tokens";
 
 export const LINK_UNUSABLE = "このリンクは使えません（期限切れ・作り直し）。会社に新しいリンクをお願いしてください";
 export const TOO_MANY = "短い時間に何度も送られました。少し時間をおいてから、もう一度お試しください";
+export const STALE_VERSION = "明細が新しくなっています。画面を読み直して、中身をもう一度ご確認ください";
 
 export type PortalContext = {
   now?: Date;
@@ -87,6 +88,8 @@ export type PortalData = {
   confirmed: { at: string; version: number } | null;
   /** 前の版だけ確認している（そのあと中身が変わった） */
   confirmedOlder: { at: string; version: number } | null;
+  /** 確認した前の版から、何が変わったか（短い文） */
+  changes: string[];
   threads: Thread[];
   unreadReplies: number;
   account: MaskedAccount | null;
@@ -125,7 +128,8 @@ export async function loadPortal(db: Db, token: string, now = new Date()): Promi
   ]);
   const view = toDriverView(readSnapshot(st), st);
   const current = confs.find((c) => c.version === st.version);
-  const older = confs.filter((c) => c.version !== st.version).at(-1);
+  const older = confs.filter((c) => c.version < st.version).at(-1);
+  const changes = !current && older ? await changesSince(db, tenantId, st, view, older.version) : null;
   // ドライバーの画面では、事務の人の名前は出さない（「会社」とだけ出す）
   const threads = groupThreads(
     messages.map((m) => ({ ...m, authorName: null })),
@@ -137,6 +141,7 @@ export async function loadPortal(db: Db, token: string, now = new Date()): Promi
     closed: closeRows[0]?.status === "closed",
     confirmed: current ? { at: jpShortDateTime(current.createdAt), version: current.version } : null,
     confirmedOlder: !current && older ? { at: jpShortDateTime(older.createdAt), version: older.version } : null,
+    changes: changes?.items ?? [],
     threads,
     unreadReplies: threads.reduce((n, t) => n + t.unreadReplies, 0),
     account: driverRows[0] ? maskAccount(driverRows[0]) : null,
@@ -158,11 +163,19 @@ export async function recordPortalView(db: Db, token: string, ctx: PortalContext
   const st = await findStatementByToken(db, token, now);
   if (!st) return { recorded: false };
   let recorded = false;
-  if (!st.viewedAt) {
+  // 初めて開いたとき、または前に開いたあとで中身が変わったとき（今の中身を初めて開いた日時にする）
+  if (!st.viewedAt || st.viewedAt.getTime() < st.updatedAt.getTime()) {
+    const viewedAt = new Date(Math.max(now.getTime(), st.updatedAt.getTime()));
     const rows = await db
       .update(s.statements)
-      .set({ viewedAt: now })
-      .where(and(eq(s.statements.id, st.id), eq(s.statements.tenantId, st.tenantId), isNull(s.statements.viewedAt)))
+      .set({ viewedAt })
+      .where(
+        and(
+          eq(s.statements.id, st.id),
+          eq(s.statements.tenantId, st.tenantId),
+          or(isNull(s.statements.viewedAt), lt(s.statements.viewedAt, s.statements.updatedAt)),
+        ),
+      )
       .returning({ id: s.statements.id });
     recorded = rows.length > 0;
     if (recorded) {
@@ -171,7 +184,7 @@ export async function recordPortalView(db: Db, token: string, ctx: PortalContext
         action: "statement.view",
         entity: "statement",
         entityId: st.id,
-        detail: { by: "driver", month: st.month, driverId: st.driverId, version: st.version, device: deviceHint(ctx.userAgent ?? null) },
+        detail: { by: "driver", month: st.month, driverId: st.driverId, version: st.version, again: !!st.viewedAt, device: deviceHint(ctx.userAgent ?? null) },
       });
     }
   }
@@ -199,53 +212,62 @@ export type ConfirmResult = { at: string; version: number; already: boolean };
  */
 export async function confirmFromPortal(db: Db, token: string, input: { version: number }, ctx: PortalContext = {}): Promise<ConfirmResult> {
   const now = ctx.now ?? new Date();
-  if (ctx.byStaff) throw new UserError("会社の方のログイン中は押せません。「確認しました」はドライバーご本人が押してください");
+  if (ctx.byStaff) throw new UserError("会社の方のログイン中は押せません。「確認しました」はドライバーご本人が押してください（ご本人が会社の方でもあるときは、ログアウトしてから開き直してください）");
   const st = await requirePortalStatement(db, token, now);
   if (tooMany(`portal:confirm:${ctx.ipHash ?? "unknown"}:${st.id}`, 10, 10 * 60_000, now.getTime())) throw new UserError(TOO_MANY);
-  if (!Number.isInteger(input.version) || input.version !== st.version) {
-    throw new UserError("明細が新しくなっています。画面を読み直して、中身をもう一度ご確認ください");
-  }
-  const existing = await db
-    .select({ createdAt: s.statementConfirmations.createdAt })
-    .from(s.statementConfirmations)
-    .where(
-      and(
-        eq(s.statementConfirmations.tenantId, st.tenantId),
-        eq(s.statementConfirmations.statementId, st.id),
-        eq(s.statementConfirmations.version, st.version),
-        eq(s.statementConfirmations.hash, st.hash),
-      ),
-    )
-    .limit(1);
-  if (existing[0]) return { at: jpShortDateTime(existing[0].createdAt), version: st.version, already: true };
-  const [row] = await db
-    .insert(s.statementConfirmations)
-    .values({
+  if (!Number.isInteger(input.version) || input.version !== st.version) throw new UserError(STALE_VERSION);
+
+  // 明細の行を押さえてから確かめて書く（2 回同時に押しても 1 件・作り直しの途中の版を確認にしない）
+  return db.transaction(async (tx) => {
+    const [locked] = await tx
+      .select({ version: s.statements.version, hash: s.statements.hash, total: s.statements.total, linkNonce: s.statements.linkNonce })
+      .from(s.statements)
+      .where(and(eq(s.statements.id, st.id), eq(s.statements.tenantId, st.tenantId)))
+      .for("update");
+    if (!locked || locked.linkNonce !== st.linkNonce) throw new UserError(LINK_UNUSABLE);
+    if (locked.version !== input.version) throw new UserError(STALE_VERSION);
+    const existing = await tx
+      .select({ createdAt: s.statementConfirmations.createdAt })
+      .from(s.statementConfirmations)
+      .where(
+        and(
+          eq(s.statementConfirmations.tenantId, st.tenantId),
+          eq(s.statementConfirmations.statementId, st.id),
+          eq(s.statementConfirmations.version, locked.version),
+          eq(s.statementConfirmations.hash, locked.hash),
+        ),
+      )
+      .limit(1);
+    if (existing[0]) return { at: jpShortDateTime(existing[0].createdAt), version: locked.version, already: true };
+    const [row] = await tx
+      .insert(s.statementConfirmations)
+      .values({
+        tenantId: st.tenantId,
+        statementId: st.id,
+        totalAtConfirm: locked.total,
+        version: locked.version,
+        hash: locked.hash,
+        ipHash: ctx.ipHash ?? null,
+        userAgent: ctx.userAgent ? ctx.userAgent.slice(0, 300) : null,
+        createdAt: now,
+      })
+      .returning({ id: s.statementConfirmations.id });
+    await audit(tx as unknown as Db, {
       tenantId: st.tenantId,
-      statementId: st.id,
-      totalAtConfirm: st.total,
-      version: st.version,
-      hash: st.hash,
-      ipHash: ctx.ipHash ?? null,
-      userAgent: ctx.userAgent ? ctx.userAgent.slice(0, 300) : null,
-      createdAt: now,
-    })
-    .returning({ id: s.statementConfirmations.id });
-  await audit(db, {
-    tenantId: st.tenantId,
-    action: "statement.confirm",
-    entity: "statement",
-    entityId: st.id,
-    detail: { by: "driver", confirmationId: row.id, month: st.month, driverId: st.driverId, version: st.version, hash: st.hash, total: st.total },
+      action: "statement.confirm",
+      entity: "statement",
+      entityId: st.id,
+      detail: { by: "driver", confirmationId: row.id, month: st.month, driverId: st.driverId, version: locked.version, hash: locked.hash, total: locked.total },
+    });
+    return { at: jpShortDateTime(now), version: locked.version, already: false };
   });
-  return { at: jpShortDateTime(now), version: st.version, already: false };
 }
 
 // ---------------------------------------------------------------- 質問
 
 export async function askFromPortal(db: Db, token: string, input: { lineKey: string | null; body: string }, ctx: PortalContext = {}) {
   const now = ctx.now ?? new Date();
-  if (ctx.byStaff) throw new UserError("会社の方のログイン中は送れません。質問はドライバーご本人が送ってください");
+  if (ctx.byStaff) throw new UserError("会社の方のログイン中は送れません。質問はドライバーご本人が送ってください（ご本人が会社の方でもあるときは、ログアウトしてから開き直してください）");
   const st = await requirePortalStatement(db, token, now);
   if (
     tooMany(`portal:ask:${ctx.ipHash ?? "unknown"}:${st.id}`, 10, 10 * 60_000, now.getTime()) ||

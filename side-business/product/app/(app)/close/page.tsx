@@ -178,17 +178,26 @@ function buildItems(c: CloseChecklist, m: string, canEdit: boolean): Item[] {
   }
 
   // ⑤ 振込データ（参考）
+  const tr = c.transfer;
   items.push(
-    c.transfer.batches > 0
+    tr.batches > 0
       ? {
           no: "5",
           title: "振込データ（参考）",
-          tone: "green",
-          status: "作成済み",
+          tone: tr.changed > 0 || tr.notIncluded > 0 ? "yellow" : "green",
+          status: tr.changed > 0 ? `作り直しが必要 ${tr.changed} 件` : tr.notIncluded > 0 ? `入っていない人 ${tr.notIncluded}人` : "作成済み",
           body: (
-            <p>
-              {c.transfer.batches} 件・{c.transfer.people}人・合計 {yenText(c.transfer.total)}（振り込んだ日の記録 {c.transfer.executed} 件）
-            </p>
+            <div className="space-y-1">
+              <p>
+                {tr.batches} 件・{tr.people}人・今の明細で合計 {yenText(tr.total)}（振り込んだ日の記録 {tr.executed} 件）
+              </p>
+              {tr.changed > 0 && (
+                <p className="text-warning">
+                  作ったあとに明細が変わった振込データが {tr.changed} 件あります。銀行にまだ出していなければ、振込データの画面で取り消して作り直してください。
+                </p>
+              )}
+              {tr.notIncluded > 0 && <p>振込額があるのに、どの振込データにも入っていない人が {tr.notIncluded}人います（口座が未登録の人など）。</p>}
+            </div>
           ),
           href: `/transfer?m=${m}`,
           linkLabel: "振込データを見る",
@@ -238,7 +247,7 @@ export default async function ClosePage({ searchParams }: { searchParams: Promis
   const canEdit = roleAtLeast(user.role, "staff");
   const isOwner = user.role === "owner";
   const items = buildItems(c, m, canEdit);
-  const willChange = c.statements.missing + c.statements.stale + c.statements.orphan;
+  const changes = { created: c.statements.missing, updated: c.statements.stale, removed: c.statements.orphan };
 
   return (
     <div className="space-y-8">
@@ -280,7 +289,7 @@ export default async function ClosePage({ searchParams }: { searchParams: Promis
       ) : (
         c.reopenedAt && (
           <Notice tone="info">
-            {jstDateTime(c.reopenedAt)} に締めを外しています。直し終わったら、もう一度締めてください（理由は下の操作の記録にあります）。
+            {jstDateTime(c.reopenedAt)} に締めを外しています{c.reopenReason ? `（理由：${c.reopenReason}）` : ""}。直し終わったら、もう一度締めてください。
           </Notice>
         )
       )}
@@ -289,7 +298,9 @@ export default async function ClosePage({ searchParams }: { searchParams: Promis
         <h2 id="check-heading" className="text-lg font-bold">
           締める前の確かめ
         </h2>
-        <p className="text-sm text-muted-foreground">1〜3 は締めに必要です。4〜6 は参考で、締めを止めません。</p>
+        <p className="text-sm text-muted-foreground">
+          1 と 3 がそろうと締められます。2 の明細は、締めるときに今の稼働・設定から最新にします。4〜6 は参考で、締めを止めません。
+        </p>
         <ol className="space-y-3">
           {items.map((item) => (
             <CheckItem key={item.no} item={item} />
@@ -308,7 +319,16 @@ export default async function ClosePage({ searchParams }: { searchParams: Promis
                 締めると、明細を最新にして保存し、この月を書き換えられないようにします。今の見込みは {c.totals.drivers}人・振込額の合計{" "}
                 <Money value={c.totals.total} className="font-bold" /> です。
               </p>
-              <CloseMonthForm month={month} monthLabel={label} drivers={c.totals.drivers} total={c.totals.total} willChange={willChange} blockers={c.blockers} />
+              <CloseMonthForm
+                key={month}
+                month={month}
+                monthLabel={label}
+                drivers={c.totals.drivers}
+                total={c.totals.total}
+                changes={changes}
+                transferBatches={c.transfer.batches}
+                blockers={c.blockers}
+              />
             </Card>
           ) : (
             <Notice tone="info">締めるのは事務・オーナーの方です。この画面では、締められる状態かどうかを見られます。</Notice>
@@ -323,7 +343,14 @@ export default async function ClosePage({ searchParams }: { searchParams: Promis
           </h2>
           {isOwner ? (
             <Card>
-              <ReopenMonthForm month={month} monthLabel={label} minLength={REOPEN_REASON_MIN} />
+              <ReopenMonthForm
+                key={month}
+                month={month}
+                monthLabel={label}
+                minLength={REOPEN_REASON_MIN}
+                confirmed={c.confirm.confirmed}
+                executedBatches={c.transfer.executed}
+              />
             </Card>
           ) : (
             <Notice tone="info">締めを外せるのはオーナーの方だけです。直すところが見つかったときは、オーナーに相談してください（理由を記録してから外します）。</Notice>

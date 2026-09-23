@@ -29,9 +29,31 @@ function dateOf(value: Date | string): string {
 
 type SavedRow = { id: string; driverId: string; total: number; snapshot: unknown };
 
+/** 保存した写しを、足りない項目があっても読めるようにそろえる（古い写しでも見張り番が止まらないように） */
+function normalizeDraft(d: StatementDraft): StatementDraft {
+  const lines = Array.isArray(d.lines) ? d.lines : [];
+  return {
+    ...d,
+    lines,
+    deductions: Array.isArray(d.deductions) ? d.deductions : [],
+    adjustments: Array.isArray(d.adjustments) ? d.adjustments : [],
+    subtotal: d.subtotal ?? 0,
+    tax: d.tax ?? 0,
+    deductionTotal: d.deductionTotal ?? 0,
+    deductionTax: d.deductionTax ?? 0,
+    adjustmentTotal: d.adjustmentTotal ?? 0,
+    adjustmentTax: d.adjustmentTax ?? 0,
+    total: d.total ?? 0,
+    invoiceBurden: d.invoiceBurden ?? 0,
+    deductibleRate: d.deductibleRate ?? 1,
+    hasWork: d.hasWork ?? lines.length > 0,
+    driver: { name: d.driver?.name ?? "", code: d.driver?.code ?? null, registrationNo: d.driver?.registrationNo ?? null, invoiceRegistered: d.driver?.invoiceRegistered ?? false },
+  };
+}
+
 /** その月の明細：締めた月で写しがあれば写し、それ以外は今の稼働から作る */
 async function draftsOf(db: Db, tenantId: string, month: string, closed: boolean, saved: SavedRow[]): Promise<StatementDraft[]> {
-  const drafts = closed && saved.length ? saved.map((r) => readSnapshot(r)) : buildStatementDrafts(await loadBuildInput(db, tenantId, month));
+  const drafts = closed && saved.length ? saved.map((r) => normalizeDraft(readSnapshot(r))) : buildStatementDrafts(await loadBuildInput(db, tenantId, month));
   // 名前の一覧が社内の番号の順になるように（D01, D02, …）
   return drafts.sort((a, b) => (a.driver.code ?? "").localeCompare(b.driver.code ?? "", "ja") || a.driver.name.localeCompare(b.driver.name, "ja"));
 }

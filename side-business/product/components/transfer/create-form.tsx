@@ -13,6 +13,8 @@ type Props = {
   promisedPayDate: string;
   /** この月にすでに作った振込データの数 */
   earlierBatches: number;
+  /** そのうち、振り込んだ日が記録されているもの（あれば全員ぶんは作れない） */
+  executedBatches: number;
   all: { count: number; total: number };
   /** まだ振込データに入っていない人 */
   remaining: { count: number; total: number };
@@ -21,7 +23,7 @@ type Props = {
 };
 
 /** 振込データを作る（振込指定日を選んで作る。作ったらすぐダウンロードできる） */
-export function CreateTransferForm({ month, defaultDate, promisedPayDate, earlierBatches, all, remaining, zenginReady }: Props) {
+export function CreateTransferForm({ month, defaultDate, promisedPayDate, earlierBatches, executedBatches, all, remaining, zenginReady }: Props) {
   const [state, action, pending] = useActionState<CreateTransferState, FormData>(createTransferAction, undefined);
   const [date, setDate] = useState(defaultDate);
   const [scope, setScope] = useState<"all" | "remaining">(earlierBatches > 0 ? "remaining" : "all");
@@ -46,7 +48,7 @@ export function CreateTransferForm({ month, defaultDate, promisedPayDate, earlie
     if (late > 0) notes.push({ tone: "red", text: `約束した支払日（${shortDate(promisedPayDate)}）より ${late} 日あとです。支払が遅れるおそれがあります。` });
     if (date < todayJst()) notes.push({ tone: "yellow", text: "過ぎた日付です。銀行が受け付けないことがあります。" });
   }
-  const blocked = target.count === 0 || (scope === "all" && earlierBatches > 0 && !confirmed);
+  const blocked = target.count === 0 || (scope === "all" && earlierBatches > 0 && (executedBatches > 0 || !confirmed));
   const fe = state && !state.ok ? state.fieldErrors ?? {} : {};
 
   return (
@@ -78,13 +80,24 @@ export function CreateTransferForm({ month, defaultDate, promisedPayDate, earlie
               <span className="font-bold">まだ振込データに入っていない人だけ</span>（{remaining.count}人・{yenText(remaining.total)}）
             </span>
           </label>
-          <label className="flex min-h-11 items-start gap-3 py-1">
-            <input type="radio" name="scope" value="all" checked={scope === "all"} onChange={() => setScope("all")} className="mt-1 h-5 w-5" />
+          <label className={`flex min-h-11 items-start gap-3 py-1 ${executedBatches > 0 ? "opacity-60" : ""}`}>
+            <input
+              type="radio"
+              name="scope"
+              value="all"
+              checked={scope === "all"}
+              onChange={() => setScope("all")}
+              disabled={executedBatches > 0}
+              className="mt-1 h-5 w-5"
+            />
             <span className="text-sm">
               <span className="font-bold">全員ぶんを作り直す</span>（{all.count}人・{yenText(all.total)}）
+              {executedBatches > 0 && (
+                <span className="block text-muted-foreground">振り込んだ日が記録された振込データがあるため選べません（二重の振込になります）。</span>
+              )}
             </span>
           </label>
-          {scope === "all" && (
+          {scope === "all" && executedBatches === 0 && (
             <label className="flex min-h-11 items-start gap-3 rounded-lg border border-danger/40 bg-danger/10 p-3">
               <input type="checkbox" name="replaceConfirmed" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} className="mt-1 h-5 w-5" />
               <span className="text-sm text-danger">前に作った振込データは、銀行に出していません（出していたら二重の振込になります）。</span>
