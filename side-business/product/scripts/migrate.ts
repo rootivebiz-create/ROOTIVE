@@ -4,12 +4,19 @@ import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 
-const url = process.env.DATABASE_URL;
-if (!url) {
-  console.error("DATABASE_URL がありません");
-  process.exit(1);
+async function main() {
+  const url = process.env.DATABASE_URL;
+  if (!url) throw new Error("DATABASE_URL がありません");
+  const client = postgres(url, { max: 1 });
+  try {
+    await migrate(drizzle(client), { migrationsFolder: path.join(process.cwd(), "db", "migrations") });
+  } finally {
+    await client.end();
+  }
+  console.log("マイグレーションを当てました");
 }
-const client = postgres(url, { max: 1 });
-await migrate(drizzle(client), { migrationsFolder: path.join(process.cwd(), "db", "migrations") });
-await client.end();
-console.log("マイグレーションを当てました");
+
+main().catch((e) => {
+  console.error(e instanceof Error ? e.message : e);
+  process.exit(1);
+});
