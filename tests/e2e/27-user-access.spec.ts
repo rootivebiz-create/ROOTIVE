@@ -6,7 +6,7 @@
  * 前提：§8.6 の初期データ。ロールと見せる範囲は前後で元に戻す。テストは順番に依存するため serial
  */
 import { test, expect, type Locator, type Page } from "@playwright/test";
-import { E2E, adminSql, clickToUrl, listRow, loginViaMagicLink, readState, requireState, saveScreenshot, sessionFor, toast } from "./helpers";
+import { E2E, adminSql, clickToUrl, ensureAuthUser, listRow, loginViaMagicLink, readState, requireState, resetToSeed, saveScreenshot, sessionFor, toast } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -51,10 +51,13 @@ test.beforeEach(async () => {
 });
 
 test.describe("ユーザーごとの設定", () => {
-  test.beforeAll(() => {
+  test.beforeAll(async () => {
     const state = readState();
     if (!state || state.appSkipped) return;
+    // この spec だけを流したときは、まだ誰もログインしていない（招待だけ）ので、アカウントを作っておく
+    for (const u of [E2E.users.admin, E2E.users.viewer, E2E.users.clerk]) await ensureAuthUser(u.email, u.displayName);
     restoreUsers();
+    await resetToSeed();
   });
 
   test.afterAll(() => {
@@ -107,7 +110,7 @@ test.describe("ユーザーごとの設定", () => {
 
     // 出力のボタンが出ず、出力の口も 403
     await page.goto(`/entries?m=${MONTH}`);
-    await expect(page.getByText("相曽慧").first()).toBeVisible();
+    await expect(listRow(page, "相曽慧").first()).toBeVisible();
     await expect(page.locator('a[href^="/api/export/"]:visible')).toHaveCount(0);
     const csv = await page.request.get(`/api/export/entries.csv?m=${MONTH}`);
     expect(csv.status()).toBe(403);

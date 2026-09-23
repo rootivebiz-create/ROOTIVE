@@ -139,7 +139,7 @@ test.describe("設定", () => {
     await expect(dialog.getByRole("heading", { name: "ユーザーを招待" })).toBeVisible();
     await dialog.getByLabel("メールアドレス").fill(email);
     await dialog.getByLabel("ロール").selectOption("viewer");
-    await expect(dialog.getByText("閲覧と CSV 出力のみ")).toBeVisible();
+    await expect(dialog.getByText("閲覧と出力のみ（編集はできない）")).toBeVisible();
     await dialog.getByLabel("表示名（任意）").fill("閲覧テスト");
     const send = dialog.getByRole("checkbox", { name: "招待メールも送る" });
     await expect(send).toBeChecked();

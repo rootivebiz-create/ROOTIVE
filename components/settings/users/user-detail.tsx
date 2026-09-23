@@ -97,7 +97,6 @@ function ChoiceGroup({
     <div role="radiogroup" aria-label={name} className="grid grid-cols-3 gap-1 rounded-md border bg-muted/40 p-1">
       {CHOICES.map((c) => {
         const checked = value === c;
-        const label = c === "role" ? `${ACCESS_CHOICE_LABELS.role}（${onOff(roleDefault)}）` : ACCESS_CHOICE_LABELS[c];
         return (
           <button
             key={c}
@@ -111,7 +110,14 @@ function ChoiceGroup({
               checked ? (c === "deny" ? "bg-destructive text-destructive-foreground" : c === "allow" ? "bg-primary text-primary-foreground" : "bg-card shadow-sm") : "text-muted-foreground hover:bg-card",
             )}
           >
-            {label}
+            {c === "role" ? (
+              <>
+                <span className="block">{ACCESS_CHOICE_LABELS.role}</span>
+                <span className="block text-[10px] opacity-80">（{onOff(roleDefault)}）</span>
+              </>
+            ) : (
+              ACCESS_CHOICE_LABELS[c]
+            )}
           </button>
         );
       })}
