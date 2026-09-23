@@ -1,0 +1,30 @@
+# 個人事業（side-business/）の品質ゲート。会社のアプリとは別に、side-business/ が変わったときだけ動く
+name: side-business
+
+on:
+  push:
+    branches: ["**"]
+    paths: ["side-business/**", ".github/workflows/side-business.yml"]
+  pull_request:
+    paths: ["side-business/**", ".github/workflows/side-business.yml"]
+
+jobs:
+  check:
+    name: typecheck / lint / test / build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: side-business
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: side-business/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
