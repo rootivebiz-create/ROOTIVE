@@ -12,6 +12,7 @@ import { groupDigits, readAmount, toDateString } from "@/lib/tools/invoice-cost"
 import {
   BLANK,
   DAY_CHOICES,
+  DEDUCTION_MISSING,
   DEDUCTION_KINDS,
   PAY_MONTH_LABELS,
   RATE_UNITS,
@@ -252,10 +253,10 @@ export function TorihikiJokenTool() {
             </Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="期間のはじめ">
-                <Input type="date" value={periodFromValue} onChange={(e) => setPeriodFrom(e.target.value)} />
+                <Input type="date" value={periodFromValue} onChange={(e) => setPeriodFrom(e.target.value)} className="min-w-0" />
               </Field>
               <Field label="期間の終わり">
-                <Input type="date" value={periodTo} onChange={(e) => setPeriodTo(e.target.value)} />
+                <Input type="date" value={periodTo} onChange={(e) => setPeriodTo(e.target.value)} className="min-w-0" />
               </Field>
             </div>
             <p className="-mt-2 text-xs text-muted-foreground">終わりを決めていないなら、空のままでかまいません。</p>
@@ -350,7 +351,7 @@ export function TorihikiJokenTool() {
         <Card>
           <h2 className="text-lg font-bold">4. 報酬から差し引くもの</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            管理費・ロイヤリティ・車両リース代など、話し合って決めたものだけを書きます。ドライバーに責任がないのに、決めた報酬を後から減らすことはできません。
+            管理費・ロイヤリティ・車両リース代など、話し合って決めたものだけを書きます。ドライバーに責任がないのに、決めた報酬を後から減らすことはできません。書けば何でも差し引けるわけではないので、迷うものは弁護士などに確かめてください。
           </p>
           <div className="mt-3 space-y-3">
             {deductions.map((d) => (
@@ -462,7 +463,9 @@ export function TorihikiJokenTool() {
               ) : (
                 <>
                   <StatusBadge status={doc.deadline.status} />
-                  <a href="#torihiki-check">60日チェックの結果を見る</a>
+                  <a href="#torihiki-check" className="inline-flex min-h-11 items-center">
+                    60日チェックの結果を見る
+                  </a>
                 </>
               )}
             </p>
@@ -512,9 +515,11 @@ export function TorihikiJokenTool() {
 
         <Card>
           <h2 className="text-lg font-bold">7. その他（なくても可）</h2>
-          <Field label="ほかに決めていること" hint="事故や荷物の破損のとき・制服や端末の貸し出し・まだ決まっていないこと（決まらない理由と、決める予定の日）など。">
-            <textarea value={other} onChange={(e) => setOther(e.target.value)} rows={3} className={cx(textareaClass, "mt-1")} />
-          </Field>
+          <div className="mt-3">
+            <Field label="ほかに決めていること" hint="事故や荷物の破損のとき・制服や端末の貸し出し・まだ決まっていないこと（決まらない理由と、決める予定の日）など。">
+              <textarea value={other} onChange={(e) => setOther(e.target.value)} rows={3} className={textareaClass} />
+            </Field>
+          </div>
         </Card>
       </div>
 
@@ -526,7 +531,10 @@ export function TorihikiJokenTool() {
           </Card>
         ) : (
           <>
-            <DeadlineCard deadline={doc.deadline} safeRuleLabel={safeRule?.ruleLabel ?? null} />
+            <DeadlineCard
+              deadline={doc.deadline}
+              safePayLabel={safeRule ? `${PAY_MONTH_LABELS[safeRule.payMonthOffset]}${dayLabel(safeRule.payDay)}払い` : null}
+            />
             <ChecklistCard doc={doc} />
             {doc.warnings.length > 0 && (
               <div role="status" className="no-print rounded-card border-2 border-warning bg-card p-4 text-sm">
@@ -615,7 +623,7 @@ function StatusBadge({ status }: { status: DeadlineStatus }) {
   return <span className={cx("inline-block rounded px-2 py-0.5 text-sm font-bold", STATUS_BADGE[status])}>{STATUS_LABELS[status]}</span>;
 }
 
-function DeadlineCard({ deadline, safeRuleLabel }: { deadline: DeadlineResult; safeRuleLabel: string | null }) {
+function DeadlineCard({ deadline, safePayLabel }: { deadline: DeadlineResult; safePayLabel: string | null }) {
   const titleId = useId();
   if (deadline.error) {
     return (
@@ -649,9 +657,10 @@ function DeadlineCard({ deadline, safeRuleLabel }: { deadline: DeadlineResult; s
           <p className="mt-2">この道具で作る明示書には、1 と 2 を書き込みます。あてはまるか心配なら、支払日を早めるのが確実です。</p>
         </div>
       )}
-      {safeRuleLabel && (
+      {safePayLabel && (
         <p className="mt-3 text-sm">
-          締め期間の最初の日から数えても60日（2か月）以内にするなら：<strong>{safeRuleLabel}</strong>までに払う
+          締め期間の最初の日から数えても60日（2か月）以内にするなら、<strong>{safePayLabel}</strong>
+          までに早めます（この締め日のまま、12か月すべてで確かめた結果です）。
         </p>
       )}
 
@@ -692,13 +701,13 @@ function DeadlineCard({ deadline, safeRuleLabel }: { deadline: DeadlineResult; s
             </table>
           </TableWrap>
           <p className="mt-2 text-xs text-muted-foreground">
-            日数は、その日から支払日まで何日後かです。月ごとに締める場合は、60日を「2か月」として数える扱いがあり（31日の月も1か月）、61日後でも
+            日数は、その日を1日目として、支払日が何日目かです（法律の「60日」も同じ数え方です）。月ごとに締める場合は、60日を「2か月」として数える扱いがあり（31日の月も1か月）、61日目や62日目でも
             OK になる月があります。支払日は土日と年末年始（12月31日〜1月3日）をずらして計算しています。祝日は入れていません。
           </p>
         </div>
       </details>
       <p className="mt-3 text-xs text-muted-foreground">
-        60日のルールは、従業員がいる（または役員が2人以上いる）会社などが、個人のドライバーに仕事を頼むときの決まりです。元請から受けた仕事をそのまま頼む場合の「元請からの支払日から30日以内」という決まりは、このチェックでは扱っていません。
+        60日のルールは、従業員がいる（または役員が2人以上いる）会社などが、従業員を雇っていない個人のドライバー（一人社長の会社を含む）に仕事を頼むときの決まりです。元請から受けた仕事をドライバーに再委託する場合に、条件を満たせば「元請からの支払期日から30日以内」で決められる例外は、このチェックでは扱っていません。
       </p>
     </section>
   );
@@ -720,8 +729,9 @@ function DeadlineTableRow({ row }: { row: DeadlineRow }) {
         {shortDate(row.payDateActual)}
         {row.shifted && <span className="block text-xs text-muted-foreground">（{shortDate(row.payDate)}から）</span>}
       </td>
-      <td className="num whitespace-nowrap px-2 py-2 text-right">{row.daysFromStart}日</td>
-      <td className="num whitespace-nowrap px-2 py-2 text-right">{row.daysFromEnd}日</td>
+      {/* 法律の「起算して60日」と同じく、その日を1日目として数える（記事の早見表とも同じ） */}
+      <td className="num whitespace-nowrap px-2 py-2 text-right">{row.daysFromStart + 1}日目</td>
+      <td className="num whitespace-nowrap px-2 py-2 text-right">{row.daysFromEnd + 1}日目</td>
       <td className="whitespace-nowrap py-2 pl-2">
         <StatusBadge status={row.status} />
       </td>
@@ -737,11 +747,13 @@ const CHECK_MARK: Record<ChecklistStatus, { mark: string; className: string; lab
 
 function ChecklistCard({ doc }: { doc: TorihikiDoc }) {
   const missing = doc.checklist.filter((c) => c.status === "missing").length;
+  // 明示事項のほかに埋まっていない欄（差し引くものの名前や金額など）
+  const otherBlanks = doc.missing.filter((m) => m === DEDUCTION_MISSING);
   return (
     <Card className="no-print">
       <h2 className="font-bold">明示する事項のチェック</h2>
       <p className="mt-1 text-sm">
-        {missing === 0 ? "決められた事項は、すべて書けています。" : `あと${missing}つ、書けていない事項があります。`}
+        {missing === 0 ? "決められた事項の欄は、すべて埋まっています。" : `あと${missing}つ、書けていない事項があります。`}
       </p>
       <ul className="mt-3 space-y-2">
         {doc.checklist.map((c) => {
@@ -760,6 +772,8 @@ function ChecklistCard({ doc }: { doc: TorihikiDoc }) {
           );
         })}
       </ul>
+      {otherBlanks.length > 0 && <p className="mt-3 text-sm font-bold text-danger">ほかに未記入：{otherBlanks.join("、")}</p>}
+      <p className="mt-3 text-xs text-muted-foreground">欄が埋まっているかを見るだけで、書いた内容が法令に合っているかは判断しません。</p>
     </Card>
   );
 }

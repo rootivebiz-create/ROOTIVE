@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { TRANSITIONAL_SOURCE, TRANSITIONAL_STEPS, nonDeductibleTax } from "@/lib/payroll/tax";
 import { jpDate, jpMonth } from "@/lib/tools/invoice-cost";
-import { ArrowIcon, Section, yenText } from "./section";
+import { ArrowIcon, NewTabNote, Section, yenText } from "./section";
 
 /** 例：免税の方へ税込 11 万円を払ったとき、控除できずに会社が負担する消費税（期間ごと） */
 const EXAMPLE_PAID = 110_000;
@@ -44,6 +44,7 @@ function DeadlineCard({
             <li key={s.url}>
               <a href={s.url} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center break-all py-1">
                 {s.label}
+                <NewTabNote />
               </a>
             </li>
           ))}

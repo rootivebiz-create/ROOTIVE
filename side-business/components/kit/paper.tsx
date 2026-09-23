@@ -37,7 +37,7 @@ const PAPER_TOKENS = `
 }
 .kit-paper a { color: inherit; }
 .kit-missing { outline: 2px dashed currentColor; outline-offset: 1px; padding: 0 2px; }
-.kit-qr > svg { display: block; width: 100%; height: auto; }
+.kit-qr svg { display: block; width: 100%; height: auto; }
 @media print {
   html, body { background: #ffffff !important; }
   body { line-height: 1.6; }

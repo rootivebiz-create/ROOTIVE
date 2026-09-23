@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { FREE_CHECK, shortSource } from "@/components/kit/content";
 import { FAX_HOOK_IDS, faxHook, parseFaxHook } from "@/components/kit/fax-hooks";
 import { cx, displayUrl, kitUrl, priceSummary } from "@/components/kit/format";
@@ -36,6 +37,13 @@ const FAX_CSS = `
   }
 }
 `;
+
+/** 見出しの日付（2027年3月31日・9月2日）と（控除80%→70%）は、途中で折り返さない */
+function keepTogether(text: string): ReactNode[] {
+  return text
+    .split(/(\d{4}年\d{1,2}月\d{1,2}日|\d{1,2}月\d{1,2}日|（[^）]{1,16}）)/)
+    .map((part, i) => (i % 2 === 1 ? <span key={i} className="whitespace-nowrap">{part}</span> : part));
+}
 
 export default async function FaxPage({ searchParams }: Props) {
   const sp = await searchParams;
@@ -103,7 +111,7 @@ export default async function FaxPage({ searchParams }: Props) {
             <span className="inline-block bg-black px-2 py-0.5 text-sm font-bold text-white">{hook.badge}</span>
           </p>
           <h2 className="mt-2 text-[24px] font-bold leading-tight tracking-tight [word-break:auto-phrase] sm:text-[30px] md:text-[34px] print:text-[34px]">
-            {hook.headline}
+            {keepTogether(hook.headline)}
           </h2>
 
           {/* 3 つの要点 */}
@@ -142,8 +150,8 @@ export default async function FaxPage({ searchParams }: Props) {
               </ul>
             </div>
             <figure className="mx-auto flex w-[46mm] flex-col items-center sm:mx-0 print:mx-0">
-              <Qr url={qrUrl} label={`${hook.qrTitle}のQRコード`} className="w-[40mm] p-[1.5mm]" />
-              <figcaption className="mt-1 text-center text-[12px] font-bold leading-tight [overflow-wrap:anywhere]">
+              <Qr url={qrUrl} label={`${hook.qrTitle}のQRコード`} className="w-[44mm]" />
+              <figcaption className="mt-0.5 text-center text-[12px] font-bold leading-tight [overflow-wrap:anywhere]">
                 スマホで読み取り
                 <span className="block font-normal">{displayUrl(hook.qrPath)}</span>
               </figcaption>

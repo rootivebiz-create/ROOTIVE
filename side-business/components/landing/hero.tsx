@@ -27,7 +27,7 @@ export function Hero() {
 
       <Link
         href="/tools/invoice-cost"
-        className="group mt-6 flex min-h-11 max-w-2xl items-center gap-3 rounded-card bg-plate px-4 py-3 text-plate-foreground! no-underline"
+        className="group mt-6 flex min-h-11 max-w-2xl items-center gap-3 rounded-card bg-plate px-4 py-3 text-plate-foreground no-underline print:border print:border-black print:bg-white print:text-black"
       >
         <span className="shrink-0 rounded bg-accent px-2 py-0.5 text-xs font-bold text-accent-foreground">期限</span>
         <span className="flex-1 text-sm font-bold leading-snug sm:text-base">
@@ -36,7 +36,7 @@ export function Hero() {
         <ArrowIcon className="transition group-hover:translate-x-0.5" />
       </Link>
 
-      <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+      <div className="no-print mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
         <Link href="/tools/invoice-cost" className={ctaClass("accent", "w-full px-5 text-base sm:w-auto")}>
           70%の負担を計算する（無料）
         </Link>

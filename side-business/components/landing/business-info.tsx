@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { BusinessInfo as Info } from "@/site.config";
 import { SITE } from "@/site.config";
-import { Section } from "./section";
+import { Section, regNoText } from "./section";
 
 export function BusinessInfo({ info, email }: { info: Info; email: string | null }) {
   const rows: { label: string; value: string; href?: string }[] = [{ label: "屋号", value: SITE.name }];
@@ -9,7 +9,7 @@ export function BusinessInfo({ info, email }: { info: Info; email: string | null
   if (info.address) rows.push({ label: "所在地", value: info.address });
   if (info.phone) rows.push({ label: "電話", value: info.phone, href: `tel:${info.phone.replace(/[^\d+]/g, "")}` });
   if (email) rows.push({ label: "メール", value: email, href: `mailto:${email}` });
-  if (info.invoiceRegNo) rows.push({ label: "インボイス登録番号", value: info.invoiceRegNo });
+  if (info.invoiceRegNo) rows.push({ label: "インボイス登録番号", value: regNoText(info.invoiceRegNo) });
   const onlyName = rows.length === 1;
 
   return (

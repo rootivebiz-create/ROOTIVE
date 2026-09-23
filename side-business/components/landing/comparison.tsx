@@ -31,18 +31,18 @@ function choices(): Choice[] {
       name: "運送業向けのクラウドサービス",
       values: {
         fit: "あり。設定できる範囲で合わせる",
-        monthly: "プランごと（月1万〜5万円前後）。機能や利用者の数で変わる",
+        monthly: "プランごと（月1万〜5万円前後）。機能や台数・人数で変わる",
         data: "サービス会社のサーバー。やめるときの持ち出しは各社の条件しだい",
-        initial: "0円〜10万円前後",
+        initial: "0円のところが多い。見積のところもある",
       },
     },
     {
       name: "kintone・受託開発",
       values: {
         fit: "なし。自由に作れる",
-        monthly: "kintoneは利用者ごとのライセンス（月1.8万円前後から）。保守を外に頼むと別に費用",
+        monthly: "kintoneは利用者ごとのライセンス（作り込める版で月1.8万円前後から）。保守を外に頼むと別に費用",
         data: "kintoneはサービス会社のクラウド。受託開発は契約しだい",
-        initial: "100万〜300万円以上",
+        initial: "作る範囲しだい（数十万〜300万円以上）",
       },
     },
     {
@@ -96,7 +96,9 @@ export function Comparison() {
           <caption className="sr-only">ほかの選び方と{SITE.name}の比較</caption>
           <thead>
             <tr>
-              <td className="w-36 border-b border-border" />
+              <th scope="col" className="w-36 border-b border-border">
+                <span className="sr-only">比べる点</span>
+              </th>
               {list.map((c) => (
                 <th
                   key={c.name}

@@ -5,7 +5,7 @@ published: 2026-09-23
 updated: 2026-09-23
 category: 支払明細
 order: 6
-sources: https://www.nta.go.jp/taxes/shiraberu/taxanswer/shohi/6497.htm https://www.nta.go.jp/taxes/shiraberu/zeimokubetsu/shohi/keigenzeiritsu/pdf/qa/86.pdf https://www.nta.go.jp/taxes/shiraberu/zeimokubetsu/shohi/keigenzeiritsu/pdf/qa/91.pdf https://www.nta.go.jp/taxes/shiraberu/taxanswer/shohi/6496.htm https://www.nta.go.jp/taxes/shiraberu/zeimokubetsu/shohi/keigenzeiritsu/invoice-review/index.htm https://www.nta.go.jp/publication/pamph/sonota/0021011-068.pdf https://www.jftc.go.jp/file/flpamph.pdf https://x.com/jftc/status/1998227675962601689 https://www.jftc.go.jp/toriteki_pointleaflet2.pdf https://www.jftc.go.jp/FL/FLkankoku/index.html
+sources: https://www.nta.go.jp/taxes/shiraberu/taxanswer/shohi/6497.htm https://www.nta.go.jp/taxes/shiraberu/zeimokubetsu/shohi/keigenzeiritsu/pdf/qa/86.pdf https://www.nta.go.jp/taxes/shiraberu/zeimokubetsu/shohi/keigenzeiritsu/pdf/qa/91.pdf https://www.nta.go.jp/taxes/shiraberu/taxanswer/shohi/6496.htm https://www.nta.go.jp/taxes/shiraberu/zeimokubetsu/shohi/keigenzeiritsu/invoice-review/index.htm https://www.nta.go.jp/publication/pamph/sonota/0021011-068.pdf https://www.jftc.go.jp/file/flpamph.pdf https://x.com/jftc/status/1998227675962601689 https://www.jftc.go.jp/toriteki_pointleaflet2.pdf https://www.jftc.go.jp/FL/FLkankoku/index.html https://laws.e-gov.go.jp/law/505AC0000000025
 ---
 
 > **この記事のまとめ**
@@ -23,10 +23,10 @@ sources: https://www.nta.go.jp/taxes/shiraberu/taxanswer/shohi/6497.htm https://
 会社にとっても、明細は大事な記録です。
 
 - **フリーランス法**：従業員を使わずに1人で走るドライバーに仕事を頼んだら、単価や支払期日などの取引条件を、すぐに書面かメール・LINEなどで示す必要があります。明細は「示した条件のとおりに計算して払った」ことの記録になります。
-- **消費税**：会社が作ってドライバーに確認してもらう明細は、決められた事項を書けば「仕入明細書」として、仕入税額控除に使えます。
+- **消費税**：インボイス登録しているドライバーなら、会社が作ってドライバーに確認してもらう明細は、決められた事項を書けば「仕入明細書」として、仕入税額控除に使えます。
 - **あとからの説明**：単価や差し引くものを変えたとき、いつから何が変わったかを明細で説明できます。
 
-2026年9月2日には、公正取引委員会が日本郵便に、フリーランス法にもとづく勧告をしました。取引条件をすぐに示していなかったことや、支払期日を決めていなかったことなどが理由です。条件と明細と振込の記録は、ドライバーごとにそろえて残しておきましょう。
+2026年9月2日には、公正取引委員会が日本郵便に、フリーランス法にもとづく勧告をしました。取引条件をすぐに示していなかったことや、支払期日を決めず期日までに払っていなかったことが理由です。条件と明細と振込の記録は、ドライバーごとにそろえて残しておきましょう。
 
 ## 明細に書く項目
 
@@ -61,12 +61,12 @@ sources: https://www.nta.go.jp/taxes/shiraberu/taxanswer/shohi/6497.htm https://
 
 | 名前 | 根拠 | 金額 |
 | --- | --- | --- |
-| ロイヤリティ | 委託料（税抜）× 10% | 30,400円 |
+| ロイヤリティ | 委託料（税抜）× 5% | 15,200円 |
 | 管理費 | 月額（稼働がある月） | 10,000円 |
 | 車両リース代 | 稼働22日 × 1,500円 | 33,000円 |
-| 小計（10%対象） | | 73,400円 |
-| 消費税 | 73,400円 × 10% | 7,340円 |
-| 差し引く合計（税込） | | 80,740円 |
+| 小計（10%対象） | | 58,200円 |
+| 消費税 | 58,200円 × 10% | 5,820円 |
+| 差し引く合計（税込） | | 64,020円 |
 
 **③ 調整（消費税の対象外）**
 
@@ -74,7 +74,7 @@ sources: https://www.nta.go.jp/taxes/shiraberu/taxanswer/shohi/6497.htm https://
 | --- | --- |
 | 駐車場代の立替（10月14日・領収書あり） | ＋3,300円 |
 
-**振込額 ＝ 334,400円 − 80,740円 ＋ 3,300円 ＝ 256,960円**
+**振込額 ＝ 334,400円 − 64,020円 ＋ 3,300円 ＝ 273,680円**
 
 委託料と差し引くものを分け、それぞれに消費税を出しているのがポイントです。振込額だけを書くより、ドライバーも税理士も確かめやすくなります。
 
@@ -123,7 +123,7 @@ sources: https://www.nta.go.jp/taxes/shiraberu/taxanswer/shohi/6497.htm https://
 
 ### 免税のドライバー
 
-登録番号がないので、仕入明細書の要件は満たしません。ただ、原則課税の会社なら、経過措置により、支払にふくまれる消費税の一部を控除できます。控除できる割合は、2026年10月1日以降の仕事の分から80%が70%に下がります。帳簿に経過措置の対象であることを書き、明細などの書類を保存しておきます。
+登録番号がないので、仕入明細書の要件は満たしません。ただ、原則課税の会社なら、経過措置により、支払にふくまれる消費税の一部を控除できます。控除できる割合は、2026年10月1日以降の仕事の分から80%が70%に下がります。帳簿に経過措置の対象であることを書き、区分記載請求書と同じ事項を書いた明細などの書類を保存しておきます。
 
 会社の負担がいくら増えるかは[控除70%の計算例の記事](/articles/invoice-70-percent-driver)で、20日締めなど月の途中で締める場合は[締め日と80%・70%の記事](/articles/shimebi-80-70)で確かめられます。免税だからといって、決めた報酬から消費税分を話し合いなしに差し引くと、減額にあたるおそれがあります。
 
@@ -131,7 +131,7 @@ sources: https://www.nta.go.jp/taxes/shiraberu/taxanswer/shohi/6497.htm https://
 
 立替金の精算（会社の代わりにドライバーが払った費用を返すもの）など、その月だけの足し引きは「調整」として、委託料とは分けて書きます。1行ずつ、内容・日付・根拠（領収書など）を書きます。
 
-前の月の数量の数え間違いを直すときは、調整にまとめず、「9月分の修正 3個 × 150円」のように数量と単価で書きます。委託料の直しなので、消費税もかかるからです。
+前の月の数量の数え間違いを直すときは、調整にまとめず、「9月分の修正 3個 × 150円」のように数量と単価で書きます。委託料の直しなので、消費税もかかるからです。書き方は税理士と決めておきましょう。
 
 ## 振込額と振込日
 
@@ -173,7 +173,7 @@ LINEやメールで明細のPDFを送った場合、送った側にもデータ�
 - 単価を式の中に直接書かず、単価表を見るようにします。単価を変えるときは上書きせず、「いつから」の列を足すと、過去の明細を作り直せます。
 - 端数の扱いは条件に合わせて1つに決め、全部の式で同じにします。
 - 手で入れるセルと式のセルの色を分け、式のセルはシートの保護で守ります。
-- 最後に、明細の振込額の合計、振込データの合計、口座から出ていく額の3つが同じか確かめます。
+- 最後に、明細の振込額の合計、振込データの合計、口座から出ていく額（会社が負担する振込手数料を除く）の3つが同じか確かめます。
 
 ## 担当者しか分からない、をなくすには
 

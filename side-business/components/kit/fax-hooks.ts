@@ -48,7 +48,7 @@ export function faxHook(id: FaxHookId): FaxHook {
       ],
       qrPath: "/tools/torihiki-joken",
       qrTitle: "無料：取引条件の明示書づくりと、支払期日の60日チェック",
-      qrBody: "単価・控除・締め日・支払日を入れると、明示書のたたき台と、60日を超えていないかが分かります。",
+      qrBody: "単価・控除・締め日・支払日を入れると、明示書のたたき台ができ、支払日が60日以内かも確かめられます。",
       sources: [SOURCES.jftc],
     };
   }

@@ -64,7 +64,7 @@ export function landingFaq(): FaqItem[] {
 export function Faq({ items }: { items: FaqItem[] }) {
   return (
     <Section id="faq" title="よくある質問">
-      <div className="space-y-3">
+      <div className="no-print space-y-3">
         {items.map((f) => (
           <details key={f.q} className="group rounded-card border border-border bg-card">
             <summary className="flex min-h-11 cursor-pointer list-none items-center gap-3 px-4 py-3 font-bold leading-snug [&::-webkit-details-marker]:hidden">
@@ -85,6 +85,15 @@ export function Faq({ items }: { items: FaqItem[] }) {
           </details>
         ))}
       </div>
+      {/* 印刷：たたんだ答えは紙に出ないので、開いた形で別に置く（画面では出さない） */}
+      <dl className="hidden space-y-3 print:block">
+        {items.map((f) => (
+          <div key={f.q} className="break-inside-avoid">
+            <dt className="font-bold">Q. {f.q}</dt>
+            <dd className="mt-1">{f.a}</dd>
+          </div>
+        ))}
+      </dl>
     </Section>
   );
 }

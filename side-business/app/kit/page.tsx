@@ -56,7 +56,7 @@ const PDF_STEPS: { device: string; steps: string[]; note?: string }[] = [
       "「ヘッダーとフッター」のチェックを外し、「背景のグラフィック」にチェックを入れる",
       "「保存」を押す",
     ],
-    note: "向き（提案書は横、FAXとチラシは縦）は自動で決まります。Mac の Safari では、印刷の画面の「背景をプリント」にチェックを入れ、左下の「PDF」→「PDFとして保存」を選びます。",
+    note: "向き（提案書は横、FAXとチラシは縦）は自動で決まります。Mac の Safari では、印刷の画面で向きを確かめ、「背景をプリント」にチェックを入れて、左下の「PDF」→「PDFとして保存」を選びます。",
   },
   {
     device: "iPhone（Safari）",
@@ -65,7 +65,7 @@ const PDF_STEPS: { device: string; steps: string[]; note?: string }[] = [
       "プリントの画面の上にある共有ボタンを押す",
       "「“ファイル”に保存」を選んで保存する（LINEやメールに直接送ることもできます）",
     ],
-    note: "iOS の版によって、ボタンの場所が少し違います。",
+    note: "iOS の版によって、ボタンの場所が少し違います。提案書が縦向きになったり、ページ数が9枚にならなかったりするときは、パソコンの Chrome で作るのが確実です。",
   },
   {
     device: "Android（Chrome）",
@@ -98,7 +98,7 @@ export default function KitIndexPage() {
         提案書・FAX DM・紹介チラシの3つです。料金は site.config.ts、差出人は環境変数から自動で入ります。開いて「印刷する・PDFにする」を押せば、PDFにできます。
       </p>
       <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-        このページと資料は、URLを知っていれば誰でも見られます（検索には出しません）。お客様の情報は入れないでください。
+        このページと資料は、URLを知っていれば誰でも見られます（検索には出しません）。お客様には、URLではなくPDFにして送ってください。
       </p>
 
       {ready ? (

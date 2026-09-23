@@ -38,6 +38,7 @@ const FEATURES: Feature[] = [
     body: "フリーランス法に合わせて、単価・支払期日などの取引条件を示す書面を作り、支払期日が60日を超えていないかを確かめます。",
     planId: "payroll",
     andUp: true,
+    links: [{ href: "/tools/torihiki-joken", label: "明示書を作ってみる（無料）" }],
   },
   {
     title: "案件別・元請別・ドライバー別の利益",

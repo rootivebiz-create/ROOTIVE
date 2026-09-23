@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { MAINTENANCE_INCLUDES, OPTIONS, PLANS, type Plan } from "@/site.config";
-import { CheckIcon, Section, cx, ctaClass, yenText } from "./section";
+import { CheckIcon, Section, cx, ctaClass, regNoText, yenText } from "./section";
 
 /** 月額のない「お試し」（無ければ null） */
 export function trialPlan(): Plan | null {
@@ -67,7 +67,7 @@ export function Pricing({ invoiceRegNo }: { invoiceRegNo: string | null }) {
         <ul className="space-y-1">
           <li>月額は、ドライバーは何人でも同じです。</li>
           <li>サーバー代はお客様が直接お支払いください（見積で目安をお示しします）。</li>
-          {invoiceRegNo && <li className="num">インボイス登録番号 {invoiceRegNo}</li>}
+          {invoiceRegNo && <li className="num">インボイス登録番号 {regNoText(invoiceRegNo)}</li>}
         </ul>
       }
     >
@@ -114,7 +114,7 @@ export function Pricing({ invoiceRegNo }: { invoiceRegNo: string | null }) {
         </section>
       </div>
 
-      <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+      <div className="no-print mt-6 flex flex-col gap-3 sm:flex-row">
         <Link href="/contact" className={ctaClass("accent", "w-full sm:w-auto")}>
           見積を相談する（無料）
         </Link>

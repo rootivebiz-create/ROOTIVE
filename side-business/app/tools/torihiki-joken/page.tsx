@@ -10,6 +10,7 @@ import {
   type DeadlineStatus,
   type PayMonthOffset,
 } from "@/lib/tools/torihiki-joken";
+import { SITE } from "@/site.config";
 
 const PATH = "/tools/torihiki-joken";
 const TITLE = "軽貨物ドライバーの取引条件明示書をつくる（フリーランス法）｜支払期日の60日チェックつき";
@@ -85,7 +86,8 @@ export const metadata: Metadata = {
   title: TITLE,
   description: DESCRIPTION,
   alternates: { canonical: PATH },
-  openGraph: { type: "website", title: TITLE, description: DESCRIPTION, url: PATH },
+  // openGraph はレイアウトの値を丸ごと置きかえるので、locale と siteName もここで入れる
+  openGraph: { type: "website", locale: SITE.locale, siteName: SITE.name, title: TITLE, description: DESCRIPTION, url: PATH },
 };
 
 export default function TorihikiJokenPage() {
@@ -144,7 +146,7 @@ export default function TorihikiJokenPage() {
 
         <h2>明示書に書くこと</h2>
         <p>
-          フリーランス法（2024年11月1日施行）では、個人のドライバーなどに仕事を頼んだら、<strong>直ちに</strong>
+          フリーランス法（2024年11月1日施行）では、従業員を雇っていない個人のドライバー（一人社長の会社を含む）に仕事を頼んだら、<strong>直ちに</strong>
           、次の事項を紙かメール・LINEなどで示す必要があります（第3条と公正取引委員会規則）。
         </p>
         <table>
@@ -199,7 +201,7 @@ export default function TorihikiJokenPage() {
 
         <h2>支払期日は「60日以内」</h2>
         <p>
-          従業員がいる（または役員が2人以上いる）会社などが個人のドライバーに仕事を頼む場合、報酬の支払期日は、
+          従業員がいる（または役員が2人以上いる）会社などがこうしたドライバーに仕事を頼む場合、報酬の支払期日は、
           <strong>仕事を受けた日から数えて60日以内の、できるだけ早い日</strong>に決めます（第4条）。
         </p>
         <ul>
@@ -240,10 +242,13 @@ export default function TorihikiJokenPage() {
         <p>
           管理費・ロイヤリティ・車両のリース代などを報酬から差し引くなら、先に話し合って決め、明示書に書いておきます。1か月以上続く業務委託などでは、ドライバーに責任がないのに、決めた報酬を後から減らすことは禁止されています。
         </p>
+        <p>
+          ただし、明示書に書けば何でも差し引けるわけではありません。振込手数料のように、合意があっても違反とされるものがあります。何の費用として、いくら差し引くのかを説明できるようにしておき、迷うものは弁護士などに確かめてください。
+        </p>
 
         <h2>LINE・メールで送るとき</h2>
         <ul>
-          <li>メール・SMS・LINE などのメッセージで示してもかまいません。ただし、相手を決めて送るものに限ります（ホームページへの掲示などは不可）。</li>
+          <li>メール・SMS・LINE などのメッセージで示してもかまいません。ただし、相手を決めて送るものに限ります（誰でも見られるホームページに載せておくだけでは足りません）。</li>
           <li>メッセージは消えたり見られなくなったりすることがあるので、スクリーンショットなどで記録を残しておきましょう。</li>
           <li>メッセージで示したあとでも、ドライバーから紙で求められたら、すぐに渡します。</li>
         </ul>
@@ -251,12 +256,12 @@ export default function TorihikiJokenPage() {
 
       <section className="no-print mt-8 max-w-3xl rounded-card border border-border bg-card p-4 text-sm">
         <h2 className="font-bold">出典・参考</h2>
-        <ul className="mt-2 space-y-2">
+        <ul className="mt-2 space-y-1">
           {SOURCES.map((s) => (
             <li key={s.url}>
-              <span className="block">{s.label}</span>
-              <a href={s.url} target="_blank" rel="noopener noreferrer" className="break-all">
-                {s.url}
+              <a href={s.url} target="_blank" rel="noopener noreferrer" className="block min-h-11 py-2">
+                {s.label}
+                <span className="block break-all text-xs text-muted-foreground">{s.url}</span>
               </a>
             </li>
           ))}

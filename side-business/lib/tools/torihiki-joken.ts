@@ -195,6 +195,8 @@ export function payRuleLabel(closingDay: DayOfMonth, payMonthOffset: PayMonthOff
 export function closingPeriodText(closingDay: DayOfMonth): string {
   if (closingDay === "末" || closingDay === 31) return "毎月1日から末日まで";
   if (closingDay <= 27) return `前月${closingDay + 1}日から当月${closingDay}日まで`;
+  // 28 日はどの月にもあるが、29 日は 2 月に無いことがあるので「翌日から」と書く
+  if (closingDay === 28) return "前月28日の翌日から当月28日まで";
   return `前月${closingDay}日の翌日から当月${closingDay}日まで（${closingDay}日が無い月は末日まで）`;
 }
 
@@ -417,6 +419,9 @@ export type TorihikiDoc = {
 /** 未記入の欄に出す文字 */
 export const BLANK = "（未記入）";
 
+/** 差し引くものの行が埋まっていないときの missing の値（明示事項のチェックには入らないので、画面で別に出す） */
+export const DEDUCTION_MISSING = "差し引くものの名前か金額";
+
 const text = (v: string) => v.trim() || BLANK;
 
 /** 150 → 「150円」、null → 「（未記入）」 */
@@ -539,7 +544,7 @@ export function buildTorihikiJoken(input: TorihikiInput): TorihikiDoc {
   });
 
   if (deductions.length > 0) {
-    if (deductions.some((d) => d.label.trim() === "" || d.amount === null)) missing.push("差し引くものの名前か金額");
+    if (deductions.some((d) => d.label.trim() === "" || d.amount === null)) missing.push(DEDUCTION_MISSING);
     if (deductions.some((d) => d.kind === "percent" && d.amount !== null && (d.amount < 0 || d.amount > 100))) {
       warnings.push("差し引く割合は0〜100%の間で入れてください。");
     }
@@ -569,7 +574,7 @@ export function buildTorihikiJoken(input: TorihikiInput): TorihikiDoc {
       `例：${jpDate(first.periodStart)}〜${jpDate(first.periodEnd)}の分は、${jpDate(first.payDateActual)}に支払います。`,
     );
     if (deadline.status === "caution") {
-      warnings.push("支払日は、締め期間の最初の日から数えると60日（2か月）を超えます。締め日から数えてよい条件にあてはまるか確かめてください。");
+      warnings.push("締め期間の最初の日から数えると、支払日が60日（2か月）を超える月があります。締め日から数えてよい条件にあてはまるか確かめてください。");
     } else if (deadline.status === "ng") {
       warnings.push("支払日が、締め日から数えても60日（2か月）を超える月があります。支払日を早めてください。");
     }

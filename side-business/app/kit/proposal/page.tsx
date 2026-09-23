@@ -30,6 +30,7 @@ import { DemoBadge, MiniTable, Slide } from "@/components/kit/slide";
 import { summarize } from "@/lib/payroll/calc";
 import { pct, yen } from "@/lib/payroll/money";
 import { sampleData } from "@/lib/payroll/sample";
+import { deductibleRateForExempt } from "@/lib/payroll/tax";
 import { jpDate, jpMonth } from "@/lib/tools/invoice-cost";
 import { CONTACT, MAINTENANCE_INCLUDES, OPTIONS, PLANS, SITE, businessInfo, type Plan } from "@/site.config";
 
@@ -121,6 +122,7 @@ export default async function ProposalPage({ searchParams }: Props) {
     summary.statements[0];
   const exemptPL = summary.drivers.find((d) => d.driver.id === exempt.driver.id);
   const taxRateLabel = pct(data.settings.taxRate);
+  const demoDeductible = pct(deductibleRateForExempt(summary.judgedOn));
   const monthLabel = jpMonth(`${DEMO_MONTH}-01`);
   const bestProject = [...summary.projects]
     .filter((p) => p.margin !== null)
@@ -179,9 +181,9 @@ export default async function ProposalPage({ searchParams }: Props) {
               <p className={cx("text-sm font-bold text-muted-foreground", to && "mt-3")}>
                 業務委託ドライバーを使う軽貨物・運送会社さまへのご提案
               </p>
-              <p className="mt-2 text-[1.6rem] font-bold leading-tight tracking-tight [word-break:auto-phrase] sm:text-[2rem] lg:text-[2.6rem]">
+              <h2 className="mt-2 text-[1.6rem] font-bold leading-tight tracking-tight [word-break:auto-phrase] sm:text-[2rem] lg:text-[2.6rem]">
                 {tagline}
-              </p>
+              </h2>
               <p className="mt-3 max-w-3xl leading-relaxed lg:text-lg">
                 支払明細・振込データ・案件別の利益を、今のExcelのルールのまま、御社のアカウントに作ります。
               </p>
@@ -363,7 +365,7 @@ export default async function ProposalPage({ searchParams }: Props) {
               {exemptPL && exemptPL.invoiceCost > 0 && (
                 <p className="mt-2 rounded bg-muted p-2 text-xs leading-snug lg:text-sm">
                   この方への支払で、会社が控除できない消費税：<span className="num font-bold">{yen(exemptPL.invoiceCost)}</span>
-                  （{monthLabel}・控除70%の期間）。会社側の集計にだけ出し、明細には載せません。
+                  （{monthLabel}・控除{demoDeductible}の期間）。会社側の集計にだけ出し、明細には載せません。
                 </p>
               )}
             </section>
@@ -558,12 +560,17 @@ export default async function ProposalPage({ searchParams }: Props) {
             <caption className="sr-only">ほかの選び方と{SITE.name}の比較</caption>
             <thead>
               <tr>
-                <td className="w-28 border-b-2 border-foreground" />
+                <th scope="col" className="w-32 border-b-2 border-foreground">
+                  <span className="sr-only">比べる点</span>
+                </th>
                 {choices.map((c) => (
                   <th
                     key={c.name}
                     scope="col"
-                    className={cx("border-b-2 border-foreground px-2 py-2 text-left align-bottom font-bold lg:px-3 lg:text-base", c.ours && "bg-accent")}
+                    className={cx(
+                      "border-b-2 border-foreground px-2 py-2 text-left align-bottom font-bold [word-break:auto-phrase] lg:px-3 lg:text-base",
+                      c.ours && "bg-accent",
+                    )}
                   >
                     {c.name}
                   </th>
@@ -657,14 +664,14 @@ export default async function ProposalPage({ searchParams }: Props) {
             <div className="flex min-w-0 flex-col gap-3">
               <div className="grid grid-cols-2 gap-3">
                 <figure className="rounded-card border border-border p-3 text-center">
-                  <Qr url={contactUrl} label="相談・無料診断のページのQRコード" className="mx-auto w-full max-w-[40mm] p-1" />
+                  <Qr url={contactUrl} label="相談・無料診断のページのQRコード" className="mx-auto w-full max-w-[40mm]" />
                   <figcaption className="mt-2 text-xs font-bold leading-snug">
                     相談・無料診断
                     <span className="block font-normal text-muted-foreground [overflow-wrap:anywhere]">{displayUrl("/contact")}</span>
                   </figcaption>
                 </figure>
                 <figure className="rounded-card border border-border p-3 text-center">
-                  <Qr url={demoUrl} label="デモのページのQRコード" className="mx-auto w-full max-w-[40mm] p-1" />
+                  <Qr url={demoUrl} label="デモのページのQRコード" className="mx-auto w-full max-w-[40mm]" />
                   <figcaption className="mt-2 text-xs font-bold leading-snug">
                     デモを触る
                     <span className="block font-normal text-muted-foreground [overflow-wrap:anywhere]">{displayUrl("/demo")}</span>

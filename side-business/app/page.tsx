@@ -10,7 +10,7 @@ import { Hero } from "@/components/landing/hero";
 import { Maker } from "@/components/landing/maker";
 import { Pains } from "@/components/landing/pains";
 import { Pricing } from "@/components/landing/pricing";
-import { JsonLd } from "@/components/landing/section";
+import { JsonLd, regNoText } from "@/components/landing/section";
 import { Trust } from "@/components/landing/trust";
 import { CONTACT, PLANS, SITE, businessInfo, type BusinessInfo as Info } from "@/site.config";
 
@@ -45,6 +45,7 @@ function businessLd(info: Info) {
     ...(info.address ? { address: info.address } : {}),
     ...(info.phone ? { telephone: info.phone } : {}),
     ...(CONTACT.email ? { email: CONTACT.email } : {}),
+    ...(info.invoiceRegNo ? { taxID: regNoText(info.invoiceRegNo) } : {}),
     hasOfferCatalog: {
       "@type": "OfferCatalog",
       name: "料金（税抜）",

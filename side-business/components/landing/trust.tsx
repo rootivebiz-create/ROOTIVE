@@ -6,7 +6,7 @@ const TRUST = [
     body: "システムもデータも御社のアカウントに作ります。作ったもののソースもお渡しします。",
   },
   {
-    title: "やめても困らない",
+    title: "やめても引き継げる",
     body: "保守をやめるときは、引き継ぎの資料とソースをお渡しします。別の会社が引き継げる形にしておきます。",
   },
   {
@@ -36,7 +36,7 @@ export function Trust() {
             <p className="flex items-start gap-3">
               <span
                 aria-hidden
-                className="num inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-plate text-sm font-bold text-plate-foreground"
+                className="num inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-plate text-sm font-bold text-plate-foreground print:border print:border-black print:bg-white print:text-black"
               >
                 {i + 1}
               </span>

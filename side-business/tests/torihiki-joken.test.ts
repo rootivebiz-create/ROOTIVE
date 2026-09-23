@@ -14,6 +14,8 @@ import {
   sixtyDayLimit,
   torihikiPlainText,
   validateDeadlineInput,
+  type DayOfMonth,
+  type PayMonthOffset,
   type TorihikiInput,
 } from "@/lib/tools/torihiki-joken";
 
@@ -141,6 +143,27 @@ describe("支払期日の60日チェック", () => {
     expect(r.ok).toBe(false);
   });
 
+  it("ページの例と記事の早見表（payment-60-days・freelance-law-japanpost）の判定と一致する", () => {
+    const cases: [DayOfMonth, PayMonthOffset, DayOfMonth, string][] = [
+      ["末", 1, 25, "ok"],
+      ["末", 1, "末", "ok"],
+      [15, 1, 15, "ok"],
+      [20, 1, 10, "ok"],
+      [20, 1, 20, "ok"],
+      [15, 1, "末", "caution"],
+      [20, 1, "末", "caution"],
+      [25, 1, "末", "caution"],
+      ["末", 2, 10, "caution"],
+      [20, 2, 10, "caution"],
+      [20, 2, 20, "ng"],
+      ["末", 2, "末", "ng"],
+    ];
+    for (const [closingDay, payMonthOffset, payDay, expected] of cases) {
+      const r = paymentDeadlineCheck({ closingDay, payMonthOffset, payDay, holidayRule: "before", serviceFrom: FROM });
+      expect(`${r.ruleLabel}=${r.status}`).toBe(`${payRuleLabel(closingDay, payMonthOffset, payDay)}=${expected}`);
+    }
+  });
+
   it("OK になるいちばん遅い支払日", () => {
     expect(latestSafePayRule({ closingDay: 20, holidayRule: "before", serviceFrom: FROM })?.ruleLabel).toBe("毎月20日締め・翌月20日払い");
     expect(latestSafePayRule({ closingDay: "末", holidayRule: "before", serviceFrom: FROM })?.ruleLabel).toBe("毎月末日締め・翌月末日払い");
@@ -152,6 +175,8 @@ describe("支払期日の60日チェック", () => {
     expect(closingPeriodText("末")).toBe("毎月1日から末日まで");
     expect(closingPeriodText(20)).toBe("前月21日から当月20日まで");
     expect(closingPeriodText(30)).toContain("30日が無い月は末日まで");
+    // 28日はどの月にもあるので「無い月は」を付けない
+    expect(closingPeriodText(28)).toBe("前月28日の翌日から当月28日まで");
   });
 });
 

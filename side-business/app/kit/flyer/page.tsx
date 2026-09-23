@@ -74,7 +74,7 @@ export default function FlyerPage() {
               支払明細・振込データ・案件別の利益を、今のExcelのルールのまま、御社のアカウントに作ります。
             </p>
             <p className="mt-2 text-sm leading-snug text-white/85">
-              作っているのは、同じ軽貨物の運送会社を経営している本人です。自分の会社で毎月使っている仕組みを、御社のやり方に合わせて作ります。
+              作っているのは、同じ軽貨物の運送会社を経営している本人です。自分の会社でも同じような仕組みを毎月使っています。その経験をもとに、御社のやり方に合わせて作ります。
             </p>
           </header>
 
@@ -100,7 +100,7 @@ export default function FlyerPage() {
             {/* 3 つのよいところ */}
             <section aria-labelledby="fl-benefits" className="mt-3">
               <h3 id="fl-benefits" className="text-base font-bold md:text-lg print:text-lg">
-                選ばれる3つの理由
+                3つの特長
               </h3>
               <ol className="mt-1.5 grid gap-2 sm:grid-cols-3 print:grid-cols-3">
                 {BENEFITS.map((b, i) => (
@@ -112,7 +112,14 @@ export default function FlyerPage() {
                       >
                         {i + 1}
                       </span>
-                      {b.title}
+                      {/* 「、」のあとで折り返す（「御社のも／の」のように途中で切れないように） */}
+                      <span className="min-w-0">
+                        {b.title.split(/(?<=、)/).map((part) => (
+                          <span key={part} className="inline-block">
+                            {part}
+                          </span>
+                        ))}
+                      </span>
                     </p>
                     <p className="mt-1 text-xs leading-snug text-muted-foreground">{b.short}</p>
                   </li>
@@ -185,8 +192,8 @@ export default function FlyerPage() {
 
             {/* 相談と差出人 */}
             <footer className="mt-3 grid gap-4 sm:grid-cols-[auto_1fr] md:mt-auto print:mt-auto print:grid-cols-[auto_1fr]">
-              <figure className="mx-auto flex w-[30mm] flex-col items-center sm:mx-0 print:mx-0">
-                <Qr url={qrUrl} label={`${SITE.name}のサイトのQRコード`} className="w-full p-[1.5mm]" />
+              <figure className="mx-auto flex w-[32mm] flex-col items-center sm:mx-0 print:mx-0">
+                <Qr url={qrUrl} label={`${SITE.name}のサイトのQRコード`} className="w-full" />
                 <figcaption className="mt-1 text-center text-[11px] leading-tight [overflow-wrap:anywhere]">{displayUrl("/")}</figcaption>
               </figure>
               <div className="min-w-0">

@@ -5,7 +5,7 @@ published: 2026-09-23
 updated: 2026-09-23
 category: フリーランス法
 order: 3
-sources: https://www.jftc.go.jp/houdou/pressrelease/2026/sep/260902_japanpost.html https://www.jftc.go.jp/FL/FLkankoku/index.html https://www.lnews.jp/2026/09/s0902505.html https://www.nikkei.com/article/DGXZQOUD017JU0R00C26A9000000/ https://www.jftc.go.jp/houdou/pressrelease/2026/jun/260610_FL.html https://www.chusho.meti.go.jp/keiei/torihiki/download/freelance/law_02.pdf https://www.chusho.meti.go.jp/keiei/torihiki/download/freelance/law_05.pdf https://www.chusho.meti.go.jp/keiei/torihiki/download/freelance/law_qa.pdf https://www.jftc.go.jp/fllaw_limited/fllaw_qa.html https://www.jftc.go.jp/file/flpamph.pdf https://www.gov-online.go.jp/article/202511/entry-10040.html
+sources: https://www.jftc.go.jp/houdou/pressrelease/2026/sep/260902_japanpost.html https://www.jftc.go.jp/FL/FLkankoku/index.html https://www.lnews.jp/2026/09/s0902505.html https://www.jftc.go.jp/houdou/pressrelease/2026/jun/260610_FL.html https://www.chusho.meti.go.jp/keiei/torihiki/download/freelance/law_02.pdf https://www.chusho.meti.go.jp/keiei/torihiki/download/freelance/law_05.pdf https://www.chusho.meti.go.jp/keiei/torihiki/download/freelance/law_qa.pdf https://www.jftc.go.jp/fllaw_limited/fllaw_qa.html https://www.jftc.go.jp/file/flpamph.pdf
 ---
 
 > **この記事のまとめ**
@@ -26,9 +26,9 @@ sources: https://www.jftc.go.jp/houdou/pressrelease/2026/sep/260902_japanpost.ht
 | 頼んでいた仕事 | 荷物の配達、郵便局の敷地内の除草など |
 | 条件を示していなかった | 167人。取引条件の全部か一部を、すぐに書面やメールなどで示していなかった（第3条第1項） |
 | 期日までに払っていなかった | 140人。支払期日を決めておらず、仕事を受けた日までに払っていなかった（第4条第5項） |
-| 原因とされる運用 | 委託費が一定額以下の仕事は「請求書払い」。先に契約書を作らず、請求書が届いてから払っていた（報道） |
+| 原因とされる運用 | 「請求書払い」。先に契約書を作らず、請求書が届いてから払っていた（報道） |
 
-公正取引委員会は、本社・支社や郵便局の一部を抜き出して調べました。報道によると、認定した人数よりも「相当数いた可能性がある」として、会社全体で違反がないかを調べることなどを求めています。
+報道によると、公正取引委員会は本社・支社や全国の郵便局を抜き出して調べました。そのうえで、認定した人数よりも「相当数いた可能性がある」として、会社全体で違反がないかを調べることなどを求めています。
 
 ### 勧告の後ろに、多くの指導がある
 
@@ -75,9 +75,9 @@ sources: https://www.jftc.go.jp/houdou/pressrelease/2026/sep/260902_japanpost.ht
 
 従業員がいる会社などが支払期日を決めていないと、法律上は、**仕事を受けた日そのものが支払期日**になります。60日を超える日を決めた場合は、仕事を受けた日から数えて60日目が支払期日になります。
 
-つまり「請求書が届いたら払う」やり方では、払ったときには、もう期日を過ぎていることがあります。日本郵便の140人のケースは、この形です。
+つまり「請求書が届いたら払う」やり方では、払ったときには、もう期日を過ぎていることがあります。日本郵便で期日までに払っていなかったとされた140人も、支払期日を決めていなかったケースです。
 
-また、「翌月10日まで」「納品後60日以内」のような書き方は、具体的な日が決まらないので、支払期日を決めたことにはならないとされています。
+また、公正取引委員会などのQ&Aでは、「〇月〇日まで」「納品後〇日以内」のような書き方は、具体的な日が決まらないので、支払期日を決めたことにはならないとされています。「翌月10日まで」ではなく「翌月10日」と書きます。
 
 ### 3. 軽貨物で同じ形になりやすい頼み方（例）
 
@@ -97,12 +97,12 @@ sources: https://www.jftc.go.jp/houdou/pressrelease/2026/sep/260902_japanpost.ht
 | 示す事項 | 軽貨物での書き方の例 |
 | --- | --- |
 | 会社とドライバーの名前 | 会社名と、ドライバーの氏名か屋号（番号や記号でも可） |
-| 仕事を頼んだ日 | 仕事を頼むことを決めた日 |
+| 仕事を頼んだ日 | ドライバーと仕事を頼むことで合意した日 |
 | 仕事の内容 | 宅配便の配達、企業配（ルート配送）など |
 | 仕事をする日・期間 | 2026年10月1日から2027年9月30日まで など |
 | 仕事をする場所 | 〇〇営業所と、〇〇市の担当エリア など |
 | 検査を終える日 | 検査をしないなら不要 |
-| 報酬の額 | 「1個150円 × 個数」のような決め方でも可 |
+| 報酬の額 | 個数で金額が変わるなら「1個150円 × 個数」のような決め方を書く |
 | 支払期日 | 毎月末日締め、翌月末日払い のような具体的な日 |
 | 現金以外で払う場合の事項 | 銀行振込なら不要 |
 
@@ -125,9 +125,9 @@ sources: https://www.jftc.go.jp/houdou/pressrelease/2026/sep/260902_japanpost.ht
 | 月末締め・翌々月10日払い | 要注意 |
 | 月末締め・翌々月末払い | 60日を超えます |
 
-「要注意」は、締め期間の最初の日から数えると2か月を超えるものです。締め日から数えてよい条件にあてはまるかを、確かめる必要があります。条件はツールのページにまとめています。
+「要注意」は、締め期間の最初の日から数えると2か月を超えるものです。役務（配達など）については、数え始めの日の例外が解釈ガイドラインに書かれています。締め日から数えてよい条件にあてはまるかを、確かめる必要があります。条件の要点はツールのページにまとめています。
 
-元請から受けた仕事をドライバーに頼む場合は、例外があります。示す内容に、①元請から受けた仕事の再委託であること、②元請の名前（元請だと分かる記号などでも可）、③元請から代金を受け取る支払期日、を書いておけば、ドライバーへの支払期日を、元請からの支払期日から30日以内で決められます。書いていなければ、原則の60日で考えることになります。
+元請から受けた仕事をドライバーに頼む場合は、例外があります。示す内容に、①元請から受けた仕事の再委託であること、②元請の名前（元請だと分かる記号などでも可）、③元請から代金を受け取る支払期日、を書いておけば、ドライバーへの支払期日を、元請からの支払期日から数えて30日以内の、できるだけ早い日で決められます。書いていなければ、原則の60日で考えることになります。
 
 ### ③ 記録を残す
 
