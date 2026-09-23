@@ -178,6 +178,34 @@ describe("設定の画面", () => {
     expect(await html("rates", "viewer")).not.toContain("人ごとの単価を登録");
   });
 
+  it("人ごとの単価：見張り番から「この人 × この案件」で開くと、今の 155円 を入れた形で開く（合意日だけ足せる）", async () => {
+    const db = state.db!;
+    const [okada] = await db.select().from(s.drivers).where(and(eq(s.drivers.tenantId, tenantId), eq(s.drivers.code, "D05")));
+    const [takuhai] = await db.select().from(s.projects).where(and(eq(s.projects.tenantId, tenantId), eq(s.projects.name, "宅配（個建て）")));
+    const page = await html("rates", "staff", { driver: okada.id, project: takuhai.id });
+    expect(page).toContain("この人 × この案件の単価を直す");
+    expect(page).toMatch(/name="payRate"[^>]*value="155"|value="155"[^>]*name="payRate"/);
+    expect(page).toContain("上書きする");
+  });
+
+  it("控除：締めたのに明細の写しが無い月（9 月）は「引いていない」ではなく「写しが無い」と出す", async () => {
+    const sep = await html("rules", "staff", { m: "2026-09" });
+    expect(sep).toContain("明細の写しがありません");
+    expect(sep).toContain("明細の写しが無いので出せません");
+    expect(sep).not.toContain("この月は引いていません");
+  });
+
+  it("ドライバー：保存したあとの知らせ。登録済みの案件・控除の入力欄に「使う」は出さない（専用のボタンで切り替える）", async () => {
+    const d = await aoki();
+    expect(await html("driver", "staff", { saved: "updated" }, { id: d.id })).toContain("保存しました。");
+    const projects = await html("projects", "staff");
+    // 追加の欄にだけ「使っている」がある（1 つ）。一覧の直す欄には無い
+    expect(projects.match(/type="checkbox"[^>]*name="active"/g)).toHaveLength(1);
+    expect(projects).toContain("使わないにする");
+    const rules = await html("rules", "staff", { m: "2026-10" });
+    expect(rules.match(/type="checkbox"[^>]*name="active"/g)).toHaveLength(1);
+  });
+
   it("控除：10 月の当たり方（ロイヤリティ 8人・241,060円）と、合意の記録が無い控除", async () => {
     const staff = await html("rules", "staff", { m: "2026-10" });
     expect(staff).toContain("8人・合計 241,060円");

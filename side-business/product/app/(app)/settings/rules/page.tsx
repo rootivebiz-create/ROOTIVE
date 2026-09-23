@@ -128,7 +128,7 @@ export default async function RulesPage({ searchParams }: { searchParams: Promis
       {shown.length === 0 ? (
         <EmptyState title="控除のルールはまだありません">
           <p>
-            引くものが無ければ、登録しなくて大丈夫です。
+            引くものが無ければ、ここへの登録は要りません。
             {canEdit ? "今の Excel にロイヤリティや管理費の列があれば、上の「控除を追加」のひな形から登録できます。" : "登録は事務・オーナーの方がします。"}
           </p>
         </EmptyState>

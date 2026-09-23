@@ -17,7 +17,7 @@ export default async function NewDriverPage() {
         title="ドライバーを追加"
         description={
           <>
-            名前だけでも登録できます。口座・登録番号は、振込データや明細を作る前までに入れれば大丈夫です。たくさんいるときは{" "}
+            名前だけでも登録できます。口座・登録番号は、あとから入れられます（振込データ・明細を作る前に入れてください）。たくさんいるときは{" "}
             <Link href="/onboarding/drivers">まとめて登録（Excel・貼り付け）</Link> が早いです。
           </>
         }

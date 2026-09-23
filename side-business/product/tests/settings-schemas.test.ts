@@ -126,6 +126,15 @@ describe("口座（全銀）", () => {
     });
     expect(ok.requesterCode).toBe("1234567890");
     expect(ok.requesterName).toBe("ｻﾝﾌﾟﾙｳﾝｿｳ(ｶ");
+    // 金融機関名だけ入れても、黙って捨てずに足りない欄を知らせる
+    const nameOnly = errors(companySchema.safeParse({ ...companyBase, requesterBankName: "みずほ" }));
+    expect(nameOnly.requesterCode).toContain("依頼人コード");
+    expect(nameOnly.requesterAccountNumber).toContain("口座番号");
+  });
+
+  it("電話番号は、長音（ー）や全角のハイフンで書いても「-」にそろえる", () => {
+    expect(driverSchema.parse({ ...driverBase, phone: "０９０ー１２３４ー５６７８" }).phone).toBe("090-1234-5678");
+    expect(errors(driverSchema.safeParse({ ...driverBase, phone: "でんわ" })).phone).toContain("電話番号");
   });
 });
 
@@ -140,6 +149,10 @@ describe("数の入力（全角・カンマ）", () => {
     expect(errors(ruleSchema.safeParse({ ...base, value: "12.345" })).value).toContain("2 桁");
     expect(percentToRate(8)).toBe(0.08);
     expect(rateToPercent(0.1025)).toBe(10.25);
+    // 「10%」「１０％」と書いても 0.1（定額のほうは % を読まない）
+    expect(ruleSchema.parse({ ...base, value: "10%" }).rate).toBe(0.1);
+    expect(ruleSchema.parse({ ...base, value: "１０％" }).rate).toBe(0.1);
+    expect(errors(ruleSchema.safeParse({ name: "管理費", kind: "fixed", value: "15000%" })).value).toContain("数で");
   });
 
   it("定額はカンマつき・全角でも円の整数に。数量 × 単価は小数も", () => {

@@ -37,7 +37,8 @@ export async function settingsOverview(db: Db, tenantId: string) {
       name: tenant.name,
       payRule: payRuleSentence(tenant.closingDay, tenant.payMonthOffset, tenant.payDay),
       missing: [
-        !tenant.registrationNo && "登録番号",
+        // 免税の会社は登録番号が無いのがふつうなので、抜けとして出さない
+        !tenant.registrationNo && tenant.taxMethod !== "exempt" && "登録番号",
         !(r?.code && r.bankCode && r.accountNumber) && "振込依頼人（全銀）",
         !tenant.settings?.paymentTermsText && "支払期日の文言",
       ].filter((x): x is string => typeof x === "string"),

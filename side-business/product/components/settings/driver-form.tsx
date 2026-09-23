@@ -168,7 +168,7 @@ export function DriverForm({
       </Section>
 
       <Section title="源泉徴収・その他">
-        <Check name="isCorporation" defaultChecked={initial.isCorporation} label="法人（会社）として契約している" hint="法人への支払には、報酬の源泉徴収をしません" />
+        <Check name="isCorporation" defaultChecked={initial.isCorporation} label="法人（会社）として契約している" hint="チェックすると、明細で源泉徴収を計算しません（源泉徴収の区分を選んでいても）" />
         <F label="源泉徴収の区分" error={fe.withholdingCategory}>
           <Select name="withholdingCategory" value={withholding} onChange={(e) => setWithholding(e.currentTarget.value)}>
             {WITHHOLDING_CATEGORY_ORDER.map((c) => (

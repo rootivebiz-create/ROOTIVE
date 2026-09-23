@@ -14,11 +14,11 @@ import { deemedNote } from "~/server/features/settings/format";
 import { settingsOverview } from "~/server/features/settings/overview";
 import { createProject, deleteProject, listProjects, setProjectActive, updateProject, usedProjectIds } from "~/server/features/settings/projects";
 import { deleteOverride, listOverrides, upsertOverride } from "~/server/features/settings/rates";
-import { createRule, deleteRule, listRules, ruleImpact, setRuleActive, updateRule, usedRuleIds } from "~/server/features/settings/rules";
+import { createRule, deleteRule, listRules, ruleImpact, ruleImpactOfMonth, setRuleActive, updateRule, usedRuleIds } from "~/server/features/settings/rules";
 import { clientSchema, companySchema, driverSchema, overrideSchema, projectSchema, ruleSchema } from "~/server/features/settings/schemas";
 import { changeUserRole, listPendingInvites, listUsers, prepareInvite, revokeInvite, setUserDisabled } from "~/server/features/settings/users";
 import { DEMO_MONTH, DEMO_PREV_MONTH, seedDemo } from "~/server/seed-demo";
-import { generateStatements } from "~/server/statements-core";
+import { generateStatements, readSnapshot } from "~/server/statements-core";
 import { sha256 } from "~/server/tokens";
 import { createTestDb } from "./helpers/db";
 
@@ -220,6 +220,39 @@ describe("ドライバー別の単価", () => {
     expect(await failure(deleteOverride(db, B, oA.id))).toContain("見つかりません");
     expect((await listOverrides(db, A)).some((o) => o.id === oA.id)).toBe(true);
     expect((await listOverrides(db, B)).every((o) => o.driverName !== "（不明）")).toBe(true);
+    // 別の会社のドライバー × 自分の案件でも登録できない（B の単価は増えない）
+    const aokiB = await driverByCode(B, "D01");
+    const takuhaiA = await projectByName(A, "宅配（個建て）");
+    const beforeB = (await listOverrides(db, B)).length;
+    expect(await failure(upsertOverride(db, A, overrideSchema.parse({ driverId: aokiB.id, projectId: takuhaiA.id, payRate: "1", agreedOn: "" })))).toContain("ドライバーは見つかりません");
+    expect(await listOverrides(db, B)).toHaveLength(beforeB);
+    expect((await listOverrides(db, A)).some((o) => o.driverId === aokiB.id)).toBe(false);
+  });
+});
+
+describe("使う・使わないは専用のボタンだけで変わる", () => {
+  it("案件・控除を入力欄から保存しても、使わないにしたものは使うに戻らない", async () => {
+    const night = await projectByName(A, "夜間便");
+    await setProjectActive(db, A, night.id, false);
+    // 画面に残っていた古い「使っている」のまま保存しても、使わないのまま
+    const { after, changed } = await updateProject(db, A, night.id, projectSchema.parse({ clientId: night.clientId ?? "", name: "夜間便", aliases: "夜間", unit: "便", billRate: "12000", payRate: "9500", active: "on" }));
+    expect(after.active).toBe(false);
+    expect(changed.active).toBeUndefined();
+    await setProjectActive(db, A, night.id, true);
+
+    const fee = await ruleByName(A, "管理費");
+    await setRuleActive(db, A, fee.id, false);
+    const r = await updateRule(db, A, fee.id, ruleSchema.parse({ name: "管理費", kind: "fixed", value: "15,000", onlyWhenWorked: "on", taxable: "on", agreedInWriting: "on", active: "on", sort: "2" }));
+    expect(r.after).toMatchObject({ active: false, amount: 15000 });
+    await setRuleActive(db, A, fee.id, true);
+    // 10 月の管理費は 8人・120,000円 に戻る
+    expect((await ruleImpact(db, A, DEMO_MONTH)).get(fee.id)).toMatchObject({ drivers: 8, total: 120000 });
+  });
+
+  it("元請は別の会社から変えられない", async () => {
+    const [aClient] = await listClients(db, A);
+    expect(await failure(updateClient(db, B, aClient.id, clientSchema.parse({ name: "乗っ取り", closingDay: "0" })))).toContain("見つかりません");
+    expect((await listClients(db, A)).find((c) => c.id === aClient.id)!.name).toBe(aClient.name);
   });
 });
 
@@ -275,8 +308,10 @@ describe("控除のルール", () => {
     await db.insert(s.monthCloses).values({ tenantId: A, month: DEMO_MONTH, status: "closed", closedAt: new Date() });
     await updateRule(db, A, royalty.id, ruleSchema.parse({ name: "ロイヤリティ", kind: "percent", value: "20", onlyWhenWorked: "on", taxable: "on", agreedInWriting: "on", active: "on", sort: "1" }));
     expect((await ruleImpact(db, A, DEMO_MONTH)).get(royalty.id)).toMatchObject({ drivers: 8, total: 241060 });
-    // 締めた 9 月は明細の写しが無いので 0 件
+    // 締めた 9 月は明細の写しが無いので 0 件（画面は「引いていない」ではなく「写しが無い」と出す）
     expect((await ruleImpact(db, A, DEMO_PREV_MONTH)).size).toBe(0);
+    expect(await ruleImpactOfMonth(db, A, DEMO_PREV_MONTH)).toMatchObject({ closed: true, statements: 0 });
+    expect(await ruleImpactOfMonth(db, A, DEMO_MONTH)).toMatchObject({ closed: true, statements: 8 });
     // 締めていない会社 B の 10 月は、今のルールで計算する（B は 10% のまま）
     const royaltyB = await ruleByName(B, "ロイヤリティ");
     expect((await ruleImpact(db, B, DEMO_MONTH)).get(royaltyB.id)).toMatchObject({ drivers: 8, total: 241060 });
@@ -322,12 +357,22 @@ describe("利用者", () => {
   it("招待：使っている人・ほかで使われているアドレスは止める。止めた人は役割をそろえて再開の招待に", async () => {
     expect(await failure(prepareInvite(db, A, { name: "x", email: "staff@demo.example", role: "viewer" }))).toContain("ほかで使われて");
     const [staff] = (await usersOf(A)).filter((u) => u.role === "staff");
-    await db.update(s.users).set({ email: "only-a@example.test" }).where(eq(s.users.id, staff.id));
+    // パスワードを決めてある人は招待し直さない
+    await db.update(s.users).set({ email: "only-a@example.test", passwordHash: "scrypt$x" }).where(eq(s.users.id, staff.id));
     expect(await failure(prepareInvite(db, A, { name: "x", email: "only-a@example.test", role: "viewer" }))).toContain("もう利用者です");
+    // パスワードをまだ決めていない人は、招待し直してリンクを渡せる（入れないままにしない）
+    await db.update(s.users).set({ passwordHash: null }).where(eq(s.users.id, staff.id));
+    expect(await prepareInvite(db, A, { name: "x", email: "only-a@example.test", role: "staff" })).toEqual({ reactivates: false });
     await db.update(s.users).set({ disabledAt: new Date() }).where(eq(s.users.id, staff.id));
     expect(await prepareInvite(db, A, { name: "x", email: "only-a@example.test", role: "viewer" })).toEqual({ reactivates: true });
     expect((await usersOf(A)).find((u) => u.id === staff.id)!.role).toBe("viewer");
     await db.update(s.users).set({ disabledAt: null, role: "staff", email: "staff@demo.example" }).where(eq(s.users.id, staff.id));
+    // ただ 1 人のオーナー（パスワードなし）を、招待し直しで閲覧に下げることはできない
+    const [owner] = (await usersOf(A)).filter((u) => u.role === "owner");
+    await db.update(s.users).set({ email: "owner-a@example.test" }).where(eq(s.users.id, owner.id));
+    expect(await failure(prepareInvite(db, A, { name: owner.name, email: "owner-a@example.test", role: "viewer" }))).toContain("オーナーが 1 人もいなくなる");
+    expect((await usersOf(A)).find((u) => u.id === owner.id)!.role).toBe("owner");
+    await db.update(s.users).set({ email: owner.email }).where(eq(s.users.id, owner.id));
 
     // 招待の一覧・取り消し（古い招待は、同じアドレスへ招待し直すと使えなくなる）
     const future = new Date(Date.now() + 7 * 24 * 3600_000);
@@ -386,10 +431,14 @@ describe("会社の設定と AI の同意", () => {
     });
     expect(after.settings.employees).toBeUndefined();
     expect(changed.payDay).toEqual({ from: 25, to: 20 });
-    // 支払日の変更は明細の支払日に出る
+    // 支払日の変更は、これから作る明細の支払日に出る
     const drafts = buildStatementDrafts(await loadBuildInput(db, A, DEMO_MONTH));
     expect(drafts[0].payDate).toBe("2026-11-20");
     expect(drafts[0].note).toContain("10日以内");
+    // すでに作った明細の写しは書き換えない（作り直すまで 11月25日・7 日の文のまま）
+    const saved = (await db.select().from(s.statements).where(and(eq(s.statements.tenantId, A), eq(s.statements.month, DEMO_MONTH)))).map(readSnapshot);
+    expect(saved).toHaveLength(8);
+    expect(saved.every((x) => x.payDate === "2026-11-25" && x.note === deemedNote(7))).toBe(true);
 
     const [tB] = await db.select().from(s.tenants).where(eq(s.tenants.id, B));
     expect(tB).toMatchObject({ payDay: 25 });
@@ -417,5 +466,11 @@ describe("会社の設定と AI の同意", () => {
     expect(o.rules).toMatchObject({ active: 4, notAgreed: 1 });
     expect(o.company.payRule).toBe("毎月末日締め・翌月25日払い");
     expect(o.company.missing).toEqual(["支払期日の文言"]);
+    // 登録番号が無くても、免税の会社なら抜けとして出さない
+    await db.update(s.tenants).set({ registrationNo: null, taxMethod: "exempt" }).where(eq(s.tenants.id, B));
+    expect((await settingsOverview(db, B)).company.missing).toEqual(["支払期日の文言"]);
+    await db.update(s.tenants).set({ taxMethod: "general" }).where(eq(s.tenants.id, B));
+    expect((await settingsOverview(db, B)).company.missing).toEqual(["登録番号", "支払期日の文言"]);
+    await db.update(s.tenants).set({ registrationNo: "T1234567890123" }).where(eq(s.tenants.id, B));
   });
 });

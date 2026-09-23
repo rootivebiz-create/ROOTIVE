@@ -119,7 +119,7 @@ export default async function RatesPage({ searchParams }: { searchParams: Promis
 
           {rows.length === 0 ? (
             <EmptyState title={all.length === 0 ? "まだありません" : "当てはまる単価がありません"}>
-              <p>{all.length === 0 ? "全員が案件の標準の単価なら、登録しなくて大丈夫です。" : <Link href="/settings/rates">条件を外す</Link>}</p>
+              <p>{all.length === 0 ? "全員が案件の標準の単価なら、ここへの登録は要りません。" : <Link href="/settings/rates">条件を外す</Link>}</p>
             </EmptyState>
           ) : (
             <ul className="space-y-3">
@@ -155,11 +155,12 @@ export default async function RatesPage({ searchParams }: { searchParams: Promis
                           </div>
                           {canEdit && (
                             <Expand summary="直す・消す">
+                              {/* 人と案件は決まっているので、選ぶための一覧は渡さない（人が多い会社でも画面を軽く） */}
                               <RateForm
                                 action={saveOverrideAction}
-                                drivers={driverOptions}
-                                projects={projectOptions}
-                                existing={existing}
+                                drivers={[]}
+                                projects={projectOptions.filter((p) => p.id === o.projectId)}
+                                existing={[]}
                                 today={today}
                                 initial={{ driverId: o.driverId, projectId: o.projectId, payRate: String(o.payRate), agreedOn: o.agreedOn ?? "", fixed: true }}
                               />

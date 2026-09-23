@@ -49,7 +49,7 @@ export default async function DriverPage({ params, searchParams }: { params: Pro
             </Badge>
           ))}
         </div>
-        {sp.saved === "created" && <Notice tone="ok">登録しました。口座・登録番号・取引条件の日付は、あとから足しても大丈夫です。</Notice>}
+        {sp.saved === "created" && <Notice tone="ok">登録しました。口座・登録番号・取引条件の日付は、あとから入れられます。</Notice>}
         {sp.saved === "updated" && <Notice tone="ok">保存しました。まだ締めていない月の明細は、作り直すと反映されます。</Notice>}
       </div>
 

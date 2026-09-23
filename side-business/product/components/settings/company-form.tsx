@@ -64,6 +64,7 @@ const DAYS = Array.from({ length: 30 }, (_, i) => i + 1);
 export function CompanyForm({ action, initial, canEdit, today, month, periodWords, startWords, toriteki, sources }: CompanyFormProps) {
   const { state, pending, onSubmit, fe } = useFormAction(action);
   const [taxMethod, setTaxMethod] = useState(initial.taxMethod);
+  const [regNo, setRegNo] = useState(initial.registrationNo);
   const [closingDay, setClosingDay] = useState(initial.closingDay);
   const [payMonthOffset, setPayMonthOffset] = useState(initial.payMonthOffset);
   const [payDay, setPayDay] = useState(initial.payDay);
@@ -98,7 +99,7 @@ export function CompanyForm({ action, initial, canEdit, today, month, periodWord
               <Input name="name" defaultValue={initial.name} required maxLength={100} />
             </F>
             <F label="登録番号（T＋13 桁）" error={fe.registrationNo} hint="明細（仕入明細書）に載ります。未登録なら空のまま">
-              <Input name="registrationNo" defaultValue={initial.registrationNo} placeholder="T1234567890123" inputMode="text" autoComplete="off" />
+              <Input name="registrationNo" value={regNo} onChange={(e) => setRegNo(e.currentTarget.value)} placeholder="T1234567890123" inputMode="text" autoComplete="off" />
             </F>
           </div>
         </Section>
@@ -107,6 +108,9 @@ export function CompanyForm({ action, initial, canEdit, today, month, periodWord
           <input type="hidden" name="taxMethod" value={taxMethod} />
           <Choice name="taxMethodChoice" value={taxMethod} onChange={setTaxMethod} options={TAX_METHODS} disabled={!canEdit} />
           {fe.taxMethod && <p className="text-xs font-bold text-danger">{fe.taxMethod}</p>}
+          {taxMethod === "exempt" && regNo.trim() !== "" && (
+            <Callout tone="yellow">「免税」を選んでいますが、登録番号が入っています。インボイスに登録している会社は消費税を納める側になるので、どちらかが違っていないか確かめてください。</Callout>
+          )}
           <Check
             name="payTaxToExempt"
             defaultChecked={initial.payTaxToExempt}
