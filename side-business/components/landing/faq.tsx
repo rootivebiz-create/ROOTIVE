@@ -1,12 +1,35 @@
 import { compactYen } from "@/lib/format";
 import { trialPlan } from "@/lib/plans";
-import { PLANS } from "@/site.config";
+import { PLANS, SITE } from "@/site.config";
 import { Section } from "./section";
 
 export type FaqItem = { q: string; a: string };
 
+/**
+ * 単価や元請の情報を預けてよいかの答え。作り手が運送会社を経営していると書けるとき（SITE.makerIsOperator）は、
+ * 同業に知られる心配として聞かれるので、取引先が重ならないことも答える。約束するのはここに書いたことだけ。
+ */
+export function confidentialityFaq(isOperator: boolean = SITE.makerIsOperator): FaqItem {
+  const common = [
+    "データをお預かりする前に、秘密保持契約を結びます。",
+    "預かったデータはその仕事だけに使い、終わったら30日以内に消します。",
+  ];
+  const own = "本番のデータは、御社のアカウントに置きます。";
+  if (isOperator) {
+    return {
+      q: "同業の運送会社の代表に、うちの単価や元請を知られて大丈夫？",
+      a: [
+        ...common,
+        "当方の会社と元請・荷主が重なる会社とは、取引しません（お話を進める前に、あらかじめ確認します）。",
+        own,
+      ].join(""),
+    };
+  }
+  return { q: "うちの単価や元請の情報を預けて大丈夫？", a: [...common, own].join("") };
+}
+
 /** よくある質問（画面と FAQPage の構造化データで同じ文を使う）。金額は site.config から組み立てる */
-export function landingFaq(): FaqItem[] {
+export function landingFaq(isOperator: boolean = SITE.makerIsOperator): FaqItem[] {
   const trial = trialPlan();
   const featured = PLANS.find((p) => p.featured && p.monthlyYen > 0) ?? PLANS.find((p) => p.monthlyYen > 0);
   /** 比べる相手：1 人あたり月 1,000 円前後のサービス（公開情報をもとにした目安） */
@@ -43,6 +66,7 @@ export function landingFaq(): FaqItem[] {
       q: "ドライバーの口座や個人情報を渡すのが不安です。",
       a: "データは御社のアカウントにだけ置きます。構築と保守では必要な範囲で触れますが、本番の個人情報をAIに入れることはしません。契約には個人情報の取り扱いの取り決めを付けます。無料の診断やお試しは、ドライバーの名前を番号に置きかえたExcelで行えます。",
     },
+    confidentialityFaq(isOperator),
     {
       q: "免税ドライバーの分は、負担が増えた分だけ報酬を見直せばよいのでは？",
       a: "一方的に報酬を変えると、フリーランス法や独占禁止法の問題になるおそれがあります。まず会社の負担を正しく計算し、それをもとにドライバーと話し合う材料にしてください。当方がお手伝いするのは計算と明細づくりまでです。最終的な判断は、税理士・弁護士にご確認ください。",

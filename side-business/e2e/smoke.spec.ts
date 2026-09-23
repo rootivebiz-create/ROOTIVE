@@ -97,3 +97,13 @@ test("問い合わせ：送り先が未設定なら、準備中と分かる", as
   await page.goto("/contact");
   await expect(page.getByText(/準備中/).first()).toBeVisible();
 });
+
+test.describe("とても狭い画面（320px）", () => {
+  test.use({ viewport: { width: 320, height: 640 } });
+  for (const path of ["/", "/demo", "/tools/invoice-cost", "/tools/payout", "/contact"]) {
+    test(`${path} が 320px でも横にはみ出さない`, async ({ page }) => {
+      await page.goto(path);
+      await expectNoHorizontalScroll(page);
+    });
+  }
+});

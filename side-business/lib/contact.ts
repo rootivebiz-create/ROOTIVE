@@ -194,7 +194,7 @@ export const inquirySchema = z.object({
       error: "電話番号の桁が合いません（例：03-1234-5678、090-1234-5678）",
     })
     .default(""),
-  drivers: z.enum(DRIVER_OPTIONS, { error: "ドライバーの人数を選んでください" }),
+  drivers: z.enum(DRIVER_OPTIONS, { error: "業務委託の方の人数を選んでください" }),
   topics: z
     .array(z.enum(TOPIC_OPTIONS, { error: "相談したいことは一覧から選んでください" }), {
       error: "相談したいことは一覧から選んでください",
@@ -275,7 +275,7 @@ export function formatInquiry(inquiry: Inquiry, receivedAt: Date): string {
     `お名前：${inquiry.name}`,
     `メール：${inquiry.email}`,
     `電話：${inquiry.phone || "（なし）"}`,
-    `ドライバーの人数：${inquiry.drivers}`,
+    `業務委託の方の人数：${inquiry.drivers}`,
     `相談したいこと：${inquiry.topics.length > 0 ? inquiry.topics.join("、") : "（選択なし）"}`,
     // 長い本文で Webhook の上限に切られても残るよう、本文より前に置く
     `流入元：${formatSource(inquiry.source)}`,
@@ -330,7 +330,7 @@ export function mailtoHref(to: string, inquiry: Inquiry): string {
     `会社名：${inquiry.company}`,
     `お名前：${inquiry.name}`,
     `電話：${inquiry.phone || "（なし）"}`,
-    `ドライバーの人数：${inquiry.drivers}`,
+    `業務委託の方の人数：${inquiry.drivers}`,
     `相談したいこと：${inquiry.topics.length > 0 ? inquiry.topics.join("、") : "（選択なし）"}`,
     "",
     "ご相談の内容：",

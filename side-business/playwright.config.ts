@@ -20,7 +20,8 @@ export default defineConfig({
   webServer: {
     command: `npx next start -p ${port}`,
     url: `http://127.0.0.1:${port}`,
-    reuseExistingServer: true,
+    // 古いサーバーを使い回すと、前のビルドの画面を確かめてしまう
+    reuseExistingServer: false,
     timeout: 60_000,
   },
   projects: [

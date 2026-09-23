@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { JsonLd } from "@/components/json-ld";
 import { getArticle, listArticles } from "@/lib/content";
-import { SITE } from "@/site.config";
+import { SHARE_IMAGE, SITE } from "@/site.config";
 
 export const dynamicParams = false;
 
@@ -23,6 +23,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     alternates: { canonical: `/articles/${a.slug}` },
     // openGraph はレイアウトの値を丸ごと置きかえるので、locale と siteName もここで入れる
     openGraph: {
+      images: [SHARE_IMAGE],
       type: "article",
       locale: SITE.locale,
       siteName: SITE.name,

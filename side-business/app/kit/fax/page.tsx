@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { FREE_CHECK, shortSource } from "@/components/kit/content";
+import { makerCopy } from "@/components/kit/maker";
 import { FAX_HOOK_IDS, faxHook, parseFaxHook } from "@/components/kit/fax-hooks";
 import { displayUrl, kitUrl } from "@/components/kit/format";
 import { KitToolbar, PaperStyle } from "@/components/kit/paper";
@@ -168,7 +169,7 @@ export default async function FaxPage({ searchParams }: Props) {
             <p className="mt-1 text-[14px]">
               業務委託ドライバーの<span className="font-bold">支払明細・振込データ（全銀）・案件別の利益</span>
               を、今のExcelのルールのまま、御社のアカウントに作ります。データもシステムも御社のもの。月額は定額で、ドライバーは何人でも同じです
-              {price ? `（${price.replace(/（税抜）$/, "・税抜")}）` : ""}。作るのは、軽貨物の運送会社を経営している本人です。
+              {price ? `（${price.replace(/（税抜）$/, "・税抜")}）` : ""}。{makerCopy().fax}
             </p>
             <p className="mt-1 text-[12px]">
               お作りするのは計算と書類づくりの仕組みです。税務・法律の最終的な判断は、税理士・弁護士・社労士にご確認ください。

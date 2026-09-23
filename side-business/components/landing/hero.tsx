@@ -1,15 +1,20 @@
 import Link from "next/link";
+import { makerCopy } from "@/components/kit/maker";
 import { compactYen } from "@/lib/format";
 import { buildPlans, trialPlan } from "@/lib/plans";
 import { SITE } from "@/site.config";
 import { PrimaryCta } from "./primary-cta";
 import { ArrowIcon, CheckIcon, ctaClass } from "./section";
 
-const POINTS = [
-  { title: "今のExcelのルールのまま", body: "単価・控除・端数・元請ごとの締めを、そのまま再現します" },
-  { title: "データもシステムも御社のもの", body: "御社のアカウントに作ります。ソースもお渡しします" },
-  { title: "作るのは軽貨物会社の代表", body: "自分の会社でも、支払明細と利益の管理を仕組みにして毎月使っています" },
-] as const;
+/** 3 つの約束。作り手の書き方は SITE.makerIsOperator で変わる */
+function points() {
+  const maker = makerCopy();
+  return [
+    { title: "今のExcelのルールのまま", body: "単価・控除・端数・元請ごとの締めを、そのまま再現します" },
+    { title: "データもシステムも御社のもの", body: "御社のアカウントに作ります。ソースもお渡しします" },
+    { title: maker.pointTitle, body: maker.pointBody },
+  ];
+}
 
 export function Hero() {
   const trial = trialPlan();
@@ -63,7 +68,7 @@ export function Hero() {
       </p>
 
       <ul className="mt-6 grid gap-3 sm:grid-cols-3">
-        {POINTS.map((p) => (
+        {points().map((p) => (
           <li key={p.title} className="flex gap-3 rounded-card border border-border bg-card p-4">
             <CheckIcon className="mt-0.5" />
             <span>

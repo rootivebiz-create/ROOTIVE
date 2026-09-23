@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { listArticles } from "@/lib/content";
-import { SITE } from "@/site.config";
+import { SHARE_IMAGE, SITE } from "@/site.config";
 
 const TITLE = "記事一覧";
 const DESCRIPTION = "軽貨物（黒ナンバー）の個人事業主ドライバー向けに、法令対応・確定申告・インボイス・手取りをわかりやすくまとめた記事。";
@@ -11,7 +11,8 @@ export const metadata: Metadata = {
   description: DESCRIPTION,
   alternates: { canonical: "/articles" },
   // openGraph はレイアウトの値を丸ごと置きかえるので、locale と siteName もここで入れる
-  openGraph: { type: "website", locale: SITE.locale, siteName: SITE.name, title: TITLE, description: DESCRIPTION, url: "/articles" },
+  openGraph: {
+      images: [SHARE_IMAGE], type: "website", locale: SITE.locale, siteName: SITE.name, title: TITLE, description: DESCRIPTION, url: "/articles" },
 };
 
 export default function ArticlesPage() {

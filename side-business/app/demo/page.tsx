@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { DemoApp } from "@/components/demo/demo-app";
 import { PrimaryCta } from "@/components/landing/primary-cta";
-import { SITE } from "@/site.config";
+import { SHARE_IMAGE, SITE } from "@/site.config";
 
 const TITLE = "デモ：支払明細・利益・振込データ";
 const DESCRIPTION =
@@ -12,7 +12,8 @@ export const metadata: Metadata = {
   description: DESCRIPTION,
   alternates: { canonical: "/demo" },
   // openGraph はレイアウトの値を丸ごと置きかえるので、locale と siteName もここで入れる
-  openGraph: { type: "website", locale: SITE.locale, siteName: SITE.name, title: TITLE, description: DESCRIPTION, url: "/demo" },
+  openGraph: {
+      images: [SHARE_IMAGE], type: "website", locale: SITE.locale, siteName: SITE.name, title: TITLE, description: DESCRIPTION, url: "/demo" },
 };
 
 const TRY_STEPS = [

@@ -76,7 +76,7 @@ describe("相談フォームの入力を確かめる", () => {
     expect(e.company).toBe("会社名を入れてください");
     expect(e.name).toBe("お名前を入れてください");
     expect(e.email).toBe("メールアドレスを入れてください");
-    expect(e.drivers).toBe("ドライバーの人数を選んでください");
+    expect(e.drivers).toBe("業務委託の方の人数を選んでください");
     expect(e.agree).toBe("プライバシーポリシーへの同意が必要です");
     expect(e.phone).toBeUndefined();
     expect(e.topics).toBeUndefined();
@@ -114,7 +114,7 @@ describe("相談フォームの入力を確かめる", () => {
   });
 
   it("ドライバーの人数と相談したいことは一覧にあるものだけ", () => {
-    expect(errors({ ...valid, drivers: "100人" }).drivers).toBe("ドライバーの人数を選んでください");
+    expect(errors({ ...valid, drivers: "100人" }).drivers).toBe("業務委託の方の人数を選んでください");
     expect(errors({ ...valid, topics: ["採用"] }).topics).toBe("相談したいことは一覧から選んでください");
     expect(errors({ ...valid, topics: "支払明細" }).topics).toBe("相談したいことは一覧から選んでください");
   });
@@ -163,7 +163,7 @@ describe("通知の文面", () => {
         "お名前：山田 太郎",
         "メール：taro@example.com",
         "電話：03-1234-5678",
-        "ドライバーの人数：6〜15人",
+        "業務委託の方の人数：6〜15人",
         "相談したいこと：支払明細、振込データ",
         "流入元：（記録なし：直接の入力・ブックマークなど）",
         "",
@@ -224,7 +224,7 @@ describe("通知の文面", () => {
     const url = new URL(href);
     expect(url.searchParams.get("subject")).toBe("【相談の申し込み】株式会社テスト運送（山田 太郎 様）");
     const body = url.searchParams.get("body") ?? "";
-    expect(body).toContain("ドライバーの人数：6〜15人");
+    expect(body).toContain("業務委託の方の人数：6〜15人");
     expect(body).toContain("い".repeat(299) + "…");
     expect(body).not.toContain("い".repeat(301));
   });

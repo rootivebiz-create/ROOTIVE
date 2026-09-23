@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { SITE } from "@/site.config";
+import { SHARE_IMAGE, SITE } from "@/site.config";
 
 const TITLE = "無料の計算ツール";
 const DESCRIPTION =
@@ -10,7 +10,8 @@ export const metadata: Metadata = {
   title: TITLE,
   description: DESCRIPTION,
   alternates: { canonical: "/tools" },
-  openGraph: { type: "website", locale: SITE.locale, siteName: SITE.name, title: TITLE, description: DESCRIPTION, url: "/tools" },
+  openGraph: {
+      images: [SHARE_IMAGE], type: "website", locale: SITE.locale, siteName: SITE.name, title: TITLE, description: DESCRIPTION, url: "/tools" },
 };
 
 const TOOLS = [

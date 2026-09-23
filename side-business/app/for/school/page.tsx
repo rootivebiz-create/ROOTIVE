@@ -23,7 +23,7 @@ import {
 import { jpDate, jpMonth, manYen } from "@/lib/format";
 import { pct } from "@/lib/payroll/money";
 import { TRANSITIONAL_SOURCE, TRANSITIONAL_STEPS } from "@/lib/payroll/tax";
-import { SITE } from "@/site.config";
+import { SHARE_IMAGE, SITE } from "@/site.config";
 
 const PATH = "/for/school";
 const TITLE =
@@ -161,6 +161,7 @@ export const metadata: Metadata = {
   alternates: { canonical: PATH },
   // openGraph はレイアウトの値を丸ごと置きかえるので、locale と siteName もここで入れる
   openGraph: {
+      images: [SHARE_IMAGE],
     type: "website",
     locale: SITE.locale,
     siteName: SITE.name,

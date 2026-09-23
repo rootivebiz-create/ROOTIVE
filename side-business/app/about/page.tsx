@@ -1,19 +1,30 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { makerCopy } from "@/components/kit/maker";
 import { buttonClass, Card } from "@/components/ui";
-import { CONTACT, PLANS, SITE, businessInfo } from "@/site.config";
+import { CONTACT, PLANS, SHARE_IMAGE, SITE, businessInfo } from "@/site.config";
 
 const PATH = "/about";
 const TITLE = "運営者について";
-const DESCRIPTION = `${SITE.name}を運営しているのは、軽貨物の運送会社を経営している本人です。支払明細・利益の管理・点呼の記録を自分の会社で仕組みにして、毎日使っています。進め方・やらないこと・データの扱いをまとめました。`;
+/** 作り手の書き方は SITE.makerIsOperator で変わる（components/kit/maker.ts） */
+const MAKER = makerCopy();
+const DESCRIPTION = MAKER.aboutDescription;
 
 export const metadata: Metadata = {
   title: TITLE,
   description: DESCRIPTION,
   alternates: { canonical: PATH },
-  // openGraph はレイアウトの値を丸ごと置きかえるので、locale と siteName もここで入れる
-  openGraph: { type: "website", locale: SITE.locale, siteName: SITE.name, title: TITLE, description: DESCRIPTION, url: PATH },
+  // openGraph はレイアウトの値を丸ごと置きかえるので、locale・siteName・共有の画像もここで入れる
+  openGraph: {
+    type: "website",
+    locale: SITE.locale,
+    siteName: SITE.name,
+    title: TITLE,
+    description: DESCRIPTION,
+    url: PATH,
+    images: [SHARE_IMAGE],
+  },
 };
 
 /**
@@ -30,8 +41,8 @@ const STEPS = [
     body: "30分のオンライン相談で、いまの締めのやり方（Excel・紙・単価や控除の決まり）を伺います。",
   },
   {
-    title: "動く見本を見ていただく",
-    body: "御社の案件・単価・控除の決まりで、実際に動く見本を作ってお見せします。決めるのはそれを見てからです。",
+    title: "次の一歩を1つだけご提案",
+    body: "相談のあと、次の一歩を1つだけご提案します（先月分でのお試し・見積もり・無料診断のどれか）。決めるのは、それを見てからで大丈夫です。",
   },
   {
     title: "導入",
@@ -70,11 +81,9 @@ export default function AboutPage() {
       <h1 className="text-2xl font-bold leading-snug sm:text-3xl">運営者について</h1>
 
       <p className="mt-4 rounded-card border-l-4 border-accent bg-card px-4 py-4 text-lg font-bold leading-relaxed">
-        運営しているのは、軽貨物の運送会社を経営している本人です。自分の会社で、支払明細・利益の管理・点呼の記録を仕組みにして、毎日使っています。
+        {MAKER.aboutLead}
       </p>
-      <p className="mt-4">
-        この仕組みづくりは、その運送会社の事業ではなく、本人の個人事業として行っています。現場で使っている立場から、同じように月末の締めに追われている運送会社の仕組みを作ります。
-      </p>
+      <p className="mt-4">{MAKER.aboutBody}</p>
 
       <section aria-labelledby="how" className="mt-10">
         <h2 id="how" className="text-lg font-bold">

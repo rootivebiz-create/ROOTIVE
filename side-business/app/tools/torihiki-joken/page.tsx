@@ -11,7 +11,7 @@ import {
   type DeadlineStatus,
   type PayMonthOffset,
 } from "@/lib/tools/torihiki-joken";
-import { SITE } from "@/site.config";
+import { SHARE_IMAGE, SITE } from "@/site.config";
 
 const PATH = "/tools/torihiki-joken";
 const TITLE = "軽貨物ドライバーの取引条件明示書をつくる（フリーランス法）｜支払期日の60日チェックつき";
@@ -86,7 +86,8 @@ export const metadata: Metadata = {
   description: DESCRIPTION,
   alternates: { canonical: PATH },
   // openGraph はレイアウトの値を丸ごと置きかえるので、locale と siteName もここで入れる
-  openGraph: { type: "website", locale: SITE.locale, siteName: SITE.name, title: TITLE, description: DESCRIPTION, url: PATH },
+  openGraph: {
+      images: [SHARE_IMAGE], type: "website", locale: SITE.locale, siteName: SITE.name, title: TITLE, description: DESCRIPTION, url: PATH },
 };
 
 export default function TorihikiJokenPage() {

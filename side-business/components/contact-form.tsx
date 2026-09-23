@@ -218,8 +218,8 @@ export function ContactForm({
         <h3 className="mt-4 text-sm font-bold">このあとの流れ</h3>
         <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm leading-relaxed">
           <li>メールで、30分のオンライン相談の日時を決めます（候補の日時か、予約のページをお送りします）。</li>
-          <li>当日は、いまの Excel か支払明細の見本を画面で見せていただくのがいちばん早いです（ドライバーの名前は隠したままで大丈夫です）。</li>
-          <li>相談のあと、御社のやり方に合わせた見本と見積もりをお送りします。決めるのは、それを見てからで大丈夫です。</li>
+          <li>当日は、いまの Excel か支払明細の見本を画面で見せていただくのがいちばん早いです（名前は隠したままで大丈夫です）。</li>
+          <li>相談のあと、次の一歩を1つだけご提案します（先月分でのお試し・見積もり・無料診断のどれか）。決めるのは、それを見てからで大丈夫です。</li>
         </ol>
         {bookingUrl && (
           <p className="mt-4 text-sm">
@@ -315,7 +315,13 @@ export function ContactForm({
           />
         </Row>
 
-        <Row id={id("drivers")} label="業務委託ドライバーの人数" required error={errors.drivers}>
+        <Row
+          id={id("drivers")}
+          label="業務委託の方（ドライバー・スタッフなど）の人数"
+          required
+          hint="業務委託で毎月お支払いしている方の人数です（ドライバー・講師・エンジニア・スタイリストなど）。だいたいで大丈夫です。"
+          error={errors.drivers}
+        >
           <Select
             id={id("drivers")}
             name="drivers"
@@ -323,7 +329,7 @@ export function ContactForm({
             value={form.drivers}
             onChange={(e) => update("drivers", e.target.value)}
             aria-invalid={invalid("drivers")}
-            aria-describedby={describedBy("drivers")}
+            aria-describedby={describedBy("drivers", true)}
             className={cx(errors.drivers && invalidClass)}
           >
             <option value="">選んでください</option>
@@ -374,7 +380,7 @@ export function ContactForm({
             maxLength={LIMITS.message}
             value={form.message}
             onChange={(e) => update("message", e.target.value)}
-            placeholder="例：ドライバーは12人。支払明細を Excel で作っていて、月末に2日かかっています。"
+            placeholder="例：業務委託の方は12人（ドライバー・講師など）。支払明細を Excel で作っていて、月末に2日かかっています。"
             aria-invalid={invalid("message")}
             aria-describedby={describedBy("message", true)}
             className={cx(

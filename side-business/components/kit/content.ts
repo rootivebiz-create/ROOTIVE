@@ -6,6 +6,7 @@ import { compactYen, jpDate, jpMonth, rangeYen } from "@/lib/format";
 import { TRANSITIONAL_SOURCE, TRANSITIONAL_STEPS, nonDeductibleTax } from "@/lib/payroll/tax";
 import { buildPlans, buildWeeksText, trialPlan } from "@/lib/plans";
 import { SITE } from "@/site.config";
+import { makerCopy } from "./maker";
 
 export type Source = { label: string; url: string };
 
@@ -102,8 +103,8 @@ export const TRUST = [
   { title: "お金には触れない", body: "作るのは振込データまで。振込は御社が行います" },
 ] as const;
 
-export const MAKER =
-  "作るのは、軽貨物の運送会社を経営している本人です。自分の会社でも、支払明細と利益の管理を仕組みにして毎月使っています。AIを使って作るので、早く、手ごろに作れます。";
+/** 「作っている人」の段落。書き方は SITE.makerIsOperator で変わる（components/kit/maker.ts） */
+export const MAKER = makerCopy().paragraph;
 
 export const NOT_ADVICE =
   "お作りするのは、計算と書類づくりの仕組みです。税務・法律の判断はしません。最終的な判断は、税理士・弁護士・社労士にご確認ください。";
@@ -177,12 +178,12 @@ export function comparisonChoices(): Choice[] {
       },
     },
     {
-      name: "kintone・受託開発",
+      name: "ノーコードの業務アプリ（kintone など）・受託開発",
       values: {
         fit: "なし。自由に作れる",
-        monthly: "kintoneは利用者ごとのライセンス（作り込める版で月1.8万円前後から）。保守を外に頼むと別に費用",
-        data: "kintoneはサービス会社のクラウド。受託開発は契約しだい",
-        initial: "作る範囲しだい（数十万〜300万円以上）",
+        monthly: "ノーコードの業務アプリは、利用料＋作り込みの外注費。受託開発は、保守を頼むと別に費用",
+        data: "ノーコードの業務アプリはサービス会社のクラウド。受託開発は契約しだい",
+        initial: "作る範囲と外注先しだい",
       },
     },
     {

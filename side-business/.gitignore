@@ -10,3 +10,8 @@ playwright-report/
 test-results/
 *.tsbuildinfo
 next-env.d.ts
+
+# お客様から預かったファイル（Git に入れない。終わったら 30 日以内に消す → sales-kit/03・10）
+private/
+*.xlsx
+*.xls

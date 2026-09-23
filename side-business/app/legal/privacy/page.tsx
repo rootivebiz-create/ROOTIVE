@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { CONTACT, SITE, businessInfo } from "@/site.config";
+import { CONTACT, SHARE_IMAGE, SITE, businessInfo } from "@/site.config";
 
 const PATH = "/legal/privacy";
 const TITLE = "プライバシーポリシー";
@@ -11,8 +11,16 @@ export const metadata: Metadata = {
   title: TITLE,
   description: DESCRIPTION,
   alternates: { canonical: PATH },
-  // openGraph はレイアウトの値を丸ごと置きかえるので、locale と siteName もここで入れる
-  openGraph: { type: "website", locale: SITE.locale, siteName: SITE.name, title: TITLE, description: DESCRIPTION, url: PATH },
+  // openGraph はレイアウトの値を丸ごと置きかえるので、locale・siteName・共有の画像もここで入れる
+  openGraph: {
+    type: "website",
+    locale: SITE.locale,
+    siteName: SITE.name,
+    title: TITLE,
+    description: DESCRIPTION,
+    url: PATH,
+    images: [SHARE_IMAGE],
+  },
 };
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -67,7 +75,7 @@ export default function PrivacyPage() {
           <ul>
             <li>
               <strong>相談フォームに入力された内容</strong>
-              ：会社名、お名前、メールアドレス、電話番号、ドライバーの人数、相談したいこと、ご相談の内容
+              ：会社名、お名前、メールアドレス、電話番号、業務委託の方（ドライバー・スタッフなど）の人数、相談したいこと、ご相談の内容
             </li>
             <li>
               <strong>どこからサイトに来たか（流入元）</strong>
@@ -77,6 +85,10 @@ export default function PrivacyPage() {
             <li>
               <strong>アクセスの記録</strong>
               ：IPアドレス、ブラウザの種類、見たページ、日時など。サイトを配信するサービスが自動で記録します。
+            </li>
+            <li>
+              <strong>アクセス解析の集計</strong>
+              ：ページの表示回数や参照元（どのサイト・資料から来たか）など。個人を特定しない形で集計したものだけを見ます（くわしくは 9.）。
             </li>
             <li>ご相談やご契約のやりとりの中で、お知らせいただいた情報</li>
           </ul>
@@ -100,7 +112,7 @@ export default function PrivacyPage() {
         <Section title="5. 外部のサービスの利用（委託）">
           <p>メールの送信やサイトの配信などに、次のような外部のサービスを使います。</p>
           <ul>
-            <li>Vercel Inc.（米国）：このサイトの配信</li>
+            <li>Vercel Inc.（米国）：このサイトの配信と、アクセス解析（Vercel Web Analytics）</li>
             <li>Resend（米国）：相談フォームの内容をメールで受け取るため</li>
             <li>受け付けの知らせを受け取るチャットのサービス、オンライン相談の予約・ビデオ通話のサービスなど</li>
           </ul>
@@ -145,8 +157,10 @@ export default function PrivacyPage() {
 
         <Section title="9. Cookie とアクセス解析">
           <p>
-            現在、アクセス解析のツールや、広告のための Cookie は使っていません。使い始めるときは、このページを改定してお知らせします。
+            Vercel Web Analytics（Vercel Inc.）で、ページの表示回数や参照元などを、個人を特定しない形で集計しています（Cookie は使いません）。
+            当方が見るのは集計した数字だけで、どなたがどのページを見たかは分かりません。
           </p>
+          <p>広告のための Cookie は使っていません。ほかのアクセス解析や Cookie を使い始めるときは、このページを改定してお知らせします。</p>
         </Section>
 
         <Section title="10. ご本人からの求め（開示・訂正・削除など）">
@@ -164,7 +178,7 @@ export default function PrivacyPage() {
           <p>法令や、サービスの内容が変わったときなどに、このページを改定することがあります。大事な変更は、このページでお知らせします。</p>
         </Section>
 
-        <p className="text-sm text-muted-foreground">制定：2026年9月</p>
+        <p className="text-sm text-muted-foreground">制定：2026年9月（同月、アクセス解析について改定）</p>
       </div>
     </div>
   );

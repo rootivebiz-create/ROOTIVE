@@ -53,6 +53,7 @@ git push git@github.com:<個人のアカウント>/<リポジトリ名>.git side
 2. このまま会社のリポジトリで公開する場合は **Root Directory を `side-business`** にする（個人のリポジトリへ移したなら空のまま）
 3. 下の環境変数を入れて「Deploy」
 4. ドメインを取ったら「Settings → Domains」で追加し、`NEXT_PUBLIC_SITE_URL` をその URL にして再デプロイ
+5. Vercel の Analytics タブで Web Analytics を有効にする（ページの表示回数・参照元を、Cookie を使わずに数えます。コードには `<Analytics />` を入れてあります）
 
 ### 3. 環境変数
 
@@ -60,7 +61,7 @@ git push git@github.com:<個人のアカウント>/<リポジトリ名>.git side
 
 | 名前 | 必須 | 中身 |
 |---|---|---|
-| `NEXT_PUBLIC_SITE_URL` | ◯ | 本番の URL（例 `https://shimebi-lab.jp`） |
+| `NEXT_PUBLIC_SITE_URL` | ◯ | 本番の URL（例 `https://shimebi-lab.jp`）。未設定なら Vercel の本番ドメイン（`VERCEL_PROJECT_PRODUCTION_URL`）を使います |
 | `OWNER_NAME` | ◯ | 事業者名（氏名。屋号と並べて出ます） |
 | `NEXT_PUBLIC_CONTACT_EMAIL` | ◯ | 事業用のメールアドレス |
 | `BUSINESS_ADDRESS` | 営業メール・FAX を送るなら ◯ | 所在地（バーチャルオフィス可） |

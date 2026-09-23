@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ContactForm } from "@/components/contact-form";
 import { buttonClass, Card } from "@/components/ui";
 import { hasDelivery, readDeliveryConfig } from "@/lib/contact";
-import { CONTACT, SITE } from "@/site.config";
+import { CONTACT, SHARE_IMAGE, SITE } from "@/site.config";
 
 const PATH = "/contact";
 const TITLE = "相談する（無料・30分・オンライン）";
@@ -13,8 +13,16 @@ export const metadata: Metadata = {
   title: TITLE,
   description: DESCRIPTION,
   alternates: { canonical: PATH },
-  // openGraph はレイアウトの値を丸ごと置きかえるので、locale と siteName もここで入れる
-  openGraph: { type: "website", locale: SITE.locale, siteName: SITE.name, title: TITLE, description: DESCRIPTION, url: PATH },
+  // openGraph はレイアウトの値を丸ごと置きかえるので、locale・siteName・共有の画像もここで入れる
+  openGraph: {
+    type: "website",
+    locale: SITE.locale,
+    siteName: SITE.name,
+    title: TITLE,
+    description: DESCRIPTION,
+    url: PATH,
+    images: [SHARE_IMAGE],
+  },
 };
 
 export default function ContactPage() {
@@ -33,8 +41,8 @@ export default function ContactPage() {
       body: "支払明細・振込・請求を、いま誰が、何を使って、どれくらいの時間で作っているかを伺います。",
     },
     {
-      title: "御社用のデモと見積もりをお送りします",
-      body: "御社の案件や単価の決め方に合わせた動く見本と、見積もりをお送りします。決めるのは、それを見てからで大丈夫です。",
+      title: "次の一歩を1つだけご提案します",
+      body: "相談のあと、次の一歩を1つだけご提案します（先月分でのお試し・見積もり・無料診断のどれか）。決めるのは、それを見てからで大丈夫です。",
     },
   ];
 
@@ -93,7 +101,7 @@ export default function ContactPage() {
       </section>
 
       <p className="mt-8 rounded-card bg-muted px-4 py-3 text-sm">
-        いま使っている Excel や明細の見本があれば、当日画面で見せていただくのがいちばん早いです（ドライバーの名前は隠したままで大丈夫です）。
+        いま使っている Excel や明細の見本があれば、当日画面で見せていただくのがいちばん早いです（名前は隠したままで大丈夫です）。
       </p>
 
       <section aria-labelledby="form" className="mt-10">
@@ -119,7 +127,7 @@ export default function ContactPage() {
           </p>
         )}
         <p className="mt-2 text-sm text-muted-foreground">
-          書いていただくのは、会社名・お名前・メールアドレス・ドライバーの人数の4つだけです（ほかは任意）。入力いただいた内容は、ご相談へのお返事と見積もりのために使います。
+          書いていただくのは、会社名・お名前・メールアドレス・業務委託の方の人数の4つだけです（ほかは任意）。入力いただいた内容は、ご相談へのお返事と見積もりのために使います。
           あわせて、このサイトに来たきっかけ（FAX・チラシなどの資料の種類や、前に見ていたサイトの名前）もお送りします（<Link href="/legal/privacy">プライバシーポリシー</Link>）。
         </p>
         <Card className="mt-4 sm:p-6">

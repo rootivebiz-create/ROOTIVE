@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { PlateLogo } from "@/components/plate-logo";
 import { BENEFITS, FEATURES, FREE_CHECK, FREELANCE, STEP_70_DATE } from "@/components/kit/content";
 import { displayUrl, kitUrl } from "@/components/kit/format";
+import { makerCopy } from "@/components/kit/maker";
 import { KitToolbar, PaperStyle } from "@/components/kit/paper";
 import { Qr } from "@/components/kit/qr";
 import { SenderBlock, SetupWarning } from "@/components/kit/sender";
@@ -76,7 +77,7 @@ export default function FlyerPage() {
               支払明細・振込データ・案件別の利益を、今のExcelのルールのまま、御社のアカウントに作ります。
             </p>
             <p className="mt-2 text-sm leading-snug text-white/85">
-              作っているのは、同じ軽貨物の運送会社を経営している本人です。自分の会社でも同じような仕組みを毎月使っています。その経験をもとに、御社のやり方に合わせて作ります。
+              {makerCopy().flyer}
             </p>
           </header>
 

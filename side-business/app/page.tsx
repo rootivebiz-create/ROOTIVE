@@ -13,7 +13,7 @@ import { Pains } from "@/components/landing/pains";
 import { Pricing } from "@/components/landing/pricing";
 import { Trust } from "@/components/landing/trust";
 import { regNoText } from "@/lib/format";
-import { CONTACT, PLANS, SITE, businessInfo, type BusinessInfo as Info } from "@/site.config";
+import { CONTACT, PLANS, SHARE_IMAGE, SITE, businessInfo, type BusinessInfo as Info } from "@/site.config";
 
 const OG_TITLE = `${SITE.name}｜${SITE.tagline}`;
 
@@ -27,6 +27,7 @@ export const metadata: Metadata = {
     url: "/",
     title: OG_TITLE,
     description: SITE.description,
+    images: [SHARE_IMAGE],
   },
 };
 

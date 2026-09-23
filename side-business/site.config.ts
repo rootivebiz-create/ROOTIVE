@@ -12,16 +12,53 @@
  * この事業は個人事業で、どの会社の事業でもない。会社名・会社のロゴ・会社のシステムの画面・データは載せない。
  */
 
+/**
+ * 作り手が「軽貨物の運送会社を経営している本人」だと書いてよいか。
+ * 会社の承認で書いてよいと決めたときだけ true。false にすると、サイト・営業資料のすべてが
+ * 「運送業の支払の仕組みに詳しい作り手が、AIを使って作ります」といった中立の書き方になる（components/kit/maker.ts）。
+ */
+const MAKER_IS_OPERATOR = true;
+
+/**
+ * 本番の URL。NEXT_PUBLIC_SITE_URL → Vercel の本番ドメイン（VERCEL_PROJECT_PRODUCTION_URL）→ 手元の開発用の順で決める。
+ * 末尾の「/」は外す。
+ */
+export function siteUrlFrom(env: Record<string, string | undefined>): string {
+  const explicit = env.NEXT_PUBLIC_SITE_URL?.trim();
+  const vercel = (env.VERCEL_PROJECT_PRODUCTION_URL ?? env.NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL)?.trim();
+  const url = explicit || (vercel ? `https://${vercel.replace(/^https?:\/\//, "")}` : "http://localhost:3200");
+  return url.replace(/\/+$/, "");
+}
+
 export const SITE = {
   /** 屋号（仮）。商標・同じ屋号が無いか確かめてから決める */
   name: "しめ日ラボ",
   shortName: "しめ日ラボ",
   tagline: "業務委託ドライバーの月末の締めを、御社のルールのまま自動に。",
-  description:
-    "軽貨物・運送会社向け。業務委託ドライバーの支払明細・振込データ・案件別の利益を、今の Excel のルールのまま自動にする仕組みを、御社のアカウントに作ります。作るのは現役の軽貨物会社の代表。10月からのインボイス経過措置（控除70%）にも対応。",
+  description: `軽貨物・運送会社向け。業務委託ドライバーの支払明細・振込データ・案件別の利益を、今の Excel のルールのまま自動にする仕組みを、御社のアカウントに作ります。${
+    MAKER_IS_OPERATOR ? "作るのは現役の軽貨物会社の代表。" : "運送業の支払の仕組みに詳しい作り手が、AIを使って作ります。"
+  }10月からのインボイス経過措置（控除70%）にも対応。`,
   locale: "ja_JP",
-  /** 本番の URL（環境変数 NEXT_PUBLIC_SITE_URL で上書き） */
-  url: (process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3200").replace(/\/+$/, ""),
+  /** 本番の URL（siteUrlFrom の順で決める） */
+  url: siteUrlFrom({
+    NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL,
+    VERCEL_PROJECT_PRODUCTION_URL: process.env.VERCEL_PROJECT_PRODUCTION_URL,
+    NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL: process.env.NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL,
+  }),
+  /** 作り手が運送会社を経営していると書いてよいか（上の MAKER_IS_OPERATOR。会社の承認で書いてよいと決めたときだけ true） */
+  makerIsOperator: MAKER_IS_OPERATOR as boolean,
+} as const;
+
+/**
+ * SNS・チャットで共有したときの画像（public/og.png・1200×630）。
+ * ページで openGraph を書くと、レイアウトの openGraph は丸ごと置きかわる（画像も消える）ので、
+ * ページ側の openGraph にも images: [SHARE_IMAGE] を入れる。
+ */
+export const SHARE_IMAGE = {
+  url: "/og.png",
+  width: 1200,
+  height: 630,
+  alt: `${SITE.name}｜${SITE.tagline}`,
 } as const;
 
 export const CONTACT = {
@@ -55,7 +92,7 @@ export function ownerName(): string | null {
 
 /**
  * 料金（すべて税抜）。ドライバーは何人でも同じ料金。サーバー代はお客様が直接払う（見積で目安を示す）。
- * 根拠：競合（1 人月 1,000 円の協会アプリ、月 1〜5 万円の運送 SaaS、初期 100 万円以上の kintone・受託開発）の間に置く。
+ * 根拠：競合（1 人月 1,000 円の協会アプリ、月 1〜5 万円の運送 SaaS、作り込みの外注が要るノーコードの業務アプリ・受託開発）の間に置く。
  */
 export type Plan = {
   id: string;

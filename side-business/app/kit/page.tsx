@@ -212,7 +212,10 @@ export default function KitIndexPage() {
           使うときの注意
         </h2>
         <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm leading-relaxed">
-          <li>QRコードには utm_source（fax・flyer・proposal）が付いています。アクセス解析で、どの資料から来たかが分かります。</li>
+          <li>
+            QRコードには utm_source（fax・flyer・proposal）が付いています。Vercel の Web Analytics で、ページの表示回数を utm
+            の値ごとに見られます（使えるかは Vercel のプランしだい）。相談フォームから届く知らせには「流入元」（どの資料から来たか）が入るので、問い合わせがどの資料から来たかはそこで分かります。
+          </li>
           <li>料金を変えたら site.config.ts だけを直せば、3つの資料すべてに反映されます。</li>
           <li>期限の話題（10月からの70%など）は時間がたつと古くなります。送る前に、日付と出典の最新の情報を確かめてください。</li>
           <li>資料に「導入◯社」や、測っていない時間の短縮の数字は書いていません。足すときは、実際にあったことだけにしてください。</li>

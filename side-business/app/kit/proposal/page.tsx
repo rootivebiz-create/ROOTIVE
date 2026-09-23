@@ -29,6 +29,7 @@ import { SenderBlock, SetupWarning } from "@/components/kit/sender";
 import { DemoBadge, MiniTable, Slide } from "@/components/kit/slide";
 import { cx } from "@/lib/cx";
 import { jpDate, jpMonth, jpToday, yenText } from "@/lib/format";
+import { trialOffer } from "@/lib/plans";
 import { summarize } from "@/lib/payroll/calc";
 import { pct, yen } from "@/lib/payroll/money";
 import { sampleData } from "@/lib/payroll/sample";
@@ -133,6 +134,7 @@ export default async function ProposalPage({ searchParams }: Props) {
   const choices = comparisonChoices();
   const perHead = perHeadEquivalent();
   const steps = flowSteps();
+  const trial = trialOffer();
   const contactUrl = kitUrl("/contact", "proposal");
   const demoUrl = kitUrl("/demo", "proposal");
   const tagline = SITE.tagline.replace(/。$/, "");
@@ -642,32 +644,62 @@ export default async function ProposalPage({ searchParams }: Props) {
           </div>
         </Slide>
 
-        {/* 9. 次の一歩 */}
-        <Slide id="next" n={9} total={TOTAL} kicker="次の一歩" title="まずは、先月分の無料診断から">
+        {/* 9. 次の一歩：いちばん上は有料の「先月分でお試し」。無料診断と相談の予約はその下に小さく */}
+        <Slide
+          id="next"
+          n={9}
+          total={TOTAL}
+          kicker="次の一歩"
+          title={trial ? `まずは、${trial.name}（${trial.weeks}）` : "まずは、先月分の無料診断から"}
+        >
           <div className="grid gap-5 lg:grid-cols-[1.25fr_1fr] print:grid-cols-[1.25fr_1fr]">
             <div className="min-w-0">
-              <ol className="space-y-2">
-                <li className="rounded-card border border-border p-3 lg:p-4">
-                  <p className="font-bold lg:text-lg">① 30分のオンライン相談（無料）</p>
-                  <p className="mt-0.5 text-sm leading-snug lg:mt-1 lg:text-base">今の締め方・明細の形をうかがい、御社のやり方のまま仕組みにできるかをお伝えします。</p>
+              {trial ? (
+                <section aria-labelledby="next-trial" className="rounded-card border-2 border-foreground p-3 lg:p-5">
+                  <h3 id="next-trial" className="text-lg font-bold leading-snug lg:text-2xl">
+                    {trial.name}
+                  </h3>
+                  <dl className="mt-2 grid grid-cols-2 gap-2">
+                    <div className="rounded-card bg-muted p-2 lg:p-3">
+                      <dt className="text-xs text-muted-foreground lg:text-sm">費用（1回）</dt>
+                      <dd className="num font-bold lg:text-xl">{trial.price}</dd>
+                    </div>
+                    <div className="rounded-card bg-muted p-2 lg:p-3">
+                      <dt className="text-xs text-muted-foreground lg:text-sm">期間の目安</dt>
+                      <dd className="num font-bold lg:text-xl">{trial.weeks}</dd>
+                    </div>
+                  </dl>
+                  <p className="mt-2 rounded-card bg-accent px-3 py-2 text-sm font-bold leading-snug text-accent-foreground lg:text-base">
+                    {trial.credit}
+                  </p>
+                  <p className="mt-2 text-sm leading-snug lg:text-base">
+                    御社の先月分のExcelで支払明細を計算し、実際の支払額と1行ずつ突き合わせます。合わなかった行と理由をまとめてお渡しします（やることの一覧は6枚目）。
+                  </p>
+                </section>
+              ) : null}
+              <h3 className={cx("text-sm font-bold lg:text-base", trial && "mt-3")}>
+                {trial ? "その前に、無料でできること" : "無料でできること"}
+              </h3>
+              <ul className="mt-1.5 grid gap-2 sm:grid-cols-2 print:grid-cols-2">
+                <li className="rounded-card border border-border p-2.5 lg:p-3">
+                  <p className="text-sm font-bold lg:text-base">{FREE_CHECK.title}</p>
+                  <p className="mt-0.5 text-xs leading-snug lg:text-sm">{FREE_CHECK.body}</p>
                 </li>
-                <li className="rounded-card border border-border p-3 lg:p-4">
-                  <p className="font-bold lg:text-lg">② {FREE_CHECK.title}</p>
-                  <p className="mt-0.5 text-sm leading-snug lg:mt-1 lg:text-base">{FREE_CHECK.body}</p>
+                <li className="rounded-card border border-border p-2.5 lg:p-3">
+                  <p className="text-sm font-bold lg:text-base">30分のオンライン相談</p>
+                  <p className="mt-0.5 text-xs leading-snug lg:text-sm">
+                    今の締め方をうかがい、合うかどうかを正直にお伝えします。合わなければ、既製品をおすすめします。
+                  </p>
                 </li>
-                <li className="rounded-card border border-border p-3 lg:p-4">
-                  <p className="font-bold lg:text-lg">③ 決めるのは、それを見てから</p>
-                  <p className="mt-0.5 text-sm leading-snug lg:mt-1 lg:text-base">無理にすすめることはしません。合わなければ、既製品をおすすめします。</p>
-                </li>
-              </ol>
+              </ul>
               <p className="mt-3 text-xs leading-snug text-muted-foreground lg:text-sm">{NOT_ADVICE}</p>
             </div>
             <div className="flex min-w-0 flex-col gap-3">
               <div className="grid grid-cols-2 gap-3">
                 <figure className="rounded-card border border-border p-3 text-center">
-                  <Qr url={contactUrl} label="相談・無料診断のページのQRコード" className="mx-auto w-full max-w-[40mm]" />
+                  <Qr url={contactUrl} label="お申し込み・相談のページのQRコード" className="mx-auto w-full max-w-[40mm]" />
                   <figcaption className="mt-2 text-xs font-bold leading-snug">
-                    相談・無料診断
+                    {trial ? "お試し・相談の申し込み" : "相談・無料診断"}
                     <span className="block font-normal text-muted-foreground [overflow-wrap:anywhere]">{displayUrl("/contact")}</span>
                   </figcaption>
                 </figure>

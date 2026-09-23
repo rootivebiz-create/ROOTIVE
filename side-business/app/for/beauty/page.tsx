@@ -16,7 +16,7 @@ import { WITHHOLDING_CATEGORIES, WITHHOLDING_RATES, applyBp, withholdingRateFor 
 import { jpDate } from "@/lib/format";
 import { pct } from "@/lib/payroll/money";
 import { TRANSITIONAL_SOURCE, TRANSITIONAL_STEPS } from "@/lib/payroll/tax";
-import { SITE } from "@/site.config";
+import { SHARE_IMAGE, SITE } from "@/site.config";
 
 const PATH = "/for/beauty";
 const TITLE = "業務委託の美容師・ネイリスト・セラピストの歩合計算と支払明細（無料の計算ツール）";
@@ -142,7 +142,8 @@ export const metadata: Metadata = {
   description: DESCRIPTION,
   alternates: { canonical: PATH },
   // openGraph はレイアウトの値を丸ごと置きかえるので、locale と siteName もここで入れる
-  openGraph: { type: "website", locale: SITE.locale, siteName: SITE.name, title: TITLE, description: DESCRIPTION, url: PATH },
+  openGraph: {
+      images: [SHARE_IMAGE], type: "website", locale: SITE.locale, siteName: SITE.name, title: TITLE, description: DESCRIPTION, url: PATH },
 };
 
 const th = "border border-border bg-muted px-2 py-2 text-left";
