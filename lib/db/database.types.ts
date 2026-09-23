@@ -946,6 +946,7 @@ export type Database = {
           aptitude_age_from: number
           aptitude_age_years: number
           health_check_months: number
+          established_on: string | null
         }
         Insert: {
           id?: string
@@ -991,6 +992,7 @@ export type Database = {
           aptitude_age_from?: number
           aptitude_age_years?: number
           health_check_months?: number
+          established_on?: string | null
         }
         Update: {
           id?: string
@@ -1036,6 +1038,7 @@ export type Database = {
           aptitude_age_from?: number
           aptitude_age_years?: number
           health_check_months?: number
+          established_on?: string | null
         }
         Relationships: []
       }

@@ -33,6 +33,7 @@ export default async function CompanySettingsPage({ searchParams }: { searchPara
     tax_rate: pctText(company.tax_rate),
     tax_rounding: company.tax_rounding,
     fiscal_month: String(Number(company.fiscal_month ?? 3)),
+    established_on: company.established_on ?? "",
     fb_consignor_code: company.fb_consignor_code ?? "",
     fb_consignor_kana: company.fb_consignor_kana ?? "",
     fb_bank_code: company.fb_bank_code ?? "",

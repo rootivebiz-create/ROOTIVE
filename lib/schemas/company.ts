@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { moneySchema, nameSchema, percentToRateSchema, roundingModeSchema } from "./common";
+import { moneySchema, nameSchema, optionalDateSchema, percentToRateSchema, roundingModeSchema } from "./common";
 // 振込先口座の検証はドライバーと共通（lib/schemas/drivers.ts に置いている）
 import { accountNumberSchema, accountTypeSchema, bankCodeSchema, bankNameSchema, branchCodeSchema, branchNameSchema, toHalfWidthDigits, toHalfWidthKana } from "./drivers";
 import type { BankAccountType } from "@/lib/db/types";
@@ -54,6 +54,8 @@ export interface CompanyFormInput {
   tax_rounding: RoundingMode;
   /** 決算月（"1"〜"12"） */
   fiscal_month: string;
+  /** 設立日（YYYY-MM-DD。空欄可）。期（第N期）を数える */
+  established_on: string;
   /** 全銀の委託者コード（銀行から指定される番号。空欄可） */
   fb_consignor_code: string;
   /** 委託者名（半角カナ） */
@@ -140,6 +142,7 @@ export const companyInputSchema = z.object({
   tax_rate: percentToRateSchema,
   tax_rounding: roundingModeSchema,
   fiscal_month: intFromInput(1, 12, "決算月"),
+  established_on: optionalDateSchema,
   fb_consignor_code: consignorCodeSchema,
   fb_consignor_kana: consignorKanaSchema,
   fb_bank_code: bankCodeSchema,

@@ -16,7 +16,8 @@ import { ROUNDING_LABELS, ROUNDING_MODES, type RoundingMode } from "@/lib/calc/t
 import { parseNumberInput, parsePercentInput } from "@/lib/calc/parse";
 import { calcTax } from "@/lib/calc/tax";
 import { yen } from "@/lib/format";
-import { formatDateJa, formatMonthJa, payoutDate } from "@/lib/month";
+import { currentMonthJST, formatDateJa, formatMonthJa, payoutDate } from "@/lib/month";
+import { fiscalPeriodOfMonth, fiscalSettingsOf, periodTitle } from "@/lib/fiscal";
 import {
   FISCAL_MONTHS,
   PAYOUT_MONTH_OFFSETS,
@@ -222,8 +223,10 @@ export function CompanyForm({ initial, currentMonth }: { initial: CompanyFormInp
 
       <Card>
         <CardHeader>
-          <CardTitle>決算月</CardTitle>
-          <CardDescription>決算・税務の期限（法人税の申告、消費税の申告など）の目安を組み立てるのに使います。分からなければ顧問税理士に確認してください。</CardDescription>
+          <CardTitle>決算月と期</CardTitle>
+          <CardDescription>
+            決算・税務の期限（法人税の申告、消費税の申告など）の目安と、月の切り替え・年次レポートの「第N期」の区切りに使います。分からなければ顧問税理士に確認してください。
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="space-y-1.5 md:max-w-[16rem]">
@@ -238,6 +241,15 @@ export function CompanyForm({ initial, currentMonth }: { initial: CompanyFormInp
             <p className="text-xs text-muted-foreground">例：3 月決算なら「3 月」。多くの会社は 3 月・9 月・12 月です。</p>
             <FieldError messages={errors.fiscal_month} />
           </div>
+          <div className="space-y-1.5 md:max-w-[16rem]">
+            <Label htmlFor="company-established-on">設立日</Label>
+            <Input id="company-established-on" type="date" value={f.established_on} onChange={(e) => set({ established_on: e.target.value })} disabled={pending} />
+            <p className="text-xs text-muted-foreground">入れると「第3期」のように期の番号で表示します。空欄なら「2026年9月期」のように決算の年月で表示します。</p>
+            <FieldError messages={errors.established_on} />
+          </div>
+          <p className="rounded-md bg-muted/50 px-3 py-2 text-sm" data-testid="fiscal-preview">
+            今は <span className="font-medium">{periodTitle(fiscalPeriodOfMonth(currentMonthJST(), fiscalSettingsOf({ fiscal_month: f.fiscal_month, established_on: f.established_on })))}</span> です。
+          </p>
         </CardContent>
       </Card>
 

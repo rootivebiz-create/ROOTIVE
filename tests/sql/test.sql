@@ -2503,4 +2503,37 @@ set role authenticated;
 select public.test_logout();
 reset role;
 
-\echo '== すべてのアサーションが通りました（18〜35 節）'
+\echo '-- 36. 期（設立日と決算月。0030）'
+
+set role authenticated;
+select public.test_login(:'owner_a');
+-- 会社設定で設立日を入れると、会社の台帳にも写る
+insert into public.company_profile (company_id) values (:'company_a') on conflict (company_id) do nothing;
+update public.companies set established_on = '2024-04-15' where id = :'company_a';
+select public.t_assert((select established_on = '2024-04-15' from public.company_profile where company_id = :'company_a'), '会社設定の設立日が会社の台帳に写る');
+-- 会社の台帳で変えると、会社設定にも写る
+update public.company_profile set established_on = '2024-05-01' where company_id = :'company_a';
+select public.t_assert((select established_on = '2024-05-01' from public.companies where id = :'company_a'), '会社の台帳の設立日が会社設定に写る');
+-- スタッフ（閲覧者・事務員）も設立日を読める（期を数えるため）
+select public.test_login(:'viewer_a');
+select public.t_assert((select established_on = '2024-05-01' from public.companies where id = :'company_a'), '閲覧者も設立日を読める（期の番号に使う）');
+select public.t_assert((select count(*) from public.company_profile) = 0, '会社の台帳そのものは閲覧者に見えないまま');
+-- 管理者は設立日を変えられない（会社設定はオーナーのみ）
+select public.test_login(:'admin_a');
+select public.t_assert(public.t_rowcount(format($$update public.companies set established_on = '2000-01-01' where id = '%s'$$, :'company_a')) = 0, '管理者は設立日を変えられない');
+
+-- 復元すると設立日も戻る
+select public.test_login(:'owner_a');
+create temporary table t36_backup as select public.export_backup() as data;
+select public.t_assert((select data->'company'->>'established_on' = '2024-05-01' from t36_backup), '書き出しに設立日が入る');
+update public.companies set established_on = null where id = :'company_a';
+select public.import_backup((select data from t36_backup));
+select public.t_assert((select established_on = '2024-05-01' from public.companies where id = :'company_a'), '復元すると設立日が戻る');
+
+-- 後片付け
+update public.companies set established_on = null where id = :'company_a';
+update public.company_profile set established_on = null where company_id = :'company_a';
+select public.test_logout();
+reset role;
+
+\echo '== すべてのアサーションが通りました（18〜36 節）'

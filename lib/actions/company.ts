@@ -39,6 +39,8 @@ export async function updateCompanyAction(input: CompanyFormInput): Promise<Acti
         tax_rate: parsed.tax_rate,
         tax_rounding: parsed.tax_rounding,
         fiscal_month: parsed.fiscal_month,
+        // 0030：設立日（期を数える。会社の台帳にもトリガーが写す）
+        established_on: parsed.established_on,
         // 振込元（総合振込データの依頼人情報）。空欄は "" のまま保存する
         fb_consignor_code: parsed.fb_consignor_code,
         fb_consignor_kana: parsed.fb_consignor_kana,

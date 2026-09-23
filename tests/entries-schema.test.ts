@@ -228,6 +228,7 @@ describe("helpers", () => {
       tax_rate: 0.1,
       tax_rounding: "floor",
       fiscal_month: 3,
+      established_on: null,
       fb_consignor_code: "",
       fb_consignor_kana: "",
       fb_bank_code: "",
