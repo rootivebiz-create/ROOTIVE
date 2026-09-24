@@ -6,12 +6,14 @@ import {
   isBeforeEstablishment,
   normalizeFiscalMonth,
   parsePeriodYear,
+  periodDateRange,
   periodEndYearOf,
   periodOptions,
   periodTitle,
   summarizePeriod,
 } from "@/lib/fiscal";
 import { yenCompact } from "@/lib/format";
+import { planRangeLabel, planYearLabel, planYearOptions } from "@/components/executive/helpers";
 
 /** 期（事業年度。0030）：決算月で区切り、設立日から第N期と数える */
 describe("期の区切り（決算月）", () => {
@@ -71,6 +73,12 @@ describe("第N期（設立日から数える）", () => {
     expect(p.months).toHaveLength(12);
   });
 
+  it("期の最初の日と最後の日（第1期は設立の月の 1 日から）", () => {
+    expect(periodDateRange(fiscalPeriod(2026, settings))).toEqual({ from: "2025-10-01", to: "2026-09-30" });
+    expect(periodDateRange(fiscalPeriod(2024, settings))).toEqual({ from: "2024-04-01", to: "2024-09-30" });
+    expect(periodDateRange(fiscalPeriod(2028, { fiscalMonth: 2, establishedOn: null }))).toEqual({ from: "2027-03-01", to: "2028-02-29" });
+  });
+
   it("設立前の期は番号を付けない", () => {
     const before = fiscalPeriod(2023, settings);
     expect(before.number).toBeNull();
@@ -124,5 +132,29 @@ describe("月の切り替えの表", () => {
     expect(yenCompact(9_999)).toBe("¥9,999");
     expect(yenCompact(-50_000)).toBe("-5万");
     expect(yenCompact(null)).toBe("¥0");
+  });
+});
+
+describe("中期計画の期（0031）", () => {
+  const settings = { fiscalMonth: 9, establishedOn: "2024-04-15" };
+
+  it("計画の年は期の決算の年として見出しを付ける", () => {
+    expect(planYearLabel(2026, settings)).toEqual({ label: "第3期", range: "2025年10月〜2026年9月" });
+    expect(planYearLabel(2024, settings)).toEqual({ label: "第1期", range: "2024年4月〜2024年9月" });
+    // 設立日が無ければ「2026年9月期」、12 月決算は暦年と同じなので「2026年」
+    expect(planYearLabel(2026, { fiscalMonth: 9, establishedOn: null }).label).toBe("2026年9月期");
+    expect(planYearLabel(2026, { fiscalMonth: 12, establishedOn: null })).toEqual({ label: "2026年", range: "2026年1月〜2026年12月" });
+  });
+
+  it("計画の期間は最初の期の始まりから最後の期の決算月まで", () => {
+    expect(planRangeLabel(2026, 2028, settings)).toEqual({ label: "第3期〜第5期", range: "2025年10月〜2028年9月" });
+    expect(planRangeLabel(2026, 2026, settings).label).toBe("第3期");
+  });
+
+  it("選べる期は今期の 3 期前〜10 期先と、いま入っている期（古い順）", () => {
+    const opts = planYearOptions(2026, settings, [2020]);
+    expect(opts[0]).toEqual({ value: 2020, label: "2020年9月期（2019年10月〜2020年9月）" });
+    expect(opts.find((o) => o.value === 2026)?.label).toBe("第3期（2025年10月〜2026年9月）");
+    expect(opts[opts.length - 1].value).toBe(2036);
   });
 });

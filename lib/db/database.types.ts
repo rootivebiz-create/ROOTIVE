@@ -5110,6 +5110,13 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: Json
       }
+      fiscal_end_year: {
+        Args: {
+          p_month: string
+          p_fiscal_month: number
+        }
+        Returns: number
+      }
       generate_loan_schedule: {
         Args: {
           p_loan_id: string

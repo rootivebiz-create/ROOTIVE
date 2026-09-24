@@ -1,4 +1,4 @@
-import { addMonths, compareMonth, formatMonthJa, isMonthKey, monthRange } from "@/lib/month";
+import { addMonths, compareMonth, daysInMonth, formatMonthJa, isMonthKey, monthRange } from "@/lib/month";
 
 /**
  * 会社の「期」（事業年度。0030）。純関数・サーバーとブラウザの両方で使う。
@@ -89,6 +89,11 @@ export function fiscalPeriodOfMonth(month: string, settings: FiscalSettings): Fi
 /** 期の見出し（「第3期（2025年10月〜2026年9月）」） */
 export function periodTitle(p: FiscalPeriod): string {
   return `${p.label}（${p.rangeLabel}）`;
+}
+
+/** 期の最初の日と最後の日（"YYYY-MM-DD"。借入の返済予定などの日付で絞るときに使う） */
+export function periodDateRange(p: FiscalPeriod): { from: string; to: string } {
+  return { from: `${p.startMonth}-01`, to: `${p.endMonth}-${String(daysInMonth(p.endMonth)).padStart(2, "0")}` };
 }
 
 /** 設立前の期か（設立日があり、その期が第1期より前） */

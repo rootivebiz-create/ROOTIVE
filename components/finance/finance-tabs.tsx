@@ -13,7 +13,8 @@ const LABELS: Record<FinanceTab, string> = {
 
 /**
  * 財務画面のタブ（?tab=budget|loans|tax）
- * ?m（稼動月）や ?y（対象年）など、ほかのパラメータはそのまま引き継ぐ
+ * ?m（稼動月）など、ほかのパラメータはそのまま引き継ぐ。
+ * ?y / ?fy はタブで意味が違う（予算は期か暦年、税務は期限の年）ので、タブを移ると外して既定（今の期・今年）に戻す
  */
 export function FinanceTabs({ tab, badges = {} }: { tab: FinanceTab; badges?: Partial<Record<FinanceTab, number>> }) {
   const pathname = usePathname();
@@ -24,6 +25,10 @@ export function FinanceTabs({ tab, badges = {} }: { tab: FinanceTab; badges?: Pa
     sp.set("tab", key);
     // 借入の選択はタブを移ると意味が無い
     sp.delete("loan");
+    if (key !== tab) {
+      sp.delete("y");
+      sp.delete("fy");
+    }
     return `${pathname}?${sp.toString()}`;
   };
 

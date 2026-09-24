@@ -70,7 +70,7 @@ export function financeTabFromParam(param: string | string[] | undefined): Finan
 }
 
 // ---------------------------------------------------------------------------
-// 年間予算（month_targets を 12 か月まとめて保存する）
+// 予算（month_targets を期・暦年の月ぶんまとめて保存する）
 // ---------------------------------------------------------------------------
 
 /** 1 か月ぶんの目標（クライアント → Server Action） */
@@ -84,7 +84,6 @@ export interface YearTargetRowInput {
 }
 
 export interface SaveYearTargetsInput {
-  year: string | number;
   rows: YearTargetRowInput[];
 }
 
@@ -96,15 +95,26 @@ export const yearTargetRowSchema = z.object({
   driver_target: headcountSchema,
 });
 
+/** "YYYY-MM" を通しの月数にする（範囲の幅を測る） */
+function monthIndex(month: string): number {
+  return Number(month.slice(0, 4)) * 12 + Number(month.slice(5, 7)) - 1;
+}
+
+/**
+ * 予算の保存：期（決算月で区切る）か暦年の月をまとめて。
+ * 期は 2 つの暦年にまたがるので、年ではなく「続いた 12 か月の範囲に収まるか」で確かめる
+ */
 export const saveYearTargetsSchema = z
   .object({
-    year: yearSchema,
     rows: z.array(yearTargetRowSchema).min(1, "保存する月がありません").max(12, "保存できるのは 12 か月ぶんまでです"),
   })
-  .refine((v) => v.rows.every((r) => Number(r.month.slice(0, 4)) === v.year), {
-    message: "対象年と月が一致しません",
-    path: ["rows"],
-  })
+  .refine(
+    (v) => {
+      const idx = v.rows.map((r) => monthIndex(r.month));
+      return Math.max(...idx) - Math.min(...idx) <= 11;
+    },
+    { message: "保存できるのは続いた 12 か月の範囲までです", path: ["rows"] },
+  )
   .refine((v) => new Set(v.rows.map((r) => r.month)).size === v.rows.length, {
     message: "同じ月が重複しています",
     path: ["rows"],

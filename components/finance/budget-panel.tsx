@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Save, Sparkles, Target } from "lucide-react";
@@ -21,6 +21,7 @@ import {
   BUDGET_METRICS,
   BUDGET_METRIC_HINTS,
   BUDGET_METRIC_LABELS,
+  budgetMonthLabel,
   budgetTotalCompare,
   compareBudget,
   diffLabel,
@@ -31,15 +32,27 @@ import {
   type BudgetMetric,
   type BudgetRow,
 } from "@/lib/finance/budget";
-import { FinanceYearSelector } from "./year-selector";
 import { QuickFillDialog } from "./quick-fill-dialog";
 
+/** 予算の範囲（期か暦年。年次レポートの ReportRange から渡す） */
+export interface BudgetRange {
+  /** 「第3期」「2026年9月期」「2026年」 */
+  label: string;
+  /** 「第3期（2025年10月〜2026年9月）」「2026年」 */
+  title: string;
+  /** 「前期」「前年」 */
+  prevName: string;
+  /** ひとつ前の範囲の名前（「第2期」「2025年」） */
+  prevLabel: string;
+}
+
 export interface BudgetPanelProps {
-  year: number;
-  years: number[];
-  /** その年の 12 か月（目標と実績） */
+  range: BudgetRange;
+  /** 期・暦年の切り替え（サーバーで作った RangeSelector） */
+  selector: ReactNode;
+  /** その範囲の月（目標と実績）。期の第1期は 12 か月より短いことがある */
   rows: BudgetRow[];
-  /** 前年の 12 か月（「前年実績 ＋ ◯%」に使う） */
+  /** ひとつ前の範囲の同じ月（「前期実績 ＋ ◯%」に使う） */
   prevRows: BudgetRow[];
   /** owner / admin */
   canEdit: boolean;
@@ -96,7 +109,7 @@ function DiffValue({ metric, value }: { metric: BudgetMetric; value: number }) {
   return <span className={cn("num", value < 0 && "neg")}>{`${value > 0 ? "+" : ""}${value} 人`}</span>;
 }
 
-export function BudgetPanel({ year, years, rows, prevRows, canEdit }: BudgetPanelProps) {
+export function BudgetPanel({ range, selector, rows, prevRows, canEdit }: BudgetPanelProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [metric, setMetric] = useState<BudgetMetric>("bill");
@@ -128,7 +141,7 @@ export function BudgetPanel({ year, years, rows, prevRows, canEdit }: BudgetPane
     setDraft((d) => ({ ...d, [month]: { ...d[month], [m]: value } }));
   };
 
-  /** かんたん入力：選んでいる指標の 12 か月ぶんをまとめて入れ替える */
+  /** かんたん入力：選んでいる指標の範囲の月ぶんをまとめて入れ替える */
   const applySeries = (values: number[]) => {
     setDraft((d) => {
       const next: Draft = { ...d };
@@ -150,7 +163,7 @@ export function BudgetPanel({ year, years, rows, prevRows, canEdit }: BudgetPane
       driver_target: draftValue(draft, r.month, "driver"),
     }));
     startTransition(async () => {
-      const res = await saveYearTargetsAction({ year, rows: input });
+      const res = await saveYearTargetsAction({ rows: input });
       if (!res.ok) {
         toast.error(res.error);
         return;
@@ -166,7 +179,7 @@ export function BudgetPanel({ year, years, rows, prevRows, canEdit }: BudgetPane
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <FinanceYearSelector year={year} years={years} />
+        {selector}
         {canEdit && (
           <div className="flex flex-wrap items-center gap-2">
             <Button size="sm" variant="outline" onClick={() => setQuickOpen(true)} disabled={pending}>
@@ -184,7 +197,7 @@ export function BudgetPanel({ year, years, rows, prevRows, canEdit }: BudgetPane
         )}
       </div>
 
-      {/* 年間の予実（4 指標） */}
+      {/* 範囲の予実（4 指標） */}
       <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
         {totals.map(({ metric: m, compare }) => (
           <Card
@@ -244,10 +257,10 @@ export function BudgetPanel({ year, years, rows, prevRows, canEdit }: BudgetPane
 
       {empty && (
         <Empty
-          title={`${year}年の予算がまだ入っていません`}
+          title={`${range.label}の予算がまだ入っていません`}
           description={
             canEdit
-              ? "下の表に月ごとの目標を入れて「まとめて保存」を押してください。「かんたん入力」を使うと、前年実績や年間合計から 12 か月ぶんを一度に埋められます。"
+              ? `下の表に月ごとの目標を入れて「まとめて保存」を押してください。「かんたん入力」を使うと、${range.prevName}実績や合計から ${rows.length} か月ぶんを一度に埋められます。`
               : "管理者が予算を入れると、ここで予実の対比が見られます。"
           }
         >
@@ -258,7 +271,7 @@ export function BudgetPanel({ year, years, rows, prevRows, canEdit }: BudgetPane
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">
-            {year}年の{BUDGET_METRIC_LABELS[metric]}（目標と実績）
+            {range.title}の{BUDGET_METRIC_LABELS[metric]}（目標と実績）
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0 md:p-0">
@@ -273,12 +286,12 @@ export function BudgetPanel({ year, years, rows, prevRows, canEdit }: BudgetPane
               </TableRow>
             </TableHeader>
             <TableBody>
-              {liveRows.map((r) => {
+              {liveRows.map((r, i) => {
                 const c = compareBudget(metric, r.target[metric], r.actual[metric]);
                 return (
                   <TableRow key={r.month}>
                     <TableCell className="whitespace-nowrap pl-4 font-medium">
-                      {formatMonthJa(r.month).replace(`${year}年`, "")}
+                      {budgetMonthLabel(r.month, i)}
                       {r.closed && <span className="ml-1 text-xs text-muted-foreground">締</span>}
                     </TableCell>
                     <TableCell className="text-right">
@@ -312,7 +325,7 @@ export function BudgetPanel({ year, years, rows, prevRows, canEdit }: BudgetPane
             </TableBody>
             <TableFooter>
               <TableRow>
-                <TableCell className="whitespace-nowrap pl-4">{totalLabel(metric)}</TableCell>
+                <TableCell className="whitespace-nowrap pl-4">{totalLabel(metric, range.label)}</TableCell>
                 <TableCell className="text-right">
                   <Value metric={metric} value={totalCompare.target} />
                 </TableCell>
@@ -333,7 +346,7 @@ export function BudgetPanel({ year, years, rows, prevRows, canEdit }: BudgetPane
 
       {canEdit && dirty && (
         <Alert variant="warning">
-          <p>入力した目標はまだ保存されていません。「まとめて保存」を押すと 12 か月ぶんをまとめて保存します。</p>
+          <p>入力した目標はまだ保存されていません。「まとめて保存」を押すと {rows.length} か月ぶんをまとめて保存します。</p>
         </Alert>
       )}
 
@@ -346,7 +359,8 @@ export function BudgetPanel({ year, years, rows, prevRows, canEdit }: BudgetPane
           open={quickOpen}
           onOpenChange={setQuickOpen}
           metric={metric}
-          year={year}
+          range={range}
+          months={rows.map((r) => r.month)}
           prevRows={prevRows}
           currentValues={rows.map((r) => draftValue(draft, r.month, metric))}
           onApply={applySeries}

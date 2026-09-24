@@ -19,6 +19,7 @@ import {
   achievementLevel,
   actualSeries,
   averageDrivers,
+  budgetMonthLabel,
   budgetTotalCompare,
   budgetTotals,
   BUDGET_METRICS,
@@ -29,10 +30,12 @@ import {
   hasAnyTarget,
   isLowerBetter,
   isMoneyMetric,
+  previousMonths,
   sameValues,
   splitEvenly,
   targetSeries,
   toBudgetRows,
+  toBudgetRowsForMonths,
   totalLabel,
   type MonthKpiLike,
 } from "@/lib/finance/budget";
@@ -45,6 +48,7 @@ import {
   monthlyPaymentOf,
   nextPayment,
   paymentDayLabel,
+  paymentsBetween,
   paymentsInMonth,
   paymentsInYear,
   sortLoans,
@@ -61,6 +65,7 @@ import {
   tasksOfYear,
   taxCounts,
   taxDaysLeft,
+  taxYearLabel,
   taxYears,
   toTaxTaskView,
   type TaxTaskLike,
@@ -230,8 +235,10 @@ describe("予実対比の集計", () => {
     expect(totals.actualMonths).toBe(2);
     expect(totals.actual.driver).toBe(4.5);
     expect(averageDrivers(rows, "target")).toBe(6);
-    expect(totalLabel("bill")).toBe("年間合計");
-    expect(totalLabel("driver")).toBe("月平均");
+    expect(totalLabel("bill")).toBe("合計");
+    expect(totalLabel("bill", "第3期")).toBe("第3期の合計");
+    expect(totalLabel("bill", "2026年")).toBe("2026年の合計");
+    expect(totalLabel("driver", "第3期")).toBe("月平均");
   });
 
   it("年間合計の達成率も出せる", () => {
@@ -256,6 +263,42 @@ describe("予実対比の集計", () => {
   it("目標が 1 つも入っていない年を見分ける", () => {
     expect(hasAnyTarget(toBudgetRows(2026, KPIS))).toBe(true);
     expect(hasAnyTarget(toBudgetRows(2025, KPIS))).toBe(false);
+  });
+});
+
+describe("予算を期で見る（0030・0031）", () => {
+  it("期の月（2 つの暦年にまたがる）で行を作る", () => {
+    const months = ["2025-10", "2025-11", "2025-12", "2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09"];
+    const rows = toBudgetRowsForMonths(months, KPIS);
+    expect(rows).toHaveLength(12);
+    expect(rows[0].month).toBe("2025-10");
+    expect(rows[3].month).toBe("2026-01");
+    expect(rows[3].actual.bill).toBe(1_000_000);
+    expect(rows[0].hasData).toBe(false);
+    // 暦年は 1〜12 月
+    expect(toBudgetRows(2026, KPIS).map((r) => r.month)).toEqual(yearMonths(2026));
+  });
+
+  it("第1期のように 12 か月より短い期は、その月の数だけ", () => {
+    const rows = toBudgetRowsForMonths(["2024-04", "2024-05", "2024-06", "2024-07", "2024-08", "2024-09"], KPIS);
+    expect(rows).toHaveLength(6);
+    expect(budgetTotals(rows).months).toBe(6);
+  });
+
+  it("前期の月はそれぞれ 12 か月前", () => {
+    expect(previousMonths(["2025-10", "2026-01", "2026-09"])).toEqual(["2024-10", "2025-01", "2025-09"]);
+  });
+
+  it("月の見出しは最初の行と 1 月だけ年を付ける", () => {
+    expect(budgetMonthLabel("2025-10", 0)).toBe("2025年10月");
+    expect(budgetMonthLabel("2025-11", 1)).toBe("11月");
+    expect(budgetMonthLabel("2026-01", 3)).toBe("2026年1月");
+    expect(budgetMonthLabel("2026-01", 0)).toBe("2026年1月");
+  });
+
+  it("かんたん入力は月の数で等分・同額にできる（端数は最後の月）", () => {
+    expect(splitEvenly(1_000_001, 6)).toEqual([166_666, 166_666, 166_666, 166_666, 166_666, 166_671]);
+    expect(sameValues(5, 6)).toHaveLength(6);
   });
 });
 
@@ -397,13 +440,23 @@ describe("借入の計算", () => {
     expect(totalOfPayments(PAYMENTS)).toBe(344_000);
   });
 
-  it("借入タブの要約（残高・今月・今年・利息・遅れ）を出す", () => {
+  it("期日が範囲（期の最初の日〜最後の日）に入る回を選ぶ", () => {
+    expect(paymentsBetween(PAYMENTS, "2025-10-01", "2026-09-30").map((p) => p.id).sort()).toEqual(["p1", "p2", "p3"]);
+    expect(paymentsBetween(PAYMENTS, "2026-10-01", "2027-09-30").map((p) => p.id)).toEqual(["p4"]);
+  });
+
+  it("今期の返済は渡した期の範囲で数える（範囲が無ければ今年）", () => {
+    expect(loanSummary(LOANS, PAYMENTS, TODAY, { from: "2025-10-01", to: "2026-09-30" }).periodTotal).toBe(258_000);
+    expect(loanSummary(LOANS, PAYMENTS, TODAY).periodTotal).toBe(344_000);
+  });
+
+  it("借入タブの要約（残高・今月・今期・利息・遅れ）を出す", () => {
     const s = loanSummary(LOANS, PAYMENTS, TODAY);
     expect(s.loanCount).toBe(2);
     expect(s.activeCount).toBe(1);
     expect(s.remainingTotal).toBe(4_200_000);
     expect(s.thisMonthTotal).toBe(86_000);
-    expect(s.thisYearTotal).toBe(344_000);
+    expect(s.periodTotal).toBe(344_000);
     expect(s.interestTotal).toBe(230_000);
     expect(s.overdueCount).toBe(1);
     expect(s.overdueTotal).toBe(86_000);
@@ -484,6 +537,9 @@ describe("税務の期限", () => {
     expect(daysLeftLabel(views[3])).toBe("—");
     expect(tasksOfYear(views, 2026)).toHaveLength(4);
     expect(tasksOfYear(views, 2027)).toHaveLength(1);
+    // 年の選択肢には、その年に決算を迎える期を添える（設立日が無ければ年だけ）
+    expect(taxYearLabel(2026, { fiscalMonth: 9, establishedOn: "2024-04-15" })).toBe("2026年（第3期の決算）");
+    expect(taxYearLabel(2026, { fiscalMonth: 9, establishedOn: null })).toBe("2026年");
     expect(taxYears(TAX_ROWS)).toEqual([2027, 2026]);
   });
 });
@@ -500,25 +556,26 @@ describe("財務の入力スキーマ", () => {
     expect(financeTabFromParam(undefined)).toBe("budget");
   });
 
-  it("年間予算は全角・カンマ可、空欄は 0 として受け取る", () => {
+  it("予算は全角・カンマ可、空欄は 0 として受け取る", () => {
     const parsed = saveYearTargetsSchema.parse({
-      year: "2026",
       rows: [{ month: "2026-01", bill_target: "1,000,000", profit_target: "", expense_target: "３０００００", driver_target: "１０" }],
     });
-    expect(parsed.year).toBe(2026);
     expect(parsed.rows[0].bill_target).toBe(1_000_000);
     expect(parsed.rows[0].profit_target).toBe(0);
     expect(parsed.rows[0].expense_target).toBe(300_000);
     expect(parsed.rows[0].driver_target).toBe(10);
   });
 
-  it("年間予算は対象年と違う月・重複した月を受け付けない", () => {
+  it("予算は期のように 2 つの暦年にまたがってもよいが、続いた 12 か月の範囲を超える月・重複した月は受け付けない", () => {
     const row = { bill_target: 0, profit_target: 0, expense_target: 0, driver_target: 0 };
-    expect(saveYearTargetsSchema.safeParse({ year: 2026, rows: [{ ...row, month: "2025-01" }] }).success).toBe(false);
-    expect(
-      saveYearTargetsSchema.safeParse({ year: 2026, rows: [{ ...row, month: "2026-01" }, { ...row, month: "2026-01" }] }).success,
-    ).toBe(false);
-    expect(saveYearTargetsSchema.safeParse({ year: 2026, rows: [] }).success).toBe(false);
+    // 9 月決算の期（2025年10月〜2026年9月）
+    expect(saveYearTargetsSchema.safeParse({ rows: [{ ...row, month: "2025-10" }, { ...row, month: "2026-09" }] }).success).toBe(true);
+    // 13 か月の幅
+    const wide = saveYearTargetsSchema.safeParse({ rows: [{ ...row, month: "2025-09" }, { ...row, month: "2026-09" }] });
+    expect(wide.success).toBe(false);
+    expect(wide.error?.issues[0]?.message).toBe("保存できるのは続いた 12 か月の範囲までです");
+    expect(saveYearTargetsSchema.safeParse({ rows: [{ ...row, month: "2026-01" }, { ...row, month: "2026-01" }] }).success).toBe(false);
+    expect(saveYearTargetsSchema.safeParse({ rows: [] }).success).toBe(false);
   });
 
   it("借入は年利を % で受け取って率に直す（返済日の空欄は月末＝0）", () => {

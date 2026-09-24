@@ -1,13 +1,14 @@
 /**
- * 年間予算と予実対比の純関数（React・DB に依存しない）
+ * 予算と予実対比の純関数（React・DB に依存しない）
  *
+ * - 範囲は期（決算月で区切る。0030）か暦年。月の並びは呼ぶ側が lib/fiscal・年次レポートの範囲から渡す
  * - 実績と目標は DB ビュー `v_month_kpi` の 1 行から取り出す（手計算をしない）
  * - 金額の合計は `lib/calc` の sumMoney（独自の丸めを書かない）
  * - 達成率は 実績 ÷ 目標。目標が 0 の月は「—」（null）
  * - 経費だけは「少ないほど良い」ので色分けを逆にする
  */
 import { mulMoney, roundDisplay, subMoney, sumMoney } from "@/lib/calc";
-import { dateToMonth } from "@/lib/month";
+import { addMonths, dateToMonth, formatMonthJa } from "@/lib/month";
 import { yearMonths } from "./date";
 
 /** 予算で扱う 4 つの指標 */
@@ -92,17 +93,35 @@ export interface BudgetRow {
   actual: BudgetValues;
 }
 
-/** その年の 12 か月ぶんの行（データの無い月も 0 で埋める） */
-export function toBudgetRows(year: number, kpis: MonthKpiLike[]): BudgetRow[] {
+/**
+ * 並べたい月（期・暦年。"YYYY-MM"）の行。データの無い月も 0 で埋める。
+ * 期の第1期は 12 か月より短いことがあるので、行の数は月の数どおり（0030・0031）
+ */
+export function toBudgetRowsForMonths(months: string[], kpis: MonthKpiLike[]): BudgetRow[] {
   const byMonth = new Map<string, MonthKpiLike>();
   for (const k of kpis) {
     const m = k.month ? dateToMonth(k.month) : "";
     if (m) byMonth.set(m, k);
   }
-  return yearMonths(year).map((month) => {
+  return months.map((month) => {
     const k = byMonth.get(month);
     return { month, closed: k?.status === "closed", hasData: k != null, target: targetsOf(k), actual: actualsOf(k) };
   });
+}
+
+/** その年の 12 か月ぶんの行（暦年） */
+export function toBudgetRows(year: number, kpis: MonthKpiLike[]): BudgetRow[] {
+  return toBudgetRowsForMonths(yearMonths(year), kpis);
+}
+
+/** 前期（前年）の月：それぞれの 12 か月前（「前期実績 ＋ ◯%」に使う） */
+export function previousMonths(months: string[]): string[] {
+  return months.map((m) => addMonths(m, -12));
+}
+
+/** 予実の表の月の見出し：最初の行と 1 月だけ年を付ける（「2025年10月」「11月」…「2026年1月」） */
+export function budgetMonthLabel(month: string, index: number): string {
+  return index === 0 || month.endsWith("-01") ? formatMonthJa(month) : `${Number(month.slice(5, 7))}月`;
 }
 
 // ---------------------------------------------------------------------------
@@ -166,7 +185,7 @@ export function diffLabel(compare: BudgetCompare): string {
 }
 
 // ---------------------------------------------------------------------------
-// 年間の合計
+// 期間（期・暦年）の合計
 // ---------------------------------------------------------------------------
 
 /** ドライバー数の月平均（0 の月は数えない。小数 1 桁） */
@@ -180,13 +199,13 @@ export function averageDrivers(rows: BudgetRow[], which: "target" | "actual"): n
 export interface BudgetTotals {
   target: BudgetValues;
   actual: BudgetValues;
-  /** 行数（ふつう 12） */
+  /** 行数（ふつう 12。第1期は短いことがある） */
   months: number;
   /** v_month_kpi に行があった月の数 */
   actualMonths: number;
 }
 
-/** 年間の合計（ドライバー数だけ月平均） */
+/** 期間の合計（ドライバー数だけ月平均） */
 export function budgetTotals(rows: BudgetRow[]): BudgetTotals {
   const pick = (which: "target" | "actual", metric: BudgetMetric) => rows.map((r) => r[which][metric]);
   return {
@@ -207,15 +226,16 @@ export function budgetTotals(rows: BudgetRow[]): BudgetTotals {
   };
 }
 
-/** 年間合計の予実対比（ドライバー数は月平均で比べる） */
+/** 期間の合計の予実対比（ドライバー数は月平均で比べる） */
 export function budgetTotalCompare(rows: BudgetRow[], metric: BudgetMetric): BudgetCompare {
   const totals = budgetTotals(rows);
   return compareBudget(metric, totals.target[metric], totals.actual[metric]);
 }
 
-/** 合計行の見出し（ドライバー数だけ「月平均」） */
-export function totalLabel(metric: BudgetMetric): string {
-  return isMoneyMetric(metric) ? "年間合計" : "月平均";
+/** 合計行の見出し（ドライバー数だけ「月平均」）。範囲の名前を渡すと「第3期の合計」「2026年の合計」 */
+export function totalLabel(metric: BudgetMetric, rangeLabel?: string): string {
+  if (!isMoneyMetric(metric)) return "月平均";
+  return rangeLabel ? `${rangeLabel}の合計` : "合計";
 }
 
 /** 目標が 1 つでも入っているか */
@@ -227,7 +247,7 @@ export function hasAnyTarget(rows: BudgetRow[]): boolean {
 // かんたん入力（クライアントで入力欄を埋めるだけ。保存は 1 回）
 // ---------------------------------------------------------------------------
 
-/** 前年実績 ＋ ◯%（円未満・人未満は四捨五入） */
+/** 前期（前年）実績 ＋ ◯%（円未満・人未満は四捨五入） */
 export function growValues(values: number[], percent: number): number[] {
   const rate = 1 + (Number.isFinite(percent) ? percent : 0) / 100;
   return values.map((v) => roundDisplay(mulMoney(num(v), rate)));
@@ -239,7 +259,7 @@ export function sameValues(value: number, count = 12): number[] {
   return Array.from({ length: Math.max(0, count) }, () => v);
 }
 
-/** 年間合計から等分（端数は最終月で調整して合計をきっちり合わせる） */
+/** 合計から等分（端数は最後の月で調整して合計をきっちり合わせる） */
 export function splitEvenly(total: number, count = 12): number[] {
   if (count <= 0) return [];
   const t = roundDisplay(num(total));
@@ -249,7 +269,7 @@ export function splitEvenly(total: number, count = 12): number[] {
   return out;
 }
 
-/** 行から指標の実績だけを取り出す（前年実績 ＋ ◯% に使う） */
+/** 行から指標の実績だけを取り出す（前期実績 ＋ ◯% に使う） */
 export function actualSeries(rows: BudgetRow[], metric: BudgetMetric): number[] {
   return rows.map((r) => r.actual[metric]);
 }

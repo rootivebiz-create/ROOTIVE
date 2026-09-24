@@ -166,6 +166,7 @@ export const guaranteeSchema = z.object({
 });
 
 // ---------- 中期計画 ----------
+// 年（from_year / to_year / plan_years.year）は期の決算の年（0031。12 月決算なら暦年と同じ）
 
 const yearSchema = z.coerce.number().int().min(2000, "2000 年以降で入力してください").max(2100, "2100 年までで入力してください");
 
@@ -179,7 +180,7 @@ export const planSchema = z
     memo: memoSchema,
     is_active: z.boolean().default(true),
   })
-  .refine((v) => v.to_year >= v.from_year, { message: "終わりの年は始まりの年以降にしてください", path: ["to_year"] });
+  .refine((v) => v.to_year >= v.from_year, { message: "終わりの期は始まりの期以降にしてください", path: ["to_year"] });
 
 export const planYearSchema = z.object({
   id: uuidSchema,

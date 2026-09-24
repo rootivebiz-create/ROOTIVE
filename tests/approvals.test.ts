@@ -176,8 +176,10 @@ describe("companyProfileSchema", () => {
 // ---------------------------------------------------------------------------
 
 describe("planSchema", () => {
-  it("終わりの年は始まりの年以降", () => {
-    expect(planSchema.safeParse({ name: "3か年", from_year: 2027, to_year: 2026 }).success).toBe(false);
+  it("終わりの期は始まりの期以降（年は期の決算の年）", () => {
+    const bad = planSchema.safeParse({ name: "3か年", from_year: 2027, to_year: 2026 });
+    expect(bad.success).toBe(false);
+    expect(bad.error?.issues[0]?.message).toBe("終わりの期は始まりの期以降にしてください");
     expect(planSchema.safeParse({ name: "3か年", from_year: 2026, to_year: 2026 }).success).toBe(true);
     expect(planSchema.parse({ name: "3か年", from_year: "2026", to_year: "2028" }).to_year).toBe(2028);
   });

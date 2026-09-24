@@ -1388,9 +1388,10 @@ select public.t_assert((select count(*) = 3 from public.plan_years where plan_id
 select public.t_assert((select company_id = :'company_a' from public.plan_years where plan_id = :'plan_1' and year = 2026), '年の会社はトリガーが補完する');
 select public.t_expect_error($$insert into public.plan_years (plan_id, year) values ('00000000-0000-0000-0000-00000000ef01', 2030)$$, '', '計画の期間の外の年は入らない');
 
-update public.plan_years set bill_target = 100000000, profit_target = 12000000, driver_target = 12 where plan_id = :'plan_1' and year = 2026;
-select public.t_assert((select bill_actual > 0 and month_count > 0 from public.v_plan_year_actual where plan_id = :'plan_1' and year = 2026), '2026 年の実績が出る');
-select public.t_assert((select bill_achievement is not null and profit_achievement is not null from public.v_plan_year_actual where plan_id = :'plan_1' and year = 2026), '達成率が出る');
+-- 年は期の決算の年（0031）。3 月決算なので 2027 ＝ 2026年4月〜2027年3月
+update public.plan_years set bill_target = 100000000, profit_target = 12000000, driver_target = 12 where plan_id = :'plan_1' and year = 2027;
+select public.t_assert((select bill_actual > 0 and month_count > 0 from public.v_plan_year_actual where plan_id = :'plan_1' and year = 2027), '2027 年 3 月期の実績が出る');
+select public.t_assert((select bill_achievement is not null and profit_achievement is not null from public.v_plan_year_actual where plan_id = :'plan_1' and year = 2027), '達成率が出る');
 select public.t_assert((select bill_achievement is null from public.v_plan_year_actual where plan_id = :'plan_1' and year = 2028), '目標が 0 の年は達成率を出さない');
 select public.t_assert((select plan_name = '第 1 次 3 か年計画' from public.v_plan_year_actual where plan_id = :'plan_1' and year = 2027), '計画名が付く');
 
@@ -1555,8 +1556,10 @@ select public.test_login(:'owner_a');
 update public.plan_years set bill_target = 120000000, profit_target = 12000000, driver_target = 12
  where plan_id = '00000000-0000-0000-0000-00000000ef01' and year = 2028;
 select public.t_assert(public.spread_plan_year('00000000-0000-0000-0000-00000000ef01', 2028, 'even') = 12, '12 か月に配分する');
-select public.t_assert((select coalesce(sum(bill_target), 0) = 120000000 from public.month_targets where company_id = :'company_a' and month between '2028-01-01' and '2028-12-01'), '配分の合計は年間目標と一致する');
-select public.t_assert((select bill_target = 10000000 from public.month_targets where company_id = :'company_a' and month = '2028-01-01'), '均等なら 1 か月 1,000 万円');
+-- 3 月決算なので 2028 ＝ 2027年4月〜2028年3月（0031）
+select public.t_assert((select coalesce(sum(bill_target), 0) = 120000000 from public.month_targets where company_id = :'company_a' and month between '2027-04-01' and '2028-03-01'), '配分の合計は期の目標と一致する');
+select public.t_assert((select count(*) = 0 from public.month_targets where company_id = :'company_a' and month between '2028-04-01' and '2028-12-01' and bill_target <> 0), '期の外（2028年4月以降）には配らない');
+select public.t_assert((select bill_target = 10000000 from public.month_targets where company_id = :'company_a' and month = '2027-04-01'), '均等なら 1 か月 1,000 万円');
 -- 手で入れた月は上書きしない
 update public.month_targets set bill_target = 5000000 where company_id = :'company_a' and month = '2028-03-01';
 select public.t_assert(public.spread_plan_year('00000000-0000-0000-0000-00000000ef01', 2028, 'even') = 12, 'もう一度配分できる');
@@ -2536,4 +2539,67 @@ update public.company_profile set established_on = null where company_id = :'com
 select public.test_logout();
 reset role;
 
-\echo '== すべてのアサーションが通りました（18〜36 節）'
+\echo '-- 37. 中期計画を期で数える（0031）'
+
+set role authenticated;
+select public.test_login(:'owner_a');
+-- 9 月決算・2024年4月15日設立：第1期 2024年4月〜9月（6 か月）、第3期 2025年10月〜2026年9月
+update public.companies set fiscal_month = 9, established_on = '2024-04-15' where id = :'company_a';
+select public.t_assert(public.fiscal_end_year('2026-09-01', 9) = 2026 and public.fiscal_end_year('2026-10-01', 9) = 2027 and public.fiscal_end_year('2026-01-01', 9) = 2026, '決算の年は決算月で区切る');
+select public.t_assert(public.fiscal_end_year('2026-05-01', 12) = 2026 and public.fiscal_end_year('2026-12-01', 12) = 2026, '12 月決算は暦年と同じ');
+
+\set plan_2 '00000000-0000-0000-0000-00000000ef02'
+insert into public.plans (id, company_id, name, from_year, to_year, created_by)
+values (:'plan_2', :'company_a', '期の計画', 2024, 2027, :'owner_a');
+select public.t_assert(public.ensure_plan_years(:'plan_2') = 4, '期の計画の年ができる');
+
+-- 実績は期の月（2025年10月〜2026年9月）で合計する
+select public.t_assert((select bill_actual from public.v_plan_year_actual where plan_id = :'plan_2' and year = 2026)
+  = (select coalesce(sum(bill), 0) from public.v_month_pl where company_id = :'company_a' and month between '2025-10-01' and '2026-09-01'), '実績は期の月で合計する');
+select public.t_assert((select bill_actual >= 2559573 from public.v_plan_year_actual where plan_id = :'plan_2' and year = 2026), '2026年9月の売上は 2026年9月期に入る');
+select public.t_assert((select bill_actual from public.v_plan_year_actual where plan_id = :'plan_2' and year = 2027)
+  = (select coalesce(sum(bill), 0) from public.v_month_pl where company_id = :'company_a' and month between '2026-10-01' and '2027-09-01'), '翌期は 2026年10月から');
+
+-- 第1期は設立の月から 6 か月に配る。端数は決算月
+delete from public.month_targets where company_id = :'company_a' and month between '2024-01-01' and '2024-12-01';
+update public.plan_years set bill_target = 1000001, profit_target = 100000, driver_target = 3 where plan_id = :'plan_2' and year = 2024;
+select public.t_assert(public.spread_plan_year(:'plan_2', 2024, 'even') = 6, '第1期は設立の月から 6 か月に配る');
+select public.t_assert((select count(*) = 6 and sum(bill_target) = 1000001 and min(month) = '2024-04-01' and max(month) = '2024-09-01'
+  from public.month_targets where company_id = :'company_a' and month between '2024-01-01' and '2024-12-01' and bill_target <> 0), '2024年4月〜9月だけに配り、合計は期の目標と一致する');
+select public.t_assert((select bill_target = 166667 from public.month_targets where company_id = :'company_a' and month = '2024-04-01'), '1 か月は 6 分の 1');
+select public.t_assert((select bill_target = 166666 from public.month_targets where company_id = :'company_a' and month = '2024-09-01'), '端数は決算月でまとめる');
+
+-- 前期の構成比：12 か月前の同じ月の売上の割合で配る
+delete from public.month_targets where company_id = :'company_a' and month between '2026-10-01' and '2027-09-01';
+update public.plan_years set bill_target = 30000000, profit_target = 3000000, driver_target = 10 where plan_id = :'plan_2' and year = 2027;
+select public.t_assert(public.spread_plan_year(:'plan_2', 2027, 'actual') = 12, '2 期目以降は 12 か月に配る');
+select public.t_assert((select sum(bill_target) = 30000000 from public.month_targets where company_id = :'company_a' and month between '2026-10-01' and '2027-09-01'), '前期の構成比でも合計は期の目標と一致する');
+select public.t_assert((select bill_target from public.month_targets where company_id = :'company_a' and month = '2027-08-01')
+  = round(30000000 * (coalesce((select bill from public.v_month_pl where company_id = :'company_a' and month = '2026-08-01'), 0)
+      / (select sum(bill) from public.v_month_pl where company_id = :'company_a' and month between '2025-10-01' and '2026-09-01')), 0), '12 か月前の同じ月の売上の割合で配る');
+
+-- 12 月決算は今までどおり 1〜12 月
+update public.companies set fiscal_month = 12 where id = :'company_a';
+delete from public.month_targets where company_id = :'company_a' and month between '2025-01-01' and '2025-12-01';
+update public.plan_years set bill_target = 12000000, profit_target = 1200000, driver_target = 5 where plan_id = :'plan_2' and year = 2025;
+select public.t_assert(public.spread_plan_year(:'plan_2', 2025, 'even') = 12, '12 月決算は 12 か月に配る');
+select public.t_assert((select count(*) = 12 and sum(bill_target) = 12000000 and min(month) = '2025-01-01' and max(month) = '2025-12-01'
+  from public.month_targets where company_id = :'company_a' and month between '2025-01-01' and '2025-12-01' and bill_target <> 0), '12 月決算は 1〜12 月に配る');
+select public.t_assert((select bill_actual from public.v_plan_year_actual where plan_id = :'plan_2' and year = 2026)
+  = (select coalesce(sum(bill), 0) from public.v_month_pl where company_id = :'company_a' and month between '2026-01-01' and '2026-12-01'), '12 月決算の実績は暦年の合計');
+
+-- 管理者は配れない（今までどおり）
+select public.test_login(:'admin_a');
+select public.t_expect_error($$select public.spread_plan_year('00000000-0000-0000-0000-00000000ef02', 2025, 'even')$$, 'FORBIDDEN', '管理者は期の目標を配れない');
+
+-- 後片付け
+select public.test_login(:'owner_a');
+delete from public.plans where id = :'plan_2';
+delete from public.month_targets where company_id = :'company_a'
+   and (month between '2024-01-01' and '2024-12-01' or month between '2025-01-01' and '2025-12-01' or month between '2026-10-01' and '2027-09-01');
+update public.companies set fiscal_month = 3, established_on = null where id = :'company_a';
+update public.company_profile set established_on = null where company_id = :'company_a';
+select public.test_logout();
+reset role;
+
+\echo '== すべてのアサーションが通りました（18〜37 節）'

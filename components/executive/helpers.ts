@@ -6,7 +6,8 @@
  */
 import { APPROVAL_KIND_LABELS, EXPORT_KIND_LABELS, type ApprovalKind } from "@/lib/db/types";
 import { daysBetweenDates } from "@/lib/finance/date";
-import { formatDateJa } from "@/lib/month";
+import { fiscalPeriod, normalizeFiscalMonth, type FiscalSettings } from "@/lib/fiscal";
+import { formatDateJa, formatMonthJa } from "@/lib/month";
 import { yen } from "@/lib/format";
 
 /** 日付（null は「—」） */
@@ -132,4 +133,41 @@ export function deviceText(userAgent: string | null | undefined): string {
 export function exportKindLabel(kind: string | null | undefined): string {
   const k = kind ?? "";
   return EXPORT_KIND_LABELS[k] ?? (k || "その他");
+}
+
+// ---------------------------------------------------------------------------
+// 中期計画の期（0031）：計画の「年」は期の決算の年
+// ---------------------------------------------------------------------------
+
+/**
+ * 計画の年（期）の見出し：「第3期」と「2025年10月〜2026年9月」。
+ * 期の番号が無い（設立日が無い）ときは「2026年9月期」、12 月決算なら暦年と同じなので「2026年」
+ */
+export function planYearLabel(year: number, fiscal: FiscalSettings): { label: string; range: string } {
+  const p = fiscalPeriod(year, fiscal);
+  const label = p.number == null && normalizeFiscalMonth(fiscal.fiscalMonth) === 12 ? `${year}年` : p.label;
+  return { label, range: p.rangeLabel };
+}
+
+/** 計画の期間：「第3期〜第5期」と「2025年10月〜2028年9月」 */
+export function planRangeLabel(fromYear: number, toYear: number, fiscal: FiscalSettings): { label: string; range: string } {
+  const a = planYearLabel(fromYear, fiscal);
+  const b = planYearLabel(toYear, fiscal);
+  const label = fromYear === toYear ? a.label : `${a.label}〜${b.label}`;
+  const range = `${formatMonthJa(fiscalPeriod(fromYear, fiscal).startMonth)}〜${formatMonthJa(fiscalPeriod(toYear, fiscal).endMonth)}`;
+  return { label, range };
+}
+
+/** 計画の期の選択肢（今期の 3 期前〜10 期先 ＋ いま入っている期。値は決算の年） */
+export function planYearOptions(currentYear: number, fiscal: FiscalSettings, extra: number[] = []): { value: number; label: string }[] {
+  const years = new Set<number>();
+  for (let y = currentYear - 3; y <= currentYear + 10; y += 1) years.add(y);
+  for (const y of extra) if (Number.isInteger(y) && y >= 2000 && y <= 2100) years.add(y);
+  return [...years]
+    .filter((y) => y >= 2000 && y <= 2100)
+    .sort((a, b) => a - b)
+    .map((y) => {
+      const l = planYearLabel(y, fiscal);
+      return { value: y, label: `${l.label}（${l.range}）` };
+    });
 }

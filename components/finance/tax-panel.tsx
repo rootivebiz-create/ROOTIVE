@@ -15,7 +15,8 @@ import { MonthLink } from "@/components/layout/month-link";
 import { ensureTaxTasksAction, setTaxTaskStatusAction } from "@/lib/actions/finance";
 import { TAX_TASK_STATUS_LABELS, TAX_URGENCY_LABELS } from "@/lib/db/types";
 import { fiscalMonthLabel, fiscalYearEnd } from "@/lib/finance/date";
-import { daysLeftLabel, groupTaxTasks, taxCounts, TAX_URGENCIES, TAX_URGENCY_DESCRIPTIONS, type TaxTaskView, type TaxUrgency } from "@/lib/finance/tax";
+import { daysLeftLabel, groupTaxTasks, taxCounts, taxYearLabel, TAX_URGENCIES, TAX_URGENCY_DESCRIPTIONS, type TaxTaskView, type TaxUrgency } from "@/lib/finance/tax";
+import { fiscalPeriod, type FiscalSettings } from "@/lib/fiscal";
 import { formatDateJa } from "@/lib/month";
 import { cn } from "@/lib/utils";
 import { FinanceYearSelector } from "./year-selector";
@@ -25,8 +26,8 @@ export interface TaxPanelProps {
   year: number;
   years: number[];
   tasks: TaxTaskView[];
-  /** 会社設定の決算月（1〜12） */
-  fiscalMonth: number;
+  /** 会社設定の決算月と設立日（どの期の決算かを出す。0030） */
+  fiscal: FiscalSettings;
   /** 日本時間の今日 "YYYY-MM-DD" */
   today: string;
   /** owner / admin */
@@ -42,7 +43,9 @@ const URGENCY_VARIANT: Record<TaxUrgency, "destructive" | "warning" | "outline" 
   done: "secondary",
 };
 
-export function TaxPanel({ year, years, tasks, fiscalMonth, today, canEdit, isOwner }: TaxPanelProps) {
+export function TaxPanel({ year, years, tasks, fiscal, today, canEdit, isOwner }: TaxPanelProps) {
+  const fiscalMonth = fiscal.fiscalMonth;
+  const period = fiscalPeriod(year, fiscal);
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [editing, setEditing] = useState<TaxTaskView | null>(null);
@@ -89,7 +92,7 @@ export function TaxPanel({ year, years, tasks, fiscalMonth, today, canEdit, isOw
       </Alert>
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <FinanceYearSelector year={year} years={years} />
+        <FinanceYearSelector year={year} years={years} optionLabel={(y) => taxYearLabel(y, fiscal)} />
         {canEdit && (
           <div className="flex flex-wrap items-center gap-2">
             <Button size="sm" variant="outline" onClick={generate} disabled={pending}>
@@ -110,7 +113,7 @@ export function TaxPanel({ year, years, tasks, fiscalMonth, today, canEdit, isOw
               決算月：<span className="num">{fiscalMonthLabel(fiscalMonth)}</span>
             </p>
             <p className="text-xs text-muted-foreground">
-              {year}年の決算日は {formatDateJa(fiscalYearEnd(year, fiscalMonth))} です。期限はこの決算日から組み立てています。
+              {year}年に決算を迎えるのは{period.label}（{period.rangeLabel}）で、決算日は {formatDateJa(fiscalYearEnd(year, fiscalMonth))} です。期限はこの決算日から組み立てています。
             </p>
           </div>
           {isOwner ? (

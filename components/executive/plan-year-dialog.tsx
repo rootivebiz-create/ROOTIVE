@@ -11,22 +11,29 @@ import { Textarea } from "@/components/ui/textarea";
 import { savePlanYearAction, type PlanYearInput } from "@/lib/actions/plans";
 import { planYearSchema } from "@/lib/schemas/executive";
 import type { PlanYearActual } from "@/lib/db/types";
+import type { FiscalSettings } from "@/lib/fiscal";
 import { FieldError, toFieldErrors, type FieldErrors } from "./field-error";
+import { planYearLabel } from "./helpers";
 
 export interface PlanYearDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** 編集する年（null のときは閉じている） */
+  /** 編集する期（null のときは閉じている） */
   year: PlanYearActual | null;
+  /** 決算月と設立日（見出しの「第3期」に使う） */
+  fiscal: FiscalSettings;
 }
 
-export function PlanYearDialog({ open, onOpenChange, year }: PlanYearDialogProps) {
+export function PlanYearDialog({ open, onOpenChange, year, fiscal }: PlanYearDialogProps) {
+  const heading = year?.year != null ? planYearLabel(year.year, fiscal) : null;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{year?.year ?? ""} 年の目標</DialogTitle>
-          <DialogDescription>年間の売上・営業利益・ドライバー数の目標です。月への配分は「月へ配る」で行います。</DialogDescription>
+          <DialogTitle>{heading ? `${heading.label}の目標` : "目標"}</DialogTitle>
+          <DialogDescription>
+            {heading ? `${heading.range}の` : ""}売上・営業利益・ドライバー数の目標です。月への配分は「月へ配る」で行います。
+          </DialogDescription>
         </DialogHeader>
         {open && year && <PlanYearForm onOpenChange={onOpenChange} year={year} />}
       </DialogContent>
@@ -75,17 +82,17 @@ function PlanYearForm({ onOpenChange, year }: { onOpenChange: (open: boolean) =>
   return (
     <div className="flex flex-col gap-4">
       <div className="space-y-1.5">
-        <Label htmlFor="plan-year-bill">売上の目標（年間・税抜）</Label>
+        <Label htmlFor="plan-year-bill">売上の目標（期の合計・税抜）</Label>
         <NumberInput id="plan-year-bill" value={billTarget} onChange={(e) => setBillTarget(e.target.value)} placeholder="120,000,000" disabled={pending} aria-invalid={!!errors.bill_target} />
         <FieldError errors={errors} name="bill_target" />
       </div>
       <div className="space-y-1.5">
-        <Label htmlFor="plan-year-profit">営業利益の目標（年間）</Label>
+        <Label htmlFor="plan-year-profit">営業利益の目標（期の合計）</Label>
         <NumberInput id="plan-year-profit" value={profitTarget} onChange={(e) => setProfitTarget(e.target.value)} placeholder="12,000,000" disabled={pending} aria-invalid={!!errors.profit_target} />
         <FieldError errors={errors} name="profit_target" />
       </div>
       <div className="space-y-1.5">
-        <Label htmlFor="plan-year-driver">ドライバー数の目標（年末）</Label>
+        <Label htmlFor="plan-year-driver">ドライバー数の目標（期末）</Label>
         <NumberInput id="plan-year-driver" decimal={false} value={driverTarget} onChange={(e) => setDriverTarget(e.target.value)} placeholder="20" disabled={pending} aria-invalid={!!errors.driver_target} />
         <FieldError errors={errors} name="driver_target" />
       </div>

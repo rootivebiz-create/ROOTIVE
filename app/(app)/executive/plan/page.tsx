@@ -1,6 +1,7 @@
 import { requirePageRole } from "@/lib/auth/session";
 import { loadPlanYearActuals, loadPlans } from "@/lib/executive/queries";
-import { todayJST, yearOfDate } from "@/lib/finance/date";
+import { monthOfDate, todayJST } from "@/lib/finance/date";
+import { fiscalSettingsOf, periodEndYearOf } from "@/lib/fiscal";
 import { uuidSchema } from "@/lib/schemas/common";
 import { PlanView } from "@/components/executive/plan-view";
 
@@ -17,7 +18,7 @@ function planIdFromParam(param: string | string[] | undefined): string | null {
  * 中期計画と予実（/executive/plan）：代表（owner）専用
  *
  * 稼動月（?m）には依存しない。計画の切り替えは ?plan=<uuid>（既定は進行中の計画のうち新しいもの）。
- * 年ごとの実績は DB のビュー v_plan_year_actual（v_month_pl の暦年合計）をそのまま出す。
+ * 計画の「年」は期の決算の年（0031）。期ごとの実績は DB のビュー v_plan_year_actual（v_month_pl をその期の月で合計）をそのまま出す。
  */
 export default async function ExecutivePlanPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const sp = await searchParams;
@@ -28,5 +29,8 @@ export default async function ExecutivePlanPage({ searchParams }: { searchParams
   const selectedPlan = plans.find((p) => p.id === requestedId) ?? plans.find((p) => p.is_active) ?? plans[0] ?? null;
   const years = selectedPlan ? await loadPlanYearActuals(supabase, company.id, selectedPlan.id) : [];
 
-  return <PlanView plans={plans} selectedPlan={selectedPlan} years={years} thisYear={yearOfDate(todayJST())} />;
+  const fiscal = fiscalSettingsOf(company);
+  const thisYear = periodEndYearOf(monthOfDate(todayJST()), fiscal.fiscalMonth);
+
+  return <PlanView plans={plans} selectedPlan={selectedPlan} years={years} thisYear={thisYear} fiscal={fiscal} />;
 }

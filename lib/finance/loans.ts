@@ -119,6 +119,14 @@ export function paymentsInYear(payments: LoanPaymentLike[], year: number): LoanP
   return payments.filter((p) => yearOfDate(p.due_on) === year);
 }
 
+/** 期日が from〜to（"YYYY-MM-DD"。両端を含む）の回（期で集計するときに使う） */
+export function paymentsBetween(payments: LoanPaymentLike[], from: string, to: string): LoanPaymentLike[] {
+  return payments.filter((p) => {
+    const d = String(p.due_on ?? "").slice(0, 10);
+    return d !== "" && d >= from && d <= to;
+  });
+}
+
 /** 返済額の合計 */
 export function totalOfPayments(payments: LoanPaymentLike[]): number {
   return sumMoney(payments.map((p) => num(p.total)));
@@ -140,8 +148,8 @@ export interface LoanSummary {
   remainingTotal: number;
   /** 今月の返済額（期日が今月の回の合計） */
   thisMonthTotal: number;
-  /** 今年の返済額（期日が今年の回の合計） */
-  thisYearTotal: number;
+  /** 今期の返済額（期日が集計の範囲＝ふつうは今期の回の合計。範囲を渡さなければ今年） */
+  periodTotal: number;
   /** 支払利息の合計（返済予定にある利息のすべて） */
   interestTotal: number;
   /** 期日を過ぎた未返済の件数と金額 */
@@ -152,12 +160,14 @@ export interface LoanSummary {
 /**
  * 借入の要約
  * @param loans v_loan_list の行
- * @param payments 集計したい期間の v_loan_payment_list の行（ふつうは今年ぶん）
+ * @param payments 集計したい期間の v_loan_payment_list の行（ふつうは今期ぶん）
  * @param today 日本時間の今日 "YYYY-MM-DD"
+ * @param period 「今期の返済」を数える範囲（lib/fiscal の periodDateRange）。省くと今年（1/1〜12/31）
  */
-export function loanSummary(loans: LoanLike[], payments: LoanPaymentLike[], today: string): LoanSummary {
+export function loanSummary(loans: LoanLike[], payments: LoanPaymentLike[], today: string, period?: { from: string; to: string }): LoanSummary {
   const month = monthOfDate(today);
   const year = yearOfDate(today);
+  const range = period ?? { from: `${year}-01-01`, to: `${year}-12-31` };
   const counted = loans.filter((l) => l.status !== "paid");
   const overdue = payments.filter((p) => isOverduePayment(p, today));
   return {
@@ -165,7 +175,7 @@ export function loanSummary(loans: LoanLike[], payments: LoanPaymentLike[], toda
     activeCount: loans.filter(isActiveLoan).length,
     remainingTotal: sumMoney(loans.filter((l) => l.status === "active").map((l) => num(l.remaining_principal))),
     thisMonthTotal: totalOfPayments(paymentsInMonth(payments, month)),
-    thisYearTotal: totalOfPayments(paymentsInYear(payments, year)),
+    periodTotal: totalOfPayments(paymentsBetween(payments, range.from, range.to)),
     interestTotal: sumMoney(loans.map((l) => num(l.total_interest))),
     overdueCount: overdue.length,
     overdueTotal: totalOfPayments(overdue),
@@ -177,7 +187,7 @@ export const ZERO_LOAN_SUMMARY: LoanSummary = {
   activeCount: 0,
   remainingTotal: 0,
   thisMonthTotal: 0,
-  thisYearTotal: 0,
+  periodTotal: 0,
   interestTotal: 0,
   overdueCount: 0,
   overdueTotal: 0,

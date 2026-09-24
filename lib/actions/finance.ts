@@ -51,10 +51,10 @@ function revalidateTax(): void {
 }
 
 // ---------------------------------------------------------------------------
-// 年間予算（month_targets）
+// 予算（month_targets）
 // ---------------------------------------------------------------------------
 
-/** 12 か月ぶんの目標をまとめて保存（admin+）。締め済み月の目標も編集できる */
+/** 期（または暦年）の月ぶんの目標をまとめて保存（admin+）。締め済み月の目標も編集できる */
 export async function saveYearTargetsAction(input: SaveYearTargetsInput): Promise<ActionResult<{ count: number }>> {
   return runAction(async () => {
     const { supabase, company } = await requireManagerAction();
@@ -71,7 +71,7 @@ export async function saveYearTargetsAction(input: SaveYearTargetsInput): Promis
     ensureNoError(await supabase.from("month_targets").upsert(rows, { onConflict: "company_id,month" }));
     revalidateBudget();
     return { count: rows.length };
-  }, "年間予算を保存しました");
+  }, "予算を保存しました");
 }
 
 // ---------------------------------------------------------------------------

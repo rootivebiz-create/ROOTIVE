@@ -56,8 +56,8 @@ test.describe("財務（予算・借入・税務）", () => {
     expect(adminSql(`select bill_target::bigint from public.month_targets where company_id = '${companyId}' and month = '2026-09-01';`)).toMatch(/2000000/);
 
     // 実績（2,559,573）と達成率（128.0%）が出る
-    await expect(listRow(page, "年間合計").first()).toContainText("2,559,573");
-    await expect(listRow(page, "年間合計").first()).toContainText("128.0%");
+    await expect(listRow(page, "2026年の合計").first()).toContainText("2,559,573");
+    await expect(listRow(page, "2026年の合計").first()).toContainText("128.0%");
     if (testInfo.project.name === "mobile") await saveScreenshot(page, "finance-budget-mobile.png");
   });
 

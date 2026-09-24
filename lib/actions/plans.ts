@@ -11,6 +11,7 @@ import { uuidSchema } from "@/lib/schemas/common";
  * 中期計画（plans / plan_years）の Server Actions。**すべて代表（owner）のみ**。
  *
  * 順序は CLAUDE.md §1 のとおり（requireOwnerAction → zod → supabase-js → revalidatePath → ActionResult）。
+ * - 計画の「年」は期の決算の年（0031。12 月決算なら暦年と同じ）
  * - 年の行を作るのは RPC `ensure_plan_years`（期間ぶんを作り、すでにある年はそのまま）
  * - 年の目標を月へ配る（month_targets）のは RPC `spread_plan_year` だけ。アプリ側で按分を書かない
  */
@@ -87,7 +88,7 @@ export async function ensurePlanYearsAction(planId: string): Promise<ActionResul
     ensureNoError(res);
     revalidatePlans();
     return { years: typeof res.data === "number" ? res.data : 0 };
-  }, "計画の年を作りました");
+  }, "計画の期を用意しました");
 }
 
 // ---------------------------------------------------------------------------
@@ -113,17 +114,17 @@ export async function savePlanYearAction(input: PlanYearInput): Promise<ActionRe
         .eq("company_id", company.id)
         .select("id")
         .maybeSingle(),
-      "対象の年が見つかりません。",
+      "対象の期が見つかりません。",
     );
 
     revalidatePlans();
     return { id: saved.id };
-  }, "年の目標を保存しました");
+  }, "期の目標を保存しました");
 }
 
 /**
- * 年の目標を 12 か月へ配る（month_targets を書き換える）。
- * 均等（even）か、前年の売上の構成比（actual）。按分は DB の spread_plan_year に任せる。
+ * 期の目標をその期の月へ配る（month_targets を書き換える。第1期は設立の月から、端数は決算月）。
+ * 均等（even）か、前期の同じ月の売上の構成比（actual）。按分は DB の spread_plan_year に任せる。
  */
 export async function spreadPlanYearAction(input: SpreadPlanYearInput): Promise<ActionResult<{ months: number }>> {
   return runAction(async () => {
@@ -135,5 +136,5 @@ export async function spreadPlanYearAction(input: SpreadPlanYearInput): Promise<
 
     revalidateTargets();
     return { months: typeof res.data === "number" ? res.data : 0 };
-  }, "年の目標を月へ配りました");
+  }, "期の目標を月へ配りました");
 }

@@ -7,6 +7,7 @@
  */
 import { sumMoney } from "@/lib/calc";
 import type { TaxTaskStatus } from "@/lib/db/types";
+import { fiscalPeriod, type FiscalSettings } from "@/lib/fiscal";
 import { daysBetweenDates, yearOfDate } from "./date";
 
 /** 「まもなく」と扱う日数（v_tax_task_list と同じ 30 日） */
@@ -157,6 +158,15 @@ export function taxYears(tasks: TaxTaskLike[]): number[] {
     if (y >= 2000 && y <= 2100) years.add(y);
   }
   return [...years].sort((a, b) => b - a);
+}
+
+/**
+ * 年セレクタの表示：その年に決算を迎える期を添える（「2026年（第3期の決算）」）。
+ * 期限は日付のカレンダーなので暦年で並べ、期の番号が無い（設立日が無い・設立前）ときは年だけ
+ */
+export function taxYearLabel(year: number, fiscal: FiscalSettings): string {
+  const p = fiscalPeriod(year, fiscal);
+  return p.number != null ? `${year}年（${p.label}の決算）` : `${year}年`;
 }
 
 /** その年の期限が作られているか（「まとめて作る」ボタンの出し分け） */

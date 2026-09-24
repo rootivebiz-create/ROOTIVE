@@ -6,22 +6,27 @@ import { toast } from "sonner";
 import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input, NumberInput } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { deletePlanAction, savePlanAction, type PlanInput } from "@/lib/actions/plans";
 import { planSchema } from "@/lib/schemas/executive";
 import type { Plan } from "@/lib/db/types";
+import type { FiscalSettings } from "@/lib/fiscal";
 import { FieldError, toFieldErrors, type FieldErrors } from "./field-error";
+import { planRangeLabel, planYearOptions } from "./helpers";
 
 export interface PlanDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** null = 新規 */
   plan: Plan | null;
-  /** 今年（新規のときの既定） */
+  /** 今期の決算の年（新規のときの既定） */
   thisYear: number;
+  /** 決算月と設立日（計画の年＝期の決算の年。0031） */
+  fiscal: FiscalSettings;
 }
 
 interface FormState {
@@ -33,7 +38,7 @@ interface FormState {
   isActive: boolean;
 }
 
-function initialForm(plan: Plan | null, thisYear: number): FormState {
+function initialForm(plan: Plan | null, thisYear: number, fiscal: FiscalSettings): FormState {
   if (plan) {
     return {
       name: plan.name,
@@ -44,7 +49,14 @@ function initialForm(plan: Plan | null, thisYear: number): FormState {
       isActive: plan.is_active,
     };
   }
-  return { name: `${thisYear}〜${thisYear + 2} 年 中期計画`, fromYear: String(thisYear), toYear: String(thisYear + 2), vision: "", memo: "", isActive: true };
+  return {
+    name: `${planRangeLabel(thisYear, thisYear + 2, fiscal).label} 中期計画`,
+    fromYear: String(thisYear),
+    toYear: String(thisYear + 2),
+    vision: "",
+    memo: "",
+    isActive: true,
+  };
 }
 
 export function PlanDialog(props: PlanDialogProps) {
@@ -54,7 +66,7 @@ export function PlanDialog(props: PlanDialogProps) {
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{plan ? "中期計画を編集" : "中期計画を作る"}</DialogTitle>
-          <DialogDescription>保存すると、期間ぶんの年（目標を入れる行）がまとめて用意されます。入っている目標はそのまま残ります。</DialogDescription>
+          <DialogDescription>期（事業年度）で区切ります。保存すると、期間ぶんの期（目標を入れる行）がまとめて用意されます。入っている目標はそのまま残ります。</DialogDescription>
         </DialogHeader>
         {open && <PlanForm {...props} />}
       </DialogContent>
@@ -62,10 +74,11 @@ export function PlanDialog(props: PlanDialogProps) {
   );
 }
 
-function PlanForm({ onOpenChange, plan, thisYear }: PlanDialogProps) {
+function PlanForm({ onOpenChange, plan, thisYear, fiscal }: PlanDialogProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [form, setForm] = useState<FormState>(() => initialForm(plan, thisYear));
+  const [form, setForm] = useState<FormState>(() => initialForm(plan, thisYear, fiscal));
+  const options = planYearOptions(thisYear, fiscal, plan ? [plan.from_year, plan.to_year] : []);
   const [errors, setErrors] = useState<FieldErrors>({});
 
   const buildInput = (): PlanInput => ({
@@ -124,15 +137,27 @@ function PlanForm({ onOpenChange, plan, thisYear }: PlanDialogProps) {
         <FieldError errors={errors} name="name" />
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
-          <Label htmlFor="plan-from">始まりの年</Label>
-          <NumberInput id="plan-from" decimal={false} value={form.fromYear} onChange={(e) => setForm((f) => ({ ...f, fromYear: e.target.value }))} placeholder="2026" disabled={pending} aria-invalid={!!errors.from_year} />
+          <Label htmlFor="plan-from">始まりの期</Label>
+          <Select id="plan-from" value={form.fromYear} onChange={(e) => setForm((f) => ({ ...f, fromYear: e.target.value }))} disabled={pending} aria-invalid={!!errors.from_year}>
+            {options.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
           <FieldError errors={errors} name="from_year" />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="plan-to">終わりの年</Label>
-          <NumberInput id="plan-to" decimal={false} value={form.toYear} onChange={(e) => setForm((f) => ({ ...f, toYear: e.target.value }))} placeholder="2028" disabled={pending} aria-invalid={!!errors.to_year} />
+          <Label htmlFor="plan-to">終わりの期</Label>
+          <Select id="plan-to" value={form.toYear} onChange={(e) => setForm((f) => ({ ...f, toYear: e.target.value }))} disabled={pending} aria-invalid={!!errors.to_year}>
+            {options.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
           <FieldError errors={errors} name="to_year" />
         </div>
       </div>

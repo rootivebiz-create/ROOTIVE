@@ -21,8 +21,10 @@ import { LoanSchedule } from "./loan-schedule";
 
 export interface LoansPanelProps {
   loans: LoanRow[];
-  /** 今年の返済予定（要約カードに使う） */
-  yearPayments: LoanPaymentRow[];
+  /** 今期の返済予定（要約カードに使う） */
+  periodPayments: LoanPaymentRow[];
+  /** 今期（lib/fiscal の periodDateRange ＋ 見出し「第3期（2025年10月〜2026年9月）」） */
+  period: { from: string; to: string; title: string };
   /** ?loan= で選ばれている借入 */
   selectedLoanId: string | null;
   /** 選ばれている借入の返済予定（全期間） */
@@ -48,14 +50,14 @@ function dateText(date: string | null): string {
   return date ? formatDateJa(date) : "—";
 }
 
-export function LoansPanel({ loans, yearPayments, selectedLoanId, schedule, today, canEdit }: LoansPanelProps) {
+export function LoansPanel({ loans, periodPayments, period, selectedLoanId, schedule, today, canEdit }: LoansPanelProps) {
   const pathname = usePathname();
   const params = useSearchParams();
   const [editing, setEditing] = useState<LoanRow | null>(null);
   const [creating, setCreating] = useState(false);
 
   const rows = useMemo(() => sortLoans(loans) as LoanRow[], [loans]);
-  const summary = useMemo(() => loanSummary(loans, yearPayments, today), [loans, yearPayments, today]);
+  const summary = useMemo(() => loanSummary(loans, periodPayments, today, period), [loans, periodPayments, today, period]);
   const selected = useMemo(() => loans.find((l) => l.id === selectedLoanId) ?? null, [loans, selectedLoanId]);
 
   /** 借入を選ぶ（?loan=）。ほかのパラメータは引き継ぐ */
@@ -70,7 +72,7 @@ export function LoansPanel({ loans, yearPayments, selectedLoanId, schedule, toda
   const cards = [
     { label: "借入残高", value: summary.remainingTotal, hint: `返済中 ${summary.activeCount} 件` },
     { label: "今月の返済", value: summary.thisMonthTotal, hint: "期日が今月の合計" },
-    { label: "今年の返済", value: summary.thisYearTotal, hint: "期日が今年の合計" },
+    { label: "今期の返済", value: summary.periodTotal, hint: `期日が${period.title}の合計` },
     { label: "支払利息の合計", value: summary.interestTotal, hint: "返済予定にある利息" },
   ];
 
