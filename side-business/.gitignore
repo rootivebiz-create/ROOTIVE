@@ -1,0 +1,19 @@
+node_modules/
+.next/
+out/
+.env
+.env.local
+.env.*.local
+*.log
+.vercel
+playwright-report/
+test-results/
+*.tsbuildinfo
+next-env.d.ts
+
+# お客様から預かったファイル（Git に入れない。終わったら 30 日以内に消す → sales-kit/03・10）
+private/
+*.xlsx
+*.xls
+# 製品のデモの「見本で試す」のファイル（架空のデータ）は Git に入れる（無いとデモの取り込みの見本が開けない）
+!product/public/samples/*.xlsx

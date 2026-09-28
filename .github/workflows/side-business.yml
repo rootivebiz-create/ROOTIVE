@@ -1,0 +1,63 @@
+# 個人事業（side-business/）の品質ゲート。会社のアプリとは別に、side-business/ が変わったときだけ動く
+name: side-business
+
+on:
+  push:
+    branches: ["**"]
+    paths: ["side-business/**", ".github/workflows/side-business.yml"]
+  pull_request:
+    paths: ["side-business/**", ".github/workflows/side-business.yml"]
+
+jobs:
+  check:
+    name: typecheck / lint / test / build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: side-business
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: side-business/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      # ブラウザでの確かめ（スマホ 375px とパソコン）。ビルドしたものをそのまま使う
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test
+
+  product:
+    name: product（製品）typecheck / lint / test / build
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: side-business/product
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            side-business/package-lock.json
+            side-business/product/package-lock.json
+      # 製品はサイトの計算の部品（side-business/lib）を共有するので、サイトの依存も入れる
+      - run: npm ci
+        working-directory: side-business
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      # ブラウザでの確かめ（デモの架空の会社・スマホ 320px/375px とパソコン）。上で作ったビルドを使う
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test
+        env:
+          E2E_SKIP_BUILD: "1"

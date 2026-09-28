@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "payment_notices_unique" ON "payment_notices" USING btree ("tenant_id","client_id","month");

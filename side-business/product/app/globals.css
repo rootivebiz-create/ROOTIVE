@@ -1,0 +1,227 @@
+@import "tailwindcss";
+/* サイトと共有する UI 部品（side-business/components/ui.tsx）のクラスも拾う */
+@source "../../components/ui.tsx";
+
+/* しめ日ラボ（製品）：サイトと同じ色の土台（黒と黄色） */
+:root {
+  --background: #f6f6f4;
+  --foreground: #16171a;
+  --card: #ffffff;
+  --muted: #ecece8;
+  --muted-foreground: #5c5f66;
+  --border: #deded8;
+  --plate: #16171a;
+  --plate-foreground: #f5c400;
+  --primary: #16171a;
+  --primary-foreground: #ffffff;
+  --accent: #f5c400;
+  --accent-foreground: #16171a;
+  --link: #0b57d0;
+  --danger: #c62828;
+  --success: #1b7f47;
+  --warning: #9a6200;
+  --radius: 0.75rem;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0f1012;
+    --foreground: #ececea;
+    --card: #17181b;
+    --muted: #222328;
+    --muted-foreground: #a1a3aa;
+    --border: #2d2f35;
+    --plate: #000000;
+    --plate-foreground: #f5c400;
+    --primary: #ececea;
+    --primary-foreground: #16171a;
+    --accent: #f5c400;
+    --accent-foreground: #16171a;
+    --link: #8ab4f8;
+    --danger: #ef5350;
+    --success: #4caf7d;
+    --warning: #f0b429;
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-plate: var(--plate);
+  --color-plate-foreground: var(--plate-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-link: var(--link);
+  --color-danger: var(--danger);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --radius-card: var(--radius);
+  --font-sans: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic UI", Meiryo, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+/* 土台の指定は base の層に置く（Tailwind のクラスで上書きできるように） */
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    line-height: 1.7;
+    font-feature-settings: "palt" 1;
+    /* 区切りの無い長い英数字（ファイル名・メールアドレス）が 320px の画面からはみ出さないように。表や横並びの幅は変わらない */
+    overflow-wrap: break-word;
+  }
+
+  /* 会社の画面（上にメニューが貼り付く）では、ページの中のリンク（#…）で飛んだ先がメニューの下に隠れないようにずらす。
+     ドライバーの画面（/s・/t）は貼り付くメニューが無いので、ずらさない */
+  :root:has([data-app-shell]) {
+    scroll-padding-top: 7.5rem;
+  }
+  @media (min-width: 48rem) {
+    :root:has([data-app-shell]) {
+      scroll-padding-top: 4.5rem;
+    }
+  }
+
+  a {
+    color: var(--link);
+  }
+
+  /* キーボードで移ったときの枠。どの部品でも同じ見え方にする（黄色のボタンの上でも見える濃さ） */
+  :focus-visible {
+    outline: 2px solid var(--link);
+    outline-offset: 2px;
+  }
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 記事本文（Markdown を HTML にしたもの） */
+.prose-ja {
+  font-size: 1rem;
+  line-height: 1.9;
+  overflow-wrap: anywhere;
+}
+.prose-ja h2 {
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin: 2.4rem 0 0.8rem;
+  padding: 0.3rem 0 0.3rem 0.75rem;
+  border-left: 6px solid var(--accent);
+  line-height: 1.5;
+}
+.prose-ja h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin: 1.8rem 0 0.6rem;
+  line-height: 1.5;
+}
+.prose-ja p {
+  margin: 0.9rem 0;
+}
+.prose-ja ul,
+.prose-ja ol {
+  margin: 0.9rem 0;
+  padding-left: 1.4rem;
+}
+.prose-ja ul {
+  list-style: disc;
+}
+.prose-ja ol {
+  list-style: decimal;
+}
+.prose-ja li {
+  margin: 0.3rem 0;
+}
+.prose-ja strong {
+  font-weight: 700;
+  background: linear-gradient(transparent 62%, color-mix(in srgb, var(--accent) 45%, transparent) 62%);
+}
+.prose-ja blockquote {
+  margin: 1.2rem 0;
+  padding: 0.8rem 1rem;
+  border-radius: var(--radius);
+  background: var(--muted);
+  color: var(--foreground);
+}
+.prose-ja table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 1.2rem 0;
+  font-size: 0.92rem;
+  max-width: 100%;
+}
+.prose-ja th,
+.prose-ja td {
+  border: 1px solid var(--border);
+  padding: 0.45rem 0.7rem;
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+}
+.prose-ja td {
+  white-space: normal;
+  min-width: 6rem;
+}
+.prose-ja th {
+  background: var(--muted);
+  font-weight: 700;
+}
+.prose-ja code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--muted);
+  padding: 0.1rem 0.3rem;
+  border-radius: 0.3rem;
+}
+.prose-ja hr {
+  margin: 2rem 0;
+  border-color: var(--border);
+}
+
+/* 印刷（業務記録簿・点呼記録簿などを紙や PDF にする） */
+@media print {
+  @page {
+    size: A4;
+    margin: 10mm;
+  }
+  :root {
+    --background: #ffffff;
+    --foreground: #000000;
+    --card: #ffffff;
+    --muted: #f0f0ec;
+    --muted-foreground: #444444;
+    --border: #000000;
+    --link: #000000;
+    --primary: #16171a;
+    --primary-foreground: #ffffff;
+    color-scheme: light;
+  }
+  body {
+    background: #fff;
+    color: #000;
+    font-size: 10pt;
+    line-height: 1.4;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-break {
+    break-after: page;
+  }
+}

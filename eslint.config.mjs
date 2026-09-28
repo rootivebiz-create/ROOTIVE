@@ -17,6 +17,8 @@ const eslintConfig = [
       "test-results/**",
       "next-env.d.ts",
       "public/sw.js",
+      // 個人事業のプロジェクト（別の package.json と設定を持つ）
+      "side-business/**",
     ],
   },
   {
