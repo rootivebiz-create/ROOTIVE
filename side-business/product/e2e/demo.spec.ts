@@ -97,7 +97,10 @@ test("§3 のデモ：取り込み → 見張り番 → 明細 → ドライバ�
   await ops.click(page.getByRole("button", { name: "リンクをコピー" }), "リンクをコピー");
   await expect(page.getByText("リンクをコピーしました", { exact: false })).toBeVisible();
   const driverUrl = await page.getByLabel("ドライバー用のリンク").inputValue();
-  expect(driverUrl).toMatch(/^http:\/\/localhost:\d+\/s\/[A-Za-z0-9._-]+$/);
+  // リンクはいま開いているサイト（手元なら localhost、公開したデモならその URL）の /s/…
+  const origin = new URL(page.url()).origin;
+  expect(driverUrl.startsWith(`${origin}/s/`), driverUrl).toBe(true);
+  expect(driverUrl.slice(origin.length)).toMatch(/^\/s\/[A-Za-z0-9._-]+$/);
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(driverUrl);
 
   // ドライバー：クッキーの無い別のブラウザで開いて「内容を確認しました」

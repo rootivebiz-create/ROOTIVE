@@ -20,7 +20,8 @@ async function main() {
     console.log(decision.reason);
     return;
   }
-  const client = postgres(decision.url, { max: 1 });
+  // prepare: false：プールの接続（Supabase の Transaction pooler・Neon の -pooler）では名前付きの準備文が使えないことがある
+  const client = postgres(decision.url, { max: 1, prepare: false });
   try {
     await migrate(drizzle(client), { migrationsFolder: path.join(process.cwd(), "db", "migrations") });
   } finally {

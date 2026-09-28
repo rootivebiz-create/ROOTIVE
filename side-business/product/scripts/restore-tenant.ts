@@ -15,6 +15,7 @@ import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import * as schema from "../db/schema";
+import { cleanPostgresUrl, isPostgresUrl } from "../db/url";
 import type { Db } from "../db/client";
 
 /**
@@ -37,10 +38,10 @@ async function main() {
   const dry = process.argv.includes("--dry-run");
   const url = process.env.DATABASE_URL?.trim();
   if (!file) throw new Error("読み戻す ZIP のファイルを指定してください（例：npx tsx scripts/restore-tenant.ts ./書き出し.zip）");
-  if (!url || !/^postgres(ql)?:\/\//.test(url)) throw new Error("DATABASE_URL（postgres://…）を環境変数で渡してください");
+  if (!isPostgresUrl(url)) throw new Error("DATABASE_URL（postgres://…）を環境変数で渡してください");
   const bytes = new Uint8Array(fs.readFileSync(path.resolve(file)));
   const { importTenantData, previewTenantImport } = loadExportAll();
-  const client = postgres(url, { max: 1, prepare: false });
+  const client = postgres(cleanPostgresUrl(url), { max: 1, prepare: false });
   try {
     const db = drizzle(client, { schema }) as unknown as Db;
     await migrate(drizzle(client), { migrationsFolder: path.join(process.cwd(), "db", "migrations") });

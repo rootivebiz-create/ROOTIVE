@@ -14,6 +14,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Db } from "../db/client";
 import * as schema from "../db/schema";
+import { cleanPostgresUrl, isPostgresUrl } from "../db/url";
 import {
   formatAccessList,
   formatResetResult,
@@ -27,10 +28,10 @@ import {
 async function open(): Promise<{ db: Db; close: () => Promise<void>; where: string }> {
   const url = process.env.DATABASE_URL?.trim();
   if (url) {
-    if (!/^postgres(ql)?:\/\//.test(url)) throw new ResetAccessError("DATABASE_URL は postgres://… の形にしてください");
+    if (!isPostgresUrl(url)) throw new ResetAccessError("DATABASE_URL は postgres://… の形にしてください");
     const { default: postgres } = await import("postgres");
     const { drizzle } = await import("drizzle-orm/postgres-js");
-    const client = postgres(url, { max: 1, prepare: false });
+    const client = postgres(cleanPostgresUrl(url), { max: 1, prepare: false });
     return { db: drizzle(client, { schema }) as unknown as Db, close: () => client.end(), where: "DATABASE_URL の Postgres" };
   }
   // 手元（開発）：PGlite。同じ置き場所を 2 つから同時に開けないので、開発サーバーを止めてから

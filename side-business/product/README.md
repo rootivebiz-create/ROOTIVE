@@ -124,6 +124,34 @@ DATABASE_URL='postgres://…（お客様の DB）' VERCEL_TOKEN='…' \
    ```
    （環境変数に `DEMO_MODE=1` が入ります。`SETUP_TOKEN` は入りません）
 3. 出てきた URL の `/demo/start` が入口です。サイトの環境変数 `NEXT_PUBLIC_PRODUCT_DEMO_URL` にこの URL を入れると、サイトの「製品のデモを触る」がここにつながります
+
+### インターネットに公開する（GitHub とつながず、ファイルを直接送る）
+
+コードがまだ **会社のリポジトリ** にあるうちは、Vercel を GitHub につながず、手元のファイルを Vercel CLI で直接送って公開します（Claude Code の作業環境からもこの方法で公開できます）。デモとサイトの 2 つのプロジェクトを作ります。
+
+**用意するもの**（秘密の値はチャットやコマンドの引数に書かず、環境変数で渡す）
+- `VERCEL_TOKEN`：Vercel（Pro）の Account Settings → Tokens で作ったトークン
+- `DEMO_DATABASE_URL`：Neon（無料）のデモ専用のプロジェクトの接続文字列（Connect → Connection pooling を有効にした `postgresql://…-pooler…`）。地域は **AWS Asia Pacific (Singapore)**。
+  Neon の文字列の末尾の `channel_binding=require` はそのままでかまいません（つなぐときに外します → `db/url.ts`）
+- Claude Code の作業環境で動かすときは、環境の設定の「ネットワーク」で `api.vercel.com`・`vercel.com`・`*.vercel.app`（と npm の `registry.npmjs.org`）を許可し、上の 2 つを環境変数に入れる（設定は新しいセッションで読み込まれる）
+
+**手順**（`product/` で）
+```bash
+# 1. デモ（製品）。送る元は side-business/（../lib を読むため）。マイグレーションは Vercel の本番のビルドの中で当たる
+DATABASE_URL="$DEMO_DATABASE_URL" npx tsx scripts/provision.ts --demo --upload --region sin1
+#    → 最後に「本番の URL」「デモの入口（…/demo/start）」が出る
+
+# 2. サイト。1 の「本番の URL」を渡す（サイトの「製品のデモを触る」がつながる）
+npx tsx scripts/publish-site.ts --demo-url https://（1 の本番の URL）
+#    → 最後に「サイトの URL」が出る
+```
+- どちらも先に `--dry-run` で中身を確かめられます（通信しない）
+- **もう一度動かすと、同じプロジェクトにデプロイし直します**（コードを直したとき）。デモの `APP_SECRET` などは変えず、足りない環境変数だけを足します
+- 送らないもの（お客様から預かった `private/`・`.env`・`node_modules` など）は `side-business/.vercelignore` に書いてあります。**このファイルが無いと、スクリプトは送らずに止まります**
+- 本番の URL は Vercel のプロジェクトのドメインから読みます（名前がほかの人に使われていると `shimebi-demo-xxxx.vercel.app` のようになります）
+- 本番の URL（`…vercel.app`）は誰でも開けます。デプロイごとの長い URL は、Vercel の既定の「Deployment Protection」で Vercel にログインした人だけが開けます（渡すのは本番の URL）
+- 問い合わせ先（`NEXT_PUBLIC_CONTACT_EMAIL`・`NEXT_PUBLIC_BOOKING_URL`・`NEXT_PUBLIC_LINE_URL`）や事業者の情報は、決まったら Vercel の画面でサイトのプロジェクトの環境変数に足し、`publish-site.ts` をもう一度動かします（入れるまでは画面に出ないだけ）
+- あとで個人の GitHub に移したら、GitHub とつないだ形（上の 1〜3）に切り替えられます（プロジェクトを作り直すか、Vercel の画面の Settings → Git でつなぐ）
    - 入口は **開いただけでは何も作りません**（「デモを始める」を押したときだけ架空の会社を作る）。検索のロボットやリンクのプレビュー（LINE・Slack など）が開いても、デモの会社は増えません。入口は検索に出さない設定です（`X-Robots-Tag`・`robots.txt`）
    - 使っている途中の人のデモは、24 時間たつまで消しません。デモの会社が 300 を超える・10 分で 60 を超えて作られる・DB が `DEMO_DB_LIMIT_MB`（既定 400MB）を超えるときは、「混み合っています」と出して新しく作りません
 

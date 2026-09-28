@@ -1,6 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { migrationDecision } from "../scripts/migrate-guard";
-import { buildPlan, projectNameFor, summaryLines, validateInput, type ProvisionPlan } from "../scripts/provision-plan";
+import {
+  buildPlan,
+  buildSitePlan,
+  missingEnv,
+  pickProductionDomain,
+  projectNameFor,
+  sitePlanProblems,
+  summaryLines,
+  uploadDeployArgs,
+  validateInput,
+  withQuery,
+  type ProvisionPlan,
+} from "../scripts/provision-plan";
 
 const input = { client: "Sample Unso", databaseUrl: "postgres://u:p@h/db", repo: "me/shimebi", rootDirectory: "product" };
 
@@ -78,5 +90,72 @@ describe("お客様の置き場所の手順", () => {
     // DATABASE_URL が無い：--if-configured なら飛ばす、手で動かしたなら止める
     expect(migrationDecision({ ifConfigured: true, databaseUrl: "" })).toMatchObject({ run: false });
     expect(migrationDecision({ ifConfigured: false })).toMatchObject({ run: false, fail: true });
+    // Neon の接続文字列：channel_binding はサーバーに送ると断られるので外して当てる
+    expect(migrationDecision({ ifConfigured: true, databaseUrl: "postgresql://u:p@ep-x-pooler.aws.neon.tech/neondb?sslmode=require&channel_binding=require", vercelEnv: "production" })).toEqual({
+      run: true,
+      url: "postgresql://u:p@ep-x-pooler.aws.neon.tech/neondb?sslmode=require",
+    });
+  });
+
+  it("--upload：GitHub とつながない（--repo が要らない）。地域は Vercel の地域 ID だけ", () => {
+    const upload = { ...input, repo: "", upload: true, demo: true };
+    expect(validateInput(upload)).toEqual([]);
+    expect(validateInput({ ...input, repo: "" })).toHaveLength(1);
+    const plan = buildPlan(upload);
+    expect(plan.createProjectBody).toEqual({ name: "shimebi-demo", framework: "nextjs", rootDirectory: "product" });
+    expect(validateInput({ ...upload, region: "sin1" })).toEqual([]);
+    expect(validateInput({ ...upload, region: "" })).toHaveLength(1);
+    expect(validateInput({ ...upload, region: "Tokyo" })).toHaveLength(1);
+    // トークンは CLI の引数で渡す（シェルの履歴には残らない。npx に直接渡す）。本番に出す
+    expect(uploadDeployArgs("tok")).toEqual(["--yes", "vercel@60", "deploy", "--prod", "--yes", "--archive=tgz", "--token", "tok"]);
+  });
+
+  it("作り直し：すでにある環境変数（キーと対象の組）は入れ直さない。APP_SECRET が変わらない", () => {
+    const plan = buildPlan({ ...input, demo: true });
+    const existing = [
+      { key: "DATABASE_URL", target: ["production"] },
+      { key: "APP_SECRET", target: ["production", "preview"] },
+      { key: "PGLITE_DIR", target: "preview" },
+    ];
+    const todo = missingEnv(existing, plan.env);
+    expect(todo.map((e) => `${e.key}:${e.target.join(",")}`)).toEqual(["DEMO_MODE:production", "DEMO_MODE:preview"]);
+    expect(missingEnv([], plan.env)).toEqual(plan.env);
+    // 本番だけあってプレビューに無いものは、プレビューだけ足す
+    const partial = missingEnv([{ key: "X", target: ["production"] }], [{ key: "X", value: "1", type: "plain", target: ["production", "preview"] }]);
+    expect(partial).toEqual([{ key: "X", value: "1", type: "plain", target: ["preview"] }]);
+  });
+
+  it("本番の URL はプロジェクトのドメインから選ぶ（名前が使われていて -xxxx が付いても当てる。転送・ブランチ用は選ばない）", () => {
+    expect(
+      pickProductionDomain([
+        { name: "shimebi-demo-abc123.vercel.app" },
+        { name: "shimebi-demo-git-main-me.vercel.app", gitBranch: "main" },
+        { name: "old.vercel.app", redirect: "shimebi-demo-abc123.vercel.app" },
+      ]),
+    ).toBe("https://shimebi-demo-abc123.vercel.app");
+    expect(pickProductionDomain([{ name: "demo.example.jp" }, { name: "shimebi-demo.vercel.app" }])).toBe("https://shimebi-demo.vercel.app");
+    expect(pickProductionDomain([])).toBeNull();
+    expect(withQuery("/v9/projects/x/env", "")).toBe("/v9/projects/x/env");
+    expect(withQuery("/v10/projects/x/env", "?teamId=t", "upsert=true")).toBe("/v10/projects/x/env?teamId=t&upsert=true");
+    expect(withQuery("/v10/projects/x/env", "", "upsert=true")).toBe("/v10/projects/x/env?upsert=true");
+  });
+
+  it("作り直しで登録の合言葉を入れ直さなかったときは、使えないリンクを出さない", () => {
+    const plan = buildPlan(input);
+    const text = summaryLines(plan, "https://x.vercel.app", false, false).join("\n");
+    expect(text).not.toContain(plan.secrets.setupToken);
+    expect(text).toContain("SETUP_TOKEN");
+  });
+
+  it("サイト：製品のデモの URL だけを入れる（末尾の / は外す）。形が違えば止める", () => {
+    const plan = buildSitePlan({ demoUrl: " https://shimebi-demo.vercel.app/ ", teamId: "team_1" });
+    expect(plan.projectName).toBe("shimebi-lab");
+    expect(plan.createProjectBody).toEqual({ name: "shimebi-lab", framework: "nextjs" });
+    expect(plan.env).toEqual([{ key: "NEXT_PUBLIC_PRODUCT_DEMO_URL", value: "https://shimebi-demo.vercel.app", type: "plain", target: ["production", "preview"] }]);
+    expect(plan.query).toBe("?teamId=team_1");
+    expect(buildSitePlan({}).env).toEqual([]);
+    expect(sitePlanProblems({ demoUrl: "https://shimebi-demo.vercel.app", name: "shimebi-lab" })).toEqual([]);
+    expect(sitePlanProblems({ demoUrl: "http://insecure.example", name: "Bad Name" })).toHaveLength(2);
+    expect(sitePlanProblems({ demoUrl: "" })).toHaveLength(1);
   });
 });

@@ -4,6 +4,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { drizzle as drizzlePglite } from "drizzle-orm/pglite";
 import { migrate as migratePglite } from "drizzle-orm/pglite/migrator";
 import * as schema from "./schema";
+import { cleanPostgresUrl, isPostgresUrl } from "./url";
 
 /**
  * DB への入口。
@@ -21,10 +22,10 @@ holder.__shimebiDb ??= {};
 
 async function connect(): Promise<Db> {
   const url = process.env.DATABASE_URL?.trim();
-  if (url && /^postgres(ql)?:\/\//.test(url)) {
+  if (isPostgresUrl(url)) {
     const { default: postgres } = await import("postgres");
     const { drizzle } = await import("drizzle-orm/postgres-js");
-    const client = postgres(url, { max: 5, prepare: false });
+    const client = postgres(cleanPostgresUrl(url), { max: 5, prepare: false });
     // postgres-js と PGlite は同じ問い合わせの書き方ができる（型だけそろえる）
     return drizzle(client, { schema }) as unknown as Db;
   }

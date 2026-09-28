@@ -16,6 +16,8 @@
 - 本番の DB へのマイグレーションは、Vercel の本番のビルドのときだけ（`scripts/migrate.ts` と `scripts/migrate-guard.ts`。プレビューのビルドでは当てない）。お客様の DB・秘密の値は本番だけに入れる（`scripts/provision-plan.ts`）
 - 締めた月（`month_closes.status='closed'`）の `work_entries`・`adjustments`・`statements` は DB の引き金が止める（`MONTH_CLOSED`）。`audit_log` は消せない。
 - 手元・テスト・デモは PGlite（`PGLITE_DIR`、`memory` で揮発）。本番は `DATABASE_URL=postgres://…`。
+- Postgres につなぐところ（`db/client.ts`・`scripts/*`）は、必ず `db/url.ts` の `cleanPostgresUrl` を通す（Neon の `channel_binding` など、postgres-js がサーバーに送ると断られる項目を外す）。
+- Vercel への公開は `scripts/provision.ts`（GitHub とつなぐ／`--upload` で CLI から直接送る）と `scripts/publish-site.ts`（サイト）。通信は `scripts/vercel-api.ts` だけ、判断は `scripts/provision-plan.ts` の純関数。直接送るときに送らないものは `side-business/.vercelignore`。
 
 ## サーバーの処理の決まり
 1. 画面：`requirePageUser(role)`（ログインと役割。足りなければ /login か /forbidden）

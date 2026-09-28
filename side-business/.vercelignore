@@ -1,0 +1,31 @@
+# Vercel CLI でファイルを直接送って公開するとき（product/scripts/provision.ts --upload・publish-site.ts）に送らないもの。
+# CLI は .gitignore を読まないので、ここに書く（GitHub とつないだデプロイでは使われない）。
+# 送る元はこのフォルダ（side-business/）。製品（product/）はサイトの計算の部品（lib/）を読むので、サイトと製品の両方がここから送られる。
+
+# お客様から預かったファイル・秘密の値（絶対に送らない）
+private/
+.env
+.env.*
+**/.env
+**/.env.*
+*.xlsx
+*.xls
+# 製品のデモの「見本で試す」のファイル（架空のデータ）は送る（無いとデモの取り込みの見本が開けない）
+!product/public/samples/*.xlsx
+
+# 手元で作られるもの（Vercel の上で作り直す）
+node_modules/
+**/node_modules/
+.next/
+**/.next/
+product/.data/
+.vercel/
+**/.vercel/
+test-results/
+**/test-results/
+playwright-report/
+**/playwright-report/
+*.tsbuildinfo
+next-env.d.ts
+**/next-env.d.ts
+*.log

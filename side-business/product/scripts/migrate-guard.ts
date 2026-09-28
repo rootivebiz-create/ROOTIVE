@@ -7,6 +7,8 @@
  * 環境変数の側でも DATABASE_URL は本番だけに入れている（scripts/provision-plan.ts）が、
  * 前に作ったプロジェクトはプレビューにも入っていることがあるので、コードの側でも止める。
  */
+import { cleanPostgresUrl, isPostgresUrl } from "../db/url";
+
 export type MigrationDecision = { run: true; url: string } | { run: false; reason: string; fail?: boolean };
 
 export function migrationDecision(opts: { ifConfigured: boolean; databaseUrl?: string; vercelEnv?: string }): MigrationDecision {
@@ -19,9 +21,9 @@ export function migrationDecision(opts: { ifConfigured: boolean; databaseUrl?: s
     };
   }
   const url = opts.databaseUrl?.trim();
-  if (!url || !/^postgres(ql)?:\/\//.test(url)) {
+  if (!isPostgresUrl(url)) {
     if (opts.ifConfigured) return { run: false, reason: "DATABASE_URL が無いので、マイグレーションは飛ばします（PGlite は起動時に当てます）" };
     return { run: false, reason: "DATABASE_URL（postgres://…）がありません", fail: true };
   }
-  return { run: true, url };
+  return { run: true, url: cleanPostgresUrl(url) };
 }
