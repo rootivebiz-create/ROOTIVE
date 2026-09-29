@@ -11,8 +11,6 @@ import { toDataUri, type StatementAssets } from "@/lib/company-assets";
 import { yen, qty as qtyText } from "@/lib/format";
 import { ensurePdfFonts, PDF_FONT_FAMILY } from "./fonts";
 
-// モジュール初期化時に 1 回だけフォントを登録する
-ensurePdfFonts();
 
 const GRAY = "#555555";
 const LINE = "#bbbbbb";
@@ -197,5 +195,6 @@ export function InvoicePdf({ data: d, assets }: InvoicePdfProps) {
 
 /** 請求書データから PDF を生成する。assets（ロゴ・認印）は呼び出し側で読んで渡す */
 export async function renderInvoicePdf(data: InvoiceData, opts: { assets?: StatementAssets } = {}): Promise<Buffer> {
+  ensurePdfFonts(); // フォントが無いときは、ここで分かる文で失敗する（モジュールの読み込みでは失敗させない）
   return renderToBuffer(<InvoicePdf data={data} assets={opts.assets} />);
 }

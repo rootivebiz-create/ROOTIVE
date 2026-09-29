@@ -1,12 +1,40 @@
 /**
  * PDF 用フォント（Noto Sans JP）の登録と日本語の改行処理
- * - public/fonts/NotoSansJP-{Regular,Bold}.ttf を同梱（Vercel では next.config.ts の outputFileTracingIncludes で含める）
+ * - assets/fonts/NotoSansJP-{Regular,Bold}.ttf を同梱（Vercel では next.config.ts の outputFileTracingIncludes で関数に含める）
+ * - **public/ には置かない**：Vercel では public/ のファイルがサーバーの関数に入らず、PDF が「出力に失敗しました」になった
  * - react-pdf は空白でしか行を折り返さないため、日本語は 1 文字ずつ折り返し候補にする（簡略化した禁則処理付き）
  */
+import fs from "node:fs";
 import path from "node:path";
 import { Font } from "@react-pdf/renderer";
 
 export const PDF_FONT_FAMILY = "NotoSansJP";
+
+/** 使うフォントのファイル（太さ → ファイル名） */
+export const PDF_FONT_FILES = { 400: "NotoSansJP-Regular.ttf", 700: "NotoSansJP-Bold.ttf" } as const;
+
+/** フォントが見つからないときの文（出力の口では「出力に失敗しました: 」の後ろにそのまま出る） */
+export const PDF_FONT_MISSING_MESSAGE = "PDF 用の日本語フォント（NotoSansJP）がサーバーに見つかりません（assets/fonts）。";
+
+/**
+ * フォントのあるフォルダ。assets/fonts → （以前の置き場所の）public/fonts の順に、2 つのファイルがそろっている所を使う。
+ * 見つからなければ PDF_FONT_MISSING_MESSAGE で投げる（react-pdf の英語の ENOENT より原因が分かる）
+ */
+export function pdfFontDir(root: string = process.cwd()): string {
+  const candidates = [path.join(root, "assets", "fonts"), path.join(root, "public", "fonts")];
+  for (const dir of candidates) {
+    if (Object.values(PDF_FONT_FILES).every((f) => fs.existsSync(path.join(dir, f)))) return dir;
+  }
+  throw new Error(PDF_FONT_MISSING_MESSAGE);
+}
+
+/** 本番の確認用（/api/health/pdf）：フォントの場所（root からの相対）とファイルの大きさ */
+export function pdfFontStatus(root: string = process.cwd()): { dir: string; bytes: Record<string, number> } {
+  const dir = pdfFontDir(root);
+  const bytes: Record<string, number> = {};
+  for (const f of Object.values(PDF_FONT_FILES)) bytes[f] = fs.statSync(path.join(dir, f)).size;
+  return { dir: path.relative(root, dir) || ".", bytes };
+}
 
 /** 行頭に置かない文字（直前の文字にくっつける） */
 const NO_BREAK_BEFORE = new Set(Array.from("、。，．・：；？！ー〜～）」』】〕〉》〙〟ヽヾゝゞ々ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮヵヶ%％℃"));
@@ -77,17 +105,20 @@ declare global {
   var __rootivePdfFontsRegistered: boolean | undefined;
 }
 
-/** フォント登録（プロセス内で 1 回だけ。HMR でモジュールが再評価されても二重登録しない） */
+/**
+ * フォント登録（プロセス内で 1 回だけ。HMR でモジュールが再評価されても二重登録しない）。
+ * 登録済みの印は登録できたときだけ立てる（フォントが見つからないときは毎回わかる文で失敗する）
+ */
 export function ensurePdfFonts(): void {
   if (globalThis.__rootivePdfFontsRegistered) return;
-  globalThis.__rootivePdfFontsRegistered = true;
-  const dir = path.join(process.cwd(), "public", "fonts");
+  const dir = pdfFontDir();
   Font.register({
     family: PDF_FONT_FAMILY,
     fonts: [
-      { src: path.join(dir, "NotoSansJP-Regular.ttf"), fontWeight: 400 },
-      { src: path.join(dir, "NotoSansJP-Bold.ttf"), fontWeight: 700 },
+      { src: path.join(dir, PDF_FONT_FILES[400]), fontWeight: 400 },
+      { src: path.join(dir, PDF_FONT_FILES[700]), fontWeight: 700 },
     ],
   });
   Font.registerHyphenationCallback(splitJapaneseWord);
+  globalThis.__rootivePdfFontsRegistered = true;
 }

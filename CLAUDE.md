@@ -194,6 +194,9 @@ Next.js 15（App Router / Server Actions）＋ Supabase（PostgreSQL・Auth・RL
   - 財務の予算は年次レポートと同じ `?fy=` / `?y=`（`resolveReportRange` ＋ `RangeSelector`。既定は今日の期）。行は `toBudgetRowsForMonths(range.months)`、前期は `previousMonths`（各月の 12 か月前）。保存（`saveYearTargetsSchema`）は年ではなく**続いた 12 か月の範囲**で確かめる。第1期は 12 か月より短い（行の数・等分の数は月の数）
   - 借入の「今期の返済」は `periodDateRange(今期)` で絞る。税務は期限の日付のカレンダーなので暦年のまま、年に「第3期の決算」を添える（`taxYearLabel`）
   - **中期計画の年（`plans.from_year` / `to_year` / `plan_years.year`）は期の決算の年（0031）**。実績は `v_plan_year_actual` が `fiscal_end_year(month, fiscal_month)` ごとに合計し、`spread_plan_year` は期の月（第1期は設立の月から）に配る。端数は決算月、`actual` は 12 か月前の同じ月の構成比。12 月決算なら暦年と同じ。見出しは `planYearLabel` / `planRangeLabel`（`components/executive/helpers.ts`）
+- **PDF のフォント**：`assets/fonts/NotoSansJP-*.ttf`。**`public/` に置かない**（Vercel では public/ がサーバーの関数に入らず、支払明細の PDF が「出力に失敗しました」になった）。
+  場所は `lib/pdf/fonts.ts` の `pdfFontDir()`、登録は各 `render*Pdf` の頭の `ensurePdfFonts()`（**モジュールの読み込みでは登録しない**。失敗を出力の口の中で分かる文にする）。
+  PDF を作る口を足したら `next.config.ts` の `PDF_ROUTES` にも足す。本番で描けるかは `/api/health/pdf`（ログイン不要・会社の情報なし。デプロイの直後に `deploy.yml` の「PDF の確認」が呼ぶ）
 - **使い方ガイド**：`/guide`（スタッフ）・`/driver/guide`（ドライバー）と、各画面の右上の「？」（スマホはメニューの「この画面の使い方」）。中身は `lib/guide/*` の純データで、出し分けはナビと同じ。**画面を足したらガイドも足す**（`tests/guide.test.ts` が page.tsx の抜けを見つける）
 - **新しいテーブルには必ず権限を出す**：0020 の末尾にある `grant ... on all tables in schema public to authenticated` は**そのあとの番号で作ったテーブルには届かない**。`security invoker` の RPC は RLS の手前で `permission denied` になる。テーブルを足したマイグレーションの末尾で grant を出し直すこと（`tests/sql/run.sh` が 1 回目の適用直後に抜けを検出する）
 - ロール：owner（すべて ＋ `/executive` の決裁・意思決定・会社の台帳・中期計画・守り ＋ ユーザーごとの見せる範囲と代表を譲る）／admin（登録・編集・月締め・出力・代表への申請・`/office` の事務）／clerk（事務員。admin と同じ登録・編集・月締め・明細の送付・請求書のメール。経営の数字・監査ログ・外部連携の設定・バックアップは無し）／viewer（閲覧・CSV・チャット・AI 相談。借入・納税・現金・振込口座は既定で見えない）／driver（自分の締め済み月の明細、今日の報告（点呼・稼働）、自分の予定と休みの申請、自分の書類・車両・契約）

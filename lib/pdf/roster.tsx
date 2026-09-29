@@ -8,7 +8,6 @@ import { Document, Page, Text, View, StyleSheet, renderToBuffer } from "@react-p
 import { APTITUDE_KIND_LABELS, INCIDENT_KIND_LABELS, INSTRUCTION_KIND_LABELS, type AptitudeKind, type IncidentKind } from "@/lib/db/types";
 import { ensurePdfFonts, PDF_FONT_FAMILY } from "./fonts";
 
-ensurePdfFonts();
 
 const GRAY = "#555555";
 const LINE = "#bbbbbb";
@@ -187,6 +186,7 @@ function DriverPage({ d, companyName, today }: { d: RosterPdfDriver; companyName
 
 /** 運転者台帳 PDF を作る */
 export async function renderRosterPdf(data: RosterPdfData): Promise<Uint8Array> {
+  ensurePdfFonts(); // フォントが無いときは、ここで分かる文で失敗する（モジュールの読み込みでは失敗させない）
   const doc = (
     <Document title="運転者台帳" author={data.companyName}>
       {data.drivers.length === 0 ? (

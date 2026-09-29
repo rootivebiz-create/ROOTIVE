@@ -3,7 +3,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import type { Database } from "@/lib/db/database.types";
 
 // /api/cron は Vercel Cron（Cookie なし）から呼ばれるため公開扱い。認可は Route Handler 側の CRON_SECRET で行う
-const PUBLIC_PREFIXES = ["/login", "/invite", "/auth", "/api/cron", "/manifest.webmanifest", "/icons", "/sw.js", "/offline"];
+// /api/health は公開の手順（GitHub Actions）から本番の動作を確かめる口。会社の情報は返さない
+const PUBLIC_PREFIXES = ["/login", "/invite", "/auth", "/api/cron", "/api/health", "/manifest.webmanifest", "/icons", "/sw.js", "/offline"];
 
 function isPublicPath(pathname: string) {
   return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/") || pathname.startsWith(p + "?"));

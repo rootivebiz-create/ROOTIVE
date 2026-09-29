@@ -13,8 +13,6 @@ import { yen, pct, qty as qtyText } from "@/lib/format";
 import { formatDateJa } from "@/lib/month";
 import { ensurePdfFonts, PDF_FONT_FAMILY } from "./fonts";
 
-// モジュール初期化時に 1 回だけフォントを登録する
-ensurePdfFonts();
 
 const GRAY = "#555555";
 const LINE = "#bbbbbb";
@@ -220,5 +218,6 @@ export function statementPdfFilename(s: Pick<StatementData, "month" | "driverNam
 
 /** 明細データから PDF を生成する。assets（ロゴ・認印）は呼び出し側で 1 回読んで渡す（ZIP では全ドライバーで使い回す） */
 export async function renderStatementPdf(data: StatementData, opts: { showRoyaltyRate?: boolean; assets?: StatementAssets } = {}): Promise<Buffer> {
+  ensurePdfFonts(); // フォントが無いときは、ここで分かる文で失敗する（モジュールの読み込みでは失敗させない）
   return renderToBuffer(<StatementPdf data={data} showRoyaltyRate={opts.showRoyaltyRate} assets={opts.assets} />);
 }

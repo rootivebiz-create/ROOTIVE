@@ -97,6 +97,29 @@ jobs:
           set -o pipefail
           bash scripts/deploy-vercel.sh 2>&1 | tee vercel-deploy.log
 
+      - name: PDF の確認（本番のサーバーで日本語フォント入りの PDF が描けるか）
+        run: |
+          URL="$(grep -oE 'https://[a-z0-9.-]+\.vercel\.app' vercel-deploy.log | tail -1 || true)"
+          if [ -z "$URL" ]; then echo "本番 URL が分からないため PDF の確認を省きます"; exit 0; fi
+          ok=""
+          for i in 1 2 3 4 5 6; do
+            curl -sS --max-time 60 "$URL/api/health/pdf" -o pdf-check.json || true
+            if grep -q '"ok":true' pdf-check.json 2>/dev/null; then ok=1; break; fi
+            sleep 15
+          done
+          echo "PDF の確認: $URL/api/health/pdf → $(cat pdf-check.json 2>/dev/null)"
+          {
+            echo "## PDF の確認"
+            echo
+            echo "$([ -n "$ok" ] && echo "本番のサーバーで PDF を描けました。" || echo "**本番のサーバーで PDF を描けませんでした。**")"
+            echo
+            echo '```'
+            cat pdf-check.json 2>/dev/null
+            echo
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          [ -n "$ok" ] || { echo "::error::本番のサーバーで PDF を描けませんでした: $(cat pdf-check.json 2>/dev/null)"; exit 1; }
+
       - name: 結果をまとめる
         if: always()
         run: |
@@ -125,4 +148,4 @@ jobs:
 
       - name: 一時ファイルの削除
         if: always()
-        run: rm -f .env.production.local supabase-setup.log vercel-deploy.log
+        run: rm -f .env.production.local supabase-setup.log vercel-deploy.log pdf-check.json

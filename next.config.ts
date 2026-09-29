@@ -9,17 +9,30 @@ const securityHeaders = [
   { key: "X-DNS-Prefetch-Control", value: "on" },
 ];
 
+/**
+ * PDF 用の日本語フォント（lib/pdf/fonts.ts）。**public/ には置かない**（Vercel では public/ がサーバーの関数に入らない）。
+ * PDF を作る所（出力の口・請求書のメール送付の画面・本番の確認口）にはすべて明示して同梱する
+ */
+const PDF_FONTS = ["./assets/fonts/**/*"];
+const PDF_ROUTES = [
+  "/api/export/statement.pdf",
+  "/api/export/statements.zip",
+  "/api/export/invoice.pdf",
+  "/api/export/month-report.pdf",
+  "/api/export/roster.pdf",
+  "/api/export/month-pack.zip",
+  "/api/export/audit-pack.zip",
+  "/api/health/pdf",
+  "/invoices/[id]",
+];
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   // web-push は Node の crypto と https をそのまま使うのでバンドルしない
   serverExternalPackages: ["@react-pdf/renderer", "iconv-lite", "web-push"],
-  // PDF 明細用の日本語フォントを Vercel のサーバーレス関数に同梱する
-  outputFileTracingIncludes: {
-    "/api/export/statement.pdf": ["./public/fonts/**/*"],
-    "/api/export/statements.zip": ["./public/fonts/**/*"],
-    "/api/export/invoice.pdf": ["./public/fonts/**/*"],
-  },
+  // PDF 用の日本語フォントを Vercel のサーバーレス関数に同梱する
+  outputFileTracingIncludes: Object.fromEntries(PDF_ROUTES.map((r) => [r, PDF_FONTS])),
   experimental: {
     serverActions: { bodySizeLimit: "20mb" },
     // 一度開いた画面は数十秒のあいだ手元に残す。

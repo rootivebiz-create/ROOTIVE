@@ -201,3 +201,15 @@ test.describe("支払明細", () => {
     await expect(page.getByText("ドライバー数は月ごとの人数のため、全期間では表示しません")).toBeVisible();
   });
 });
+
+test.describe("PDF の確認口（公開の手順がデプロイの直後に呼ぶ）", () => {
+  test("ログインなしで /api/health/pdf が、日本語フォント入りの PDF を描けたと返す", async ({ request }) => {
+    const res = await request.get(`${E2E.appUrl}/api/health/pdf`, { maxRedirects: 0 });
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+    expect(body.bytes).toBeGreaterThan(1000);
+    // フォントは public/ ではなく assets/fonts から読む（Vercel では public/ が関数に入らない）
+    expect(body.fonts.dir).toBe("assets/fonts");
+  });
+});

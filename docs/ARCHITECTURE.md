@@ -659,7 +659,7 @@ office_desk(month, today)  ── 1 往復（security invoker・admin 以上）�
 | 単価表 CSV | `app/api/export/rates.csv` + `lib/exports/rates-csv.ts` | 稼働中ドライバー × 稼働中案件内容の実効単価（受注・支払・差額・出所「個別／標準」・個別値） |
 | 全ドライバー明細 PDF（ZIP） | `app/api/export/statements.zip` + `lib/exports/zip.ts` | その月に明細があるドライバー全員の PDF を無圧縮 ZIP にまとめる（依存なしの自前 ZIP 生成）。`vercel.json` で maxDuration 60 秒 |
 | 弥生仕訳 CSV | `app/api/export/yayoi.csv` + `lib/yayoi/{accounts,build}.ts` | Shift_JIS（iconv-lite）、25 列、ヘッダー無し。売上：売掛金／売上高、外注費：外注費／未払金、ロイヤリティ・管理費・利益計上の調整：未払金／雑収入（補助科目）、利益計上なしの調整：立替金。科目・税区分・ドライバー分割・伝票日付は `companies.yayoi_accounts` で変更可 |
-| PDF 支払明細 | `app/api/export/statement.pdf` + `lib/pdf/statement.tsx` | A4 縦、Noto Sans JP（`public/fonts`）、日本語の禁則処理付き折り返し。会社利益は載せない。税抜小計・消費税・お支払額（税込）、ロゴ・認印（`lib/company-assets.ts` の `loadStatementAssets`）を印字。`vercel.json` で maxDuration 30 秒 |
+| PDF 支払明細 | `app/api/export/statement.pdf` + `lib/pdf/statement.tsx` | A4 縦、Noto Sans JP（`assets/fonts`。`public/` には置かない）、日本語の禁則処理付き折り返し。会社利益は載せない。税抜小計・消費税・お支払額（税込）、ロゴ・認印（`lib/company-assets.ts` の `loadStatementAssets`）を印字。`vercel.json` で maxDuration 30 秒 |
 | 会社のロゴ・認印 | `app/api/company-asset/[kind]` + `lib/company-assets.ts` + `lib/actions/company-assets.ts` | Storage 非公開バケット `company-assets/<company_id>/<kind>-<timestamp>.<ext>`。書き込みはサービスロール（owner の Server Action、PNG/JPEG 2MB まで、先頭バイトで判定）、読み出しはログイン中の自社ユーザー。印刷用ページ・ポータルは `<img src="/api/company-asset/logo">` |
 | 印刷用ページ | `/payouts/[driverId]/print` | ブラウザ印刷 |
 | LINE 用テキスト | `lib/statement/statementToText()` | 会社利益を含まない |
@@ -703,7 +703,7 @@ office_desk(month, today)  ── 1 往復（security invoker・admin 以上）�
 |---|---|---|
 | 単体（Vitest） | `npm test` | `lib/calc`（§2.6 の全ケース、誤差 0.01 円以内、端数処理 4 種、恒等式）、zod スキーマ、`lib/migrate` の変換と決定的 ID、`lib/voice` の解析、`lib/push` の宛先と文面。**プッシュの送信（`tests/push-send.test.ts`）は使い捨ての自己署名証明書で HTTPS のテストサーバーを立て、暗号化された本文と VAPID の署名が届くこと・410 なら購読を消すことまで確かめる**（openssl が無い環境では飛ばす） |
 | SQL 結合（psql） | `npm run test:sql` | ローカル PostgreSQL に `tests/sql/auth_stub.sql`（auth.uid() 等のスタブ）+ 全マイグレーションを適用し `tests/sql/test.sql` を実行。ビューの計算が §2.6 と一致、RLS（viewer / driver の拒否）、締めガード、招待制、復元・全削除、経費と営業利益（`v_month_pl`）、取引先と請求書（`build_invoice` / 合計の自動計算 / 状態）、ポータルの速報、代表と機密の隔離、通知の購読と設定、配車（必要人数・割り当て・休み希望・写しと確定・見通し）、法定帳票（運転者台帳・適性診断・保存期間・監査で足りないもの）、出力の機密判定と LINE 連携の復元とダッシュボードの 1 往復、事務（月締めのチェック・催促・最初に開く画面・office_desk）、事務員と明細の送付、ユーザーごとの見せる範囲と代表を譲る、期（設立日の同期と復元）。36 節。**1 回目の適用直後にテーブル権限の抜けも確かめる** |
-| E2E（Playwright） | `npm run test:e2e` | Supabase 互換のテストサーバー（`supabase-lite`：PostgreSQL + GoTrue 相当 + PostgREST 相当の軽量実装）を自動起動し、iPhone 13 と Desktop Chrome の 2 プロジェクトで主要導線（招待ログイン → ダッシュボード → 稼働追加・複製・一括入力 → 支払明細・PDF → 設定 → 月締め・解除 → 経費と営業利益 → 取引先と請求書（PDF・入金） → 年次レポートと月次目標 → ナビとコマンドパレット・ポータルの速報 → 閲覧者／ドライバーの権限 → 移行 JSON の取り込み）をブラウザで確認。29 spec・159 シナリオ × 2 プロジェクト = **318 件**。スクリーンショットを `docs/screenshots/` に保存。詳細は [docs/E2E.md](E2E.md) |
+| E2E（Playwright） | `npm run test:e2e` | Supabase 互換のテストサーバー（`supabase-lite`：PostgreSQL + GoTrue 相当 + PostgREST 相当の軽量実装）を自動起動し、iPhone 13 と Desktop Chrome の 2 プロジェクトで主要導線（招待ログイン → ダッシュボード → 稼働追加・複製・一括入力 → 支払明細・PDF → 設定 → 月締め・解除 → 経費と営業利益 → 取引先と請求書（PDF・入金） → 年次レポートと月次目標 → ナビとコマンドパレット・ポータルの速報 → 閲覧者／ドライバーの権限 → 移行 JSON の取り込み）をブラウザで確認。29 spec・160 シナリオ × 2 プロジェクト = **320 件**。スクリーンショットを `docs/screenshots/` に保存。詳細は [docs/E2E.md](E2E.md) |
 | 静的 | `npm run typecheck` / `npm run lint` / `npm run build` | 型・Lint・本番ビルド |
 | まとめ | `npm run check` | typecheck + lint + test + build:sql |
 
@@ -827,7 +827,7 @@ RPC `transfer_ownership(p_to, p_my_role)`（security definer）。
 3. **事務員（clerk）に会社利益を DB では隠していない**：事務員は請求（受注単価）と支払（支払単価）を扱うので稼働行の売上・支払は読め、`bill − pay` で利益は出せます。画面では会社利益・行の利益を出していませんが、API を直接叩けば集計ビューも読めます。経営の数字を厳密に隠すなら、事務員に売上か支払のどちらかを任せない運用にしてください。
 4. **メール送信は Supabase 標準では 1 時間 2 通**：本番でマジックリンクを常用するにはカスタム SMTP が必要（[docs/SETUP.md](SETUP.md) 手順 12）。招待リンク＋パスワード運用なら不要。
 5. **Supabase 無料プランの休止**：7 日間 API アクセスが無いとプロジェクトが一時停止します（ダッシュボードの「Restore project」で再開可）。`vercel.json` の `crons` が毎日（UTC 21:00 = 日本時間 6:00）`/api/cron/keepalive`（service_role で `companies` を 1 件数えるだけ）を呼び出して防止します。**`CRON_SECRET` は必須**で、未設定だと Route Handler が 503 を返して定期アクセスは無効になります（設定済みなら Vercel が付与する `Authorization: Bearer <CRON_SECRET>` を照合）。`scripts/deploy-vercel.sh` と GitHub Actions は未指定時に自動生成します。念のため月 1 回の手動バックアップを推奨。
-6. **PDF のフォント**：`public/fonts/NotoSansJP-*.ttf` を実行時にファイルとして読み込みます。`next.config.ts` の `outputFileTracingIncludes` で `/api/export/statement.pdf` に `public/fonts/**` を同梱する設定済みです。フォントが見つからないエラーが出た場合は、この設定と `public/fonts/` の中身を確認してください。
+6. **PDF のフォント**：`assets/fonts/NotoSansJP-*.ttf` を実行時にファイルとして読み込みます（`lib/pdf/fonts.ts` の `pdfFontDir()`）。以前は `public/fonts` に置いていましたが、Vercel では `public/` のファイルがサーバーの関数に入らず、本番だけ明細 PDF が「出力に失敗しました」になりました。`next.config.ts` の `PDF_ROUTES`（PDF を作る口すべて）に `outputFileTracingIncludes` で同梱しています。本番で描けるかは `/api/health/pdf`（ログイン不要）で確かめられ、デプロイの直後に `deploy.yml` の「PDF の確認」が自動で呼びます。見つからないときは「PDF 用の日本語フォントがサーバーに見つかりません（assets/fonts）」と出ます。
 7. **2 段階認証の UI なし**（Supabase 側で有効化できる構成のみ）。
 8. **出力を止めても画面の内容は読める**（0029）：「出力（ダウンロード）」を止めた人でも、画面に出ている数字は見られ、supabase-js を直接叩けば同じ行も読めます。止めているのは一覧のダウンロード（出力の口）と画面の出力ボタンだけです。見せたくない数字そのものは「経営の数字」「借入と納税」「現金」「振込口座」の見せる範囲で止めてください（こちらは RLS で止まります）。
 9. **税務の期限は暦年で並べる**（0031）：月の切り替え・年次レポート・予算・借入・中期計画は期（事業年度）で見られますが、税務の期限は日付のカレンダーなので「2026年（第3期の決算）」のように暦年で並べています（決算の申告期限は翌期に入るため）。

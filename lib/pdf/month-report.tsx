@@ -17,8 +17,6 @@ import { yen, pct, qty as qtyText } from "@/lib/format";
 import { addMonths, dateToMonth, formatDateJa, formatMonthJa, monthToDate } from "@/lib/month";
 import { ensurePdfFonts, PDF_FONT_FAMILY } from "./fonts";
 
-// モジュール初期化時に 1 回だけフォントを登録する
-ensurePdfFonts();
 
 const GRAY = "#555555";
 const LINE_COLOR = "#bbbbbb";
@@ -768,5 +766,6 @@ export function monthReportPdfFilename(month: string): string {
 
 /** 月次の経営レポート PDF を生成する */
 export async function renderMonthReportPdf(data: MonthReportData): Promise<Buffer> {
+  ensurePdfFonts(); // フォントが無いときは、ここで分かる文で失敗する（モジュールの読み込みでは失敗させない）
   return renderToBuffer(<MonthReportPdf data={data} />);
 }
