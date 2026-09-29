@@ -3,15 +3,18 @@
 ## 2026-09-29 支払明細の PDF が「出力に失敗しました」になるのを直した
 
 - **本番（Vercel）だけ**、支払明細の PDF（1 人ずつ・全員分の ZIP）が「出力に失敗しました」になっていました。
-  PDF に使う日本語フォントを `public/fonts` に置いていたため、Vercel ではサーバー側の処理にフォントが入っていませんでした（手元とテストでは出ていたので気づけませんでした）
-- フォントを `assets/fonts` に移し、PDF を作るすべての口（明細・全員分 ZIP・請求書・月次レポート・運転者台帳・月次パック・監査用 ZIP・請求書のメール送付）に同梱するようにしました
+  原因は、PDF を作る部品（pdfkit）が中で使う標準フォントのファイルが、本番のサーバー側の処理に入っていなかったことです
+  （`Cannot find module …/pdfkit/js/standard-fonts/Helvetica.cjs`）。手元とテストでは全部のファイルがそろっているので出ていました
+- その標準フォントと日本語フォント（`public/fonts` から `assets/fonts` へ移動）を、PDF を作るすべての口（明細・全員分 ZIP・請求書・月次レポート・運転者台帳・月次パック・監査用 ZIP・請求書のメール送付）に同梱するようにしました
+- 手元でも本番と同じファイル構成で確かめられる `npm run check:pdf-bundle` を足しました
 - フォントが見つからないときは、英語の内部エラーではなく「PDF 用の日本語フォントがサーバーに見つかりません」と出るようにしました
 - 本番で PDF が描けるかを確かめる口 `/api/health/pdf`（ログイン不要・会社の情報は使わない）を足し、公開の手順（GitHub Actions）がデプロイの直後に自動で確かめるようにしました
 
 ### 開発者向け
 
 - `lib/pdf/fonts.ts`：`pdfFontDir()` / `pdfFontStatus()`、`ensurePdfFonts()` は各 `render*Pdf` の頭で呼ぶ（モジュールの読み込みでは登録しない）
-- `next.config.ts` の `PDF_ROUTES`、`app/api/health/pdf`・`lib/pdf/health.ts`、`lib/supabase/middleware.ts` の公開パスに `/api/health`
+- `next.config.ts` の `PDF_FILES`（日本語フォント・pdfkit の標準フォント）と `PDF_ROUTES`、`app/api/health/pdf`・`lib/pdf/health.ts`、`lib/supabase/middleware.ts` の公開パスに `/api/health`
+- `scripts/check-pdf-bundle.sh`（`NEXT_BUNDLE_CHECK=1` の standalone ビルドを `.next-bundle-check` に作り、追跡されたファイルだけで `/api/health/pdf` を呼ぶ）
 - テスト：Vitest `tests/pdf-fonts.test.ts`、E2E `30-payouts.spec.ts` に 1 シナリオ
 
 ## 2026-09-24 財務（予算・借入・税務）と中期計画も「第N期」で
