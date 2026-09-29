@@ -16,7 +16,7 @@ export function AppShell({ user, children, demo }: { user: SessionUser; children
       {demo && (
         <div className="no-print bg-accent px-4 py-2 text-center text-sm font-bold text-accent-foreground">
           デモです（架空の会社・架空のデータ）。あなた専用なので自由に触ってください。24 時間で消えます。{" "}
-          <a href="/demo/start" className="underline">
+          <a href="/demo/start" className="text-accent-foreground underline">
             最初からやり直す
           </a>
         </div>

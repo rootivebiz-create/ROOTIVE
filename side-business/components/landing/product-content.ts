@@ -128,7 +128,7 @@ export const SCREENS: Screen[] = [
     id: "close",
     name: "締め",
     pack: "payroll",
-    summary: "月を締めると、その月の稼働・調整・明細は誰も書き換えられません。",
+    summary: "月を締めると、その月の稼働・調整・明細は書き換えられなくなります（締めを外せるのはオーナーだけ）。",
     shows: ["締めを外せるのはオーナーだけ（理由を書いて）", "取り込み・明細の送付・確認・締めなど、誰がいつ何をしたかの記録"],
     why: "締めたあとで数字が変わらないようにし、あとから聞かれたときにすぐ出せるようにするためです。",
   },
@@ -210,7 +210,7 @@ export const MONTH_STEPS: { screenId: string; label: string; body: string }[] = 
   {
     screenId: "close",
     label: "締め",
-    body: "締めた月は誰も書き換えられません。誰がいつ何をしたかも残ります。",
+    body: "締めた月は書き換えられません（締めを外せるのはオーナーだけで、外したことも残ります）。誰がいつ何をしたかも残ります。",
   },
   {
     screenId: "reconcile",
@@ -345,7 +345,7 @@ export const REQUIREMENTS = [
   },
   {
     title: "御社の Postgres（データベース）",
-    body: "Supabase か Neon（どちらも東京の置き場所を選べます）。毎日のバックアップが有効かを一緒に確かめます。",
+    body: "Supabase（東京を選べます）か Neon（アジアはシンガポール）。毎日のバックアップが有効かを一緒に確かめます。",
   },
   {
     title: "費用は御社から各社へ直接",

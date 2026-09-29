@@ -25,8 +25,8 @@ export function sampleData(month = "2026-10"): MonthData {
       { id: "d3", name: "上田 健", invoiceRegistered: false, monthlyFee: 15000, royaltyRate: 0.1,
         bank: { bankCode: "0009", bankNameKana: "ﾐﾂｲｽﾐﾄﾓ", branchCode: "303", branchNameKana: "ｻﾝﾌﾟﾙ", accountType: "ordinary", accountNumber: "3456789", holderKana: "ウエダ ケン" } },
       { id: "d4", name: "遠藤 大輔", invoiceRegistered: false, monthlyFee: 10000, royaltyRate: 0.08,
-        bank: { bankCode: "9900", bankNameKana: "ﾕｳﾁﾖ", branchCode: "418", branchNameKana: "ﾖﾝｲﾁﾊﾁ", accountType: "ordinary", accountNumber: "4567890", holderKana: "エンドウ ダイスケ" } },
-      { id: "d5", name: "岡田 拓也", invoiceRegistered: true, registrationNo: "T3456789012345", monthlyFee: 15000, royaltyRate: 0.1,
+        bank: { bankCode: "9900", bankNameKana: "ﾕｳﾁﾖ", branchCode: "404", branchNameKana: "ｻﾝﾌﾟﾙ", accountType: "ordinary", accountNumber: "4567890", holderKana: "エンドウ ダイスケ" } },
+      { id: "d5", name: "岡田 拓也", invoiceRegistered: true, registrationNo: "T3456789012346", monthlyFee: 15000, royaltyRate: 0.1,
         bank: { bankCode: "0001", bankNameKana: "ﾐｽﾞﾎ", branchCode: "104", branchNameKana: "ｻﾝﾌﾟﾙ", accountType: "ordinary", accountNumber: "5678901", holderKana: "オカダ タクヤ" } },
     ],
     projects: [
